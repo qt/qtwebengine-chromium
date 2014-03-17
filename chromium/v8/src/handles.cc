@@ -101,7 +101,7 @@ void HandleScope::DeleteExtensions(Isolate* isolate) {
 }
 
 
-#ifdef ENABLE_EXTRA_CHECKS
+#ifdef ENABLE_HANDLE_ZAPPING
 void HandleScope::ZapRange(Object** start, Object** end) {
   ASSERT(end - start <= kHandleBlockSize);
   for (Object** p = start; p != end; p++) {
@@ -150,54 +150,6 @@ Handle<JSGlobalProxy> ReinitializeJSGlobalProxy(
 }
 
 
-void SetExpectedNofProperties(Handle<JSFunction> func, int nof) {
-  // If objects constructed from this function exist then changing
-  // 'estimated_nof_properties' is dangerous since the previous value might
-  // have been compiled into the fast construct stub. More over, the inobject
-  // slack tracking logic might have adjusted the previous value, so even
-  // passing the same value is risky.
-  if (func->shared()->live_objects_may_exist()) return;
-
-  func->shared()->set_expected_nof_properties(nof);
-  if (func->has_initial_map()) {
-    Handle<Map> new_initial_map =
-        func->GetIsolate()->factory()->CopyMap(
-            Handle<Map>(func->initial_map()));
-    new_initial_map->set_unused_property_fields(nof);
-    func->set_initial_map(*new_initial_map);
-  }
-}
-
-
-static int ExpectedNofPropertiesFromEstimate(int estimate) {
-  // If no properties are added in the constructor, they are more likely
-  // to be added later.
-  if (estimate == 0) estimate = 2;
-
-  // We do not shrink objects that go into a snapshot (yet), so we adjust
-  // the estimate conservatively.
-  if (Serializer::enabled()) return estimate + 2;
-
-  // Inobject slack tracking will reclaim redundant inobject space later,
-  // so we can afford to adjust the estimate generously.
-  if (FLAG_clever_optimizations) {
-    return estimate + 8;
-  } else {
-    return estimate + 3;
-  }
-}
-
-
-void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
-                                          int estimate) {
-  // See the comment in SetExpectedNofProperties.
-  if (shared->live_objects_may_exist()) return;
-
-  shared->set_expected_nof_properties(
-      ExpectedNofPropertiesFromEstimate(estimate));
-}
-
-
 void FlattenString(Handle<String> string) {
   CALL_HEAP_FUNCTION_VOID(string->GetIsolate(), string->TryFlatten());
 }
@@ -208,30 +160,12 @@ Handle<String> FlattenGetString(Handle<String> string) {
 }
 
 
-Handle<Object> SetProperty(Isolate* isolate,
-                           Handle<Object> object,
-                           Handle<Object> key,
-                           Handle<Object> value,
-                           PropertyAttributes attributes,
-                           StrictModeFlag strict_mode) {
-  CALL_HEAP_FUNCTION(
-      isolate,
-      Runtime::SetObjectProperty(
-          isolate, object, key, value, attributes, strict_mode),
-      Object);
-}
-
-
 Handle<Object> ForceSetProperty(Handle<JSObject> object,
                                 Handle<Object> key,
                                 Handle<Object> value,
                                 PropertyAttributes attributes) {
-  Isolate* isolate = object->GetIsolate();
-  CALL_HEAP_FUNCTION(
-      isolate,
-      Runtime::ForceSetObjectProperty(
-          isolate, object, key, value, attributes),
-      Object);
+  return Runtime::ForceSetObjectProperty(object->GetIsolate(), object, key,
+                                        value, attributes);
 }
 
 
@@ -285,30 +219,6 @@ Handle<Object> LookupSingleCharacterStringFromCode(Isolate* isolate,
 }
 
 
-Handle<String> SubString(Handle<String> str,
-                         int start,
-                         int end,
-                         PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(str->GetIsolate(),
-                     str->SubString(start, end, pretenure), String);
-}
-
-
-Handle<JSObject> Copy(Handle<JSObject> obj) {
-  Isolate* isolate = obj->GetIsolate();
-  CALL_HEAP_FUNCTION(isolate,
-                     isolate->heap()->CopyJSObject(*obj), JSObject);
-}
-
-
-Handle<JSObject> DeepCopy(Handle<JSObject> obj) {
-  Isolate* isolate = obj->GetIsolate();
-  CALL_HEAP_FUNCTION(isolate,
-                     obj->DeepCopy(isolate),
-                     JSObject);
-}
-
-
 // Wrappers for scripts are kept alive and cached in weak global
 // handles referred from foreign objects held by the scripts as long as
 // they are used. When they are not used anymore, the garbage
@@ -332,9 +242,9 @@ static void ClearWrapperCache(v8::Isolate* v8_isolate,
 
 Handle<JSValue> GetScriptWrapper(Handle<Script> script) {
   if (script->wrapper()->foreign_address() != NULL) {
-    // Return the script wrapper directly from the cache.
+    // Return a handle for the existing script wrapper from the cache.
     return Handle<JSValue>(
-        reinterpret_cast<JSValue**>(script->wrapper()->foreign_address()));
+        *reinterpret_cast<JSValue**>(script->wrapper()->foreign_address()));
   }
   Isolate* isolate = script->GetIsolate();
   // Construct a new script wrapper.
@@ -345,10 +255,10 @@ Handle<JSValue> GetScriptWrapper(Handle<Script> script) {
 
   // The allocation might have triggered a GC, which could have called this
   // function recursively, and a wrapper has already been created and cached.
-  // In that case, simply return the cached wrapper.
+  // In that case, simply return a handle for the cached wrapper.
   if (script->wrapper()->foreign_address() != NULL) {
     return Handle<JSValue>(
-        reinterpret_cast<JSValue**>(script->wrapper()->foreign_address()));
+        *reinterpret_cast<JSValue**>(script->wrapper()->foreign_address()));
   }
 
   result->set_value(*script);
@@ -727,7 +637,7 @@ Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object,
       // present enum cache. The first step to using the cache is to set the
       // enum length of the map by counting the number of own descriptors that
       // are not DONT_ENUM or SYMBOLIC.
-      if (own_property_count == Map::kInvalidEnumCache) {
+      if (own_property_count == kInvalidEnumCacheSentinel) {
         own_property_count = object->map()->NumberOfDescribedProperties(
             OWN_DESCRIPTORS, DONT_SHOW);
 
@@ -839,31 +749,6 @@ Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object,
 }
 
 
-Handle<ObjectHashSet> ObjectHashSetAdd(Handle<ObjectHashSet> table,
-                                       Handle<Object> key) {
-  CALL_HEAP_FUNCTION(table->GetIsolate(),
-                     table->Add(*key),
-                     ObjectHashSet);
-}
-
-
-Handle<ObjectHashSet> ObjectHashSetRemove(Handle<ObjectHashSet> table,
-                                          Handle<Object> key) {
-  CALL_HEAP_FUNCTION(table->GetIsolate(),
-                     table->Remove(*key),
-                     ObjectHashSet);
-}
-
-
-Handle<ObjectHashTable> PutIntoObjectHashTable(Handle<ObjectHashTable> table,
-                                               Handle<Object> key,
-                                               Handle<Object> value) {
-  CALL_HEAP_FUNCTION(table->GetIsolate(),
-                     table->Put(*key, *value),
-                     ObjectHashTable);
-}
-
-
 DeferredHandleScope::DeferredHandleScope(Isolate* isolate)
     : impl_(isolate->handle_scope_implementer()) {
   impl_->BeginDeferredScope();
@@ -902,6 +787,17 @@ DeferredHandles* DeferredHandleScope::Detach() {
   handles_detached_ = true;
 #endif
   return deferred;
+}
+
+
+void AddWeakObjectToCodeDependency(Heap* heap,
+                                   Handle<Object> object,
+                                   Handle<Code> code) {
+  heap->EnsureWeakObjectToCodeTable();
+  Handle<DependentCode> dep(heap->LookupWeakObjectToCodeDependency(*object));
+  dep = DependentCode::Insert(dep, DependentCode::kWeaklyEmbeddedGroup, code);
+  CALL_HEAP_FUNCTION_VOID(heap->isolate(),
+                          heap->AddWeakObjectToCodeDependency(*object, *dep));
 }
 
 

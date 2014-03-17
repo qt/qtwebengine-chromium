@@ -30,15 +30,14 @@
 
 #include "config.h"
 #include "WebInputEvent.h"
-
-#include <ctype.h>
-#include "core/platform/chromium/KeyboardCodes.h"
+#include "platform/KeyboardCodes.h"
 #include "wtf/Assertions.h"
 #include "wtf/StringExtras.h"
+#include <ctype.h>
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 struct SameSizeAsWebInputEvent {
     int inputData[5];
@@ -236,4 +235,4 @@ int WebKeyboardEvent::locationModifiersFromWindowsKeyCode(int keycode)
     }
 }
 
-} // namespace WebKit
+} // namespace blink

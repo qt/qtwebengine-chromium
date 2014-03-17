@@ -23,7 +23,8 @@
         '.',
       ],
       'defines': [
-        'WITH_SIMD', 'MOTION_JPEG_SUPPORTED',
+        'WITH_SIMD',
+        'MOTION_JPEG_SUPPORTED',
       ],
       'sources': [
         'jcapimin.c',
@@ -155,11 +156,11 @@
           ],
         }],
         # The ARM SIMD implementation can be used for devices that support
-        # the NEON instruction set. This is done dynamically by probing CPU
-        # features at runtime, so always compile it for ARMv7-A devices.
+        # the NEON instruction set. This can safely be done dynamically by
+        # probing CPU features at runtime, if you wish.
         [ 'target_arch=="arm"', {
           'conditions': [
-            [ 'armv7 == 1 or arm_neon == 1', {
+            [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
               'sources': [
                 'simd/jsimd_arm.c',
                 'simd/jsimd_arm_neon.S',
@@ -263,6 +264,11 @@
               }],
             ],
           },
+        }],
+        [ 'OS=="android"', {
+          'defines': [
+            'NO_GETENV',  # getenv() is not thread-safe.
+          ],
         }],
       ],
       'rules': [

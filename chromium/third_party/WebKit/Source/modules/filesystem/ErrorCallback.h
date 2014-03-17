@@ -31,16 +31,14 @@
 #ifndef ErrorCallback_h
 #define ErrorCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
 class FileError;
 
-class ErrorCallback : public RefCounted<ErrorCallback> {
+class ErrorCallback {
 public:
     virtual ~ErrorCallback() { }
-    virtual bool handleEvent(FileError*) = 0;
+    virtual void handleEvent(FileError*) = 0;
 };
 
 } // namespace

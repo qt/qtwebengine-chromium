@@ -33,11 +33,11 @@ class SVGColor;
 
 class SVGFEDiffuseLightingElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEDiffuseLightingElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEDiffuseLightingElement> create(Document&);
     void lightElementAttributeChanged(const SVGFELightElement*, const QualifiedName&);
 
 private:
-    SVGFEDiffuseLightingElement(const QualifiedName&, Document&);
+    explicit SVGFEDiffuseLightingElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -57,11 +57,7 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGFEDiffuseLightingElement* toSVGFEDiffuseLightingElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::feDiffuseLightingTag));
-    return static_cast<SVGFEDiffuseLightingElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGFEDiffuseLightingElement, hasTagName(SVGNames::feDiffuseLightingTag));
 
 } // namespace WebCore
 

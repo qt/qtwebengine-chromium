@@ -19,7 +19,8 @@ class HttpStreamFactoryImplRequestTest
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     HttpStreamFactoryImplRequestTest,
-    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
+    testing::Values(kProtoDeprecatedSPDY2,
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
                     kProtoHTTP2Draft04));
 
 namespace {
@@ -35,10 +36,10 @@ class DoNothingRequestDelegate : public HttpStreamRequest::Delegate {
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
       HttpStreamBase* stream) OVERRIDE {}
-  virtual void OnWebSocketStreamReady(
+  virtual void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      WebSocketStreamBase* stream) OVERRIDE {}
+      WebSocketHandshakeStreamBase* stream) OVERRIDE {}
   virtual void OnStreamFailed(
       int status,
       const SSLConfig& used_ssl_config) OVERRIDE {}

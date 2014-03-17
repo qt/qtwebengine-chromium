@@ -31,26 +31,25 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLParamElement::HTMLParamElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLParamElement::HTMLParamElement(Document& document)
+    : HTMLElement(paramTag, document)
 {
-    ASSERT(hasTagName(paramTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLParamElement> HTMLParamElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLParamElement> HTMLParamElement::create(Document& document)
 {
-    return adoptRef(new HTMLParamElement(tagName, document));
+    return adoptRef(new HTMLParamElement(document));
 }
 
-String HTMLParamElement::name() const
+const AtomicString& HTMLParamElement::name() const
 {
     if (hasName())
         return getNameAttribute();
     return document().isHTMLDocument() ? emptyAtom : getIdAttribute();
 }
 
-String HTMLParamElement::value() const
+const AtomicString& HTMLParamElement::value() const
 {
     return fastGetAttribute(valueAttr);
 }

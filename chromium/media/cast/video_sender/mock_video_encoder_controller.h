@@ -13,13 +13,16 @@ namespace cast {
 
 class MockVideoEncoderController : public VideoEncoderController {
  public:
+  MockVideoEncoderController();
+  virtual ~MockVideoEncoderController();
+
   MOCK_METHOD1(SetBitRate, void(int new_bit_rate));
 
   MOCK_METHOD1(SkipNextFrame, void(bool skip_next_frame));
 
   MOCK_METHOD0(GenerateKeyFrame, void());
 
-  MOCK_METHOD1(LatestFrameIdToReference, void(uint8 frame_id));
+  MOCK_METHOD1(LatestFrameIdToReference, void(uint32 frame_id));
 
   MOCK_CONST_METHOD0(NumberOfSkippedFrames, int());
 };

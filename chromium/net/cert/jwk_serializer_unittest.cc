@@ -10,6 +10,7 @@
 
 namespace net {
 
+#if !defined(USE_OPENSSL)
 // This is the ASN.1 prefix for a P-256 public key. Specifically it's:
 // SEQUENCE
 //   SEQUENCE
@@ -27,6 +28,7 @@ static const unsigned char kP256SpkiPrefix[] = {
     0x42, 0x00, 0x04
 };
 static const unsigned int kEcCoordinateSize = 32U;
+#endif
 
 // This is a valid P-256 public key.
 static const unsigned char kSpkiEc[] = {
@@ -44,6 +46,7 @@ static const unsigned char kSpkiEc[] = {
     0x05, 0xd3, 0xd2, 0xca, 0xdf, 0x44, 0x2f, 0xf4
 };
 
+#if !defined(USE_OPENSSL)
 // This is a P-256 public key with 0 X and Y values.
 static const unsigned char kSpkiEcWithZeroXY[] = {
     0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
@@ -60,8 +63,6 @@ static const unsigned char kSpkiEcWithZeroXY[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-#if !defined(USE_OPENSSL)
-
 TEST(JwkSerializerNSSTest, ConvertSpkiFromDerToJwkEc) {
   base::StringPiece spki;
   base::DictionaryValue public_key_jwk;
@@ -74,7 +75,7 @@ TEST(JwkSerializerNSSTest, ConvertSpkiFromDerToJwkEc) {
   EXPECT_TRUE(JwkSerializer::ConvertSpkiFromDerToJwk(spki, &public_key_jwk));
 
   std::string string_value;
-  EXPECT_TRUE(public_key_jwk.GetString("alg", &string_value));
+  EXPECT_TRUE(public_key_jwk.GetString("kty", &string_value));
   EXPECT_STREQ("EC", string_value.c_str());
   EXPECT_TRUE(public_key_jwk.GetString("crv", &string_value));
   EXPECT_STREQ("P-256", string_value.c_str());
@@ -102,7 +103,7 @@ TEST(JwkSerializerNSSTest, ConvertSpkiFromDerToJwkEc) {
            sizeof(kSpkiEcWithZeroXY));
   EXPECT_TRUE(JwkSerializer::ConvertSpkiFromDerToJwk(spki, &public_key_jwk));
 
-  EXPECT_TRUE(public_key_jwk.GetString("alg", &string_value));
+  EXPECT_TRUE(public_key_jwk.GetString("kty", &string_value));
   EXPECT_STREQ("EC", string_value.c_str());
   EXPECT_TRUE(public_key_jwk.GetString("crv", &string_value));
   EXPECT_STREQ("P-256", string_value.c_str());

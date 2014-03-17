@@ -41,25 +41,16 @@ public:
 private:
     virtual const char* renderName() const { return "RenderSlider"; }
     virtual bool isSlider() const { return true; }
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
 
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
     virtual void layout();
 
     SliderThumbElement* sliderThumbElement() const;
 };
 
-inline RenderSlider* toRenderSlider(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSlider());
-    return static_cast<RenderSlider*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderSlider(const RenderSlider*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSlider, isSlider());
 
 } // namespace WebCore
 

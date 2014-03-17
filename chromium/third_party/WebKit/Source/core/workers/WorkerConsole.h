@@ -30,11 +30,10 @@
 #ifndef WorkerConsole_h
 #define WorkerConsole_h
 
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/inspector/ConsoleAPITypes.h"
-#include "core/page/ConsoleBase.h"
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleBase.h"
+#include "core/frame/ConsoleTypes.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -53,9 +52,8 @@ public:
     virtual ~WorkerConsole();
 
 protected:
-    virtual ScriptExecutionContext* context();
+    virtual ExecutionContext* context();
     virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtr<ScriptCallStack>) OVERRIDE;
-    virtual bool profilerEnabled();
 
 private:
     explicit WorkerConsole(WorkerGlobalScope*);

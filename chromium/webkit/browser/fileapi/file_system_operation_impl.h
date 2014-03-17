@@ -40,10 +40,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                                const StatusCallback& callback) OVERRIDE;
   virtual void Copy(const FileSystemURL& src_url,
                     const FileSystemURL& dest_url,
+                    CopyOrMoveOption option,
                     const CopyProgressCallback& progress_callback,
                     const StatusCallback& callback) OVERRIDE;
   virtual void Move(const FileSystemURL& src_url,
                     const FileSystemURL& dest_url,
+                    CopyOrMoveOption option,
                     const StatusCallback& callback) OVERRIDE;
   virtual void DirectoryExists(const FileSystemURL& url,
                                const StatusCallback& callback) OVERRIDE;
@@ -67,7 +69,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                          const StatusCallback& callback) OVERRIDE;
   virtual void OpenFile(const FileSystemURL& url,
                         int file_flags,
-                        base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
   virtual void CreateSnapshotFile(
@@ -82,10 +83,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                                const StatusCallback& callback) OVERRIDE;
   virtual void CopyFileLocal(const FileSystemURL& src_url,
                              const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
                              const CopyFileProgressCallback& progress_callback,
                              const StatusCallback& callback) OVERRIDE;
   virtual void MoveFileLocal(const FileSystemURL& src_url,
                              const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
                              const StatusCallback& callback) OVERRIDE;
   virtual base::PlatformFileError SyncGetPlatformPath(
       const FileSystemURL& url,
@@ -131,10 +134,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                          bool recursive);
   void DoCopyFileLocal(const FileSystemURL& src,
                        const FileSystemURL& dest,
+                       CopyOrMoveOption option,
                        const CopyFileProgressCallback& progress_callback,
                        const StatusCallback& callback);
   void DoMoveFileLocal(const FileSystemURL& src,
                        const FileSystemURL& dest,
+                       CopyOrMoveOption option,
                        const StatusCallback& callback);
   void DoCopyInForeignFile(const base::FilePath& src_local_disk_file_path,
                            const FileSystemURL& dest,
@@ -188,10 +193,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
   scoped_ptr<RecursiveOperationDelegate> recursive_operation_delegate_;
 
   StatusCallback cancel_callback_;
-
-  // Used only by OpenFile, in order to clone the file handle back to the
-  // requesting process.
-  base::ProcessHandle peer_handle_;
 
   // A flag to make sure we call operation only once per instance.
   OperationType pending_operation_;

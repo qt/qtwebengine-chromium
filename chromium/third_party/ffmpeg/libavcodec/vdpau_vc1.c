@@ -44,14 +44,18 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
+        if (s->next_picture_ptr) {
         ref = ff_vdpau_get_surface_id(&s->next_picture);
         assert(ref != VDP_INVALID_HANDLE);
         info->backward_reference = ref;
+        }
         /* fall-through */
     case AV_PICTURE_TYPE_P:
+        if (s->last_picture_ptr) {
         ref = ff_vdpau_get_surface_id(&s->last_picture);
         assert(ref != VDP_INVALID_HANDLE);
         info->forward_reference  = ref;
+        }
     }
 
     info->slice_count       = 0;
@@ -83,7 +87,7 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
     info->range_mapuv       = v->range_mapuv;
     /* Specific to simple/main profile only */
     info->multires          = v->multires;
-    info->syncmarker        = v->s.resync_marker;
+    info->syncmarker        = v->resync_marker;
     info->rangered          = v->rangered | (v->rangeredfrm << 1);
     info->maxbframes        = v->s.max_b_frames;
     info->deblockEnable     = v->postprocflag & 1;

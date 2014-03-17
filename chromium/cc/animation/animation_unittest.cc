@@ -78,6 +78,16 @@ TEST(AnimationTest, TrimTimeTimeOffset) {
   EXPECT_EQ(1, anim->TrimTimeToCurrentIteration(1.0));
 }
 
+TEST(AnimationTest, TrimTimeNegativeTimeOffset) {
+  scoped_ptr<Animation> anim(CreateAnimation(1));
+  anim->set_time_offset(-4);
+
+  EXPECT_EQ(0, anim->TrimTimeToCurrentIteration(0.0));
+  EXPECT_EQ(0, anim->TrimTimeToCurrentIteration(4.0));
+  EXPECT_EQ(0.5, anim->TrimTimeToCurrentIteration(4.5));
+  EXPECT_EQ(1, anim->TrimTimeToCurrentIteration(5.0));
+}
+
 TEST(AnimationTest, TrimTimePauseResume) {
   scoped_ptr<Animation> anim(CreateAnimation(1));
   anim->SetRunState(Animation::Running, 0.0);
@@ -171,17 +181,38 @@ TEST(AnimationTest, IsFinishedAtInfiniteIterations) {
   EXPECT_FALSE(anim->IsFinishedAt(1.5));
 }
 
+TEST(AnimationTest, IsFinishedNegativeTimeOffset) {
+  scoped_ptr<Animation> anim(CreateAnimation(1));
+  anim->set_time_offset(-0.5);
+  anim->SetRunState(Animation::Running, 0.0);
+
+  EXPECT_FALSE(anim->IsFinishedAt(-1.0));
+  EXPECT_FALSE(anim->IsFinishedAt(0.0));
+  EXPECT_FALSE(anim->IsFinishedAt(0.5));
+  EXPECT_FALSE(anim->IsFinishedAt(1.0));
+  EXPECT_TRUE(anim->IsFinishedAt(1.5));
+  EXPECT_TRUE(anim->IsFinishedAt(2.0));
+  EXPECT_TRUE(anim->IsFinishedAt(2.5));
+}
+
+TEST(AnimationTest, IsFinishedPositiveTimeOffset) {
+  scoped_ptr<Animation> anim(CreateAnimation(1));
+  anim->set_time_offset(0.5);
+  anim->SetRunState(Animation::Running, 0.0);
+
+  EXPECT_FALSE(anim->IsFinishedAt(-1.0));
+  EXPECT_FALSE(anim->IsFinishedAt(0.0));
+  EXPECT_TRUE(anim->IsFinishedAt(0.5));
+  EXPECT_TRUE(anim->IsFinishedAt(1.0));
+}
+
 TEST(AnimationTest, IsFinishedAtNotRunning) {
   scoped_ptr<Animation> anim(CreateAnimation(0));
   anim->SetRunState(Animation::Running, 0.0);
   EXPECT_TRUE(anim->IsFinishedAt(0.0));
   anim->SetRunState(Animation::Paused, 0.0);
   EXPECT_FALSE(anim->IsFinishedAt(0.0));
-  anim->SetRunState(Animation::WaitingForNextTick, 0.0);
-  EXPECT_FALSE(anim->IsFinishedAt(0.0));
   anim->SetRunState(Animation::WaitingForTargetAvailability, 0.0);
-  EXPECT_FALSE(anim->IsFinishedAt(0.0));
-  anim->SetRunState(Animation::WaitingForStartTime, 0.0);
   EXPECT_FALSE(anim->IsFinishedAt(0.0));
   anim->SetRunState(Animation::Finished, 0.0);
   EXPECT_TRUE(anim->IsFinishedAt(0.0));
@@ -195,11 +226,7 @@ TEST(AnimationTest, IsFinished) {
   EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::Paused, 0.0);
   EXPECT_FALSE(anim->is_finished());
-  anim->SetRunState(Animation::WaitingForNextTick, 0.0);
-  EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::WaitingForTargetAvailability, 0.0);
-  EXPECT_FALSE(anim->is_finished());
-  anim->SetRunState(Animation::WaitingForStartTime, 0.0);
   EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::Finished, 0.0);
   EXPECT_TRUE(anim->is_finished());
@@ -213,11 +240,7 @@ TEST(AnimationTest, IsFinishedNeedsSynchronizedStartTime) {
   EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::Paused, 2.0);
   EXPECT_FALSE(anim->is_finished());
-  anim->SetRunState(Animation::WaitingForNextTick, 2.0);
-  EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::WaitingForTargetAvailability, 2.0);
-  EXPECT_FALSE(anim->is_finished());
-  anim->SetRunState(Animation::WaitingForStartTime, 2.0);
   EXPECT_FALSE(anim->is_finished());
   anim->SetRunState(Animation::Finished, 0.0);
   EXPECT_TRUE(anim->is_finished());

@@ -26,7 +26,7 @@
 #ifndef SpeechSynthesisEvent_h
 #define SpeechSynthesisEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -40,7 +40,7 @@ public:
     float elapsedTime() const { return m_elapsedTime; }
     const String& name() const { return m_name; }
 
-    virtual const AtomicString& interfaceName() const { return eventNames().interfaceForSpeechSynthesisEvent; }
+    virtual const AtomicString& interfaceName() const { return EventNames::SpeechSynthesisEvent; }
 
 private:
     SpeechSynthesisEvent();

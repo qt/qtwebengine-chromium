@@ -75,14 +75,11 @@ bool IsTcMallocBypassed() {
 }
 
 bool CallocDiesOnOOM() {
+// The sanitizers' calloc dies on OOM instead of returning NULL.
 // The wrapper function in base/process_util_linux.cc that is used when we
 // compile without TCMalloc will just die on OOM instead of returning NULL.
-// This function is explicitly disabled if we compile with AddressSanitizer,
-// MemorySanitizer or ThreadSanitizer.
-#if defined(OS_LINUX) && defined(NO_TCMALLOC) && \
-    (!defined(ADDRESS_SANITIZER) && \
-     !defined(MEMORY_SANITIZER) && \
-     !defined(THREAD_SANITIZER))
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER) || (defined(OS_LINUX) && defined(NO_TCMALLOC))
   return true;
 #else
   return false;
@@ -150,10 +147,10 @@ TEST(SecurityTest, TCMALLOC_TEST(MemoryAllocationRestrictionsNewArray)) {
 
 // The tests bellow check for overflows in new[] and calloc().
 
-#if defined(OS_IOS) || defined(OS_WIN)
-  #define DISABLE_ON_IOS_AND_WIN(function) DISABLED_##function
+#if defined(OS_IOS) || defined(OS_WIN) || defined(THREAD_SANITIZER)
+  #define DISABLE_ON_IOS_AND_WIN_AND_TSAN(function) DISABLED_##function
 #else
-  #define DISABLE_ON_IOS_AND_WIN(function) function
+  #define DISABLE_ON_IOS_AND_WIN_AND_TSAN(function) function
 #endif
 
 // There are platforms where these tests are known to fail. We would like to
@@ -177,7 +174,7 @@ void OverflowTestsSoftExpectTrue(bool overflow_detected) {
 // Test array[TooBig][X] and array[X][TooBig] allocations for int overflows.
 // IOS doesn't honor nothrow, so disable the test there.
 // Crashes on Windows Dbg builds, disable there as well.
-TEST(SecurityTest, DISABLE_ON_IOS_AND_WIN(NewOverflow)) {
+TEST(SecurityTest, DISABLE_ON_IOS_AND_WIN_AND_TSAN(NewOverflow)) {
   const size_t kArraySize = 4096;
   // We want something "dynamic" here, so that the compiler doesn't
   // immediately reject crazy arrays.
@@ -233,19 +230,6 @@ TEST(SecurityTest, CallocOverflow) {
 }
 
 #if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && defined(__x86_64__)
-// Useful for debugging.
-void PrintProcSelfMaps() {
-  int fd = open("/proc/self/maps", O_RDONLY);
-  file_util::ScopedFD fd_closer(&fd);
-  ASSERT_GE(fd, 0);
-  char buffer[1<<13];
-  int ret;
-  ret = read(fd, buffer, sizeof(buffer) - 1);
-  ASSERT_GT(ret, 0);
-  buffer[ret - 1] = 0;
-  fprintf(stdout, "%s\n", buffer);
-}
-
 // Check if ptr1 and ptr2 are separated by less than size chars.
 bool ArePointersToSameArea(void* ptr1, void* ptr2, size_t size) {
   ptrdiff_t ptr_diff = reinterpret_cast<char*>(std::max(ptr1, ptr2)) -

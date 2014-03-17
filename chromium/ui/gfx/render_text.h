@@ -25,6 +25,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/gfx/shadow_value.h"
+#include "ui/gfx/size_f.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/gfx/vector2d.h"
 
@@ -151,7 +152,7 @@ struct Line {
 // visual layout. Support is built in for a cursor, a selection, simple styling,
 // complex scripts, and bi-directional text. Implementations provide mechanisms
 // for rendering and translation between logical and visual data.
-class UI_EXPORT RenderText {
+class GFX_EXPORT RenderText {
  public:
   virtual ~RenderText();
 
@@ -165,11 +166,6 @@ class UI_EXPORT RenderText {
     return horizontal_alignment_;
   }
   void SetHorizontalAlignment(HorizontalAlignment alignment);
-
-  VerticalAlignment vertical_alignment() const {
-    return vertical_alignment_;
-  }
-  void SetVerticalAlignment(VerticalAlignment alignment);
 
   const FontList& font_list() const { return font_list_; }
   void SetFontList(const FontList& font_list);
@@ -311,8 +307,11 @@ class UI_EXPORT RenderText {
   // RenderText.
   bool GetStyle(TextStyle style) const;
 
-  // Set the text directionality mode and get the text direction yielded.
+  // Set or get the text directionality mode and get the text direction yielded.
   void SetDirectionalityMode(DirectionalityMode mode);
+  DirectionalityMode directionality_mode() const {
+      return directionality_mode_;
+  }
   base::i18n::TextDirection GetTextDirection();
 
   // Returns the visual movement direction corresponding to the logical end
@@ -326,13 +325,22 @@ class UI_EXPORT RenderText {
   // shadows.
   virtual Size GetStringSize() = 0;
 
+  // This is same as GetStringSize except that fractional size is returned.
+  // The default implementation is same as GetStringSize. Certain platforms that
+  // compute the text size as floating-point values, like Mac, will override
+  // this method.
+  // See comment in Canvas::GetStringWidthF for its usage.
+  virtual SizeF GetStringSizeF();
+
   // Returns the width of the content (which is the wrapped width in multiline
   // mode). Reserves room for the cursor if |cursor_enabled_| is true.
   int GetContentWidth();
 
-  // Returns the common baseline of the text. The returned value is the vertical
-  // offset from the top of |display_rect| to the text baseline, in pixels.
-  virtual int GetBaseline() = 0;
+  // Returns the common baseline of the text. The return value is the vertical
+  // offset from the top of |display_rect_| to the text baseline, in pixels.
+  // The baseline is determined from the font list and display rect, and does
+  // not depend on the text.
+  int GetBaseline();
 
   void Draw(Canvas* canvas);
 
@@ -346,12 +354,19 @@ class UI_EXPORT RenderText {
   // Gets the SelectionModel from a visual point in local coordinates.
   virtual SelectionModel FindCursorPosition(const Point& point) = 0;
 
-  // Get the visual bounds of a cursor at |selection|. These bounds typically
-  // represent a vertical line, but if |insert_mode| is true they contain the
-  // bounds of the associated glyph. These bounds are in local coordinates, but
-  // may be outside the visible region if the text is longer than the textfield.
-  // Subsequent text, cursor, or bounds changes may invalidate returned values.
-  Rect GetCursorBounds(const SelectionModel& selection, bool insert_mode);
+  // Return true if cursor can appear in front of the character at |position|,
+  // which means it is a grapheme boundary or the first character in the text.
+  virtual bool IsCursorablePosition(size_t position) = 0;
+
+  // Get the visual bounds of a cursor at |caret|. These bounds typically
+  // represent a vertical line if |insert_mode| is true. Pass false for
+  // |insert_mode| to retrieve the bounds of the associated glyph. These bounds
+  // are in local coordinates, but may be outside the visible region if the text
+  // is longer than the textfield. Subsequent text, cursor, or bounds changes
+  // may invalidate returned values. Note that |caret| must be placed at
+  // grapheme boundary, that is, |IsCursorablePosition(caret.caret_pos())| must
+  // return true.
+  Rect GetCursorBounds(const SelectionModel& caret, bool insert_mode);
 
   // Compute the current cursor bounds, panning the text to show the cursor in
   // the display rect if necessary. These bounds are in local coordinates.
@@ -389,6 +404,30 @@ class UI_EXPORT RenderText {
 
   const std::vector<internal::Line>& lines() const { return lines_; }
   void set_lines(std::vector<internal::Line>* lines) { lines_.swap(*lines); }
+
+  // Returns the baseline of the current text.  The return value depends on
+  // the text and its layout while the return value of GetBaseline() doesn't.
+  // GetAlignmentOffset() takes into account the difference between them.
+  //
+  // We'd like a RenderText to show the text always on the same baseline
+  // regardless of the text, so the text does not jump up or down depending
+  // on the text.  However, underlying layout engines return different baselines
+  // depending on the text.  In general, layout engines determine the minimum
+  // bounding box for the text and return the baseline from the top of the
+  // bounding box.  So the baseline changes depending on font metrics used to
+  // layout the text.
+  //
+  // For example, suppose there are FontA and FontB and the baseline of FontA
+  // is smaller than the one of FontB.  If the text is laid out only with FontA,
+  // then the baseline of FontA may be returned.  If the text includes some
+  // characters which are laid out with FontB, then the baseline of FontB may
+  // be returned.
+  //
+  // GetBaseline() returns the fixed baseline regardless of the text.
+  // GetLayoutTextBaseline() returns the baseline determined by the underlying
+  // layout engine, and it changes depending on the text.  GetAlignmentOffset()
+  // returns the difference between them.
+  virtual int GetLayoutTextBaseline() = 0;
 
   const Vector2d& GetUpdatedDisplayOffset();
 
@@ -440,10 +479,6 @@ class UI_EXPORT RenderText {
   // text is obscured, the character (code point) offsets always match.
   virtual size_t TextIndexToLayoutIndex(size_t index) const = 0;
   virtual size_t LayoutIndexToTextIndex(size_t index) const = 0;
-
-  // Return true if cursor can appear in front of the character at |position|,
-  // which means it is a grapheme boundary or the first character in the text.
-  virtual bool IsCursorablePosition(size_t position) = 0;
 
   // Reset the layout to be invalid.
   virtual void ResetLayout() = 0;
@@ -509,6 +544,7 @@ class UI_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_MinWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_SufficientWidth);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
 
   // Set the cursor to |position|, with the caret trailing the previous
   // grapheme, or if there is no previous grapheme, leading the cursor position.
@@ -533,10 +569,6 @@ class UI_EXPORT RenderText {
   // Horizontal alignment of the text with respect to |display_rect_|.  The
   // default is to align left if the application UI is LTR and right if RTL.
   HorizontalAlignment horizontal_alignment_;
-
-  // Vertical alignment of the text with respect to |display_rect_|.  The
-  // default is to align vertically centered.
-  VerticalAlignment vertical_alignment_;
 
   // The text directionality mode, defaults to DIRECTIONALITY_FROM_TEXT.
   DirectionalityMode directionality_mode_;
@@ -622,6 +654,11 @@ class UI_EXPORT RenderText {
   // The offset for the text to be drawn, relative to the display area.
   // Get this point with GetUpdatedDisplayOffset (or risk using a stale value).
   Vector2d display_offset_;
+
+  // The baseline of the text.  This is determined from the height of the
+  // display area and the cap height of the font list so the text is vertically
+  // centered.
+  int baseline_;
 
   // The cached bounds and offset are invalidated by changes to the cursor,
   // selection, font, and other operations that adjust the visible text bounds.

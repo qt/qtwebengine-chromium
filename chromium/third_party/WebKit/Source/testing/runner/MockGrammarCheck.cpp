@@ -36,14 +36,14 @@
 #include "public/web/WebTextCheckingResult.h"
 #include <algorithm>
 
-using namespace WebKit;
+using namespace blink;
 using namespace std;
 
 namespace WebTestRunner {
 
 bool MockGrammarCheck::checkGrammarOfString(const WebString& text, vector<WebTextCheckingResult>* results)
 {
-    WEBKIT_ASSERT(results);
+    BLINK_ASSERT(results);
     string16 stringText = text;
     if (find_if(stringText.begin(), stringText.end(), isASCIIAlpha) == stringText.end())
         return true;
@@ -65,14 +65,15 @@ bool MockGrammarCheck::checkGrammarOfString(const WebString& text, vector<WebTex
         {"apple zz orange.", 0, 16},
         {"apple,zz,orange.", 0, 16},
         {"orange,zz,apple.", 0, 16},
-        {"the the adlj adaasj sdklj. there there", 0, 38},
+        {"the the adlj adaasj sdklj. there there", 4, 3},
+        {"the the adlj adaasj sdklj. there there", 33, 5},
         {"zz apple orange.", 0, 16},
     };
     for (size_t i = 0; i < ARRAYSIZE_UNSAFE(grammarErrors); ++i) {
         size_t offset = 0;
         string16 error(grammarErrors[i].text, grammarErrors[i].text + strlen(grammarErrors[i].text));
         while ((offset = stringText.find(error, offset)) != string16::npos) {
-            results->push_back(WebTextCheckingResult(WebTextCheckingTypeGrammar, offset + grammarErrors[i].location, grammarErrors[i].length));
+            results->push_back(WebTextCheckingResult(WebTextDecorationTypeGrammar, offset + grammarErrors[i].location, grammarErrors[i].length));
             offset += grammarErrors[i].length;
         }
     }

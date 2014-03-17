@@ -32,15 +32,15 @@ class HTMLSelectElement;
 
 class HTMLKeygenElement FINAL : public HTMLFormControlElementWithState {
 public:
-    static PassRefPtr<HTMLKeygenElement> create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+    static PassRefPtr<HTMLKeygenElement> create(Document& document, HTMLFormElement* form)
     {
-        return adoptRef(new HTMLKeygenElement(tagName, document, form));
+        return adoptRef(new HTMLKeygenElement(document, form));
     }
 
     virtual bool willValidate() const OVERRIDE { return false; }
 
 private:
-    HTMLKeygenElement(const QualifiedName&, Document&, HTMLFormElement*);
+    HTMLKeygenElement(Document&, HTMLFormElement*);
 
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
@@ -56,10 +56,10 @@ private:
     virtual bool isInteractiveContent() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual void reset() OVERRIDE;
+    virtual void resetImpl() OVERRIDE;
     virtual bool shouldSaveAndRestoreFormControlState() const OVERRIDE { return false; }
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
 
     HTMLSelectElement* shadowSelect() const;
 };

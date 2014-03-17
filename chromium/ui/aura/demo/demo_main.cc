@@ -9,17 +9,17 @@
 #include "base/message_loop/message_loop.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/aura/client/default_capture_client.h"
-#include "ui/aura/client/stacking_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
-#include "ui/compositor/compositor.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
@@ -77,34 +77,33 @@ class DemoWindowDelegate : public aura::WindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(DemoWindowDelegate);
 };
 
-class DemoStackingClient : public aura::client::StackingClient {
+class DemoWindowTreeClient : public aura::client::WindowTreeClient {
  public:
-  explicit DemoStackingClient(aura::RootWindow* root_window)
-      : root_window_(root_window) {
-    aura::client::SetStackingClient(root_window_, this);
+  explicit DemoWindowTreeClient(aura::Window* window) : window_(window) {
+    aura::client::SetWindowTreeClient(window_, this);
   }
 
-  virtual ~DemoStackingClient() {
-    aura::client::SetStackingClient(root_window_, NULL);
+  virtual ~DemoWindowTreeClient() {
+    aura::client::SetWindowTreeClient(window_, NULL);
   }
 
-  // Overridden from aura::client::StackingClient:
+  // Overridden from aura::client::WindowTreeClient:
   virtual aura::Window* GetDefaultParent(aura::Window* context,
                                          aura::Window* window,
                                          const gfx::Rect& bounds) OVERRIDE {
     if (!capture_client_) {
       capture_client_.reset(
-          new aura::client::DefaultCaptureClient(root_window_));
+          new aura::client::DefaultCaptureClient(window_->GetRootWindow()));
     }
-    return root_window_;
+    return window_;
   }
 
  private:
-  aura::RootWindow* root_window_;
+  aura::Window* window_;
 
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 
-  DISALLOW_COPY_AND_ASSIGN(DemoStackingClient);
+  DISALLOW_COPY_AND_ASSIGN(DemoWindowTreeClient);
 };
 
 int DemoMain() {
@@ -113,17 +112,17 @@ int DemoMain() {
 
   // The ContextFactory must exist before any Compositors are created.
   bool allow_test_contexts = false;
-  ui::Compositor::InitializeContextFactoryForTests(allow_test_contexts);
+  ui::InitializeContextFactoryForTests(allow_test_contexts);
 
-  aura::Env::GetInstance();
+  aura::Env::CreateInstance();
   scoped_ptr<aura::TestScreen> test_screen(aura::TestScreen::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
   scoped_ptr<aura::RootWindow> root_window(
       test_screen->CreateRootWindowForPrimaryDisplay());
-  scoped_ptr<DemoStackingClient> stacking_client(new DemoStackingClient(
-      root_window.get()));
-  aura::FocusManager focus_manager;
-  aura::client::SetFocusClient(root_window.get(), &focus_manager);
+  scoped_ptr<DemoWindowTreeClient> window_tree_client(new DemoWindowTreeClient(
+      root_window->window()));
+  aura::test::TestFocusClient focus_client;
+  aura::client::SetFocusClient(root_window->window(), &focus_client);
 
   // Create a hierarchy of test windows.
   DemoWindowDelegate window_delegate1(SK_ColorBLUE);
@@ -132,7 +131,8 @@ int DemoMain() {
   window1.Init(ui::LAYER_TEXTURED);
   window1.SetBounds(gfx::Rect(100, 100, 400, 400));
   window1.Show();
-  window1.SetDefaultParentByRootWindow(root_window.get(), gfx::Rect());
+  aura::client::ParentWindowWithContext(
+      &window1, root_window->window(), gfx::Rect());
 
   DemoWindowDelegate window_delegate2(SK_ColorRED);
   aura::Window window2(&window_delegate2);
@@ -140,7 +140,8 @@ int DemoMain() {
   window2.Init(ui::LAYER_TEXTURED);
   window2.SetBounds(gfx::Rect(200, 200, 350, 350));
   window2.Show();
-  window2.SetDefaultParentByRootWindow(root_window.get(), gfx::Rect());
+  aura::client::ParentWindowWithContext(
+      &window2, root_window->window(), gfx::Rect());
 
   DemoWindowDelegate window_delegate3(SK_ColorGREEN);
   aura::Window window3(&window_delegate3);
@@ -150,7 +151,7 @@ int DemoMain() {
   window3.Show();
   window2.AddChild(&window3);
 
-  root_window->ShowRootWindow();
+  root_window->host()->Show();
   base::MessageLoopForUI::current()->Run();
 
   return 0;

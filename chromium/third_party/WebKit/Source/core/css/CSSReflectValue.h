@@ -46,7 +46,7 @@ public:
     CSSPrimitiveValue* offset() const { return m_offset.get(); }
     CSSValue* mask() const { return m_mask.get(); }
 
-    String customCssText() const;
+    String customCSSText() const;
     String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
 
     void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
@@ -66,6 +66,8 @@ private:
     RefPtr<CSSPrimitiveValue> m_offset;
     RefPtr<CSSValue> m_mask;
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSReflectValue, isReflectValue());
 
 } // namespace WebCore
 

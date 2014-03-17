@@ -25,8 +25,8 @@ PROXIED_IFACE(PPB_Broker, PPB_BROKER_TRUSTED_INTERFACE_0_3,
 PROXIED_IFACE(PPB_Instance, PPB_BROWSERFONT_TRUSTED_INTERFACE_1_0,
               PPB_BrowserFont_Trusted_1_0)
 PROXIED_IFACE(PPB_Instance,
-              PPB_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_7,
-              PPB_ContentDecryptor_Private_0_7)
+              PPB_CONTENTDECRYPTOR_PRIVATE_INTERFACE_0_9,
+              PPB_ContentDecryptor_Private_0_9)
 PROXIED_IFACE(PPB_Instance, PPB_CHARSET_TRUSTED_INTERFACE_1_0,
               PPB_CharSet_Trusted_1_0)
 PROXIED_IFACE(NoAPIName, PPB_FILECHOOSER_TRUSTED_INTERFACE_0_5,
@@ -45,18 +45,19 @@ PROXIED_IFACE(PPB_Instance, PPB_FLASHFULLSCREEN_INTERFACE_1_0,
 PROXIED_IFACE(NoAPIName, PPB_PDF_INTERFACE,
               PPB_PDF)
 #if defined(OS_CHROMEOS)
-PROXIED_IFACE(NoAPIName, PPB_PLATFORMVERIFICATION_PRIVATE_INTERFACE_0_1,
-              PPB_PlatformVerification_Private_0_1)
+PROXIED_IFACE(NoAPIName, PPB_PLATFORMVERIFICATION_PRIVATE_INTERFACE_0_2,
+              PPB_PlatformVerification_Private_0_2)
 #endif
 PROXIED_IFACE(NoAPIName, PPB_TALK_PRIVATE_INTERFACE_1_0,
               PPB_Talk_Private_1_0)
 PROXIED_IFACE(NoAPIName, PPB_TALK_PRIVATE_INTERFACE_2_0,
               PPB_Talk_Private_2_0)
-// This uses the FileIO API which is declared in the public stable file.
-PROXIED_IFACE(NoAPIName, PPB_FILEIOTRUSTED_INTERFACE_0_4, PPB_FileIOTrusted_0_4)
 
 PROXIED_IFACE(NoAPIName, PPB_URLLOADERTRUSTED_INTERFACE_0_3,
               PPB_URLLoaderTrusted_0_3)
+
+PROXIED_IFACE(NoAPIName, PPB_OUTPUTPROTECTION_PRIVATE_INTERFACE_0_1,
+              PPB_OutputProtection_Private_0_1)
 
 // Hack to keep font working. The Font 0.6 API is binary compatible with
 // BrowserFont 1.0, so just map the string to the same thing.

@@ -36,7 +36,7 @@ public:
     virtual const char* renderName() const { return "RenderSVGResourceRadialGradient"; }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
     virtual SVGUnitTypes::SVGUnitType gradientUnits() const { return m_attributes.gradientUnits(); }
     virtual void calculateGradientTransform(AffineTransform& transform) { transform = m_attributes.gradientTransform(); }
@@ -52,11 +52,7 @@ private:
     RadialGradientAttributes m_attributes;
 };
 
-inline RenderSVGResourceRadialGradient* toRenderSVGResourceRadialGradient(RenderSVGResourceContainer* resource)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == RadialGradientResourceType);
-    return static_cast<RenderSVGResourceRadialGradient*>(resource);
-}
+DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(RenderSVGResourceRadialGradient, RadialGradientResourceType);
 
 }
 

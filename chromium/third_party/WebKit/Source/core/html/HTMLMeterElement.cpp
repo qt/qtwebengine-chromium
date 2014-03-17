@@ -23,13 +23,13 @@
 #include "core/html/HTMLMeterElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MeterShadowElement.h"
-#include "core/page/Page.h"
 #include "core/rendering/RenderMeter.h"
 #include "core/rendering/RenderTheme.h"
 
@@ -37,10 +37,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLMeterElement::HTMLMeterElement(const QualifiedName& tagName, Document& document)
-    : LabelableElement(tagName, document)
+HTMLMeterElement::HTMLMeterElement(Document& document)
+    : LabelableElement(meterTag, document)
 {
-    ASSERT(hasTagName(meterTag));
     ScriptWrappable::init(this);
 }
 
@@ -48,9 +47,9 @@ HTMLMeterElement::~HTMLMeterElement()
 {
 }
 
-PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(Document& document)
 {
-    RefPtr<HTMLMeterElement> meter = adoptRef(new HTMLMeterElement(tagName, document));
+    RefPtr<HTMLMeterElement> meter = adoptRef(new HTMLMeterElement(document));
     meter->ensureUserAgentShadowRoot();
     return meter;
 }
@@ -73,90 +72,90 @@ void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 double HTMLMeterElement::min() const
 {
-    return parseToDoubleForNumberType(getAttribute(minAttr), 0);
+    return getFloatingPointAttribute(minAttr, 0);
 }
 
-void HTMLMeterElement::setMin(double min, ExceptionState& es)
+void HTMLMeterElement::setMin(double min, ExceptionState& exceptionState)
 {
     if (!std::isfinite(min)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(min));
         return;
     }
-    setAttribute(minAttr, String::number(min));
+    setFloatingPointAttribute(minAttr, min);
 }
 
 double HTMLMeterElement::max() const
 {
-    return std::max(parseToDoubleForNumberType(getAttribute(maxAttr), std::max(1.0, min())), min());
+    return std::max(getFloatingPointAttribute(maxAttr, std::max(1.0, min())), min());
 }
 
-void HTMLMeterElement::setMax(double max, ExceptionState& es)
+void HTMLMeterElement::setMax(double max, ExceptionState& exceptionState)
 {
     if (!std::isfinite(max)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(max));
         return;
     }
-    setAttribute(maxAttr, String::number(max));
+    setFloatingPointAttribute(maxAttr, max);
 }
 
 double HTMLMeterElement::value() const
 {
-    double value = parseToDoubleForNumberType(getAttribute(valueAttr), 0);
+    double value = getFloatingPointAttribute(valueAttr, 0);
     return std::min(std::max(value, min()), max());
 }
 
-void HTMLMeterElement::setValue(double value, ExceptionState& es)
+void HTMLMeterElement::setValue(double value, ExceptionState& exceptionState)
 {
     if (!std::isfinite(value)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(value));
         return;
     }
-    setAttribute(valueAttr, String::number(value));
+    setFloatingPointAttribute(valueAttr, value);
 }
 
 double HTMLMeterElement::low() const
 {
-    double low = parseToDoubleForNumberType(getAttribute(lowAttr), min());
+    double low = getFloatingPointAttribute(lowAttr, min());
     return std::min(std::max(low, min()), max());
 }
 
-void HTMLMeterElement::setLow(double low, ExceptionState& es)
+void HTMLMeterElement::setLow(double low, ExceptionState& exceptionState)
 {
     if (!std::isfinite(low)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(low));
         return;
     }
-    setAttribute(lowAttr, String::number(low));
+    setFloatingPointAttribute(lowAttr, low);
 }
 
 double HTMLMeterElement::high() const
 {
-    double high = parseToDoubleForNumberType(getAttribute(highAttr), max());
+    double high = getFloatingPointAttribute(highAttr, max());
     return std::min(std::max(high, low()), max());
 }
 
-void HTMLMeterElement::setHigh(double high, ExceptionState& es)
+void HTMLMeterElement::setHigh(double high, ExceptionState& exceptionState)
 {
     if (!std::isfinite(high)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(high));
         return;
     }
-    setAttribute(highAttr, String::number(high));
+    setFloatingPointAttribute(highAttr, high);
 }
 
 double HTMLMeterElement::optimum() const
 {
-    double optimum = parseToDoubleForNumberType(getAttribute(optimumAttr), (max() + min()) / 2);
+    double optimum = getFloatingPointAttribute(optimumAttr, (max() + min()) / 2);
     return std::min(std::max(optimum, min()), max());
 }
 
-void HTMLMeterElement::setOptimum(double optimum, ExceptionState& es)
+void HTMLMeterElement::setOptimum(double optimum, ExceptionState& exceptionState)
 {
     if (!std::isfinite(optimum)) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(optimum));
         return;
     }
-    setAttribute(optimumAttr, String::number(optimum));
+    setFloatingPointAttribute(optimumAttr, optimum);
 }
 
 HTMLMeterElement::GaugeRegion HTMLMeterElement::gaugeRegion() const
@@ -217,16 +216,15 @@ RenderMeter* HTMLMeterElement::renderMeter() const
         return toRenderMeter(renderer());
 
     RenderObject* renderObject = userAgentShadowRoot()->firstChild()->renderer();
-    ASSERT(!renderObject || renderObject->isMeter());
     return toRenderMeter(renderObject);
 }
 
-void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot* root)
+void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     ASSERT(!m_value);
 
     RefPtr<MeterInnerElement> inner = MeterInnerElement::create(document());
-    root->appendChild(inner);
+    root.appendChild(inner);
 
     RefPtr<MeterBarElement> bar = MeterBarElement::create(document());
     m_value = MeterValueElement::create(document());

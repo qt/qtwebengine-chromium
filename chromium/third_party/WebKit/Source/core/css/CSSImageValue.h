@@ -38,14 +38,14 @@ public:
     static PassRefPtr<CSSImageValue> create(const String& url, StyleImage* image) { return adoptRef(new CSSImageValue(url, image)); }
     ~CSSImageValue();
 
-    StyleFetchedImage* cachedImage(ResourceFetcher*, const ResourceLoaderOptions&);
-    StyleFetchedImage* cachedImage(ResourceFetcher* loader) { return cachedImage(loader, ResourceFetcher::defaultResourceOptions()); }
+    StyleFetchedImage* cachedImage(ResourceFetcher*, const ResourceLoaderOptions&, CORSEnabled);
+    StyleFetchedImage* cachedImage(ResourceFetcher* fetcher) { return cachedImage(fetcher, ResourceFetcher::defaultResourceOptions(), NotCORSEnabled); }
     // Returns a StyleFetchedImage if the image is cached already, otherwise a StylePendingImage.
     StyleImage* cachedOrPendingImage();
 
     const String& url() { return m_url; }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     PassRefPtr<CSSValue> cloneForCSSOM() const;
 
@@ -67,20 +67,7 @@ private:
     AtomicString m_initiatorName;
 };
 
-inline CSSImageValue* toCSSImageValue(CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isImageValue());
-    return static_cast<CSSImageValue*>(value);
-}
-
-inline const CSSImageValue* toCSSImageValue(const CSSValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isImageValue());
-    return static_cast<const CSSImageValue*>(value);
-}
-
-// Catch unneeded cast.
-void toCSSImageValue(const CSSImageValue*);
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSImageValue, isImageValue());
 
 } // namespace WebCore
 

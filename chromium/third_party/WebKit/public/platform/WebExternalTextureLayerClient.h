@@ -29,13 +29,13 @@
 #include "WebCommon.h"
 #include "WebSize.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebGraphicsContext3D;
 class WebExternalBitmap;
 struct WebExternalTextureMailbox;
 
-class WebExternalTextureLayerClient {
+class BLINK_PLATFORM_EXPORT WebExternalTextureLayerClient {
 public:
     virtual WebGraphicsContext3D* context() = 0;
 
@@ -52,6 +52,6 @@ protected:
     virtual ~WebExternalTextureLayerClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebExternalTextureLayerClient_h

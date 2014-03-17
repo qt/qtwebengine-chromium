@@ -15,19 +15,40 @@ namespace gpu {
 class GpuMemoryBufferFactory;
 class GpuMemoryBufferManagerInterface;
 
+namespace gles2 {
+class MailboxManager;
+class QueryManager;
+}
+
 class GPU_EXPORT GpuControlService : public GpuControl {
  public:
   GpuControlService(GpuMemoryBufferManagerInterface* gpu_memory_buffer_manager,
-                    GpuMemoryBufferFactory* gpu_memory_buffer_factory);
+                    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+                    gles2::MailboxManager* mailbox_manager,
+                    gles2::QueryManager* query_manager,
+                    const gpu::Capabilities& decoder_capabilities);
   virtual ~GpuControlService();
 
-  // Overridden from GpuControl:
+
+  // GpuControl implementation.
+  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
       size_t width,
       size_t height,
       unsigned internalformat,
       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
+  virtual bool GenerateMailboxNames(unsigned num,
+                                    std::vector<gpu::Mailbox>* names) OVERRIDE;
+  virtual uint32 InsertSyncPoint() OVERRIDE;
+  virtual void SignalSyncPoint(uint32 sync_point,
+                               const base::Closure& callback) OVERRIDE;
+  virtual void SignalQuery(uint32 query,
+                           const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
+  virtual void SendManagedMemoryStats(const ManagedMemoryStats& stats)
+      OVERRIDE;
+  virtual void Echo(const base::Closure& callback) OVERRIDE;
 
   // Register an existing gpu memory buffer and get an ID that can be used
   // to identify it in the command buffer.
@@ -40,8 +61,11 @@ class GPU_EXPORT GpuControlService : public GpuControl {
  private:
   GpuMemoryBufferManagerInterface* gpu_memory_buffer_manager_;
   GpuMemoryBufferFactory* gpu_memory_buffer_factory_;
+  gles2::MailboxManager* mailbox_manager_;
+  gles2::QueryManager* query_manager_;
   typedef std::map<int32, linked_ptr<gfx::GpuMemoryBuffer> > GpuMemoryBufferMap;
   GpuMemoryBufferMap gpu_memory_buffers_;
+  gpu::Capabilities capabilities_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuControlService);
 };

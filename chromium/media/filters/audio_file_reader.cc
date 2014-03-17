@@ -114,10 +114,10 @@ bool AudioFileReader::Open() {
 }
 
 void AudioFileReader::Close() {
-  if (codec_context_) {
-    avcodec_close(codec_context_);
-    codec_context_ = NULL;
-  }
+  // |codec_context_| is a stream inside glue_->format_context(), so it is
+  // closed when |glue_| is disposed.
+  glue_.reset();
+  codec_context_ = NULL;
 }
 
 int AudioFileReader::Read(AudioBus* audio_bus) {
@@ -131,7 +131,8 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   size_t bytes_per_sample = av_get_bytes_per_sample(codec_context_->sample_fmt);
 
   // Holds decoded audio.
-  scoped_ptr_malloc<AVFrame, ScopedPtrAVFree> av_frame(avcodec_alloc_frame());
+  scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame(
+      av_frame_alloc());
 
   // Read until we hit EOF or we've read the requested number of frames.
   AVPacket packet;

@@ -24,15 +24,19 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
 
   // Overridden from InputMethod:
   virtual void Init(bool focused) OVERRIDE;
-  virtual bool DispatchKeyEvent(
-      const base::NativeEvent& native_key_event) OVERRIDE;
-  virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnInputLocaleChanged() OVERRIDE;
   virtual std::string GetInputLocale() OVERRIDE;
   virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
 
  protected:
+  // Overridden from InputMethodBase:
+  // If a derived class overrides this method, it should call parent's
+  // implementation.
+  virtual void OnDidChangeFocusedClient(TextInputClient* focused_before,
+                                        TextInputClient* focused) OVERRIDE;
+
   // Some IMEs rely on WM_IME_REQUEST message even when TSF is enabled. So
   // OnImeRequest (and its actual implementations as OnDocumentFeed,
   // OnReconvertString, and OnQueryCharPosition) are placed in this base class.
@@ -47,6 +51,8 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
                  LPARAM lparam,
                  BOOL* handled);
   // For both WM_DEADCHAR and WM_SYSDEADCHAR
+  // TODO(yukawa): Stop handling WM_DEADCHAR and WM_SYSDEADCHAR when non-Aura
+  // build is deprecated.
   LRESULT OnDeadChar(UINT message, WPARAM wparam, LPARAM lparam, BOOL* handled);
 
   LRESULT OnDocumentFeed(RECONVERTSTRING* reconv);
@@ -69,6 +75,8 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
   ui::IMM32Manager imm32_manager_;
 
  private:
+  bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event);
+
   // The toplevel window handle.
   // On non-Aura environment, this value is not used and always NULL.
   const HWND toplevel_window_handle_;
@@ -83,6 +91,12 @@ class UI_EXPORT InputMethodWin : public InputMethodBase {
   // pressing ctrl-shift. It'll be sent to the text input client when the key
   // is released.
   base::i18n::TextDirection pending_requested_direction_;
+
+  // Represents if WM_CHAR[wparam=='\r'] should be dispatched to the focused
+  // text input client or ignored silently. This flag is introduced as a quick
+  // workaround against crbug.com/319100
+  // TODO(yukawa, IME): Figure out long-term solution.
+  bool accept_carriage_return_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodWin);
 };

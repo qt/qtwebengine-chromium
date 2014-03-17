@@ -33,21 +33,34 @@
 
 namespace WebCore {
 
-PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtr<AnimationEffect> effect, const Timing& timing)
+PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
 {
-    return adoptRef(new InertAnimation(effect, timing));
+    return adoptRef(new InertAnimation(effect, timing, paused));
 }
 
-InertAnimation::InertAnimation(PassRefPtr<AnimationEffect> effect, const Timing& timing)
+InertAnimation::InertAnimation(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
     : TimedItem(timing)
     , m_effect(effect)
+    , m_paused(paused)
 {
 }
 
-PassOwnPtr<AnimationEffect::CompositableValueMap> InertAnimation::sample()
+PassOwnPtr<AnimationEffect::CompositableValueList> InertAnimation::sample()
 {
     updateInheritedTime(0);
-    return isInEffect() ? m_effect->sample(currentIteration(), timeFraction()) : nullptr;
+    if (!isInEffect())
+        return nullptr;
+
+    double iteration = currentIteration();
+    ASSERT(iteration >= 0);
+    // FIXME: Handle iteration values which overflow int.
+    return m_effect->sample(static_cast<int>(iteration), timeFraction());
+}
+
+
+double InertAnimation::calculateTimeToEffectChange(double, double) const
+{
+    return std::numeric_limits<double>::infinity();
 }
 
 } // namespace WebCore

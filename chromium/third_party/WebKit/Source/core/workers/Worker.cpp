@@ -30,37 +30,40 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/MessageEvent.h"
+#include "core/events/MessageEvent.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/UseCounter.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
+#include "core/workers/WorkerGlobalScopeProxyProvider.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
 
-inline Worker::Worker(ScriptExecutionContext* context)
+inline Worker::Worker(ExecutionContext* context)
     : AbstractWorker(context)
-    , m_contextProxy(WorkerGlobalScopeProxy::create(this))
+    , m_contextProxy(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Worker> Worker::create(ScriptExecutionContext* context, const String& url, ExceptionState& es)
+PassRefPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    UseCounter::count(toDocument(context)->domWindow(), UseCounter::WorkerStart);
+    Document* document = toDocument(context);
+    UseCounter::count(document->domWindow(), UseCounter::WorkerStart);
+    ASSERT(document->page());
+    WorkerGlobalScopeProxyProvider* proxyProvider = WorkerGlobalScopeProxyProvider::from(document->page());
+    ASSERT(proxyProvider);
 
     RefPtr<Worker> worker = adoptRef(new Worker(context));
 
     worker->suspendIfNeeded();
 
-    KURL scriptURL = worker->resolveURL(url, es);
+    KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
         return 0;
 
@@ -69,27 +72,28 @@ PassRefPtr<Worker> Worker::create(ScriptExecutionContext* context, const String&
 
     worker->m_scriptLoader = WorkerScriptLoader::create();
     worker->m_scriptLoader->loadAsynchronously(context, scriptURL, DenyCrossOriginRequests, worker.get());
-
+    worker->m_contextProxy = proxyProvider->createWorkerGlobalScopeProxy(worker.get());
     return worker.release();
 }
 
 Worker::~Worker()
 {
     ASSERT(isMainThread());
-    ASSERT(scriptExecutionContext()); // The context is protected by worker context proxy, so it cannot be destroyed while a Worker exists.
-    m_contextProxy->workerObjectDestroyed();
+    ASSERT(executionContext()); // The context is protected by worker context proxy, so it cannot be destroyed while a Worker exists.
+    if (m_contextProxy)
+        m_contextProxy->workerObjectDestroyed();
 }
 
 const AtomicString& Worker::interfaceName() const
 {
-    return eventNames().interfaceForWorker;
+    return EventTargetNames::Worker;
 }
 
-void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& es)
+void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, es);
-    if (es.hadException())
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
+    if (exceptionState.hadException())
         return;
     m_contextProxy->postMessageToWorkerGlobalScope(message, channels.release());
 }
@@ -97,12 +101,6 @@ void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const Messag
 void Worker::terminate()
 {
     m_contextProxy->terminateWorkerGlobalScope();
-}
-
-bool Worker::canSuspend() const
-{
-    // FIXME: It is not currently possible to suspend a worker, so pages with workers can not go into page cache.
-    return false;
 }
 
 void Worker::stop()
@@ -117,19 +115,19 @@ bool Worker::hasPendingActivity() const
 
 void Worker::didReceiveResponse(unsigned long identifier, const ResourceResponse&)
 {
-    InspectorInstrumentation::didReceiveScriptResponse(scriptExecutionContext(), identifier);
+    InspectorInstrumentation::didReceiveScriptResponse(executionContext(), identifier);
 }
 
 void Worker::notifyFinished()
 {
     if (m_scriptLoader->failed()) {
-        dispatchEvent(Event::createCancelable(eventNames().errorEvent));
+        dispatchEvent(Event::createCancelable(EventTypeNames::error));
     } else {
         WorkerThreadStartMode startMode = DontPauseWorkerGlobalScopeOnStart;
-        if (InspectorInstrumentation::shouldPauseDedicatedWorkerOnStart(scriptExecutionContext()))
+        if (InspectorInstrumentation::shouldPauseDedicatedWorkerOnStart(executionContext()))
             startMode = PauseWorkerGlobalScopeOnStart;
-        m_contextProxy->startWorkerGlobalScope(m_scriptLoader->url(), scriptExecutionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), startMode);
-        InspectorInstrumentation::scriptImported(scriptExecutionContext(), m_scriptLoader->identifier(), m_scriptLoader->script());
+        m_contextProxy->startWorkerGlobalScope(m_scriptLoader->url(), executionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), startMode);
+        InspectorInstrumentation::scriptImported(executionContext(), m_scriptLoader->identifier(), m_scriptLoader->script());
     }
     m_scriptLoader = nullptr;
 

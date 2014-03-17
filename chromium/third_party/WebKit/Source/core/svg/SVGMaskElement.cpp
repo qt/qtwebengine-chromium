@@ -25,10 +25,8 @@
 
 #include "core/svg/SVGMaskElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
@@ -53,8 +51,8 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMaskElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGMaskElement::SVGMaskElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGMaskElement::SVGMaskElement(Document& document)
+    : SVGElement(SVGNames::maskTag, document)
     , m_maskUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
     , m_maskContentUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
     , m_x(LengthModeWidth, "-10%")
@@ -64,14 +62,13 @@ inline SVGMaskElement::SVGMaskElement(const QualifiedName& tagName, Document& do
 {
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "-10%" were specified.
     // Spec: If the width/height attribute is not specified, the effect is as if a value of "120%" were specified.
-    ASSERT(hasTagName(SVGNames::maskTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGMaskElement();
 }
 
-PassRefPtr<SVGMaskElement> SVGMaskElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGMaskElement> SVGMaskElement::create(Document& document)
 {
-    return adoptRef(new SVGMaskElement(tagName, document));
+    return adoptRef(new SVGMaskElement(document));
 }
 
 bool SVGMaskElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -137,8 +134,9 @@ void SVGMaskElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGMaskElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)

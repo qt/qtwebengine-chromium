@@ -24,13 +24,14 @@
 #include "core/xml/XSLTProcessor.h"
 
 #include "core/dom/DOMImplementation.h"
+#include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/editing/markup.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 
@@ -60,34 +61,39 @@ XSLTProcessor::~XSLTProcessor()
 PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourceString,
     const String& sourceEncoding, const String& sourceMIMEType, Node* sourceNode, Frame* frame)
 {
-    RefPtr<Document> ownerDocument = &sourceNode->document();
+    RefPtr<Document> ownerDocument(sourceNode->document());
     bool sourceIsDocument = (sourceNode == ownerDocument.get());
     String documentSource = sourceString;
 
     RefPtr<Document> result;
-    if (sourceMIMEType == "text/plain") {
-        result = Document::create(DocumentInit(sourceIsDocument ? ownerDocument->url() : KURL(), frame));
-        transformTextStringToXHTMLDocumentString(documentSource);
-    } else
-        result = DOMImplementation::createDocument(sourceMIMEType, frame, sourceIsDocument ? ownerDocument->url() : KURL(), false);
+    DocumentInit init(sourceIsDocument ? ownerDocument->url() : KURL(), frame);
 
-    // Before parsing, we need to save & detach the old document and get the new document
-    // in place. We have to do this only if we're rendering the result document.
+    bool forceXHTML = sourceMIMEType == "text/plain";
+    if (forceXHTML)
+        transformTextStringToXHTMLDocumentString(documentSource);
+
     if (frame) {
+        RefPtr<Document> oldDocument = frame->document();
+        result = frame->domWindow()->installNewDocument(sourceMIMEType, init, forceXHTML);
+
+        // Before parsing, we need to save & detach the old document and get the new document
+        // in place. We have to do this only if we're rendering the result document.
         if (FrameView* view = frame->view())
             view->clear();
 
-        if (Document* oldDocument = frame->document()) {
-            result->setTransformSourceDocument(oldDocument);
-            result->setSecurityOrigin(oldDocument->securityOrigin());
+        if (oldDocument) {
+            result->setTransformSourceDocument(oldDocument.get());
+            result->updateSecurityOrigin(oldDocument->securityOrigin());
             result->setCookieURL(oldDocument->cookieURL());
             result->contentSecurityPolicy()->copyStateFrom(oldDocument->contentSecurityPolicy());
         }
-
-        frame->domWindow()->setDocument(result);
+    } else {
+        result = DOMWindow::createDocument(sourceMIMEType, init, forceXHTML);
     }
 
-    result->setEncoding(sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding));
+    DocumentEncodingData data;
+    data.encoding = sourceEncoding.isEmpty() ? UTF8Encoding() : WTF::TextEncoding(sourceEncoding);
+    result->setEncodingData(data);
     result->setContent(documentSource);
 
     return result.release();

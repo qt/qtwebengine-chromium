@@ -37,11 +37,11 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/html/VoidCallback.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/Timer.h"
-#include "modules/notifications/Notification.h"
+#include "modules/notifications/WebKitNotification.h"
+#include "platform/Supplementable.h"
+#include "platform/Timer.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -54,42 +54,38 @@ class VoidCallback;
 
 class NotificationCenter : public RefCounted<NotificationCenter>, public ScriptWrappable, public ActiveDOMObject {
 public:
-    static PassRefPtr<NotificationCenter> create(ScriptExecutionContext*, NotificationClient*);
+    static PassRefPtr<NotificationCenter> create(ExecutionContext*, NotificationClient*);
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
-    PassRefPtr<Notification> createNotification(const String& iconURI, const String& title, const String& body, ExceptionState& es)
+    PassRefPtr<WebKitNotification> createNotification(const String& iconUrl, const String& title, const String& body, ExceptionState& exceptionState)
     {
         if (!client()) {
-            es.throwDOMException(InvalidStateError);
+            exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
             return 0;
         }
-        return Notification::create(title, body, iconURI, scriptExecutionContext(), es, this);
+        return WebKitNotification::create(title, body, iconUrl, executionContext(), exceptionState, this);
     }
-#endif
 
     NotificationClient* client() const { return m_client; }
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
     int checkPermission();
-    void requestPermission(PassRefPtr<VoidCallback> = 0);
-#endif
+    void requestPermission(PassOwnPtr<VoidCallback> = nullptr);
 
     virtual void stop() OVERRIDE;
 
 private:
-    NotificationCenter(ScriptExecutionContext*, NotificationClient*);
+    NotificationCenter(ExecutionContext*, NotificationClient*);
 
     class NotificationRequestCallback : public RefCounted<NotificationRequestCallback> {
     public:
-        static PassRefPtr<NotificationRequestCallback> createAndStartTimer(NotificationCenter*, PassRefPtr<VoidCallback>);
+        static PassRefPtr<NotificationRequestCallback> createAndStartTimer(NotificationCenter*, PassOwnPtr<VoidCallback>);
         void startTimer();
         void timerFired(Timer<NotificationRequestCallback>*);
     private:
-        NotificationRequestCallback(NotificationCenter*, PassRefPtr<VoidCallback>);
+        NotificationRequestCallback(NotificationCenter*, PassOwnPtr<VoidCallback>);
 
         RefPtr<NotificationCenter> m_notificationCenter;
         Timer<NotificationRequestCallback> m_timer;
-        RefPtr<VoidCallback> m_callback;
+        OwnPtr<VoidCallback> m_callback;
     };
 
     void requestTimedOut(NotificationRequestCallback*);

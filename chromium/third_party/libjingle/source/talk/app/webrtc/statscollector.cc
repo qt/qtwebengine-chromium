@@ -30,6 +30,8 @@
 #include <utility>
 #include <vector>
 
+#include "talk/base/base64.h"
+#include "talk/base/scoped_ptr.h"
 #include "talk/session/media/channel.h"
 
 namespace webrtc {
@@ -45,13 +47,23 @@ const char StatsReport::kStatsValueNameAvailableReceiveBandwidth[] =
     "googAvailableReceiveBandwidth";
 const char StatsReport::kStatsValueNameAvailableSendBandwidth[] =
     "googAvailableSendBandwidth";
+const char StatsReport::kStatsValueNameAvgEncodeMs[] = "googAvgEncodeMs";
 const char StatsReport::kStatsValueNameBucketDelay[] = "googBucketDelay";
 const char StatsReport::kStatsValueNameBytesReceived[] = "bytesReceived";
 const char StatsReport::kStatsValueNameBytesSent[] = "bytesSent";
+const char StatsReport::kStatsValueNameBandwidthLimitedResolution[] =
+    "googBandwidthLimitedResolution";
+const char StatsReport::kStatsValueNameCaptureJitterMs[] =
+    "googCaptureJitterMs";
+const char StatsReport::kStatsValueNameCaptureQueueDelayMsPerS[] =
+    "googCaptureQueueDelayMsPerS";
 const char StatsReport::kStatsValueNameChannelId[] = "googChannelId";
 const char StatsReport::kStatsValueNameCodecName[] = "googCodecName";
 const char StatsReport::kStatsValueNameComponent[] = "googComponent";
 const char StatsReport::kStatsValueNameContentName[] = "googContentName";
+const char StatsReport::kStatsValueNameCpuLimitedResolution[] =
+    "googCpuLimitedResolution";
+const char StatsReport::kStatsValueNameDer[] = "googDerBase64";
 // Echo metrics from the audio processing module.
 const char StatsReport::kStatsValueNameEchoCancellationQualityMin[] =
     "googEchoCancellationQualityMin";
@@ -64,6 +76,11 @@ const char StatsReport::kStatsValueNameEchoReturnLoss[] =
 const char StatsReport::kStatsValueNameEchoReturnLossEnhancement[] =
     "googEchoCancellationReturnLossEnhancement";
 
+const char StatsReport::kStatsValueNameEncodeUsagePercent[] =
+    "googEncodeUsagePercent";
+const char StatsReport::kStatsValueNameFingerprint[] = "googFingerprint";
+const char StatsReport::kStatsValueNameFingerprintAlgorithm[] =
+    "googFingerprintAlgorithm";
 const char StatsReport::kStatsValueNameFirsReceived[] = "googFirsReceived";
 const char StatsReport::kStatsValueNameFirsSent[] = "googFirsSent";
 const char StatsReport::kStatsValueNameFrameHeightReceived[] =
@@ -76,14 +93,28 @@ const char StatsReport::kStatsValueNameFrameRateDecoded[] =
     "googFrameRateDecoded";
 const char StatsReport::kStatsValueNameFrameRateOutput[] =
     "googFrameRateOutput";
+const char StatsReport::kStatsValueNameDecodeMs[] = "googDecodeMs";
+const char StatsReport::kStatsValueNameMaxDecodeMs[] = "googMaxDecodeMs";
+const char StatsReport::kStatsValueNameCurrentDelayMs[] = "googCurrentDelayMs";
+const char StatsReport::kStatsValueNameTargetDelayMs[] = "googTargetDelayMs";
+const char StatsReport::kStatsValueNameJitterBufferMs[] = "googJitterBufferMs";
+const char StatsReport::kStatsValueNameMinPlayoutDelayMs[] =
+    "googMinPlayoutDelayMs";
+const char StatsReport::kStatsValueNameRenderDelayMs[] = "googRenderDelayMs";
+
 const char StatsReport::kStatsValueNameFrameRateInput[] = "googFrameRateInput";
 const char StatsReport::kStatsValueNameFrameRateSent[] = "googFrameRateSent";
 const char StatsReport::kStatsValueNameFrameWidthReceived[] =
     "googFrameWidthReceived";
 const char StatsReport::kStatsValueNameFrameWidthSent[] = "googFrameWidthSent";
 const char StatsReport::kStatsValueNameInitiator[] = "googInitiator";
+const char StatsReport::kStatsValueNameIssuerId[] = "googIssuerId";
 const char StatsReport::kStatsValueNameJitterReceived[] = "googJitterReceived";
 const char StatsReport::kStatsValueNameLocalAddress[] = "googLocalAddress";
+const char StatsReport::kStatsValueNameLocalCandidateType[] =
+    "googLocalCandidateType";
+const char StatsReport::kStatsValueNameLocalCertificateId[] =
+    "googLocalCertificateId";
 const char StatsReport::kStatsValueNameNacksReceived[] = "googNacksReceived";
 const char StatsReport::kStatsValueNameNacksSent[] = "googNacksSent";
 const char StatsReport::kStatsValueNamePacketsReceived[] = "packetsReceived";
@@ -91,6 +122,10 @@ const char StatsReport::kStatsValueNamePacketsSent[] = "packetsSent";
 const char StatsReport::kStatsValueNamePacketsLost[] = "packetsLost";
 const char StatsReport::kStatsValueNameReadable[] = "googReadable";
 const char StatsReport::kStatsValueNameRemoteAddress[] = "googRemoteAddress";
+const char StatsReport::kStatsValueNameRemoteCandidateType[] =
+    "googRemoteCandidateType";
+const char StatsReport::kStatsValueNameRemoteCertificateId[] =
+    "googRemoteCertificateId";
 const char StatsReport::kStatsValueNameRetransmitBitrate[] =
     "googRetransmitBitrate";
 const char StatsReport::kStatsValueNameRtt[] = "googRtt";
@@ -104,16 +139,20 @@ const char StatsReport::kStatsValueNameTransportType[] = "googTransportType";
 const char StatsReport::kStatsValueNameTrackId[] = "googTrackId";
 const char StatsReport::kStatsValueNameTypingNoiseState[] =
     "googTypingNoiseState";
+const char StatsReport::kStatsValueNameViewLimitedResolution[] =
+    "googViewLimitedResolution";
 const char StatsReport::kStatsValueNameWritable[] = "googWritable";
 
 const char StatsReport::kStatsReportTypeSession[] = "googLibjingleSession";
 const char StatsReport::kStatsReportTypeBwe[] = "VideoBwe";
+const char StatsReport::kStatsReportTypeRemoteSsrc[] = "remoteSsrc";
 const char StatsReport::kStatsReportTypeSsrc[] = "ssrc";
 const char StatsReport::kStatsReportTypeTrack[] = "googTrack";
 const char StatsReport::kStatsReportTypeIceCandidate[] = "iceCandidate";
 const char StatsReport::kStatsReportTypeTransport[] = "googTransport";
 const char StatsReport::kStatsReportTypeComponent[] = "googComponent";
 const char StatsReport::kStatsReportTypeCandidatePair[] = "googCandidatePair";
+const char StatsReport::kStatsReportTypeCertificate[] = "googCertificate";
 
 const char StatsReport::kStatsReportVideoBweId[] = "bweforvideo";
 
@@ -229,6 +268,21 @@ void ExtractStats(const cricket::VideoReceiverInfo& info, StatsReport* report) {
                    info.framerate_decoded);
   report->AddValue(StatsReport::kStatsValueNameFrameRateOutput,
                    info.framerate_output);
+
+  report->AddValue(StatsReport::kStatsValueNameDecodeMs,
+                   info.decode_ms);
+  report->AddValue(StatsReport::kStatsValueNameMaxDecodeMs,
+                   info.max_decode_ms);
+  report->AddValue(StatsReport::kStatsValueNameCurrentDelayMs,
+                   info.current_delay_ms);
+  report->AddValue(StatsReport::kStatsValueNameTargetDelayMs,
+                   info.target_delay_ms);
+  report->AddValue(StatsReport::kStatsValueNameJitterBufferMs,
+                   info.jitter_buffer_ms);
+  report->AddValue(StatsReport::kStatsValueNameMinPlayoutDelayMs,
+                   info.min_playout_delay_ms);
+  report->AddValue(StatsReport::kStatsValueNameRenderDelayMs,
+                   info.render_delay_ms);
 }
 
 void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
@@ -251,6 +305,19 @@ void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
                    info.framerate_sent);
   report->AddValue(StatsReport::kStatsValueNameRtt, info.rtt_ms);
   report->AddValue(StatsReport::kStatsValueNameCodecName, info.codec_name);
+  report->AddBoolean(StatsReport::kStatsValueNameCpuLimitedResolution,
+                     (info.adapt_reason & 0x1) > 0);
+  report->AddBoolean(StatsReport::kStatsValueNameBandwidthLimitedResolution,
+                     (info.adapt_reason & 0x2) > 0);
+  report->AddBoolean(StatsReport::kStatsValueNameViewLimitedResolution,
+                     (info.adapt_reason & 0x4) > 0);
+  report->AddValue(StatsReport::kStatsValueNameAvgEncodeMs, info.avg_encode_ms);
+  report->AddValue(StatsReport::kStatsValueNameCaptureJitterMs,
+                   info.capture_jitter_ms);
+  report->AddValue(StatsReport::kStatsValueNameCaptureQueueDelayMsPerS,
+                   info.capture_queue_delay_ms_per_s);
+  report->AddValue(StatsReport::kStatsValueNameEncodeUsagePercent,
+                   info.encode_usage_percent);
 }
 
 void ExtractStats(const cricket::BandwidthEstimationInfo& info,
@@ -281,24 +348,22 @@ void ExtractStats(const cricket::BandwidthEstimationInfo& info,
                    info.bucket_delay);
 }
 
-uint32 ExtractSsrc(const cricket::VoiceReceiverInfo& info) {
-  return info.ssrc;
+void ExtractRemoteStats(const cricket::MediaSenderInfo& info,
+                        StatsReport* report) {
+  report->timestamp = info.remote_stats[0].timestamp;
+  // TODO(hta): Extract some stats here.
 }
 
-uint32 ExtractSsrc(const cricket::VoiceSenderInfo& info) {
-  return info.ssrc;
-}
-
-uint32 ExtractSsrc(const cricket::VideoReceiverInfo& info) {
-  return info.ssrcs[0];
-}
-
-uint32 ExtractSsrc(const cricket::VideoSenderInfo& info) {
-  return info.ssrcs[0];
+void ExtractRemoteStats(const cricket::MediaReceiverInfo& info,
+                        StatsReport* report) {
+  report->timestamp = info.remote_stats[0].timestamp;
+  // TODO(hta): Extract some stats here.
 }
 
 // Template to extract stats from a data vector.
-// ExtractSsrc and ExtractStats must be defined and overloaded for each type.
+// In order to use the template, the functions that are called from it,
+// ExtractStats and ExtractRemoteStats, must be defined and overloaded
+// for each type.
 template<typename T>
 void ExtractStatsFromList(const std::vector<T>& data,
                           const std::string& transport_id,
@@ -306,12 +371,21 @@ void ExtractStatsFromList(const std::vector<T>& data,
   typename std::vector<T>::const_iterator it = data.begin();
   for (; it != data.end(); ++it) {
     std::string id;
-    uint32 ssrc = ExtractSsrc(*it);
-    StatsReport* report = collector->PrepareReport(ssrc, transport_id);
+    uint32 ssrc = it->ssrc();
+    // Each object can result in 2 objects, a local and a remote object.
+    // TODO(hta): Handle the case of multiple SSRCs per object.
+    StatsReport* report = collector->PrepareLocalReport(ssrc, transport_id);
     if (!report) {
       continue;
     }
     ExtractStats(*it, report);
+    if (it->remote_stats.size() > 0) {
+      report = collector->PrepareRemoteReport(ssrc, transport_id);
+      if (!report) {
+        continue;
+      }
+      ExtractRemoteStats(*it, report);
+    }
   }
 };
 
@@ -394,8 +468,9 @@ void StatsCollector::UpdateStats() {
   }
 }
 
-StatsReport* StatsCollector::PrepareReport(uint32 ssrc,
-                                           const std::string& transport_id) {
+StatsReport* StatsCollector::PrepareLocalReport(
+    uint32 ssrc,
+    const std::string& transport_id) {
   std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
   StatsMap::iterator it = reports_.find(StatsId(
       StatsReport::kStatsReportTypeSsrc, ssrc_id));
@@ -415,10 +490,8 @@ StatsReport* StatsCollector::PrepareReport(uint32 ssrc,
                            &track_id);
   }
 
-  StatsReport* report = &reports_[
-      StatsId(StatsReport::kStatsReportTypeSsrc, ssrc_id)];
-  report->id = StatsId(StatsReport::kStatsReportTypeSsrc, ssrc_id);
-  report->type = StatsReport::kStatsReportTypeSsrc;
+  StatsReport* report = GetOrCreateReport(StatsReport::kStatsReportTypeSsrc,
+                                          ssrc_id);
 
   // Clear out stats from previous GatherStats calls if any.
   if (report->timestamp != stats_gathering_started_) {
@@ -432,6 +505,103 @@ StatsReport* StatsCollector::PrepareReport(uint32 ssrc,
   report->AddValue(StatsReport::kStatsValueNameTransportId,
                    transport_id);
   return report;
+}
+
+StatsReport* StatsCollector::PrepareRemoteReport(
+    uint32 ssrc,
+    const std::string& transport_id) {
+  std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
+  StatsMap::iterator it = reports_.find(StatsId(
+      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id));
+
+  std::string track_id;
+  if (it == reports_.end()) {
+    if (!session()->GetTrackIdBySsrc(ssrc, &track_id)) {
+      LOG(LS_WARNING) << "The SSRC " << ssrc
+                      << " is not associated with a track";
+      return NULL;
+    }
+  } else {
+    // Keeps the old track id since we want to report the stats for inactive
+    // tracks.
+    ExtractValueFromReport(it->second,
+                           StatsReport::kStatsValueNameTrackId,
+                           &track_id);
+  }
+
+  StatsReport* report = GetOrCreateReport(
+      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id);
+
+  // Clear out stats from previous GatherStats calls if any.
+  // The timestamp will be added later. Zero it for debugging.
+  report->values.clear();
+  report->timestamp = 0;
+
+  report->AddValue(StatsReport::kStatsValueNameSsrc, ssrc_id);
+  report->AddValue(StatsReport::kStatsValueNameTrackId, track_id);
+  // Add the mapping of SSRC to transport.
+  report->AddValue(StatsReport::kStatsValueNameTransportId,
+                   transport_id);
+  return report;
+}
+
+std::string StatsCollector::AddOneCertificateReport(
+    const talk_base::SSLCertificate* cert, const std::string& issuer_id) {
+  // TODO(bemasc): Move this computation to a helper class that caches these
+  // values to reduce CPU use in GetStats.  This will require adding a fast
+  // SSLCertificate::Equals() method to detect certificate changes.
+
+  std::string digest_algorithm;
+  if (!cert->GetSignatureDigestAlgorithm(&digest_algorithm))
+    return std::string();
+
+  talk_base::scoped_ptr<talk_base::SSLFingerprint> ssl_fingerprint(
+      talk_base::SSLFingerprint::Create(digest_algorithm, cert));
+  std::string fingerprint = ssl_fingerprint->GetRfc4572Fingerprint();
+
+  talk_base::Buffer der_buffer;
+  cert->ToDER(&der_buffer);
+  std::string der_base64;
+  talk_base::Base64::EncodeFromArray(
+      der_buffer.data(), der_buffer.length(), &der_base64);
+
+  StatsReport report;
+  report.type = StatsReport::kStatsReportTypeCertificate;
+  report.id = StatsId(report.type, fingerprint);
+  report.timestamp = stats_gathering_started_;
+  report.AddValue(StatsReport::kStatsValueNameFingerprint, fingerprint);
+  report.AddValue(StatsReport::kStatsValueNameFingerprintAlgorithm,
+                  digest_algorithm);
+  report.AddValue(StatsReport::kStatsValueNameDer, der_base64);
+  if (!issuer_id.empty())
+    report.AddValue(StatsReport::kStatsValueNameIssuerId, issuer_id);
+  reports_[report.id] = report;
+  return report.id;
+}
+
+std::string StatsCollector::AddCertificateReports(
+    const talk_base::SSLCertificate* cert) {
+  // Produces a chain of StatsReports representing this certificate and the rest
+  // of its chain, and adds those reports to |reports_|.  The return value is
+  // the id of the leaf report.  The provided cert must be non-null, so at least
+  // one report will always be provided and the returned string will never be
+  // empty.
+  ASSERT(cert != NULL);
+
+  std::string issuer_id;
+  talk_base::scoped_ptr<talk_base::SSLCertChain> chain;
+  if (cert->GetChain(chain.accept())) {
+    // This loop runs in reverse, i.e. from root to leaf, so that each
+    // certificate's issuer's report ID is known before the child certificate's
+    // report is generated.  The root certificate does not have an issuer ID
+    // value.
+    for (ptrdiff_t i = chain->GetSize() - 1; i >= 0; --i) {
+      const talk_base::SSLCertificate& cert_i = chain->Get(i);
+      issuer_id = AddOneCertificateReport(&cert_i, issuer_id);
+    }
+  }
+  // Add the leaf certificate.
+  return AddOneCertificateReport(cert, issuer_id);
 }
 
 void StatsCollector::ExtractSessionInfo() {
@@ -454,6 +624,22 @@ void StatsCollector::ExtractSessionInfo() {
     for (cricket::TransportStatsMap::iterator transport_iter
              = stats.transport_stats.begin();
          transport_iter != stats.transport_stats.end(); ++transport_iter) {
+      // Attempt to get a copy of the certificates from the transport and
+      // expose them in stats reports.  All channels in a transport share the
+      // same local and remote certificates.
+      std::string local_cert_report_id, remote_cert_report_id;
+      cricket::Transport* transport =
+          session_->GetTransport(transport_iter->second.content_name);
+      if (transport) {
+        talk_base::scoped_ptr<talk_base::SSLIdentity> identity;
+        if (transport->GetIdentity(identity.accept()))
+          local_cert_report_id = AddCertificateReports(
+              &(identity->certificate()));
+
+        talk_base::scoped_ptr<talk_base::SSLCertificate> cert;
+        if (transport->GetRemoteCertificate(cert.accept()))
+          remote_cert_report_id = AddCertificateReports(cert.get());
+      }
       for (cricket::TransportChannelStatsList::iterator channel_iter
                = transport_iter->second.channel_stats.begin();
            channel_iter != transport_iter->second.channel_stats.end();
@@ -467,6 +653,14 @@ void StatsCollector::ExtractSessionInfo() {
         channel_report.timestamp = stats_gathering_started_;
         channel_report.AddValue(StatsReport::kStatsValueNameComponent,
                                 channel_iter->component);
+        if (!local_cert_report_id.empty())
+          channel_report.AddValue(
+              StatsReport::kStatsValueNameLocalCertificateId,
+              local_cert_report_id);
+        if (!remote_cert_report_id.empty())
+          channel_report.AddValue(
+              StatsReport::kStatsValueNameRemoteCertificateId,
+              remote_cert_report_id);
         reports_[channel_report.id] = channel_report;
         for (size_t i = 0;
              i < channel_iter->connection_infos.size();
@@ -497,6 +691,13 @@ void StatsCollector::ExtractSessionInfo() {
                           info.local_candidate.address().ToString());
           report.AddValue(StatsReport::kStatsValueNameRemoteAddress,
                           info.remote_candidate.address().ToString());
+          report.AddValue(StatsReport::kStatsValueNameRtt, info.rtt);
+          report.AddValue(StatsReport::kStatsValueNameTransportType,
+                          info.local_candidate.protocol());
+          report.AddValue(StatsReport::kStatsValueNameLocalCandidateType,
+                          info.local_candidate.type());
+          report.AddValue(StatsReport::kStatsValueNameRemoteCandidateType,
+                          info.remote_candidate.type());
           reports_[report.id] = report;
         }
       }
@@ -571,6 +772,21 @@ bool StatsCollector::GetTransportIdFromProxy(const std::string& proxy,
   ost << "Channel-" << proxy_to_transport_[proxy] << "-1";
   *transport = ost.str();
   return true;
+}
+
+StatsReport* StatsCollector::GetOrCreateReport(const std::string& type,
+                                               const std::string& id) {
+  std::string statsid = StatsId(type, id);
+  StatsReport* report = NULL;
+  std::map<std::string, StatsReport>::iterator it = reports_.find(statsid);
+  if (it == reports_.end()) {
+    report = &reports_[statsid];  // Create new element.
+    report->id = statsid;
+    report->type = type;
+  } else {
+    report = &(it->second);
+  }
+  return report;
 }
 
 }  // namespace webrtc

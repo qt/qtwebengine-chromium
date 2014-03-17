@@ -11,18 +11,20 @@
           'type': 'static_library',
           'toolsets': ['target'],
           'sources': [
+            # The following files are not sorted alphabetically, but in the
+            # same order as in Android.mk to ease maintenance.
             'src/base/ftbbox.c',
             'src/base/ftbitmap.c',
             'src/base/ftfstype.c',
             'src/base/ftglyph.c',
             'src/base/ftlcdfil.c',
             'src/base/ftstroke.c',
+            'src/base/fttype1.c',
             'src/base/ftxf86.c',
             'src/base/ftbase.c',
             'src/base/ftsystem.c',
             'src/base/ftinit.c',
             'src/base/ftgasp.c',
-            'src/base/fttype1.c',
             'src/raster/raster.c',
             'src/sfnt/sfnt.c',
             'src/smooth/smooth.c',
@@ -31,6 +33,10 @@
             'src/cff/cff.c',
             'src/psnames/psnames.c',
             'src/pshinter/pshinter.c',
+          ],
+          'dependencies': [
+            '../libpng/libpng.gyp:libpng',
+            '../zlib/zlib.gyp:zlib',
           ],
           'include_dirs': [
             'build',

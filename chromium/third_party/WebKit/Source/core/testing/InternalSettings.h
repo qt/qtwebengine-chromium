@@ -29,7 +29,7 @@
 
 #include "InternalSettingsGenerated.h"
 #include "core/editing/EditingBehaviorTypes.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -57,7 +57,7 @@ public:
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
-        float m_originalTextAutosizingFontScaleFactor;
+        float m_originalAccessibilityFontScaleFactor;
         String m_originalMediaTypeOverride;
         bool m_originalMockScrollbarsEnabled;
         bool m_langAttributeAwareFormControlUIEnabled;
@@ -67,6 +67,8 @@ public:
         bool m_shouldDisplayTextDescriptions;
         String m_defaultVideoPosterURL;
         bool m_originalCompositorDrivenAcceleratedScrollEnabled;
+        bool m_originalLayerSquashingEnabled;
+        bool m_originalPasswordGenerationDecorationEnabled;
     };
 
     static PassRefPtr<InternalSettings> create(Page* page)
@@ -92,8 +94,9 @@ public:
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
+    void setPasswordGenerationDecorationEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
-    void setTextAutosizingFontScaleFactor(float fontScaleFactor, ExceptionState&);
+    void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
     void setTouchEventEmulationEnabled(bool, ExceptionState&);
     void setViewportEnabled(bool, ExceptionState&);
@@ -101,6 +104,10 @@ public:
     // FIXME: This is a temporary flag and should be removed once accelerated
     // overflow scroll is ready (crbug.com/254111).
     void setCompositorDrivenAcceleratedScrollingEnabled(bool, ExceptionState&);
+
+    // FIXME: This is a temporary flag and should be removed once squashing is
+    // ready (crbug.com/261605).
+    void setLayerSquashingEnabled(bool, ExceptionState&);
 
     // FIXME: The following are RuntimeEnabledFeatures and likely
     // cannot be changed after process start. These setters should

@@ -43,9 +43,11 @@ public:
 
     unsigned start() const { return m_start; }
     unsigned end() const { return m_end; }
+    virtual unsigned textStartOffset() const OVERRIDE { return start(); }
 
     RenderObject* firstLetter() const { return m_firstLetter; }
     void setFirstLetter(RenderObject* firstLetter) { m_firstLetter = firstLetter; }
+    RenderText* firstRenderTextInFirstLetter() const;
 
     StringImpl* contentString() const { return m_contentString.get(); }
     virtual PassRefPtr<StringImpl> originalText() const;
@@ -62,6 +64,7 @@ private:
 
     virtual UChar previousCharacter() const;
     RenderBlock* blockForAccompanyingFirstLetter() const;
+    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
 
     unsigned m_start;
     unsigned m_end;
@@ -69,20 +72,7 @@ private:
     RenderObject* m_firstLetter;
 };
 
-inline RenderTextFragment* toRenderTextFragment(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || toRenderText(object)->isTextFragment());
-    return static_cast<RenderTextFragment*>(object);
-}
-
-inline const RenderTextFragment* toRenderTextFragment(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || toRenderText(object)->isTextFragment());
-    return static_cast<const RenderTextFragment*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTextFragment(const RenderTextFragment*);
+DEFINE_TYPE_CASTS(RenderTextFragment, RenderObject, object, toRenderText(object)->isTextFragment(), toRenderText(object).isTextFragment());
 
 } // namespace WebCore
 

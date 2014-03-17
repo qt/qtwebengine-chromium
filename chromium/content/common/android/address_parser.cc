@@ -48,7 +48,7 @@ namespace address_parser {
 
 using namespace internal;
 
-bool FindAddress(const string16& text, string16* address) {
+bool FindAddress(const base::string16& text, base::string16* address) {
   size_t start, end;
   if (FindAddress(text.begin(), text.end(), &start, &end)) {
     address->assign(text.substr(start, end));
@@ -57,8 +57,8 @@ bool FindAddress(const string16& text, string16* address) {
   return false;
 }
 
-bool FindAddress(const string16::const_iterator& begin,
-                 const string16::const_iterator& end,
+bool FindAddress(const base::string16::const_iterator& begin,
+                 const base::string16::const_iterator& end,
                  size_t* start_pos,
                  size_t* end_pos) {
   HouseNumberParser house_number_parser;
@@ -69,9 +69,9 @@ bool FindAddress(const string16::const_iterator& begin,
   // by a valid zip code for that state. Also keep a look for any other
   // possible house numbers to continue from in case of no match and for
   // state names not followed by a zip code (e.g. New York, NY 10000).
-  const string16 newline_delimiters = kNewlineDelimiters;
-  const string16 delimiters = kWhitespaceUTF16 + newline_delimiters;
-  for (string16::const_iterator it = begin; it != end; ) {
+  const base::string16 newline_delimiters = kNewlineDelimiters;
+  const base::string16 delimiters = base::kWhitespaceUTF16 + newline_delimiters;
+  for (base::string16::const_iterator it = begin; it != end; ) {
     Word house_number;
     if (!house_number_parser.Parse(it, end, &house_number))
       return false;
@@ -100,7 +100,7 @@ bool FindAddress(const string16::const_iterator& begin,
 
           // Check the number of address lines.
           if (tokenizer.token_is_delim() && newline_delimiters.find(
-              *tokenizer.token_begin()) != string16::npos) {
+              *tokenizer.token_begin()) != base::string16::npos) {
             ++num_lines;
           }
         } while (tokenizer.token_is_delim());

@@ -88,16 +88,18 @@ if ($interfaceDependenciesFile) {
     }
     close FH;
 
-    # $additionalIdlFiles is list of IDL files which should not be included in
-    # DerivedSources*.cpp (i.e. they are not described in the interface
-    # dependencies file) but should generate .h and .cpp files.
+    # $additionalIdlFiles is for IDL files not listed in the interface
+    # dependencies file, namely generated IDL files for interfaces
+    # (not partial interfaces), so we need to generate .h and .cpp files.
     if (!$idlFound and $additionalIdlFiles) {
         my @idlFiles = shellwords($additionalIdlFiles);
         $idlFound = grep { $_ and basename($_) eq basename($targetIdlFile) } @idlFiles;
     }
 
     if (!$idlFound) {
-        # We generate empty .h and .cpp files just to tell build scripts that .h and .cpp files are created.
+        # IDL files for dependencies (partial interfaces and interfaces
+        # implemented elsewhere). We generate empty .h and .cpp files just to
+        # tell build scripts that outputs have been created.
         generateEmptyHeaderAndCpp($targetInterfaceName, $outputDirectory);
         exit 0;
     }
@@ -298,7 +300,10 @@ sub checkIfIDLAttributesExists
     }
     if ($error) {
         die "IDL ATTRIBUTE CHECKER ERROR: $error
-If you want to add a new IDL attribute, you need to add it to bindings/scripts/IDLAttributes.txt and add explanations to the Blink IDL document (http://chromium.org/blink/webidl).
+If you want to add a new IDL extended attribute, please add it to:
+    bindings/IDLExtendedAttributes.txt
+and add an explanation to the Blink IDL documentation at:
+    http://www.chromium.org/blink/webidl/blink-idl-extended-attributes
 ";
     }
 }

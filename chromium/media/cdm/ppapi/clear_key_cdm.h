@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "media/cdm/aes_decryptor.h"
-#include "media/cdm/ppapi/api/content_decryption_module.h"
+#include "media/cdm/ppapi/clear_key_cdm_common.h"
 
 // Enable this to use the fake decoder for testing.
 // TODO(tomfinegan): Move fake audio decoder into a separate class.
@@ -28,20 +28,23 @@ class DecoderBuffer;
 class FFmpegCdmAudioDecoder;
 
 // Clear key implementation of the cdm::ContentDecryptionModule interface.
-class ClearKeyCdm : public cdm::ContentDecryptionModule {
+class ClearKeyCdm : public ClearKeyCdmInterface {
  public:
-  explicit ClearKeyCdm(cdm::Host* host);
+  explicit ClearKeyCdm(Host* host, bool is_decrypt_only);
   virtual ~ClearKeyCdm();
 
   // ContentDecryptionModule implementation.
   virtual cdm::Status GenerateKeyRequest(
-      const char* type, int type_size,
-      const uint8_t* init_data, int init_data_size) OVERRIDE;
-  virtual cdm::Status AddKey(const char* session_id, int session_id_size,
-                             const uint8_t* key, int key_size,
-                             const uint8_t* key_id, int key_id_size) OVERRIDE;
+      const char* type, uint32_t type_size,
+      const uint8_t* init_data, uint32_t init_data_size) OVERRIDE;
+  virtual cdm::Status AddKey(const char* session_id,
+                             uint32_t session_id_size,
+                             const uint8_t* key,
+                             uint32_t key_size,
+                             const uint8_t* key_id,
+                             uint32_t key_id_size) OVERRIDE;
   virtual cdm::Status CancelKeyRequest(const char* session_id,
-                                       int session_id_size) OVERRIDE;
+                                       uint32_t session_id_size) OVERRIDE;
   virtual void TimerExpired(void* context) OVERRIDE;
   virtual cdm::Status Decrypt(const cdm::InputBuffer& encrypted_buffer,
                               cdm::DecryptedBlock* decrypted_block) OVERRIDE;
@@ -58,42 +61,57 @@ class ClearKeyCdm : public cdm::ContentDecryptionModule {
       const cdm::InputBuffer& encrypted_buffer,
       cdm::AudioFrames* audio_frames) OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual void OnPlatformChallengeResponse(
+      const cdm::PlatformChallengeResponse& response) OVERRIDE;
+  virtual void OnQueryOutputProtectionStatus(
+      uint32_t link_mask, uint32_t output_protection_mask) OVERRIDE;
 
  private:
   // TODO(xhwang): After we removed DecryptorClient. We probably can also remove
   // this Client class as well. Investigate this possibility.
   class Client {
    public:
+    // TODO(jrummell): Remove bitmask and rename kNone to kInvalid once CDM
+    // interface supports session_id passing completely.
     enum Status {
-      kKeyAdded,
-      kKeyError,
-      kKeyMessage
+      kNone = 0,
+      kCreated = 1 << 0,
+      kMessage = 1 << 1,
+      kReady = 1 << 2,
+      kClosed = 1 << 3,
+      kError = 1 << 4
     };
 
     Client();
     virtual ~Client();
 
     Status status() { return status_; }
-    const std::string& session_id() { return session_id_; }
-    const std::vector<uint8>& key_message() { return key_message_; }
-    const std::string& default_url() { return default_url_; }
+    const std::string& web_session_id() { return web_session_id_; }
+    const std::vector<uint8>& message() { return message_; }
+    const std::string& destination_url() { return destination_url_; }
+    MediaKeys::KeyError error_code() { return error_code_; }
+    int system_code() { return system_code_; }
 
     // Resets the Client to a clean state.
     void Reset();
 
-    void KeyAdded(const std::string& session_id);
-    void KeyError(const std::string& session_id,
-                  MediaKeys::KeyError error_code,
-                  int system_code);
-    void KeyMessage(const std::string& session_id,
-                    const std::vector<uint8>& message,
-                    const std::string& default_url);
+    void OnSessionCreated(uint32 session_id, const std::string& web_session_id);
+    void OnSessionMessage(uint32 session_id,
+                          const std::vector<uint8>& message,
+                          const std::string& destination_url);
+    void OnSessionReady(uint32 session_id);
+    void OnSessionClosed(uint32 session_id);
+    void OnSessionError(uint32 session_id,
+                        MediaKeys::KeyError error_code,
+                        int system_code);
 
    private:
     Status status_;
-    std::string session_id_;
-    std::vector<uint8> key_message_;
-    std::string default_url_;
+    std::string web_session_id_;
+    std::vector<uint8> message_;
+    std::string destination_url_;
+    MediaKeys::KeyError error_code_;
+    int system_code_;
   };
 
   // Prepares next heartbeat message and sets a timer for it.
@@ -132,7 +150,9 @@ class ClearKeyCdm : public cdm::ContentDecryptionModule {
   // simultaneously.
   base::Lock client_lock_;
 
-  cdm::Host* host_;
+  ClearKeyCdmHost* host_;
+
+  const bool is_decrypt_only_;
 
   std::string heartbeat_session_id_;
   std::string next_heartbeat_message_;

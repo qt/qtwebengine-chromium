@@ -10,8 +10,7 @@ namespace net {
 
 SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
   switch (next_proto) {
-    case kProtoSPDY2:
-    case kProtoSPDY21:
+    case kProtoDeprecatedSPDY2:
       return SPDY2;
     case kProtoSPDY3:
     case kProtoSPDY31:
@@ -22,7 +21,6 @@ SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
       return SPDY4;
     case kProtoUnknown:
     case kProtoHTTP11:
-    case kProtoSPDY1:
     case kProtoQUIC1SPDY3:
       break;
   }
@@ -177,6 +175,7 @@ void BufferedSpdyFramer::OnDataFrameHeader(SpdyStreamId stream_id,
                                            bool fin) {
   frames_received_++;
   header_stream_id_ = stream_id;
+  visitor_->OnDataFrameHeader(stream_id, length, fin);
 }
 
 void BufferedSpdyFramer::OnStreamFrameData(SpdyStreamId stream_id,
@@ -219,7 +218,7 @@ void BufferedSpdyFramer::OnPushPromise(SpdyStreamId stream_id,
   visitor_->OnPushPromise(stream_id, promised_stream_id);
 }
 
-int BufferedSpdyFramer::protocol_version() {
+SpdyMajorVersion BufferedSpdyFramer::protocol_version() {
   return spdy_framer_.protocol_version();
 }
 
@@ -253,19 +252,16 @@ SpdyFrame* BufferedSpdyFramer::CreateSynStream(
     SpdyPriority priority,
     uint8 credential_slot,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
   return spdy_framer_.CreateSynStream(stream_id, associated_stream_id, priority,
-                                      credential_slot, flags, compressed,
-                                      headers);
+                                      credential_slot, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateSynReply(
     SpdyStreamId stream_id,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
-  return spdy_framer_.CreateSynReply(stream_id, flags, compressed, headers);
+  return spdy_framer_.CreateSynReply(stream_id, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateRstStream(
@@ -293,20 +289,14 @@ SpdyFrame* BufferedSpdyFramer::CreateGoAway(
 SpdyFrame* BufferedSpdyFramer::CreateHeaders(
     SpdyStreamId stream_id,
     SpdyControlFlags flags,
-    bool compressed,
     const SpdyHeaderBlock* headers) {
-  return spdy_framer_.CreateHeaders(stream_id, flags, compressed, headers);
+  return spdy_framer_.CreateHeaders(stream_id, flags, headers);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateWindowUpdate(
     SpdyStreamId stream_id,
     uint32 delta_window_size) const {
   return spdy_framer_.CreateWindowUpdate(stream_id, delta_window_size);
-}
-
-SpdyFrame* BufferedSpdyFramer::CreateCredentialFrame(
-    const SpdyCredential& credential) const {
-  return spdy_framer_.CreateCredentialFrame(credential);
 }
 
 SpdyFrame* BufferedSpdyFramer::CreateDataFrame(SpdyStreamId stream_id,

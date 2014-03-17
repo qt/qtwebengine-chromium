@@ -15,10 +15,6 @@ found in the LICENSE file.
 
 <template id="help-btn-template">
   <div class="button view-help-button">?</div>
-
-  <div class="header">
-    chrome://tracing Help
-  </div>
   <div class="view-help-text">
     <div class="column left">
       <h2>Navigation</h2>
@@ -143,7 +139,12 @@ found in the LICENSE file.
 
       <div class='pair'>
         <div class='command'>g/G</div>
-        <div class='action'>Add frame markers to event</div>
+        <div class='action'>Toggle 60hz grid</div>
+      </div>
+
+      <div class='pair'>
+        <div class='command'>m</div>
+        <div class='action'>Mark current selection</div>
       </div>
 
       <div class='pair'>
@@ -156,9 +157,5 @@ found in the LICENSE file.
 
 <template id="metadata-btn-template">
   <div class="button view-metadata-button view-info-button">Metadata</div>
-
-  <div class="header">
-    Metadata Info
-  </div>
   <div class="info-button-text metadata-dialog-text"></div>
 </template>

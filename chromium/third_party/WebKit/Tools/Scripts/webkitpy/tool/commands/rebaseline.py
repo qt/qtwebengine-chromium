@@ -227,6 +227,7 @@ class RebaselineTest(BaseInternalRebaselineCommand):
 class OptimizeBaselines(AbstractRebaseliningCommand):
     name = "optimize-baselines"
     help_text = "Reshuffles the baselines for the given tests to use as litte space on disk as possible."
+    show_in_main_help = True
     argument_names = "TEST_NAMES"
 
     def __init__(self):
@@ -255,6 +256,7 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
 class AnalyzeBaselines(AbstractRebaseliningCommand):
     name = "analyze-baselines"
     help_text = "Analyzes the baselines for the given tests and prints results that are identical."
+    show_in_main_help = True
     argument_names = "TEST_NAMES"
 
     def __init__(self):
@@ -492,6 +494,7 @@ class RebaselineJson(AbstractParallelRebaselineCommand):
 class RebaselineExpectations(AbstractParallelRebaselineCommand):
     name = "rebaseline-expectations"
     help_text = "Rebaselines the tests indicated in TestExpectations."
+    show_in_main_help = True
 
     def __init__(self):
         super(RebaselineExpectations, self).__init__(options=[
@@ -539,6 +542,7 @@ class RebaselineExpectations(AbstractParallelRebaselineCommand):
 class Rebaseline(AbstractParallelRebaselineCommand):
     name = "rebaseline"
     help_text = "Rebaseline tests with results from the build bots. Shows the list of failing tests on the builders if no test names are provided."
+    show_in_main_help = True
     argument_names = "[TEST_NAMES]"
 
     def __init__(self):
@@ -677,14 +681,19 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
         has_any_needs_rebaseline_lines = False
 
         for line in tool.scm().blame(expectations_file_path).split("\n"):
-            if "NeedsRebaseline" not in line:
+            comment_index = line.find("#")
+            if comment_index == -1:
+                comment_index = len(line)
+            line_without_comments = re.sub(r"\s+", " ", line[:comment_index].strip())
+
+            if "NeedsRebaseline" not in line_without_comments:
                 continue
 
             if not has_any_needs_rebaseline_lines:
                 self._start_new_log_entry(log_server)
             has_any_needs_rebaseline_lines = True
 
-            parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line)
+            parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line_without_comments)
 
             commit_hash = parsed_line.group(1)
             svn_revision = tool.scm().svn_revision_from_git_commit(commit_hash)
@@ -703,7 +712,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 revision = svn_revision
                 author = parsed_line.group(2)
 
-            bugs.update(re.findall("crbug\.com\/(\d+)", line))
+            bugs.update(re.findall("crbug\.com\/(\d+)", line_without_comments))
             tests.add(test)
 
             if len(tests) >= self.MAX_LINES_TO_REBASELINE:
@@ -841,6 +850,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 class RebaselineOMatic(AbstractDeclarativeCommand):
     name = "rebaseline-o-matic"
     help_text = "Calls webkit-patch auto-rebaseline in a loop."
+    show_in_main_help = True
 
     SLEEP_TIME_IN_SECONDS = 30
 

@@ -45,7 +45,6 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
 
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
-  void ViewWillInitiatePaint();
   void ViewInitiatedPaint();
   void ViewFlushedPaint();
 
@@ -55,6 +54,7 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
   virtual ~PPB_Graphics3D_Impl();
   // ppapi::PPB_Graphics3D_Shared overrides.
   virtual gpu::CommandBuffer* GetCommandBuffer() OVERRIDE;
+  virtual gpu::GpuControl* GetGpuControl() OVERRIDE;
   virtual int32 DoSwapBuffers() OVERRIDE;
 
  private:

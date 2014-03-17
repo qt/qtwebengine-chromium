@@ -76,6 +76,7 @@ using webrtc::SessionDescriptionInterface;
 typedef std::vector<AudioCodec> AudioCodecs;
 typedef std::vector<Candidate> Candidates;
 
+static const uint32 kDefaultSctpPort = 5000;
 static const char kSessionTime[] = "t=0 0\r\n";
 static const uint32 kCandidatePriority = 2130706432U;  // pref = 1.0
 static const char kCandidateUfragVoice[] = "ufrag_voice";
@@ -281,7 +282,7 @@ static const char kSdpSctpDataChannelString[] =
     "a=ice-ufrag:ufrag_data\r\n"
     "a=ice-pwd:pwd_data\r\n"
     "a=mid:data_content_name\r\n"
-    "a=fmtp:5000 protocol=webrtc-datachannel; streams=65536\r\n";
+    "a=sctpmap:5000 webrtc-datachannel 1024\r\n";
 
 static const char kSdpSctpDataChannelWithCandidatesString[] =
     "m=application 2345 DTLS/SCTP 5000\r\n"
@@ -296,7 +297,7 @@ static const char kSdpSctpDataChannelWithCandidatesString[] =
     "a=ice-ufrag:ufrag_data\r\n"
     "a=ice-pwd:pwd_data\r\n"
     "a=mid:data_content_name\r\n"
-    "a=fmtp:5000 protocol=webrtc-datachannel; streams=65536\r\n";
+    "a=sctpmap:5000 webrtc-datachannel 1024\r\n";
 
 
 // One candidate reference string as per W3c spec.
@@ -974,6 +975,10 @@ class WebRtcSdpTest : public testing::Test {
         new DataContentDescription());
     data_desc_ = data.get();
     data_desc_->set_protocol(cricket::kMediaProtocolDtlsSctp);
+    DataCodec codec(cricket::kGoogleSctpDataCodecId,
+                    cricket::kGoogleSctpDataCodecName, 0);
+    codec.SetParam(cricket::kCodecParamPort, kDefaultSctpPort);
+    data_desc_->AddCodec(codec);
     desc_.AddContent(kDataContentName, NS_JINGLE_DRAFT_SCTP, data.release());
     EXPECT_TRUE(desc_.AddTransportInfo(
            TransportInfo(kDataContentName,
@@ -1479,6 +1484,19 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescription) {
   EXPECT_TRUE(CompareSessionDescription(jdesc_, jdesc));
 }
 
+TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutMline) {
+  JsepSessionDescription jdesc(kDummyString);
+  const char kSdpWithoutMline[] =
+    "v=0\r\n"
+    "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "t=0 0\r\n"
+    "a=msid-semantic: WMS local_stream_1 local_stream_2\r\n";
+  // Deserialize
+  EXPECT_TRUE(SdpDeserialize(kSdpWithoutMline, &jdesc));
+  EXPECT_EQ(0u, jdesc.description()->contents().size());
+}
+
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutCarriageReturn) {
   JsepSessionDescription jdesc(kDummyString);
   std::string sdp_without_carriage_return = kSdpFullString;
@@ -1761,6 +1779,41 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannels) {
   EXPECT_TRUE(CompareSessionDescription(jdesc, jdesc_output));
 }
 
+TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelAndNewPort) {
+  AddSctpDataChannel();
+  const uint16 kUnusualSctpPort = 9556;
+  char default_portstr[16];
+  char unusual_portstr[16];
+  talk_base::sprintfn(default_portstr, sizeof(default_portstr), "%d",
+                      kDefaultSctpPort);
+  talk_base::sprintfn(unusual_portstr, sizeof(unusual_portstr), "%d",
+                      kUnusualSctpPort);
+
+  JsepSessionDescription jdesc(kDummyString);
+  // take our pre-built session description and change the SCTP port.
+  cricket::SessionDescription* mutant = desc_.Copy();
+  DataContentDescription* dcdesc = static_cast<DataContentDescription*>(
+      mutant->GetContentDescriptionByName(kDataContentName));
+  std::vector<cricket::DataCodec> codecs(dcdesc->codecs());
+  EXPECT_EQ(codecs.size(), 1UL);
+  EXPECT_EQ(codecs[0].id, cricket::kGoogleSctpDataCodecId);
+  codecs[0].SetParam(cricket::kCodecParamPort, kUnusualSctpPort);
+
+  // note: mutant's owned by jdesc now.
+  ASSERT_TRUE(jdesc.Initialize(mutant, kSessionId, kSessionVersion));
+  mutant = NULL;
+
+  std::string sdp_with_data = kSdpString;
+  sdp_with_data.append(kSdpSctpDataChannelString);
+  talk_base::replace_substrs(default_portstr, strlen(default_portstr),
+                             unusual_portstr, strlen(unusual_portstr),
+                             &sdp_with_data);
+  JsepSessionDescription jdesc_output(kDummyString);
+
+  EXPECT_TRUE(SdpDeserialize(sdp_with_data, &jdesc_output));
+  EXPECT_TRUE(CompareSessionDescription(jdesc, jdesc_output));
+}
+
 TEST_F(WebRtcSdpTest, DeserializeSdpWithRtpDataChannelsAndBandwidth) {
   AddRtpDataChannel();
   JsepSessionDescription jdesc(kDummyString);
@@ -1797,6 +1850,18 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithMediaLevelExtmap) {
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithInvalidExtmap) {
   TestDeserializeExtmap(true, true);
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutEndLineBreak) {
+  JsepSessionDescription jdesc(kDummyString);
+  std::string sdp = kSdpFullString;
+  sdp = sdp.substr(0, sdp.size() - 2);  // Remove \r\n at the end.
+  // Deserialize
+  SdpParseError error;
+  EXPECT_FALSE(webrtc::SdpDeserialize(sdp, &jdesc, &error));
+  const std::string lastline = "a=ssrc:6 label:video_track_id_3";
+  EXPECT_EQ(lastline, error.line);
+  EXPECT_EQ("Invalid SDP line.", error.description);
 }
 
 TEST_F(WebRtcSdpTest, DeserializeCandidateWithDifferentTransport) {
@@ -1846,6 +1911,7 @@ TEST_F(WebRtcSdpTest, DeserializeBrokenSdp) {
   ReplaceAndTryToParse("t=", kSdpDestroyer);
 
   // Broken media description
+  ReplaceAndTryToParse("m=audio", "c=IN IP4 74.125.224.39");
   ReplaceAndTryToParse("m=video", kSdpDestroyer);
 
   // Invalid lines

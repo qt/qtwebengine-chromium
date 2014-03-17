@@ -10,7 +10,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
 
@@ -69,7 +69,7 @@ void RendererMainPlatformDelegate::RunSandboxTests(bool no_sandbox) {
   // Here, we test that the status of SeccompBpf in the renderer is consistent
   // with what LinuxSandbox::GetStatus() said we would do.
   class LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
-  if (linux_sandbox->GetStatus() & kSandboxLinuxSeccompBpf) {
+  if (linux_sandbox->GetStatus() & kSandboxLinuxSeccompBPF) {
     CHECK(linux_sandbox->seccomp_bpf_started());
   }
 

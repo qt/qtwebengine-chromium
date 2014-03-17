@@ -21,17 +21,17 @@
 #ifndef SVGFEFloodElement_h
 #define SVGFEFloodElement_h
 
-#include "core/platform/graphics/filters/FEFlood.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEFlood.h"
 
 namespace WebCore {
 
 class SVGFEFloodElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEFloodElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEFloodElement> create(Document&);
 
 private:
-    SVGFEFloodElement(const QualifiedName&, Document&);
+    explicit SVGFEFloodElement(Document&);
 
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName);
     virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);

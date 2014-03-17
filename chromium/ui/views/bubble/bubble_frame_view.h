@@ -50,6 +50,7 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
+  virtual void OnThemeChanged() OVERRIDE;
 
   // Overridden from ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
@@ -70,9 +71,8 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
                                    bool adjust_if_offscreen);
 
  protected:
-  // Returns the bounds for the monitor showing the specified |rect|.
-  // This function is virtual to support testing environments.
-  virtual gfx::Rect GetMonitorBounds(const gfx::Rect& rect);
+  // Returns the available screen bounds if the frame were to show in |rect|.
+  virtual gfx::Rect GetAvailableScreenBounds(const gfx::Rect& rect);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BubbleFrameViewTest, GetBoundsForClientView);

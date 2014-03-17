@@ -180,10 +180,17 @@ located in patches.chromium/. Currently this consists of:
     Advertise support of only the NIST curves P-521, P-384, and P-256,
     as well as only uncompressed points, to keep ClientHello small.
 
+  channelid.patch
+    Add API so that channel ID private key can be set only after verifying the
+    remote server supports channel IDs.
+
   fix_lhash_iteration.patch
     Fix a crash that happens when OpenSSL tries to delete items from a lhash
     table that is being iterated over. This happens in certain rare cases
     when SSL_CTX_flush_sessions() is called. See http://crbug.com/298606
+
+  chacha.patch
+    Add support for ChaCha20+Poly1305 cipher suites.
 
 **************************************************************************
 Adding new Chromium patches:

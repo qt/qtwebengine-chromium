@@ -33,17 +33,14 @@ class VideoDecoderJob;
 
 // This class handles media source extensions on Android. It uses Android
 // MediaCodec to decode audio and video streams in two separate threads.
-// IPC is being used to send data from the render process to this object.
-// TODO(qinmin): use shared memory to send data between processes.
 class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
                                        public DemuxerAndroidClient {
  public:
-  // Constructs a player with the given IDs. |manager| and |demuxer| must
-  // outlive the lifetime of this object.
+  // Constructs a player with the given ID and demuxer. |manager| must outlive
+  // the lifetime of this object.
   MediaSourcePlayer(int player_id,
                     MediaPlayerManager* manager,
-                    int demuxer_client_id,
-                    DemuxerAndroid* demuxer);
+                    scoped_ptr<DemuxerAndroid> demuxer);
   virtual ~MediaSourcePlayer();
 
   static bool IsTypeSupported(const std::vector<uint8>& scheme_uuid,
@@ -55,7 +52,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
+  virtual void SeekTo(const base::TimeDelta& timestamp) OVERRIDE;
   virtual void Release() OVERRIDE;
   virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;
@@ -73,7 +70,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // DemuxerAndroidClient implementation.
   virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) OVERRIDE;
   virtual void OnDemuxerDataAvailable(const DemuxerData& params) OVERRIDE;
-  virtual void OnDemuxerSeeked(unsigned seek_request_id) OVERRIDE;
+  virtual void OnDemuxerSeekDone(
+      const base::TimeDelta& actual_browser_seek_time) OVERRIDE;
   virtual void OnDemuxerDurationChanged(base::TimeDelta duration) OVERRIDE;
 
  private:
@@ -99,23 +97,32 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Callback to notify that MediaCrypto is ready in |drm_bridge_|.
   void OnMediaCryptoReady();
 
-  // Handle pending events when all the decoder jobs finished.
+  // Handle pending events if all the decoder jobs are not currently decoding.
   void ProcessPendingEvents();
 
-  // Helper method to configure the decoder jobs.
+  // Helper method to clear any pending |SURFACE_CHANGE_EVENT_PENDING|
+  // and reset |video_decoder_job_| to null.
+  void ResetVideoDecoderJob();
+
+  // Helper methods to configure the decoder jobs.
   void ConfigureVideoDecoderJob();
   void ConfigureAudioDecoderJob();
 
   // Flush the decoders and clean up all the data needs to be decoded.
   void ClearDecodingData();
 
-  // Called to decoder more data.
+  // Called to decode more data.
   void DecodeMoreAudio();
   void DecodeMoreVideo();
 
   // Functions check whether audio/video is present.
   bool HasVideo();
   bool HasAudio();
+
+  // Functions that check whether audio/video stream has reached end of output
+  // or are not present in player configuration.
+  bool AudioFinished();
+  bool VideoFinished();
 
   // Determine seekability based on duration.
   bool Seekable();
@@ -130,8 +137,18 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void StartStarvationCallback(const base::TimeDelta& presentation_timestamp);
 
   // Schedules a seek event in |pending_events_| and calls StopDecode() on all
-  // the MediaDecoderJobs.
-  void ScheduleSeekEventAndStopDecoding();
+  // the MediaDecoderJobs. Sets clock to |seek_time|, and resets
+  // |pending_seek_|. There must not already be a seek event in
+  // |pending_events_|.
+  void ScheduleSeekEventAndStopDecoding(const base::TimeDelta& seek_time);
+
+  // Schedules a browser seek event. We must not currently be processing any
+  // seek. Note that there is possibility that browser seek of renderer demuxer
+  // may unexpectedly stall due to lack of buffered data at or after the browser
+  // seek time.
+  // TODO(wolenetz): Instead of doing hack browser seek, replay cached data
+  // since last keyframe. See http://crbug.com/304234.
+  void BrowserSeekToCurrentTime();
 
   // Helper function to set the volume.
   void SetVolumeInternal();
@@ -146,6 +163,17 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // resync with audio and starts decoding.
   void OnPrefetchDone();
 
+  // Test-only method to setup hook for the completion of the next decode cycle.
+  // This callback state is cleared when it is next run.
+  // Prevent usage creep by only calling this from the
+  // ReleaseWithOnPrefetchDoneAlreadyPosted MediaSourcePlayerTest.
+  void set_decode_callback_for_testing(const base::Closure& test_decode_cb) {
+    decode_callback_for_testing_ = test_decode_cb;
+  }
+
+  // TODO(qinmin/wolenetz): Reorder these based on their priority from
+  // ProcessPendingEvents(). Release() and other routines are dependent upon
+  // priority consistency.
   enum PendingEventFlags {
     NO_EVENT_PENDING = 0,
     SEEK_EVENT_PENDING = 1 << 0,
@@ -160,14 +188,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void SetPendingEvent(PendingEventFlags event);
   void ClearPendingEvent(PendingEventFlags event);
 
-  int demuxer_client_id_;
-  DemuxerAndroid* demuxer_;
+  scoped_ptr<DemuxerAndroid> demuxer_;
 
   // Pending event that the player needs to do.
   unsigned pending_event_;
-
-  // ID to keep track of whether all the seek requests are acked.
-  unsigned seek_request_id_;
 
   // Stats about the media.
   base::TimeDelta duration_;
@@ -179,8 +203,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   int sampling_rate_;
   // TODO(xhwang/qinmin): Add |video_extra_data_|.
   std::vector<uint8> audio_extra_data_;
-  bool audio_finished_;
-  bool video_finished_;
+  bool reached_audio_eos_;
+  bool reached_video_eos_;
   bool playing_;
   bool is_audio_encrypted_;
   bool is_video_encrypted_;
@@ -204,12 +228,36 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // The surface object currently owned by the player.
   gfx::ScopedJavaSurface surface_;
 
+  // Track whether or not the player has received any video data since the most
+  // recent of player construction, end of last seek, or receiving and
+  // detecting a |kConfigChanged| access unit from the demuxer.
+  // If no such video data has been received, the next video data begins with
+  // an I-frame. Otherwise, we have no such guarantee.
+  bool next_video_data_is_iframe_;
+
+  // Flag that is true if doing a hack browser seek or false if doing a
+  // regular seek. Only valid when |SEEK_EVENT_PENDING| is pending.
+  // TODO(wolenetz): Instead of doing hack browser seek, replay cached data
+  // since last keyframe. See http://crbug.com/304234.
+  bool doing_browser_seek_;
+
+  // If already doing a browser seek when a regular seek request arrives,
+  // these fields remember the regular seek so OnDemuxerSeekDone() can trigger
+  // it when the browser seek is done. These are only valid when
+  // |SEEK_EVENT_PENDING| is pending.
+  bool pending_seek_;
+  base::TimeDelta pending_seek_time_;
+
   // Decoder jobs.
   scoped_ptr<AudioDecoderJob, MediaDecoderJob::Deleter> audio_decoder_job_;
   scoped_ptr<VideoDecoderJob, MediaDecoderJob::Deleter> video_decoder_job_;
 
   bool reconfig_audio_decoder_;
   bool reconfig_video_decoder_;
+
+  // Track the most recent preroll target. Decoder re-creation needs this to
+  // resume any in-progress preroll.
+  base::TimeDelta preroll_timestamp_;
 
   // A cancelable task that is posted when the audio decoder starts requesting
   // new data. This callback runs if no data arrives before the timeout period
@@ -228,6 +276,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // the player should pause. When a new key is added (OnKeyAdded()), we should
   // try to start playback again.
   bool is_waiting_for_key_;
+
+  // Test-only callback for hooking the completion of the next decode cycle.
+  base::Closure decode_callback_for_testing_;
 
   friend class MediaSourcePlayerTest;
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayer);

@@ -31,24 +31,24 @@
 #include "config.h"
 #include "core/html/forms/TelephoneInputType.h"
 
-#include "core/html/forms/InputTypeNames.h"
+#include "InputTypeNames.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> TelephoneInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> TelephoneInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new TelephoneInputType(element));
 }
 
 void TelephoneInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeTel);
+    countUsageIfVisible(UseCounter::InputTypeTel);
 }
 
 const AtomicString& TelephoneInputType::formControlType() const
 {
-    return InputTypeNames::telephone();
+    return InputTypeNames::tel;
 }
 
 bool TelephoneInputType::shouldRespectSpeechAttribute()

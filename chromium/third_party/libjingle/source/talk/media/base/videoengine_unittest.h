@@ -54,6 +54,12 @@
   EXPECT_EQ((h), (r).height()); \
   EXPECT_EQ(0, (r).errors()); \
 
+#define EXPECT_GT_FRAME_ON_RENDERER_WAIT(r, c, w, h, t) \
+  EXPECT_TRUE_WAIT((r).num_rendered_frames() >= (c) && \
+                   (w) == (r).width() && \
+                   (h) == (r).height(), (t)); \
+  EXPECT_EQ(0, (r).errors()); \
+
 static const uint32 kTimeout = 5000U;
 static const uint32 kSsrc = 1234u;
 static const uint32 kRtxSsrc = 4321u;
@@ -69,11 +75,13 @@ inline bool IsEqualCodec(const cricket::VideoCodec& a,
       IsEqualRes(a, b.width, b.height, b.framerate);
 }
 
+namespace std {
 inline std::ostream& operator<<(std::ostream& s, const cricket::VideoCodec& c) {
   s << "{" << c.name << "(" << c.id << "), "
     << c.width << "x" << c.height << "x" << c.framerate << "}";
   return s;
 }
+}  // namespace std
 
 inline int TimeBetweenSend(const cricket::VideoCodec& codec) {
   return static_cast<int>(
@@ -788,9 +796,9 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_GT(info.senders[0].framerate_sent, 0);
 
     ASSERT_EQ(1U, info.receivers.size());
-    EXPECT_EQ(1U, info.senders[0].ssrcs.size());
-    EXPECT_EQ(1U, info.receivers[0].ssrcs.size());
-    EXPECT_EQ(info.senders[0].ssrcs[0], info.receivers[0].ssrcs[0]);
+    EXPECT_EQ(1U, info.senders[0].ssrcs().size());
+    EXPECT_EQ(1U, info.receivers[0].ssrcs().size());
+    EXPECT_EQ(info.senders[0].ssrcs()[0], info.receivers[0].ssrcs()[0]);
     EXPECT_EQ(NumRtpBytes(), info.receivers[0].bytes_rcvd);
     EXPECT_EQ(NumRtpPackets(), info.receivers[0].packets_rcvd);
     EXPECT_EQ(0.0, info.receivers[0].fraction_lost);
@@ -847,8 +855,8 @@ class VideoMediaChannelTest : public testing::Test,
 
     ASSERT_EQ(2U, info.receivers.size());
     for (size_t i = 0; i < info.receivers.size(); ++i) {
-      EXPECT_EQ(1U, info.receivers[i].ssrcs.size());
-      EXPECT_EQ(i + 1, info.receivers[i].ssrcs[0]);
+      EXPECT_EQ(1U, info.receivers[i].ssrcs().size());
+      EXPECT_EQ(i + 1, info.receivers[i].ssrcs()[0]);
       EXPECT_EQ(NumRtpBytes(), info.receivers[i].bytes_rcvd);
       EXPECT_EQ(NumRtpPackets(), info.receivers[i].packets_rcvd);
       EXPECT_EQ(0.0, info.receivers[i].fraction_lost);
@@ -903,12 +911,12 @@ class VideoMediaChannelTest : public testing::Test,
     ASSERT_EQ(2U, info.senders.size());
     EXPECT_EQ(NumRtpPackets(),
         info.senders[0].packets_sent + info.senders[1].packets_sent);
-    EXPECT_EQ(1U, info.senders[0].ssrcs.size());
-    EXPECT_EQ(1234U, info.senders[0].ssrcs[0]);
+    EXPECT_EQ(1U, info.senders[0].ssrcs().size());
+    EXPECT_EQ(1234U, info.senders[0].ssrcs()[0]);
     EXPECT_EQ(DefaultCodec().width, info.senders[0].frame_width);
     EXPECT_EQ(DefaultCodec().height, info.senders[0].frame_height);
-    EXPECT_EQ(1U, info.senders[1].ssrcs.size());
-    EXPECT_EQ(5678U, info.senders[1].ssrcs[0]);
+    EXPECT_EQ(1U, info.senders[1].ssrcs().size());
+    EXPECT_EQ(5678U, info.senders[1].ssrcs()[0]);
     EXPECT_EQ(1024, info.senders[1].frame_width);
     EXPECT_EQ(768, info.senders[1].frame_height);
     // The capturer must be unregistered here as it runs out of it's scope next.
@@ -973,7 +981,7 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_TRUE(SetSend(true));
     EXPECT_TRUE(channel_->SetRender(true));
     EXPECT_EQ(0, renderer_.num_rendered_frames());
-    channel_->OnPacketReceived(&packet1);
+    channel_->OnPacketReceived(&packet1, talk_base::PacketTime());
     SetRendererAsDefault();
     EXPECT_TRUE(SendFrame());
     EXPECT_FRAME_WAIT(1, DefaultCodec().width, DefaultCodec().height, kTimeout);
@@ -1000,7 +1008,8 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_GE(2, NumRtpPackets());
     uint32 ssrc = 0;
     size_t last_packet = NumRtpPackets() - 1;
-    talk_base::scoped_ptr<const talk_base::Buffer> p(GetRtpPacket(last_packet));
+    talk_base::scoped_ptr<const talk_base::Buffer>
+        p(GetRtpPacket(static_cast<int>(last_packet)));
     ParseRtpPacket(p.get(), NULL, NULL, NULL, NULL, &ssrc, NULL);
     EXPECT_EQ(kSsrc, ssrc);
 
@@ -1017,7 +1026,7 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_TRUE_WAIT(NumRtpPackets() > rtp_packets, kTimeout);
 
     last_packet = NumRtpPackets() - 1;
-    p.reset(GetRtpPacket(last_packet));
+    p.reset(GetRtpPacket(static_cast<int>(last_packet)));
     ParseRtpPacket(p.get(), NULL, NULL, NULL, NULL, &ssrc, NULL);
     EXPECT_EQ(789u, ssrc);
   }
@@ -1165,7 +1174,11 @@ class VideoMediaChannelTest : public testing::Test,
 
     EXPECT_TRUE(channel_->SetRenderer(kSsrc, &renderer1));
     EXPECT_TRUE(SendFrame());
-    EXPECT_FRAME_ON_RENDERER_WAIT(
+    // Because the default channel is used, RemoveRecvStream above is not going
+    // to delete the channel. As a result the engine will continue to receive
+    // and decode the 3 frames sent above. So it is possible we will receive
+    // some (e.g. 1) of these 3 frames after the renderer is set again.
+    EXPECT_GT_FRAME_ON_RENDERER_WAIT(
         renderer1, 2, DefaultCodec().width, DefaultCodec().height, kTimeout);
   }
 
@@ -1277,16 +1290,15 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_FRAME_WAIT(1, 640, 400, kTimeout);
     // Remove the capturer.
     EXPECT_TRUE(channel_->SetCapturer(kSsrc, NULL));
+    // Wait for one black frame for removing the capturer.
+    EXPECT_FRAME_WAIT(2, 640, 400, kTimeout);
+
     // No capturer was added, so this RemoveCapturer should
     // fail.
     EXPECT_FALSE(channel_->SetCapturer(kSsrc, NULL));
-    // Wait for frames to stop flowing.
     talk_base::Thread::Current()->ProcessMessages(300);
-    int num_frames = renderer_.num_rendered_frames();
-    // Wait to make sure no more frames are sent
-    WAIT(renderer_.num_rendered_frames() != num_frames, 300);
     // Verify no more frames were sent.
-    EXPECT_EQ(num_frames, renderer_.num_rendered_frames());
+    EXPECT_EQ(2, renderer_.num_rendered_frames());
   }
 
   // Tests that we can add and remove capturer as unique sources.
@@ -1373,10 +1385,8 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_EQ(0, renderer.num_rendered_frames());
 
     EXPECT_TRUE(SendFrame());
-    EXPECT_TRUE_WAIT(renderer.num_rendered_frames() >= 1 &&
-                     codec.width == renderer.width() &&
-                     codec.height == renderer.height(), kTimeout);
-    EXPECT_EQ(0, renderer.errors());
+    EXPECT_GT_FRAME_ON_RENDERER_WAIT(
+        renderer, 1, codec.width, codec.height, kTimeout);
 
     // Registering an external capturer is currently the same as screen casting
     // (update the test when this changes).
@@ -1394,9 +1404,8 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_TRUE(capturer->CaptureCustomFrame(kWidth, kHeight,
                                              cricket::FOURCC_ARGB));
     EXPECT_TRUE(capturer->CaptureFrame());
-    EXPECT_TRUE_WAIT(renderer.num_rendered_frames() >= 2 &&
-                     kScaledWidth == renderer.width() &&
-                     kScaledHeight == renderer.height(), kTimeout);
+    EXPECT_GT_FRAME_ON_RENDERER_WAIT(
+        renderer, 2, kScaledWidth, kScaledHeight, kTimeout);
     EXPECT_TRUE(channel_->SetCapturer(kSsrc, NULL));
   }
 

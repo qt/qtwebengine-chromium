@@ -29,16 +29,12 @@ vp9_coeff_accum context_counters[TX_SIZES][BLOCK_TYPES];
 extern vp9_coeff_stats tree_update_hist[TX_SIZES][BLOCK_TYPES];
 #endif  /* ENTROPY_STATS */
 
-DECLARE_ALIGNED(16, extern const uint8_t,
-                vp9_pt_energy_class[MAX_ENTROPY_TOKENS]);
-
 static TOKENVALUE dct_value_tokens[DCT_MAX_VALUE * 2];
 const TOKENVALUE *vp9_dct_value_tokens_ptr;
 static int dct_value_cost[DCT_MAX_VALUE * 2];
 const int *vp9_dct_value_cost_ptr;
 
 static void fill_value_tokens() {
-
   TOKENVALUE *const t = dct_value_tokens + DCT_MAX_VALUE;
   const vp9_extra_bit *const e = vp9_extra_bits;
 
@@ -60,9 +56,9 @@ static void fill_value_tokens() {
 
         t[i].token = --j;
         eb |= (a - e[j].base_val) << 1;
-      } else
+      } else {
         t[i].token = a;
-
+      }
       t[i].extra = eb;
     }
 
@@ -81,9 +77,7 @@ static void fill_value_tokens() {
         cost += vp9_cost_bit(vp9_prob_half, extra & 1); /* sign */
         dct_value_cost[i + DCT_MAX_VALUE] = cost;
       }
-
     }
-
   } while (++i < DCT_MAX_VALUE);
 
   vp9_dct_value_tokens_ptr = dct_value_tokens + DCT_MAX_VALUE;
@@ -114,7 +108,7 @@ static void tokenize_b(int plane, int block, BLOCK_SIZE plane_bsize,
   MACROBLOCKD *xd = args->xd;
   TOKENEXTRA **tp = args->tp;
   struct macroblockd_plane *pd = &xd->plane[plane];
-  MB_MODE_INFO *mbmi = &xd->this_mi->mbmi;
+  MB_MODE_INFO *mbmi = &xd->mi_8x8[0]->mbmi;
   int pt; /* near block/prev token context index */
   int c = 0, rc = 0;
   TOKENEXTRA *t = *tp;        /* store tokens starting here */
@@ -128,20 +122,16 @@ static void tokenize_b(int plane, int block, BLOCK_SIZE plane_bsize,
   vp9_coeff_probs_model *const coef_probs = cpi->common.fc.coef_probs[tx_size];
   const int ref = is_inter_block(mbmi);
   uint8_t token_cache[1024];
-  const uint8_t *band_translate;
-  ENTROPY_CONTEXT *A, *L;
+  const uint8_t *const band_translate = get_band_translate(tx_size);
   const int seg_eob = get_tx_eob(&cpi->common.seg, segment_id, tx_size);
   int aoff, loff;
   txfrm_block_to_raster_xy(plane_bsize, tx_size, block, &aoff, &loff);
 
-  A = pd->above_context + aoff;
-  L = pd->left_context + loff;
-
   assert((!type && !plane) || (type && plane));
 
-  pt = get_entropy_context(xd, tx_size, type, block, A, L,
-                           &scan, &band_translate);
-  nb = vp9_get_coef_neighbors_handle(scan);
+  pt = get_entropy_context(tx_size, pd->above_context + aoff,
+                                    pd->left_context + loff);
+  get_scan(xd, tx_size, type, block, &scan, &nb);
   c = 0;
   do {
     const int band = get_coef_band(band_translate, c);
@@ -210,7 +200,7 @@ void vp9_tokenize_sb(VP9_COMP *cpi, TOKENEXTRA **t, int dry_run,
                      BLOCK_SIZE bsize) {
   VP9_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &cpi->mb.e_mbd;
-  MB_MODE_INFO *const mbmi = &xd->this_mi->mbmi;
+  MB_MODE_INFO *const mbmi = &xd->mi_8x8[0]->mbmi;
   TOKENEXTRA *t_backup = *t;
   const int mb_skip_context = vp9_get_pred_context_mbskip(xd);
   const int skip_inc = !vp9_segfeature_active(&cm->seg, mbmi->segment_id,

@@ -1,0 +1,85 @@
+// Copyright 2013 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+/**
+ * Test fixture for cards.js.
+ * @constructor
+ * @extends {testing.Test}
+ */
+function GoogleNowCardsUnitTest () {
+  testing.Test.call(this);
+}
+
+GoogleNowCardsUnitTest.prototype = {
+  __proto__: testing.Test.prototype,
+
+  /** @override */
+  extraLibraries: [
+    'cards.js'
+  ]
+};
+
+var testCardId = 'TEST CARD ID';
+var testNotification = {testNotificationField: 'TEST NOTIFICATION VALUE'};
+var expectedShowAlarmId = 'card-show-TEST CARD ID';
+var expectedHideAlarmId = 'card-hide-TEST CARD ID';
+var testActionUrls = {testField: 'TEST VALUE'};
+var testDismissals = [
+  {testDismissalField: 'TEST DISMISSAL VALUE 1'},
+  {testDismissalField: 'TEST DISMISSAL VALUE 2'}
+];
+var testGroupRank = 271;
+var LOCATION_CARDS_LINK_THRESHOLD = 10;
+var localStorage = {locationCardsShown: 0};
+
+function setUpCardManagerTest(fixture) {
+  fixture.makeAndRegisterMockApis([
+      'chrome.alarms.clear',
+      'chrome.alarms.create',
+      'chrome.notifications.clear',
+      'chrome.storage.local.set',
+      'countLocationCard',
+      'instrumented.alarms.onAlarm.addListener',
+      'instrumented.notifications.create',
+      'instrumented.notifications.update',
+      'instrumented.storage.local.get',
+      'tasks.add'
+  ]);
+
+  chrome.runtime = {}; // No error.
+
+  var onAlarmSavedArgs = new SaveMockArguments();
+  fixture.mockApis.expects(once()).
+      instrumented_alarms_onAlarm_addListener(
+          onAlarmSavedArgs.match(ANYTHING));
+
+  var cardSet = buildCardSet();
+
+  Mock4JS.verifyAllMocks();
+
+  Date.now = function() { return 300000; };
+
+  var test = {
+    cardSet: cardSet,
+    alarmCallback: onAlarmSavedArgs.arguments [0]
+  };
+
+  return test;
+}
+
+TEST_F('GoogleNowCardsUnitTest', 'BuildCardManager', function() {
+  // Tests that buildCardSet() call completes with no problems.
+  var test = setUpCardManagerTest(this);
+
+  assertEquals('object', typeof test.cardSet);
+  assertEquals('function', typeof test.alarmCallback);
+});
+
+TEST_F('GoogleNowCardsUnitTest', 'onAlarmUnrecognized', function() {
+  // Tests onAlarm does nothing on an unrelated alarm.
+  var test = setUpCardManagerTest(this);
+
+  // Call tested method.
+  test.alarmCallback({name: 'unrelated'});
+});

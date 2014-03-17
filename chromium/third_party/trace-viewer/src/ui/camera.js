@@ -5,15 +5,19 @@
 'use strict';
 
 base.require('ui');
+base.require('base.settings');
 
 base.exportTo('ui', function() {
 
   var constants = {
     DEFAULT_SCALE: 0.5,
-    MINIMUM_SCALE: 0.1,
-    MAXIMUM_SCALE: 2.0,
+    DEFAULT_EYE_DISTANCE: 10000,
+    MINIMUM_DISTANCE: 1000,
+    MAXIMUM_DISTANCE: 100000,
+    FOV: 15,
     RESCALE_TIMEOUT_MS: 200,
-    MAXIMUM_TILT: 90 // degrees
+    MAXIMUM_TILT: 80,
+    SETTINGS_NAMESPACE: 'ui_camera'
   };
 
 
@@ -46,10 +50,8 @@ base.exportTo('ui', function() {
       this.eventSource_.addEventListener('endrotate',
           this.onRotateEnd_.bind(this));
 
-      this.listeners_ = {};
-
-      this.eye_ = [0, 0, -500];
-      this.scale_ = constants.DEFAULT_SCALE;
+      this.eye_ = [0, 0, constants.DEFAULT_EYE_DISTANCE];
+      this.gazeTarget_ = [0, 0, 0];
       this.rotation_ = [0, 0];
 
       this.pixelRatio_ = window.devicePixelRatio || 1;
@@ -57,58 +59,22 @@ base.exportTo('ui', function() {
 
 
     get modelViewMatrix() {
-      var viewportRect_ =
-          base.windowRectForElement(this.canvas_).scaleSize(this.pixelRatio_);
       var mvMatrix = mat4.create();
 
-      // Translate modelView by the eye.
-      mat4.translate(mvMatrix, mvMatrix, this.eye_);
-
-      // Figure out around which point to rotate (considering scale).
-      var x = (this.deviceRect_.left + this.deviceRect_.right) / 2;
-      var y = (this.deviceRect_.top + this.deviceRect_.bottom) / 2;
-      var p = [x * this.scale_, y * this.scale_, 0, 1];
-
-      // Compute the rotation matrix.
-      var rotation = mat4.create();
-      mat4.rotate(rotation, rotation, this.rotation_[0], [1, 0, 0]);
-      mat4.rotate(rotation, rotation, this.rotation_[1], [0, 1, 0]);
-
-      // See where the original p is taken by the rotation matrix.
-      var newP = [0, 0, 0];
-      vec4.transformMat4(newP, p, rotation);
-
-      // Figure out where to translate so that the rotation point stays
-      // stationary.
-      var delta = [p[0] - newP[0], p[1] - newP[1]];
-
-      // Apply the translation.
-      mat4.translate(mvMatrix, mvMatrix, [delta[0], delta[1], 0]);
-
-      // Finally apply the rotation matrix itself.
-      mat4.multiply(mvMatrix, mvMatrix, rotation);
-
-      // Apply scale.
-      mat4.scale(mvMatrix, mvMatrix, [this.scale_, this.scale_, 1]);
-
+      mat4.lookAt(mvMatrix, this.eye_, this.gazeTarget_, [0, 1, 0]);
       return mvMatrix;
     },
 
     get projectionMatrix() {
-      // TODO(vmpstr): Figure out perspective projection.
       var rect =
           base.windowRectForElement(this.canvas_).scaleSize(this.pixelRatio_);
+
+      var aspectRatio = rect.width / rect.height;
       var matrix = mat4.create();
-      mat4.ortho(matrix, 0, rect.width, 0, rect.height, 1, 1000);
+      mat4.perspective(
+          matrix, base.deg2rad(constants.FOV), aspectRatio, 1, 100000);
 
-      // NDC to viewport transform.
-      mat4.translate(matrix, matrix, [1, 1, 0]);
-      mat4.scale(matrix, matrix, [rect.width / 2, rect.height / 2, 1]);
       return matrix;
-    },
-
-    get scale() {
-      return this.scale_;
     },
 
     set canvas(c) {
@@ -119,26 +85,59 @@ base.exportTo('ui', function() {
       this.deviceRect_ = rect;
     },
 
+    get stackingDistanceDampening() {
+      var gazeVector = [
+        this.gazeTarget_[0] - this.eye_[0],
+        this.gazeTarget_[1] - this.eye_[1],
+        this.gazeTarget_[2] - this.eye_[2]];
+      vec3.normalize(gazeVector, gazeVector);
+      return 1 + gazeVector[2];
+    },
+
+    loadCameraFromSettings: function(settings) {
+      this.eye_ = settings.get(
+          'eye', this.eye_, constants.SETTINGS_NAMESPACE);
+      this.gazeTarget_ = settings.get(
+          'gaze_target', this.gazeTarget_, constants.SETTINGS_NAMESPACE);
+      this.rotation_ = settings.get(
+          'rotation', this.rotation_, constants.SETTINGS_NAMESPACE);
+
+      this.dispatchRenderEvent_();
+    },
+
+    saveCameraToSettings: function(settings) {
+      settings.set(
+          'eye', this.eye_, constants.SETTINGS_NAMESPACE);
+      settings.set(
+          'gaze_target', this.gazeTarget_, constants.SETTINGS_NAMESPACE);
+      settings.set(
+          'rotation', this.rotation_, constants.SETTINGS_NAMESPACE);
+    },
+
     resetCamera: function() {
-      this.eye_ = [0, 0, -500];
-      this.scale_ = constants.DEFAULT_SCALE;
+      this.eye_ = [0, 0, constants.DEFAULT_EYE_DISTANCE];
+      this.gazeTarget_ = [0, 0, 0];
       this.rotation_ = [0, 0];
+
+      var settings = base.SessionSettings();
+      var keys = settings.keys(constants.SETTINGS_NAMESPACE);
+      if (keys.length !== 0) {
+        this.loadCameraFromSettings(settings);
+        return;
+      }
 
       if (this.deviceRect_) {
         var rect =
             base.windowRectForElement(this.canvas_).scaleSize(this.pixelRatio_);
-        this.scale_ = 0.7 * Math.min(rect.width / this.deviceRect_.width,
-                                     rect.height / this.deviceRect_.height);
-        this.scale_ = base.clamp(
-            this.scale_, constants.MINIMUM_SCALE, constants.MAXIMUM_SCALE);
-        this.eye_[0] +=
-            (rect.width / 2) -
-            this.scale_ * (this.deviceRect_.left + this.deviceRect_.right) / 2;
-        this.eye_[1] +=
-            (rect.height / 2) -
-            this.scale_ * (this.deviceRect_.top + this.deviceRect_.bottom) / 2;
+
+        this.eye_[0] = this.deviceRect_.width / 2;
+        this.eye_[1] = this.deviceRect_.height / 2;
+
+        this.gazeTarget_[0] = this.deviceRect_.width / 2;
+        this.gazeTarget_[1] = this.deviceRect_.height / 2;
       }
 
+      this.saveCameraToSettings(settings);
       this.dispatchRenderEvent_();
     },
 
@@ -146,62 +145,114 @@ base.exportTo('ui', function() {
       var rect =
           base.windowRectForElement(this.canvas_).scaleSize(this.pixelRatio_);
 
-      this.eye_[0] += delta[0];
-      this.eye_[1] += delta[1];
+      // Get the eye vector, since we'll be adjusting gazeTarget.
+      var eyeVector = [
+        this.eye_[0] - this.gazeTarget_[0],
+        this.eye_[1] - this.gazeTarget_[1],
+        this.eye_[2] - this.gazeTarget_[2]];
+      var length = vec3.length(eyeVector);
+      vec3.normalize(eyeVector, eyeVector);
 
-      var xLimits = [-this.deviceRect_.width * this.scale_, rect.width];
-      var yLimits = [-this.deviceRect_.height * this.scale_, rect.height];
+      var halfFov = constants.FOV / 2;
+      var multiplier =
+          2.0 * length * Math.tan(base.deg2rad(halfFov)) / rect.height;
 
-      this.eye_[0] = base.clamp(this.eye_[0], xLimits[0], xLimits[1]);
-      this.eye_[1] = base.clamp(this.eye_[1], yLimits[0], yLimits[1]);
+      // Get the up and right vectors.
+      var up = [0, 1, 0];
+      var rotMatrix = mat4.create();
+      mat4.rotate(
+          rotMatrix, rotMatrix, base.deg2rad(this.rotation_[1]), [0, 1, 0]);
+      mat4.rotate(
+          rotMatrix, rotMatrix, base.deg2rad(this.rotation_[0]), [1, 0, 0]);
+      vec3.transformMat4(up, up, rotMatrix);
 
+      var right = [0, 0, 0];
+      vec3.cross(right, eyeVector, up);
+      vec3.normalize(right, right);
+
+      // Update the gaze target.
+      for (var i = 0; i < 3; ++i) {
+        this.gazeTarget_[i] +=
+            delta[0] * multiplier * right[i] - delta[1] * multiplier * up[i];
+
+        this.eye_[i] = this.gazeTarget_[i] + length * eyeVector[i];
+      }
+
+      // If we have some z offset, we need to reposition gazeTarget
+      // to be on the plane z = 0 with normal [0, 0, 1].
+      if (Math.abs(this.gazeTarget_[2]) > 1e-6) {
+        var gazeVector = [-eyeVector[0], -eyeVector[1], -eyeVector[2]];
+        var newLength = base.clamp(
+            -this.eye_[2] / gazeVector[2],
+            constants.MINIMUM_DISTANCE,
+            constants.MAXIMUM_DISTANCE);
+
+        for (var i = 0; i < 3; ++i)
+          this.gazeTarget_[i] = this.eye_[i] + newLength * gazeVector[i];
+      }
+
+      this.saveCameraToSettings(base.SessionSettings());
       this.dispatchRenderEvent_();
     },
 
     updateZoomByDelta: function(delta) {
-      // Negative number should map to (0, 1)
-      // and positive should map to (1, ...).
       var deltaY = delta[1];
       deltaY = base.clamp(deltaY, -50, 50);
-      var scale = 1.0 + deltaY / 100.0;
-      var zoomPoint = this.zoomPoint_;
+      var scale = 1.0 - deltaY / 100.0;
 
-      var originalScale = this.scale_;
+      var eyeVector = [0, 0, 0];
+      vec3.subtract(eyeVector, this.eye_, this.gazeTarget_);
 
-      var pointOnSurface = [
-        (zoomPoint[0] - this.eye_[0]) * this.scale_,
-        (zoomPoint[1] - this.eye_[1]) * this.scale_];
+      var length = vec3.length(eyeVector);
 
-      // Update scale.
-      this.scale_ = base.clamp(this.scale_ * scale,
-                               constants.MINIMUM_SCALE,
-                               constants.MAXIMUM_SCALE);
+      // Clamp the length to allowed values by changing the scale.
+      if (length * scale < constants.MINIMUM_DISTANCE)
+        scale = constants.MINIMUM_DISTANCE / length;
+      else if (length * scale > constants.MAXIMUM_DISTANCE)
+        scale = constants.MAXIMUM_DISTANCE / length;
 
-      // Now see where the zoom point is on the surface with new scale.
-      var newPointOnSurface = [
-        (zoomPoint[0] - this.eye_[0]) * this.scale_,
-        (zoomPoint[1] - this.eye_[1]) * this.scale_];
+      vec3.scale(eyeVector, eyeVector, scale);
+      vec3.add(this.eye_, this.gazeTarget_, eyeVector);
 
-      // Shift the eye so that the zoom point remains stationary.
-      var moveDelta = [
-        (pointOnSurface[0] - newPointOnSurface[0]) / originalScale,
-        (pointOnSurface[1] - newPointOnSurface[1]) / originalScale];
-      this.updatePanByDelta(moveDelta);
-
+      this.saveCameraToSettings(base.SessionSettings());
       this.dispatchRenderEvent_();
     },
 
     updateRotateByDelta: function(delta) {
-      this.rotation_[0] -= base.deg2rad(delta[1]);
-      this.rotation_[1] += base.deg2rad(delta[0]);
+      delta[0] *= 0.5;
+      delta[1] *= 0.5;
 
-      var tiltLimitInRad = base.deg2rad(constants.MAXIMUM_TILT);
+      if (Math.abs(this.rotation_[0] + delta[1]) > constants.MAXIMUM_TILT)
+        return;
+      if (Math.abs(this.rotation_[1] - delta[0]) > constants.MAXIMUM_TILT)
+        return;
 
-      this.rotation_[0] =
-          base.clamp(this.rotation_[0], -tiltLimitInRad, tiltLimitInRad);
-      this.rotation_[1] =
-          base.clamp(this.rotation_[1], -tiltLimitInRad, tiltLimitInRad);
+      var eyeVector = [0, 0, 0, 0];
+      vec3.subtract(eyeVector, this.eye_, this.gazeTarget_);
 
+      // Undo the current rotation.
+      var rotMatrix = mat4.create();
+      mat4.rotate(
+          rotMatrix, rotMatrix, -base.deg2rad(this.rotation_[0]), [1, 0, 0]);
+      mat4.rotate(
+          rotMatrix, rotMatrix, -base.deg2rad(this.rotation_[1]), [0, 1, 0]);
+      vec4.transformMat4(eyeVector, eyeVector, rotMatrix);
+
+      // Update rotation values.
+      this.rotation_[0] += delta[1];
+      this.rotation_[1] -= delta[0];
+
+      // Redo the new rotation.
+      mat4.identity(rotMatrix);
+      mat4.rotate(
+          rotMatrix, rotMatrix, base.deg2rad(this.rotation_[1]), [0, 1, 0]);
+      mat4.rotate(
+          rotMatrix, rotMatrix, base.deg2rad(this.rotation_[0]), [1, 0, 0]);
+      vec4.transformMat4(eyeVector, eyeVector, rotMatrix);
+
+      vec3.add(this.eye_, this.gazeTarget_, eyeVector);
+
+      this.saveCameraToSettings(base.SessionSettings());
       this.dispatchRenderEvent_();
     },
 
@@ -209,15 +260,15 @@ base.exportTo('ui', function() {
     // Event callbacks.
     onPanBegin_: function(e) {
       this.panning_ = true;
-      this.lastMousePosition_ = this.getMousePosition_(e.data);
+      this.lastMousePosition_ = this.getMousePosition_(e);
     },
 
     onPanUpdate_: function(e) {
       if (!this.panning_)
         return;
 
-      var delta = this.getMouseDelta_(e.data, this.lastMousePosition_);
-      this.lastMousePosition_ = this.getMousePosition_(e.data);
+      var delta = this.getMouseDelta_(e, this.lastMousePosition_);
+      this.lastMousePosition_ = this.getMousePosition_(e);
       this.updatePanByDelta(delta);
     },
 
@@ -228,7 +279,7 @@ base.exportTo('ui', function() {
     onZoomBegin_: function(e) {
       this.zooming_ = true;
 
-      var p = this.getMousePosition_(e.data);
+      var p = this.getMousePosition_(e);
 
       this.lastMousePosition_ = p;
       this.zoomPoint_ = p;
@@ -238,8 +289,8 @@ base.exportTo('ui', function() {
       if (!this.zooming_)
         return;
 
-      var delta = this.getMouseDelta_(e.data, this.lastMousePosition_);
-      this.lastMousePosition_ = this.getMousePosition_(e.data);
+      var delta = this.getMouseDelta_(e, this.lastMousePosition_);
+      this.lastMousePosition_ = this.getMousePosition_(e);
       this.updateZoomByDelta(delta);
     },
 
@@ -250,15 +301,15 @@ base.exportTo('ui', function() {
 
     onRotateBegin_: function(e) {
       this.rotating_ = true;
-      this.lastMousePosition_ = this.getMousePosition_(e.data);
+      this.lastMousePosition_ = this.getMousePosition_(e);
     },
 
     onRotateUpdate_: function(e) {
       if (!this.rotating_)
         return;
 
-      var delta = this.getMouseDelta_(e.data, this.lastMousePosition_);
-      this.lastMousePosition_ = this.getMousePosition_(e.data);
+      var delta = this.getMouseDelta_(e, this.lastMousePosition_);
+      this.lastMousePosition_ = this.getMousePosition_(e);
       this.updateRotateByDelta(delta);
     },
 
@@ -268,14 +319,14 @@ base.exportTo('ui', function() {
 
 
     // Misc helper functions.
-    getMousePosition_: function(data) {
+    getMousePosition_: function(e) {
       var rect = base.windowRectForElement(this.canvas_);
-      return [(data.clientX - rect.x) * this.pixelRatio_,
-              (data.clientY - rect.y) * this.pixelRatio_];
+      return [(e.clientX - rect.x) * this.pixelRatio_,
+              (e.clientY - rect.y) * this.pixelRatio_];
     },
 
-    getMouseDelta_: function(data, p) {
-      var newP = this.getMousePosition_(data);
+    getMouseDelta_: function(e, p) {
+      var newP = this.getMousePosition_(e);
       return [newP[0] - p[0], newP[1] - p[1]];
     },
 

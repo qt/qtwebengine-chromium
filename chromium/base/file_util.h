@@ -40,8 +40,6 @@ namespace base {
 
 class Time;
 
-extern bool g_bug108724_debug;
-
 //-----------------------------------------------------------------------------
 // Functions that involve filesystem access or modification:
 
@@ -139,13 +137,8 @@ BASE_EXPORT bool TextContentsEqual(const FilePath& filename1,
 // Useful for unit tests.
 BASE_EXPORT bool ReadFileToString(const FilePath& path, std::string* contents);
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
 #if defined(OS_POSIX)
+
 // Read exactly |bytes| bytes from file descriptor |fd|, storing the result
 // in |buffer|. This function is protected against EINTR and partial reads.
 // Returns true iff |bytes| bytes have been successfully read from |fd|.
@@ -153,13 +146,12 @@ BASE_EXPORT bool ReadFromFD(int fd, char* buffer, size_t bytes);
 
 // Creates a symbolic link at |symlink| pointing to |target|.  Returns
 // false on failure.
-BASE_EXPORT bool CreateSymbolicLink(const base::FilePath& target,
-                                    const base::FilePath& symlink);
+BASE_EXPORT bool CreateSymbolicLink(const FilePath& target,
+                                    const FilePath& symlink);
 
 // Reads the given |symlink| and returns where it points to in |target|.
 // Returns false upon failure.
-BASE_EXPORT bool ReadSymbolicLink(const base::FilePath& symlink,
-                                  base::FilePath* target);
+BASE_EXPORT bool ReadSymbolicLink(const FilePath& symlink, FilePath* target);
 
 // Bits ans masks of the file permission.
 enum FilePermissionBits {
@@ -182,80 +174,95 @@ enum FilePermissionBits {
 // Reads the permission of the given |path|, storing the file permission
 // bits in |mode|. If |path| is symbolic link, |mode| is the permission of
 // a file which the symlink points to.
-BASE_EXPORT bool GetPosixFilePermissions(const base::FilePath& path,
-                                         int* mode);
+BASE_EXPORT bool GetPosixFilePermissions(const FilePath& path, int* mode);
 // Sets the permission of the given |path|. If |path| is symbolic link, sets
 // the permission of a file which the symlink points to.
-BASE_EXPORT bool SetPosixFilePermissions(const base::FilePath& path,
-                                         int mode);
-#endif  // defined(OS_POSIX)
+BASE_EXPORT bool SetPosixFilePermissions(const FilePath& path, int mode);
 
-// Return true if the given directory is empty
-BASE_EXPORT bool IsDirectoryEmpty(const base::FilePath& dir_path);
+#endif  // OS_POSIX
+
+// Returns true if the given directory is empty
+BASE_EXPORT bool IsDirectoryEmpty(const FilePath& dir_path);
 
 // Get the temporary directory provided by the system.
-// WARNING: DON'T USE THIS. If you want to create a temporary file, use one of
-// the functions below.
-BASE_EXPORT bool GetTempDir(base::FilePath* path);
-// Get a temporary directory for shared memory files.
-// Only useful on POSIX; redirects to GetTempDir() on Windows.
-BASE_EXPORT bool GetShmemTempDir(base::FilePath* path, bool executable);
+//
+// WARNING: In general, you should use CreateTemporaryFile variants below
+// instead of this function. Those variants will ensure that the proper
+// permissions are set so that other users on the system can't edit them while
+// they're open (which can lead to security issues).
+BASE_EXPORT bool GetTempDir(FilePath* path);
 
+// Get a temporary directory for shared memory files. The directory may depend
+// on whether the destination is intended for executable files, which in turn
+// depends on how /dev/shmem was mounted. As a result, you must supply whether
+// you intend to create executable shmem segments so this function can find
+// an appropriate location.
+//
+// Only useful on POSIX; redirects to GetTempDir() on Windows.
+BASE_EXPORT bool GetShmemTempDir(bool executable, FilePath* path);
+
+#if defined(OS_POSIX)
 // Get the home directory.  This is more complicated than just getenv("HOME")
 // as it knows to fall back on getpwent() etc.
-BASE_EXPORT base::FilePath GetHomeDir();
+//
+// This function is not currently implemented on Windows or Mac because we
+// don't use it. Generally you would use one of PathService's APP_DATA
+// directories on those platforms. If we need it, this could be implemented
+// there to return the appropriate directory.
+BASE_EXPORT FilePath GetHomeDir();
+#endif  // OS_POSIX
 
 // Creates a temporary file. The full path is placed in |path|, and the
 // function returns true if was successful in creating the file. The file will
 // be empty and all handles closed after this function returns.
-BASE_EXPORT bool CreateTemporaryFile(base::FilePath* path);
+BASE_EXPORT bool CreateTemporaryFile(FilePath* path);
 
 // Same as CreateTemporaryFile but the file is created in |dir|.
-BASE_EXPORT bool CreateTemporaryFileInDir(const base::FilePath& dir,
-                                          base::FilePath* temp_file);
+BASE_EXPORT bool CreateTemporaryFileInDir(const FilePath& dir,
+                                          FilePath* temp_file);
 
 // Create and open a temporary file.  File is opened for read/write.
 // The full path is placed in |path|.
 // Returns a handle to the opened file or NULL if an error occurred.
-BASE_EXPORT FILE* CreateAndOpenTemporaryFile(base::FilePath* path);
+BASE_EXPORT FILE* CreateAndOpenTemporaryFile(FilePath* path);
+
 // Like above but for shmem files.  Only useful for POSIX.
 // The executable flag says the file needs to support using
 // mprotect with PROT_EXEC after mapping.
-BASE_EXPORT FILE* CreateAndOpenTemporaryShmemFile(base::FilePath* path,
+BASE_EXPORT FILE* CreateAndOpenTemporaryShmemFile(FilePath* path,
                                                   bool executable);
+
 // Similar to CreateAndOpenTemporaryFile, but the file is created in |dir|.
-BASE_EXPORT FILE* CreateAndOpenTemporaryFileInDir(const base::FilePath& dir,
-                                                  base::FilePath* path);
+BASE_EXPORT FILE* CreateAndOpenTemporaryFileInDir(const FilePath& dir,
+                                                  FilePath* path);
 
 // Create a new directory. If prefix is provided, the new directory name is in
 // the format of prefixyyyy.
 // NOTE: prefix is ignored in the POSIX implementation.
 // If success, return true and output the full path of the directory created.
-BASE_EXPORT bool CreateNewTempDirectory(
-    const base::FilePath::StringType& prefix,
-    base::FilePath* new_temp_path);
+BASE_EXPORT bool CreateNewTempDirectory(const FilePath::StringType& prefix,
+                                        FilePath* new_temp_path);
 
 // Create a directory within another directory.
 // Extra characters will be appended to |prefix| to ensure that the
 // new directory does not have the same name as an existing directory.
-BASE_EXPORT bool CreateTemporaryDirInDir(
-    const base::FilePath& base_dir,
-    const base::FilePath::StringType& prefix,
-    base::FilePath* new_dir);
+BASE_EXPORT bool CreateTemporaryDirInDir(const FilePath& base_dir,
+                                         const FilePath::StringType& prefix,
+                                         FilePath* new_dir);
 
 // Creates a directory, as well as creating any parent directories, if they
 // don't exist. Returns 'true' on successful creation, or if the directory
 // already exists.  The directory is only readable by the current user.
 // Returns true on success, leaving *error unchanged.
 // Returns false on failure and sets *error appropriately, if it is non-NULL.
-BASE_EXPORT bool CreateDirectoryAndGetError(const base::FilePath& full_path,
-                                            base::PlatformFileError* error);
+BASE_EXPORT bool CreateDirectoryAndGetError(const FilePath& full_path,
+                                            PlatformFileError* error);
 
 // Backward-compatible convenience method for the above.
-BASE_EXPORT bool CreateDirectory(const base::FilePath& full_path);
+BASE_EXPORT bool CreateDirectory(const FilePath& full_path);
 
 // Returns the file size. Returns true on success.
-BASE_EXPORT bool GetFileSize(const base::FilePath& file_path, int64* file_size);
+BASE_EXPORT bool GetFileSize(const FilePath& file_path, int64* file_size);
 
 // Sets |real_path| to |path| with symbolic links and junctions expanded.
 // On windows, make sure the path starts with a lettered drive.
@@ -263,48 +270,37 @@ BASE_EXPORT bool GetFileSize(const base::FilePath& file_path, int64* file_size);
 // a directory or to a nonexistent path.  On windows, this function will
 // fail if |path| is a junction or symlink that points to an empty file,
 // or if |real_path| would be longer than MAX_PATH characters.
-BASE_EXPORT bool NormalizeFilePath(const base::FilePath& path,
-                                   base::FilePath* real_path);
+BASE_EXPORT bool NormalizeFilePath(const FilePath& path, FilePath* real_path);
 
 #if defined(OS_WIN)
 
 // Given a path in NT native form ("\Device\HarddiskVolumeXX\..."),
 // return in |drive_letter_path| the equivalent path that starts with
 // a drive letter ("C:\...").  Return false if no such path exists.
-BASE_EXPORT bool DevicePathToDriveLetterPath(const base::FilePath& device_path,
-                                             base::FilePath* drive_letter_path);
+BASE_EXPORT bool DevicePathToDriveLetterPath(const FilePath& device_path,
+                                             FilePath* drive_letter_path);
 
 // Given an existing file in |path|, set |real_path| to the path
 // in native NT format, of the form "\Device\HarddiskVolumeXX\..".
 // Returns false if the path can not be found. Empty files cannot
 // be resolved with this function.
-BASE_EXPORT bool NormalizeToNativeFilePath(const base::FilePath& path,
-                                           base::FilePath* nt_path);
+BASE_EXPORT bool NormalizeToNativeFilePath(const FilePath& path,
+                                           FilePath* nt_path);
 #endif
 
 // This function will return if the given file is a symlink or not.
-BASE_EXPORT bool IsLink(const base::FilePath& file_path);
+BASE_EXPORT bool IsLink(const FilePath& file_path);
 
 // Returns information about the given file path.
-BASE_EXPORT bool GetFileInfo(const base::FilePath& file_path,
-                             base::PlatformFileInfo* info);
+BASE_EXPORT bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* info);
 
 // Sets the time of the last access and the time of the last modification.
-BASE_EXPORT bool TouchFile(const base::FilePath& path,
-                           const base::Time& last_accessed,
-                           const base::Time& last_modified);
-
-// Set the time of the last modification. Useful for unit tests.
-BASE_EXPORT bool SetLastModifiedTime(const base::FilePath& path,
-                                     const base::Time& last_modified);
-
-#if defined(OS_POSIX)
-// Store inode number of |path| in |inode|. Return true on success.
-BASE_EXPORT bool GetInode(const base::FilePath& path, ino_t* inode);
-#endif
+BASE_EXPORT bool TouchFile(const FilePath& path,
+                           const Time& last_accessed,
+                           const Time& last_modified);
 
 // Wrapper for fopen-like calls. Returns non-NULL FILE* on success.
-BASE_EXPORT FILE* OpenFile(const base::FilePath& filename, const char* mode);
+BASE_EXPORT FILE* OpenFile(const FilePath& filename, const char* mode);
 
 // Closes file opened by OpenFile. Returns true on success.
 BASE_EXPORT bool CloseFile(FILE* file);
@@ -316,6 +312,12 @@ BASE_EXPORT bool TruncateFile(FILE* file);
 // Reads the given number of bytes from the file into the buffer.  Returns
 // the number of read bytes, or -1 on error.
 BASE_EXPORT int ReadFile(const base::FilePath& filename, char* data, int size);
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
 
 // Writes the given buffer into the file, overwriting any data that was
 // previously there.  Returns the number of bytes written, or -1 on error.
@@ -401,7 +403,7 @@ class ScopedFDClose {
  public:
   inline void operator()(int* x) const {
     if (x && *x >= 0) {
-      if (HANDLE_EINTR(close(*x)) < 0)
+      if (IGNORE_EINTR(close(*x)) < 0)
         DPLOG(ERROR) << "close";
     }
   }

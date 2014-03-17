@@ -38,10 +38,19 @@ class DocumentMarkerDetails;
 // for all types other than type TextMatch.
 class DocumentMarker {
 public:
+    enum MarkerTypeIndex {
+        SpellingMarkerIndex = 0,
+        GramarMarkerIndex,
+        TextMatchMarkerIndex,
+        InvisibleSpellcheckMarkerIndex,
+        MarkerTypeIndexesCount
+    };
+
     enum MarkerType {
-        Spelling = 1 << 0,
-        Grammar = 1 << 1,
-        TextMatch = 1 << 2
+        Spelling = 1 << SpellingMarkerIndex,
+        Grammar = 1 << GramarMarkerIndex,
+        TextMatch = 1 << TextMatchMarkerIndex,
+        InvisibleSpellcheck = 1 << InvisibleSpellcheckMarkerIndex
     };
 
     class MarkerTypes {
@@ -63,7 +72,7 @@ public:
     class AllMarkers : public MarkerTypes {
     public:
         AllMarkers()
-            : MarkerTypes(Spelling | Grammar | TextMatch)
+            : MarkerTypes(Spelling | Grammar | TextMatch | InvisibleSpellcheck)
         {
         }
     };
@@ -72,6 +81,14 @@ public:
     public:
         MisspellingMarkers()
             : MarkerTypes(Spelling | Grammar)
+        {
+        }
+    };
+
+    class SpellCheckClientMarkers : public MarkerTypes {
+    public:
+        SpellCheckClientMarkers()
+            : MarkerTypes(Spelling | Grammar | InvisibleSpellcheck)
         {
         }
     };

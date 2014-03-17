@@ -32,13 +32,12 @@
 #include "core/inspector/TimelineRecordFactory.h"
 
 #include "bindings/v8/ScriptCallStackFactory.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -57,15 +56,17 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createGenericRecord(double startTi
     return record.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createBackgroundRecord(double startTime, const String& threadName)
+PassRefPtr<JSONObject> TimelineRecordFactory::createBackgroundRecord(double startTime, const String& threadName, const String& type, PassRefPtr<JSONObject> data)
 {
     RefPtr<JSONObject> record = JSONObject::create();
     record->setNumber("startTime", startTime);
     record->setString("thread", threadName);
+    record->setString("type", type);
+    record->setObject("data", data ? data : JSONObject::create());
     return record.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createGCEventData(const size_t usedHeapSizeDelta)
+PassRefPtr<JSONObject> TimelineRecordFactory::createGCEventData(size_t usedHeapSizeDelta)
 {
     RefPtr<JSONObject> data = JSONObject::create();
     data->setNumber("usedHeapSizeDelta", usedHeapSizeDelta);
@@ -220,6 +221,15 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createAnimationFrameData(int callb
     return data.release();
 }
 
+PassRefPtr<JSONObject> TimelineRecordFactory::createGPUTaskData(bool foreign, size_t usedGPUMemoryBytes)
+{
+    RefPtr<JSONObject> data = JSONObject::create();
+    data->setBoolean("foreign", foreign);
+    if (!foreign)
+        data->setNumber("usedGPUMemoryBytes", usedGPUMemoryBytes);
+    return data.release();
+}
+
 static PassRefPtr<JSONArray> createQuad(const FloatQuad& quad)
 {
     RefPtr<JSONArray> array = JSONArray::create();
@@ -234,18 +244,31 @@ static PassRefPtr<JSONArray> createQuad(const FloatQuad& quad)
     return array.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createLayerData(long long layerRootNodeId)
+PassRefPtr<JSONObject> TimelineRecordFactory::createNodeData(long long nodeId)
 {
     RefPtr<JSONObject> data = JSONObject::create();
-    if (layerRootNodeId)
-        data->setNumber("layerRootNode", layerRootNodeId);
+    if (nodeId)
+        data->setNumber("rootNode", nodeId);
     return data.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createPaintData(const FloatQuad& quad, long long layerRootNodeId)
+PassRefPtr<JSONObject> TimelineRecordFactory::createLayerData(long long rootNodeId)
+{
+    return createNodeData(rootNodeId);
+}
+
+PassRefPtr<JSONObject> TimelineRecordFactory::createPaintData(const FloatQuad& quad, long long layerRootNodeId, int graphicsLayerId)
 {
     RefPtr<JSONObject> data = TimelineRecordFactory::createLayerData(layerRootNodeId);
     data->setArray("clip", createQuad(quad));
+    data->setNumber("layerId", graphicsLayerId);
+    return data.release();
+}
+
+PassRefPtr<JSONObject> TimelineRecordFactory::createFrameData(int frameId)
+{
+    RefPtr<JSONObject> data = JSONObject::create();
+    data->setNumber("id", frameId);
     return data.release();
 }
 

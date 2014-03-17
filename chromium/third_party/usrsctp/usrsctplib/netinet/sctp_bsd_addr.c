@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_bsd_addr.c 239035 2012-08-04 08:03:30Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_bsd_addr.c 258221 2013-11-16 15:04:49Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -160,20 +160,13 @@ sctp_iterator_thread(void *v SCTP_UNUSED)
 	SCTP_IPI_ITERATOR_WQ_UNLOCK();
 #if defined(__Userspace__)
 	sctp_wakeup_iterator();
-#if !defined(__Userspace_os_Windows)
-	pthread_exit(NULL);
-#else
-	ExitThread(0);
-#endif
+	return (NULL);
 #else
 	wakeup(&sctp_it_ctl.iterator_flags);
 	thread_terminate(current_thread());
-#endif
 #ifdef INVARIANTS
 	panic("Hmm. thread_terminate() continues...");
 #endif
-#if defined(__Userspace__)
-	return (NULL);
 #endif
 #endif
 }
@@ -181,46 +174,32 @@ sctp_iterator_thread(void *v SCTP_UNUSED)
 void
 sctp_startup_iterator(void)
 {
-	static int called = 0;
-#if defined(__FreeBSD__) || (defined(__Userspace__) && !defined(__Userspace_os_Windows))
-	int ret;
-#endif
-
-	if (called) {
+	if (sctp_it_ctl.thread_proc) {
 		/* You only get one */
 		return;
 	}
-	/* init the iterator head */
-	called = 1;
-	sctp_it_ctl.iterator_running = 0;
-	sctp_it_ctl.iterator_flags = 0;
-	sctp_it_ctl.cur_it = NULL;
-	SCTP_ITERATOR_LOCK_INIT();
-	SCTP_IPI_ITERATOR_WQ_INIT();
 	TAILQ_INIT(&sctp_it_ctl.iteratorhead);
 #if defined(__FreeBSD__)
 #if __FreeBSD_version <= 701000
-	ret = kthread_create(sctp_iterator_thread,
+	kthread_create(sctp_iterator_thread,
 #else
-	ret = kproc_create(sctp_iterator_thread,
+	kproc_create(sctp_iterator_thread,
 #endif
-			   (void *)NULL,
-			   &sctp_it_ctl.thread_proc,
-			   RFPROC,
-			   SCTP_KTHREAD_PAGES,
-			   SCTP_KTRHEAD_NAME);
+	             (void *)NULL,
+	             &sctp_it_ctl.thread_proc,
+	             RFPROC,
+	             SCTP_KTHREAD_PAGES,
+	             SCTP_KTRHEAD_NAME);
 #elif defined(__APPLE__)
-        (void)kernel_thread_start((thread_continue_t)sctp_iterator_thread, NULL, &sctp_it_ctl.thread_proc);
+	kernel_thread_start((thread_continue_t)sctp_iterator_thread, NULL, &sctp_it_ctl.thread_proc);
 #elif defined(__Userspace__)
 #if defined(__Userspace_os_Windows)
 	if ((sctp_it_ctl.thread_proc = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)&sctp_iterator_thread, NULL, 0, NULL)) == NULL) {
-		SCTP_PRINTF("ERROR; Creating sctp_iterator_thread failed\n");
-	}
 #else
-	if ((ret = pthread_create(&sctp_it_ctl.thread_proc, NULL, &sctp_iterator_thread, NULL))) {
-		SCTP_PRINTF("ERROR; return code from sctp_iterator_thread pthread_create() is %d\n", ret);
-	}
+	if (pthread_create(&sctp_it_ctl.thread_proc, NULL, &sctp_iterator_thread, NULL)) {
 #endif
+		SCTP_PRINTF("ERROR: Creating sctp_iterator_thread failed.\n");
+	}
 #endif
 }
 

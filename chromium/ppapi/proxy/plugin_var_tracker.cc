@@ -6,10 +6,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
+#include "ipc/ipc_message.h"
 #include "ppapi/c/dev/ppp_class_deprecated.h"
 #include "ppapi/c/ppb_var.h"
+#include "ppapi/proxy/file_system_resource.h"
 #include "ppapi/proxy/plugin_array_buffer_var.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_resource_var.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/proxy_object_var.h"
@@ -21,6 +24,16 @@
 
 namespace ppapi {
 namespace proxy {
+
+namespace {
+
+Connection GetConnectionForInstance(PP_Instance instance) {
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
+  DCHECK(dispatcher);
+  return Connection(PluginGlobals::Get()->GetBrowserSender(), dispatcher);
+}
+
+}  // namespace
 
 PluginVarTracker::HostVar::HostVar(PluginDispatcher* d, int32 i)
     : dispatcher(d),
@@ -154,9 +167,49 @@ void PluginVarTracker::ReleaseHostObject(PluginDispatcher* dispatcher,
   ReleaseVar(found->second);
 }
 
+PP_Var PluginVarTracker::MakeResourcePPVarFromMessage(
+    PP_Instance instance,
+    const IPC::Message& creation_message,
+    int pending_renderer_id,
+    int pending_browser_id) {
+  DCHECK(pending_renderer_id);
+  DCHECK(pending_browser_id);
+  switch (creation_message.type()) {
+    case PpapiPluginMsg_FileSystem_CreateFromPendingHost::ID: {
+      PP_FileSystemType file_system_type;
+      if (!UnpackMessage<PpapiPluginMsg_FileSystem_CreateFromPendingHost>(
+               creation_message, &file_system_type)) {
+        NOTREACHED() << "Invalid message of type "
+                        "PpapiPluginMsg_FileSystem_CreateFromPendingHost";
+        return PP_MakeNull();
+      }
+      // Create a plugin-side resource and attach it to the host resource.
+      // Note: This only makes sense when the plugin is out of process (which
+      // should always be true when passing resource vars).
+      PP_Resource pp_resource =
+          (new FileSystemResource(GetConnectionForInstance(instance),
+                                  instance,
+                                  pending_renderer_id,
+                                  pending_browser_id,
+                                  file_system_type))->GetReference();
+      return MakeResourcePPVar(pp_resource);
+    }
+    default: {
+      NOTREACHED() << "Creation message has unexpected type "
+                   << creation_message.type();
+      return PP_MakeNull();
+    }
+  }
+}
+
 ResourceVar* PluginVarTracker::MakeResourceVar(PP_Resource pp_resource) {
+  // The resource 0 returns a null resource var.
+  if (!pp_resource)
+    return new PluginResourceVar();
+
   ResourceTracker* resource_tracker = PpapiGlobals::Get()->GetResourceTracker();
   ppapi::Resource* resource = resource_tracker->GetResource(pp_resource);
+  // A non-existant resource other than 0 returns NULL.
   if (!resource)
     return NULL;
   return new PluginResourceVar(resource);
@@ -270,9 +323,11 @@ int32 PluginVarTracker::AddVarInternal(Var* var, AddVarRefMode mode) {
   ProxyObjectVar* proxy_object = var->AsProxyObjectVar();
   if (proxy_object) {
     HostVar host_var(proxy_object->dispatcher(), proxy_object->host_var_id());
-    DCHECK(host_var_to_plugin_var_.find(host_var) ==
-           host_var_to_plugin_var_.end());  // Adding an object twice, use
-                                            // FindOrMakePluginVarFromHostVar.
+    // TODO(teravest): Change to DCHECK when http://crbug.com/276347 is
+    // resolved.
+    CHECK(host_var_to_plugin_var_.find(host_var) ==
+          host_var_to_plugin_var_.end());  // Adding an object twice, use
+                                           // FindOrMakePluginVarFromHostVar.
     host_var_to_plugin_var_[host_var] = new_id;
   }
   return new_id;
@@ -394,7 +449,10 @@ scoped_refptr<ProxyObjectVar> PluginVarTracker::FindOrMakePluginVarFromHostVar(
 
   // Have this host var, look up the object.
   VarMap::iterator ret = live_vars_.find(found->second);
-  DCHECK(ret != live_vars_.end());
+
+  // We CHECK here because we currently don't fall back sanely.
+  // This may be involved in a NULL dereference. http://crbug.com/276347
+  CHECK(ret != live_vars_.end());
 
   // All objects should be proxy objects.
   DCHECK(ret->second.var->AsProxyObjectVar());

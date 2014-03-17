@@ -11,10 +11,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/win/metro.h"
+#include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_variant.h"
 #include "media/base/media_switches.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
 
+using base::win::ScopedCoMem;
 using base::win::ScopedComPtr;
 using base::win::ScopedVariant;
 
@@ -163,6 +165,12 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 }
 
 // static
+void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
+    VideoCaptureFormats* formats) {
+  NOTIMPLEMENTED();
+}
+
+// static
 VideoCaptureDevice* VideoCaptureDevice::Create(const Name& device_name) {
   VideoCaptureDevice* ret = NULL;
   if (device_name.capture_api_type() == Name::MEDIA_FOUNDATION) {
@@ -257,8 +265,7 @@ void VideoCaptureDeviceWin::GetDeviceNames(Names* device_names) {
 
 VideoCaptureDeviceWin::VideoCaptureDeviceWin(const Name& device_name)
     : device_name_(device_name),
-      state_(kIdle),
-      observer_(NULL) {
+      state_(kIdle) {
   DetachFromThread();
 }
 
@@ -333,26 +340,27 @@ bool VideoCaptureDeviceWin::Init() {
   return CreateCapabilityMap();
 }
 
-void VideoCaptureDeviceWin::Allocate(
-    const VideoCaptureCapability& capture_format,
-    VideoCaptureDevice::EventHandler* observer) {
+void VideoCaptureDeviceWin::AllocateAndStart(
+    const VideoCaptureParams& params,
+    scoped_ptr<VideoCaptureDevice::Client> client) {
   DCHECK(CalledOnValidThread());
   if (state_ != kIdle)
     return;
 
-  observer_ = observer;
+  client_ = client.Pass();
 
   // Get the camera capability that best match the requested resolution.
   const VideoCaptureCapabilityWin& found_capability =
-      capabilities_.GetBestMatchedCapability(capture_format.width,
-                                             capture_format.height,
-                                             capture_format.frame_rate);
-  VideoCaptureCapability capability = found_capability;
+      capabilities_.GetBestMatchedFormat(
+          params.requested_format.frame_size.width(),
+          params.requested_format.frame_size.height(),
+          params.requested_format.frame_rate);
+  VideoCaptureFormat format = found_capability.supported_format;
 
   // Reduce the frame rate if the requested frame rate is lower
   // than the capability.
-  if (capability.frame_rate > capture_format.frame_rate)
-    capability.frame_rate = capture_format.frame_rate;
+  if (format.frame_rate > params.requested_format.frame_rate)
+    format.frame_rate = params.requested_format.frame_rate;
 
   AM_MEDIA_TYPE* pmt = NULL;
   VIDEO_STREAM_CONFIG_CAPS caps;
@@ -370,20 +378,19 @@ void VideoCaptureDeviceWin::Allocate(
   if (SUCCEEDED(hr)) {
     if (pmt->formattype == FORMAT_VideoInfo) {
       VIDEOINFOHEADER* h = reinterpret_cast<VIDEOINFOHEADER*>(pmt->pbFormat);
-      if (capability.frame_rate > 0)
-        h->AvgTimePerFrame = kSecondsToReferenceTime / capability.frame_rate;
+      if (format.frame_rate > 0)
+        h->AvgTimePerFrame = kSecondsToReferenceTime / format.frame_rate;
     }
-    // Set the sink filter to request this capability.
-    sink_filter_->SetRequestedMediaCapability(capability);
-    // Order the capture device to use this capability.
+    // Set the sink filter to request this format.
+    sink_filter_->SetRequestedMediaFormat(format);
+    // Order the capture device to use this format.
     hr = stream_config->SetFormat(pmt);
   }
 
   if (FAILED(hr))
     SetErrorState("Failed to set capture device output format");
 
-  if (capability.color == PIXEL_FORMAT_MJPEG &&
-      !mjpg_filter_.get()) {
+  if (format.pixel_format == PIXEL_FORMAT_MJPEG && !mjpg_filter_.get()) {
     // Create MJPG filter if we need it.
     hr = mjpg_filter_.CreateInstance(CLSID_MjpegDec, NULL, CLSCTX_INPROC);
 
@@ -401,8 +408,7 @@ void VideoCaptureDeviceWin::Allocate(
     }
   }
 
-  if (capability.color == PIXEL_FORMAT_MJPEG &&
-      mjpg_filter_.get()) {
+  if (format.pixel_format == PIXEL_FORMAT_MJPEG && mjpg_filter_.get()) {
     // Connect the camera to the MJPEG decoder.
     hr = graph_builder_->ConnectDirect(output_capture_pin_, input_mjpg_pin_,
                                        NULL);
@@ -426,21 +432,12 @@ void VideoCaptureDeviceWin::Allocate(
     return;
   }
 
-  // Get the capability back from the sink filter after the filter have been
+  // Get the format back from the sink filter after the filter have been
   // connected.
-  const VideoCaptureCapability& used_capability
-      = sink_filter_->ResultingCapability();
-  observer_->OnFrameInfo(used_capability);
+  capture_format_ = sink_filter_->ResultingFormat();
 
-  state_ = kAllocated;
-}
-
-void VideoCaptureDeviceWin::Start() {
-  DCHECK(CalledOnValidThread());
-  if (state_ != kAllocated)
-    return;
-
-  HRESULT hr = media_control_->Run();
+  // Start capturing.
+  hr = media_control_->Run();
   if (FAILED(hr)) {
     SetErrorState("Failed to start the Capture device.");
     return;
@@ -449,7 +446,7 @@ void VideoCaptureDeviceWin::Start() {
   state_ = kCapturing;
 }
 
-void VideoCaptureDeviceWin::Stop() {
+void VideoCaptureDeviceWin::StopAndDeAllocate() {
   DCHECK(CalledOnValidThread());
   if (state_ != kCapturing)
     return;
@@ -460,15 +457,6 @@ void VideoCaptureDeviceWin::Stop() {
     return;
   }
 
-  state_ = kAllocated;
-}
-
-void VideoCaptureDeviceWin::DeAllocate() {
-  DCHECK(CalledOnValidThread());
-  if (state_ == kIdle)
-    return;
-
-  HRESULT hr = media_control_->Stop();
   graph_builder_->Disconnect(output_capture_pin_);
   graph_builder_->Disconnect(input_sink_pin_);
 
@@ -482,20 +470,15 @@ void VideoCaptureDeviceWin::DeAllocate() {
     SetErrorState("Failed to Stop the Capture device");
     return;
   }
-
+  client_.reset();
   state_ = kIdle;
-}
-
-const VideoCaptureDevice::Name& VideoCaptureDeviceWin::device_name() {
-  DCHECK(CalledOnValidThread());
-  return device_name_;
 }
 
 // Implements SinkFilterObserver::SinkFilterObserver.
 void VideoCaptureDeviceWin::FrameReceived(const uint8* buffer,
                                           int length) {
-  observer_->OnIncomingCapturedFrame(buffer, length, base::Time::Now(),
-                                     0, false, false);
+  client_->OnIncomingCapturedFrame(
+      buffer, length, base::Time::Now(), 0, capture_format_);
 }
 
 bool VideoCaptureDeviceWin::CreateCapabilityMap() {
@@ -526,7 +509,9 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
   for (int i = 0; i < count; ++i) {
     hr = stream_config->GetStreamCaps(i, &media_type,
                                       reinterpret_cast<BYTE*>(&caps));
-    if (FAILED(hr)) {
+    // GetStreamCaps() may return S_FALSE, so don't use FAILED() or SUCCEED()
+    // macros here since they'll trigger incorrectly.
+    if (hr != S_OK) {
       DVLOG(2) << "Failed to GetStreamCaps";
       return false;
     }
@@ -534,21 +519,19 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
     if (media_type->majortype == MEDIATYPE_Video &&
         media_type->formattype == FORMAT_VideoInfo) {
       VideoCaptureCapabilityWin capability(i);
-      REFERENCE_TIME time_per_frame = 0;
-
       VIDEOINFOHEADER* h =
           reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
-      capability.width = h->bmiHeader.biWidth;
-      capability.height = h->bmiHeader.biHeight;
-      time_per_frame = h->AvgTimePerFrame;
+      capability.supported_format.frame_size.SetSize(h->bmiHeader.biWidth,
+                                                     h->bmiHeader.biHeight);
 
-      // Try to get the max frame rate from IAMVideoControl.
+      // Try to get a better |time_per_frame| from IAMVideoControl.  If not, use
+      // the value from VIDEOINFOHEADER.
+      REFERENCE_TIME time_per_frame = h->AvgTimePerFrame;
       if (video_control) {
-        LONGLONG* max_fps_ptr;
-        LONG list_size;
-        SIZE size;
-        size.cx = capability.width;
-        size.cy = capability.height;
+        ScopedCoMem<LONGLONG> max_fps;
+        LONG list_size = 0;
+        SIZE size = {capability.supported_format.frame_size.width(),
+                     capability.supported_format.frame_size.height()};
 
         // GetFrameRateList doesn't return max frame rate always
         // eg: Logitech Notebook. This may be due to a bug in that API
@@ -556,45 +539,42 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
         // a util method written. Can't assume the first value will return
         // the max fps.
         hr = video_control->GetFrameRateList(output_capture_pin_, i, size,
-                                             &list_size, &max_fps_ptr);
-
-        if (SUCCEEDED(hr) && list_size > 0) {
-          int min_time =  *std::min_element(max_fps_ptr,
-                                            max_fps_ptr + list_size);
-          capability.frame_rate = (min_time > 0) ?
-              kSecondsToReferenceTime / min_time : 0;
-        } else {
-          // Get frame rate from VIDEOINFOHEADER.
-          capability.frame_rate = (time_per_frame > 0) ?
-              static_cast<int>(kSecondsToReferenceTime / time_per_frame) : 0;
+                                             &list_size, &max_fps);
+        // Sometimes |list_size| will be > 0, but max_fps will be NULL.  Some
+        // drivers may return an HRESULT of S_FALSE which SUCCEEDED() translates
+        // into success, so explicitly check S_OK.  See http://crbug.com/306237.
+        if (hr == S_OK && list_size > 0 && max_fps) {
+          time_per_frame = *std::min_element(max_fps.get(),
+                                             max_fps.get() + list_size);
         }
-      } else {
-        // Get frame rate from VIDEOINFOHEADER since IAMVideoControl is
-        // not supported.
-        capability.frame_rate = (time_per_frame > 0) ?
-            static_cast<int>(kSecondsToReferenceTime / time_per_frame) : 0;
       }
+
+      capability.supported_format.frame_rate =
+          (time_per_frame > 0)
+              ? static_cast<int>(kSecondsToReferenceTime / time_per_frame)
+              : 0;
+
       // DirectShow works at the moment only on integer frame_rate but the
       // best capability matching class works on rational frame rates.
-      capability.frame_rate_numerator = capability.frame_rate;
+      capability.frame_rate_numerator = capability.supported_format.frame_rate;
       capability.frame_rate_denominator = 1;
 
       // We can't switch MEDIATYPE :~(.
       if (media_type->subtype == kMediaSubTypeI420) {
-        capability.color = PIXEL_FORMAT_I420;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_I420;
       } else if (media_type->subtype == MEDIASUBTYPE_IYUV) {
         // This is identical to PIXEL_FORMAT_I420.
-        capability.color = PIXEL_FORMAT_I420;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_I420;
       } else if (media_type->subtype == MEDIASUBTYPE_RGB24) {
-        capability.color = PIXEL_FORMAT_RGB24;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_RGB24;
       } else if (media_type->subtype == MEDIASUBTYPE_YUY2) {
-        capability.color = PIXEL_FORMAT_YUY2;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_YUY2;
       } else if (media_type->subtype == MEDIASUBTYPE_MJPG) {
-        capability.color = PIXEL_FORMAT_MJPEG;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_MJPEG;
       } else if (media_type->subtype == MEDIASUBTYPE_UYVY) {
-        capability.color = PIXEL_FORMAT_UYVY;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_UYVY;
       } else if (media_type->subtype == MEDIASUBTYPE_ARGB32) {
-        capability.color = PIXEL_FORMAT_ARGB;
+        capability.supported_format.pixel_format = PIXEL_FORMAT_ARGB;
       } else {
         WCHAR guid_str[128];
         StringFromGUID2(media_type->subtype, guid_str, arraysize(guid_str));
@@ -614,6 +594,6 @@ void VideoCaptureDeviceWin::SetErrorState(const char* reason) {
   DCHECK(CalledOnValidThread());
   DVLOG(1) << reason;
   state_ = kError;
-  observer_->OnError();
+  client_->OnError();
 }
 }  // namespace media

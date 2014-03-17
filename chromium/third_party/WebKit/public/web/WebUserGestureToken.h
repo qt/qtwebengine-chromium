@@ -37,7 +37,7 @@ namespace WebCore {
 class UserGestureToken;
 }
 
-namespace WebKit {
+namespace blink {
 
 // A WebUserGestureToken allows for storing the user gesture state of the
 // currently active context and reinstantiating it later on to continue
@@ -53,23 +53,23 @@ public:
     }
     ~WebUserGestureToken() { reset(); }
 
-    WEBKIT_EXPORT bool hasGestures() const;
-    WEBKIT_EXPORT void setOutOfProcess();
-    WEBKIT_EXPORT void setJavascriptPrompt();
+    BLINK_EXPORT bool hasGestures() const;
+    BLINK_EXPORT void setOutOfProcess();
+    BLINK_EXPORT void setJavascriptPrompt();
     bool isNull() const { return m_token.isNull(); }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     explicit WebUserGestureToken(PassRefPtr<WebCore::UserGestureToken>);
     operator PassRefPtr<WebCore::UserGestureToken>() const;
 #endif
 
 private:
-    WEBKIT_EXPORT void assign(const WebUserGestureToken&);
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebUserGestureToken&);
+    BLINK_EXPORT void reset();
 
     WebPrivatePtr<WebCore::UserGestureToken> m_token;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebUserGestureToken_h

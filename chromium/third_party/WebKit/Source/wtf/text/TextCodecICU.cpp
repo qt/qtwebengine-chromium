@@ -84,18 +84,22 @@ void TextCodecICU::registerEncodingNames(EncodingNameRegistrar registrar)
                 continue;
         }
 
+        // A number of these aliases are handled in Chrome's copy of ICU, but
+        // Chromium can be compiled with the system ICU.
+
         // 1. Treat GB2312 encoding as GBK (its more modern superset), to match other browsers.
         // 2. On the Web, GB2312 is encoded as EUC-CN or HZ, while ICU provides a native encoding
         //    for encoding GB_2312-80 and several others. So, we need to override this behavior, too.
-        if (strcmp(standardName, "GB2312") == 0 || strcmp(standardName, "GB_2312-80") == 0)
+        if (!strcmp(standardName, "GB2312") || !strcmp(standardName, "GB_2312-80"))
             standardName = "GBK";
-        // Similarly, EUC-KR encodings all map to an extended version.
-        else if (strcmp(standardName, "KSC_5601") == 0 || strcmp(standardName, "EUC-KR") == 0 || strcmp(standardName, "cp1363") == 0)
-            standardName = "windows-949";
+        // Similarly, EUC-KR encodings all map to an extended version, but
+        // per HTML5, the canonical name still should be EUC-KR.
+        else if (!strcmp(standardName, "EUC-KR") || !strcmp(standardName, "KSC_5601") || !strcmp(standardName, "cp1363"))
+            standardName = "EUC-KR";
         // And so on.
-        else if (strcasecmp(standardName, "iso-8859-9") == 0) // This name is returned in different case by ICU 3.2 and 3.6.
+        else if (!strcasecmp(standardName, "iso-8859-9")) // This name is returned in different case by ICU 3.2 and 3.6.
             standardName = "windows-1254";
-        else if (strcmp(standardName, "TIS-620") == 0)
+        else if (!strcmp(standardName, "TIS-620"))
             standardName = "windows-874";
 
         registrar(standardName, standardName);
@@ -147,9 +151,9 @@ void TextCodecICU::registerEncodingNames(EncodingNameRegistrar registrar)
     registrar("x-cp1250", "windows-1250");
     registrar("x-cp1251", "windows-1251");
     registrar("x-euc", "EUC-JP");
-    registrar("x-windows-949", "windows-949");
-    registrar("KSC5601", "KSC_5601");
-    registrar("x-uhc", "windows-949");
+    registrar("x-windows-949", "EUC-KR");
+    registrar("KSC5601", "EUC-KR");
+    registrar("x-uhc", "EUC-KR");
     registrar("shift-jis", "Shift_JIS");
 
     // These aliases are present in modern versions of ICU, but use different codecs, and have no standard names.
@@ -174,6 +178,46 @@ void TextCodecICU::registerEncodingNames(EncodingNameRegistrar registrar)
     registrar("ISO8859-15", "ISO-8859-15");
     // Not registering ISO8859-16, because Firefox (as of version 3.6.6) doesn't know this particular alias,
     // and because older versions of ICU don't support ISO-8859-16 encoding at all.
+
+    // Additional aliases present in the WHATWG Encoding Standard (http://encoding.spec.whatwg.org/)
+    // and Firefox (24), but not in ICU 4.6.
+    registrar("csiso58gb231280", "GBK");
+    registrar("csiso88596e", "ISO-8859-6");
+    registrar("csiso88596i", "ISO-8859-6");
+    registrar("csiso88598e", "ISO-8859-8");
+    registrar("gb_2312", "GBK");
+    registrar("iso88591", "windows-1252");
+    registrar("iso88592", "ISO-8859-2");
+    registrar("iso88593", "ISO-8859-3");
+    registrar("iso88594", "ISO-8859-4");
+    registrar("iso88595", "ISO-8859-5");
+    registrar("iso88596", "ISO-8859-6");
+    registrar("iso88597", "ISO-8859-7");
+    registrar("iso88598", "ISO-8859-8");
+    registrar("iso88599", "windows-1254");
+    registrar("iso885910", "ISO-8859-10");
+    registrar("iso885911", "windows-874");
+    registrar("iso885913", "ISO-8859-13");
+    registrar("iso885914", "ISO-8859-14");
+    registrar("iso885915", "ISO-8859-15");
+    registrar("iso_8859-1", "windows-1252");
+    registrar("iso_8859-2", "ISO-8859-2");
+    registrar("iso_8859-3", "ISO-8859-3");
+    registrar("iso_8859-4", "ISO-8859-4");
+    registrar("iso_8859-5", "ISO-8859-5");
+    registrar("iso_8859-6", "ISO-8859-6");
+    registrar("iso_8859-7", "ISO-8859-7");
+    registrar("iso_8859-8", "ISO-8859-8");
+    registrar("iso_8859-9", "windows-1254");
+    registrar("iso_8859-15", "ISO-8859-15");
+    registrar("koi8_r", "KOI8-R");
+    registrar("x-cp1252", "windows-1252");
+    registrar("x-cp1253", "windows-1253");
+    registrar("x-cp1254", "windows-1254");
+    registrar("x-cp1255", "windows-1255");
+    registrar("x-cp1256", "windows-1256");
+    registrar("x-cp1257", "windows-1257");
+    registrar("x-cp1258", "windows-1258");
 }
 
 void TextCodecICU::registerCodecs(TextCodecRegistrar registrar)
@@ -243,7 +287,7 @@ void TextCodecICU::createICUConverter() const
     m_converterICU = ucnv_open(m_encoding.name(), &err);
 #if !LOG_DISABLED
     if (err == U_AMBIGUOUS_ALIAS_WARNING)
-        LOG_ERROR("ICU ambiguous alias warning for encoding: %s", m_encoding.name());
+        WTF_LOG_ERROR("ICU ambiguous alias warning for encoding: %s", m_encoding.name());
 #endif
     if (m_converterICU)
         ucnv_setFallback(m_converterICU, TRUE);
@@ -300,7 +344,7 @@ String TextCodecICU::decode(const char* bytes, size_t length, bool flush, bool s
         createICUConverter();
         ASSERT(m_converterICU);
         if (!m_converterICU) {
-            LOG_ERROR("error creating ICU encoder even though encoding was in table");
+            WTF_LOG_ERROR("error creating ICU encoder even though encoding was in table");
             return String();
         }
     }
@@ -333,7 +377,7 @@ String TextCodecICU::decode(const char* bytes, size_t length, bool flush, bool s
 
     // <http://bugs.webkit.org/show_bug.cgi?id=17014>
     // Simplified Chinese pages use the code A3A0 to mean "full-width space", but ICU decodes it as U+E5E5.
-    if (strcmp(m_encoding.name(), "GBK") == 0 || strcasecmp(m_encoding.name(), "gb18030") == 0)
+    if (!strcmp(m_encoding.name(), "GBK") || !strcasecmp(m_encoding.name(), "gb18030"))
         resultString.replace(0xE5E5, ideographicSpace);
 
     return resultString;
@@ -420,36 +464,21 @@ public:
     TextCodecInput(const TextEncoding& encoding, const UChar* characters, size_t length)
         : m_begin(characters)
         , m_end(characters + length)
-    {
-        if (encoding.hasTrivialDisplayString())
-            return;
-        m_buffer.reserveInitialCapacity(length);
-        m_buffer.append(characters, length);
-        initalizeFromBuffer(encoding);
-    }
+    { }
 
     TextCodecInput(const TextEncoding& encoding, const LChar* characters, size_t length)
     {
         m_buffer.reserveInitialCapacity(length);
         for (size_t i = 0; i < length; ++i)
             m_buffer.append(characters[i]);
-        initalizeFromBuffer(encoding);
+        m_begin = m_buffer.data();
+        m_end = m_begin + m_buffer.size();
     }
 
     const UChar* begin() const { return m_begin; }
     const UChar* end() const { return m_end; }
 
 private:
-    void initalizeFromBuffer(const TextEncoding& encoding)
-    {
-        // FIXME: We should see if there is "force ASCII range" mode in ICU;
-        // until then, we change the backslash into a yen sign.
-        // Encoding will change the yen sign back into a backslash.
-        encoding.displayBuffer(m_buffer.data(), m_buffer.size());
-        m_begin = m_buffer.data();
-        m_end = m_begin + m_buffer.size();
-    }
-
     const UChar* m_begin;
     const UChar* m_end;
     Vector<UChar> m_buffer;

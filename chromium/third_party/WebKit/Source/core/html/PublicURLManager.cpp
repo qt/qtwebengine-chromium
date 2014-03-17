@@ -28,19 +28,19 @@
 #include "core/html/PublicURLManager.h"
 
 #include "core/html/URLRegistry.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
-PassOwnPtr<PublicURLManager> PublicURLManager::create(ScriptExecutionContext* context)
+PassOwnPtr<PublicURLManager> PublicURLManager::create(ExecutionContext* context)
 {
     OwnPtr<PublicURLManager> publicURLManager(adoptPtr(new PublicURLManager(context)));
     publicURLManager->suspendIfNeeded();
     return publicURLManager.release();
 }
 
-PublicURLManager::PublicURLManager(ScriptExecutionContext* context)
+PublicURLManager::PublicURLManager(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_isStopped(false)
 {

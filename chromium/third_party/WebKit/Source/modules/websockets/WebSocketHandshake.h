@@ -33,15 +33,15 @@
 
 #include "modules/websockets/WebSocketExtensionDispatcher.h"
 #include "modules/websockets/WebSocketExtensionProcessor.h"
-#include "modules/websockets/WebSocketHandshakeRequest.h"
-#include "modules/websockets/WebSocketHandshakeResponse.h"
-#include "weborigin/KURL.h"
+#include "platform/network/WebSocketHandshakeRequest.h"
+#include "platform/network/WebSocketHandshakeResponse.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class WebSocketHandshake {
     WTF_MAKE_NONCOPYABLE(WebSocketHandshake); WTF_MAKE_FAST_ALLOCATED;
@@ -52,7 +52,7 @@ public:
     enum Mode {
         Incomplete, Normal, Failed, Connected, ModeMax
     };
-    WebSocketHandshake(const KURL&, const String& protocol, ScriptExecutionContext*);
+    WebSocketHandshake(const KURL&, const String& protocol, ExecutionContext*);
     ~WebSocketHandshake();
 
     const KURL& url() const;
@@ -73,18 +73,19 @@ public:
     // We're collecting data for histogram in the destructor. Note that calling
     // this method affects that.
     void reset();
-    void clearScriptExecutionContext();
+    void clearExecutionContext();
 
     int readServerHandshake(const char* header, size_t len);
     Mode mode() const;
-    String failureReason() const; // Returns a string indicating the reason of failure if mode() == Failed.
+    // Returns a string indicating the reason of failure if mode() == Failed.
+    String failureReason() const;
 
-    String serverWebSocketProtocol() const;
-    String serverSetCookie() const;
-    String serverSetCookie2() const;
-    String serverUpgrade() const;
-    String serverConnection() const;
-    String serverWebSocketAccept() const;
+    const AtomicString& serverWebSocketProtocol() const;
+    const AtomicString& serverSetCookie() const;
+    const AtomicString& serverSetCookie2() const;
+    const AtomicString& serverUpgrade() const;
+    const AtomicString& serverConnection() const;
+    const AtomicString& serverWebSocketAccept() const;
     String acceptedExtensions() const;
 
     const WebSocketHandshakeResponse& serverHandshakeResponse() const;
@@ -106,10 +107,14 @@ private:
     KURL m_url;
     String m_clientProtocol;
     bool m_secure;
-    ScriptExecutionContext* m_context;
+    ExecutionContext* m_context;
 
     Mode m_mode;
 
+    // Stores a received server's handshake. The order of headers is not
+    // guaranteed to be preserved. Duplicated headers may be dropped. Values may
+    // be rebuilt after parsing, so they can be different from the original data
+    // received from the server.
     WebSocketHandshakeResponse m_response;
 
     String m_failureReason;

@@ -28,8 +28,9 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -123,6 +124,7 @@ void RenderIFrame::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     if (isSeamless()) {
         layoutSeamlessly();
         // Do not return so as to share the layer and overflow updates below.

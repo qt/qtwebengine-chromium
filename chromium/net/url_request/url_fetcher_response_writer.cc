@@ -6,7 +6,7 @@
 
 #include "base/file_util.h"
 #include "base/location.h"
-#include "base/task_runner.h"
+#include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -14,22 +14,29 @@
 
 namespace net {
 
-URLFetcherStringWriter::URLFetcherStringWriter(std::string* string)
-    : string_(string) {
+URLFetcherStringWriter* URLFetcherResponseWriter::AsStringWriter() {
+  return NULL;
+}
+
+URLFetcherFileWriter* URLFetcherResponseWriter::AsFileWriter() {
+  return NULL;
+}
+
+URLFetcherStringWriter::URLFetcherStringWriter() {
 }
 
 URLFetcherStringWriter::~URLFetcherStringWriter() {
 }
 
 int URLFetcherStringWriter::Initialize(const CompletionCallback& callback) {
-  // Do nothing.
+  data_.clear();
   return OK;
 }
 
 int URLFetcherStringWriter::Write(IOBuffer* buffer,
                                   int num_bytes,
                                   const CompletionCallback& callback) {
-  string_->append(buffer->data(), num_bytes);
+  data_.append(buffer->data(), num_bytes);
   return num_bytes;
 }
 
@@ -38,13 +45,17 @@ int URLFetcherStringWriter::Finish(const CompletionCallback& callback) {
   return OK;
 }
 
+URLFetcherStringWriter* URLFetcherStringWriter::AsStringWriter() {
+  return this;
+}
+
 URLFetcherFileWriter::URLFetcherFileWriter(
-    scoped_refptr<base::TaskRunner> file_task_runner)
-    : error_code_(OK),
-      weak_factory_(this),
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner,
+    const base::FilePath& file_path)
+    : weak_factory_(this),
       file_task_runner_(file_task_runner),
-      owns_file_(false),
-      total_bytes_written_(0) {
+      file_path_(file_path),
+      owns_file_(false) {
   DCHECK(file_task_runner_.get());
 }
 
@@ -53,9 +64,6 @@ URLFetcherFileWriter::~URLFetcherFileWriter() {
 }
 
 int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
-  DCHECK(!file_stream_);
-  DCHECK(!owns_file_);
-
   file_stream_.reset(new FileStream(NULL));
 
   int result = ERR_IO_PENDING;
@@ -64,7 +72,7 @@ int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
     base::PostTaskAndReplyWithResult(
         file_task_runner_.get(),
         FROM_HERE,
-        base::Bind(&file_util::CreateTemporaryFile, temp_file_path),
+        base::Bind(&base::CreateTemporaryFile, temp_file_path),
         base::Bind(&URLFetcherFileWriter::DidCreateTempFile,
                    weak_factory_.GetWeakPtr(),
                    callback,
@@ -78,8 +86,6 @@ int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
                    weak_factory_.GetWeakPtr(),
                    callback));
     DCHECK_NE(OK, result);
-    if (result != ERR_IO_PENDING)
-      error_code_ = result;
   }
   return result;
 }
@@ -94,10 +100,9 @@ int URLFetcherFileWriter::Write(IOBuffer* buffer,
                                    base::Bind(&URLFetcherFileWriter::DidWrite,
                                               weak_factory_.GetWeakPtr(),
                                               callback));
-  if (result < 0 && result != ERR_IO_PENDING) {
-    error_code_ = result;
+  if (result < 0 && result != ERR_IO_PENDING)
     CloseAndDeleteFile();
-  }
+
   return result;
 }
 
@@ -110,20 +115,8 @@ int URLFetcherFileWriter::Finish(const CompletionCallback& callback) {
   return result;
 }
 
-void URLFetcherFileWriter::CloseComplete(const CompletionCallback& callback,
-                                         int result) {
-  // Destroy |file_stream_| whether or not the close succeeded.
-  file_stream_.reset();
-  callback.Run(result);
-}
-
-void URLFetcherFileWriter::DidWrite(const CompletionCallback& callback,
-                                    int result) {
-  if (result < 0) {
-    error_code_ = result;
-    CloseAndDeleteFile();
-  }
-  callback.Run(result);
+URLFetcherFileWriter* URLFetcherFileWriter::AsFileWriter() {
+  return this;
 }
 
 void URLFetcherFileWriter::DisownFile() {
@@ -132,6 +125,14 @@ void URLFetcherFileWriter::DisownFile() {
   DCHECK(!file_stream_);
 
   owns_file_ = false;
+}
+
+void URLFetcherFileWriter::DidWrite(const CompletionCallback& callback,
+                                    int result) {
+  if (result < 0)
+    CloseAndDeleteFile();
+
+  callback.Run(result);
 }
 
 void URLFetcherFileWriter::CloseAndDeleteFile() {
@@ -150,8 +151,7 @@ void URLFetcherFileWriter::DidCreateTempFile(const CompletionCallback& callback,
                                              base::FilePath* temp_file_path,
                                              bool success) {
   if (!success) {
-    error_code_ = ERR_FILE_NOT_FOUND;
-    callback.Run(error_code_);
+    callback.Run(ERR_FILE_NOT_FOUND);
     return;
   }
   file_path_ = *temp_file_path;
@@ -169,13 +169,18 @@ void URLFetcherFileWriter::DidCreateTempFile(const CompletionCallback& callback,
 
 void URLFetcherFileWriter::DidOpenFile(const CompletionCallback& callback,
                                        int result) {
-  if (result == OK) {
-    total_bytes_written_ = 0;
+  if (result == OK)
     owns_file_ = true;
-  } else {
-    error_code_ = result;
+  else
     CloseAndDeleteFile();
-  }
+
+  callback.Run(result);
+}
+
+void URLFetcherFileWriter::CloseComplete(const CompletionCallback& callback,
+                                         int result) {
+  // Destroy |file_stream_| whether or not the close succeeded.
+  file_stream_.reset();
   callback.Run(result);
 }
 

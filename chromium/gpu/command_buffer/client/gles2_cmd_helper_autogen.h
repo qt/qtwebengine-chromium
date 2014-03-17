@@ -33,17 +33,6 @@
     }
   }
 
-  void BindAttribLocationImmediate(
-      GLuint program, GLuint index, const char* name) {
-    const uint32 data_size = strlen(name);
-    gles2::cmds::BindAttribLocationImmediate* c =
-        GetImmediateCmdSpace<gles2::cmds::BindAttribLocationImmediate>(
-            data_size);
-    if (c) {
-      c->Init(program, index, name, data_size);
-    }
-  }
-
   void BindAttribLocationBucket(
       GLuint program, GLuint index, uint32 name_bucket_id) {
     gles2::cmds::BindAttribLocationBucket* c =
@@ -131,31 +120,12 @@
     }
   }
 
-  void BufferDataImmediate(GLenum target, GLsizeiptr size, GLenum usage) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::BufferDataImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::BufferDataImmediate>(s);
-    if (c) {
-      c->Init(target, size, usage);
-    }
-  }
-
   void BufferSubData(
       GLenum target, GLintptr offset, GLsizeiptr size, uint32 data_shm_id,
       uint32 data_shm_offset) {
     gles2::cmds::BufferSubData* c = GetCmdSpace<gles2::cmds::BufferSubData>();
     if (c) {
       c->Init(target, offset, size, data_shm_id, data_shm_offset);
-    }
-  }
-
-  void BufferSubDataImmediate(
-      GLenum target, GLintptr offset, GLsizeiptr size) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::BufferSubDataImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::BufferSubDataImmediate>(s);
-    if (c) {
-      c->Init(target, offset, size);
     }
   }
 
@@ -225,17 +195,6 @@
     }
   }
 
-  void CompressedTexImage2DImmediate(
-      GLenum target, GLint level, GLenum internalformat, GLsizei width,
-      GLsizei height, GLint border, GLsizei imageSize) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::CompressedTexImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::CompressedTexImage2DImmediate>(s);  // NOLINT
-    if (c) {
-      c->Init(target, level, internalformat, width, height, border, imageSize);
-    }
-  }
-
   void CompressedTexImage2DBucket(
       GLenum target, GLint level, GLenum internalformat, GLsizei width,
       GLsizei height, GLint border, GLuint bucket_id) {
@@ -256,18 +215,6 @@
       c->Init(
           target, level, xoffset, yoffset, width, height, format, imageSize,
           data_shm_id, data_shm_offset);
-    }
-  }
-
-  void CompressedTexSubImage2DImmediate(
-      GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
-      GLsizei height, GLenum format, GLsizei imageSize) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::CompressedTexSubImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::CompressedTexSubImage2DImmediate>(s);  // NOLINT
-    if (c) {
-      c->Init(
-          target, level, xoffset, yoffset, width, height, format, imageSize);
     }
   }
 
@@ -985,15 +932,6 @@
     }
   }
 
-  void ShaderSourceImmediate(GLuint shader, uint32 data_size) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::ShaderSourceImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::ShaderSourceImmediate>(s);
-    if (c) {
-      c->Init(shader, data_size);
-    }
-  }
-
   void ShaderSourceBucket(GLuint shader, uint32 data_bucket_id) {
     gles2::cmds::ShaderSourceBucket* c =
         GetCmdSpace<gles2::cmds::ShaderSourceBucket>();
@@ -1057,18 +995,6 @@
       c->Init(
           target, level, internalformat, width, height, border, format, type,
           pixels_shm_id, pixels_shm_offset);
-    }
-  }
-
-  void TexImage2DImmediate(
-      GLenum target, GLint level, GLint internalformat, GLsizei width,
-      GLsizei height, GLint border, GLenum format, GLenum type) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::TexImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::TexImage2DImmediate>(s);
-    if (c) {
-      c->Init(
-          target, level, internalformat, width, height, border, format, type);
     }
   }
 
@@ -1137,19 +1063,6 @@
       c->Init(
           target, level, xoffset, yoffset, width, height, format, type,
           pixels_shm_id, pixels_shm_offset, internal);
-    }
-  }
-
-  void TexSubImage2DImmediate(
-      GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
-      GLsizei height, GLenum format, GLenum type, GLboolean internal) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::TexSubImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::TexSubImage2DImmediate>(s);
-    if (c) {
-      c->Init(
-          target, level, xoffset, yoffset, width, height, format, type,
-          internal);
     }
   }
 
@@ -1555,15 +1468,25 @@
     }
   }
 
-  void BlitFramebufferEXT(
+  void BlitFramebufferCHROMIUM(
       GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,
       GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
-    gles2::cmds::BlitFramebufferEXT* c =
-        GetCmdSpace<gles2::cmds::BlitFramebufferEXT>();
+    gles2::cmds::BlitFramebufferCHROMIUM* c =
+        GetCmdSpace<gles2::cmds::BlitFramebufferCHROMIUM>();
     if (c) {
       c->Init(
           srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask,
           filter);
+    }
+  }
+
+  void RenderbufferStorageMultisampleCHROMIUM(
+      GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
+      GLsizei height) {
+    gles2::cmds::RenderbufferStorageMultisampleCHROMIUM* c =
+        GetCmdSpace<gles2::cmds::RenderbufferStorageMultisampleCHROMIUM>();
+    if (c) {
+      c->Init(target, samples, internalformat, width, height);
     }
   }
 
@@ -1911,14 +1834,6 @@
     }
   }
 
-  void GenMailboxCHROMIUM(GLuint bucket_id) {
-    gles2::cmds::GenMailboxCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::GenMailboxCHROMIUM>();
-    if (c) {
-      c->Init(bucket_id);
-    }
-  }
-
   void ProduceTextureCHROMIUM(
       GLenum target, uint32 mailbox_shm_id, uint32 mailbox_shm_offset) {
     gles2::cmds::ProduceTextureCHROMIUM* c =
@@ -1964,17 +1879,6 @@
         GetCmdSpace<gles2::cmds::BindUniformLocationCHROMIUM>();
     if (c) {
       c->Init(program, location, name_shm_id, name_shm_offset, data_size);
-    }
-  }
-
-  void BindUniformLocationCHROMIUMImmediate(
-      GLuint program, GLint location, const char* name) {
-    const uint32 data_size = strlen(name);
-    gles2::cmds::BindUniformLocationCHROMIUMImmediate* c =
-        GetImmediateCmdSpace<gles2::cmds::BindUniformLocationCHROMIUMImmediate>(
-            data_size);
-    if (c) {
-      c->Init(program, location, name, data_size);
     }
   }
 
@@ -2107,6 +2011,14 @@
             size);
     if (c) {
       c->Init(count, bufs);
+    }
+  }
+
+  void DiscardBackbufferCHROMIUM() {
+    gles2::cmds::DiscardBackbufferCHROMIUM* c =
+        GetCmdSpace<gles2::cmds::DiscardBackbufferCHROMIUM>();
+    if (c) {
+      c->Init();
     }
   }
 

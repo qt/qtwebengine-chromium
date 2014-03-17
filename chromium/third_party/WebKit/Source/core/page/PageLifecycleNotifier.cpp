@@ -29,29 +29,29 @@
 
 namespace WebCore {
 
-PageLifecycleNotifier::PageLifecycleNotifier(LifecycleContext* context)
-    : LifecycleNotifier(context)
+PageLifecycleNotifier::PageLifecycleNotifier(Page* context)
+    : LifecycleNotifier<Page>(context)
 {
 }
 
-void PageLifecycleNotifier::addObserver(LifecycleObserver* observer)
+void PageLifecycleNotifier::addObserver(PageLifecycleNotifier::Observer* observer)
 {
-    if (observer->observerType() == LifecycleObserver::PageLifecycleObserverType) {
+    if (observer->observerType() == Observer::PageLifecycleObserverType) {
         RELEASE_ASSERT(m_iterating != IteratingOverPageObservers);
         m_pageObservers.add(static_cast<PageLifecycleObserver*>(observer));
     }
 
-    LifecycleNotifier::addObserver(observer);
+    LifecycleNotifier<Page>::addObserver(observer);
 }
 
-void PageLifecycleNotifier::removeObserver(LifecycleObserver* observer)
+void PageLifecycleNotifier::removeObserver(PageLifecycleNotifier::Observer* observer)
 {
-    if (observer->observerType() == LifecycleObserver::PageLifecycleObserverType) {
+    if (observer->observerType() == Observer::PageLifecycleObserverType) {
         RELEASE_ASSERT(m_iterating != IteratingOverPageObservers);
         m_pageObservers.remove(static_cast<PageLifecycleObserver*>(observer));
     }
 
-    LifecycleNotifier::removeObserver(observer);
+    LifecycleNotifier<Page>::removeObserver(observer);
 }
 
 } // namespace WebCore

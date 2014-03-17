@@ -37,8 +37,8 @@ class HTMLCollection;
 
 namespace Private {
     template<class GenericNode, class GenericNodeContainer>
-    void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer*);
-};
+    void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
+}
 
 class NoEventDispatchAssertion {
 public:
@@ -105,11 +105,11 @@ public:
     // They don't send DOM mutation events or handle reparenting.
     // However, arbitrary code may be run by beforeload handlers.
     void parserAppendChild(PassRefPtr<Node>);
-    void parserRemoveChild(Node*);
-    void parserInsertBefore(PassRefPtr<Node> newChild, Node* refChild);
+    void parserRemoveChild(Node&);
+    void parserInsertBefore(PassRefPtr<Node> newChild, Node& refChild);
+    void parserTakeAllChildrenFrom(ContainerNode&);
 
     void removeChildren();
-    void takeAllChildrenFrom(ContainerNode*);
 
     void cloneChildNodes(ContainerNode* clone);
 
@@ -117,7 +117,8 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual LayoutRect boundingBox() const OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
-    virtual void setActive(bool active = true, bool pause = false) OVERRIDE;
+    void focusStateChanged();
+    virtual void setActive(bool = true) OVERRIDE;
     virtual void setHovered(bool = true) OVERRIDE;
 
     // -----------------------------------------------------------------------------
@@ -135,18 +136,26 @@ protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
 
     template<class GenericNode, class GenericNodeContainer>
-    friend void appendChildToContainer(GenericNode* child, GenericNodeContainer*);
+    friend void appendChildToContainer(GenericNode& child, GenericNodeContainer&);
 
     template<class GenericNode, class GenericNodeContainer>
-    friend void Private::addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer*);
+    friend void Private::addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
 
     void removeDetachedChildren();
     void setFirstChild(Node* child) { m_firstChild = child; }
     void setLastChild(Node* child) { m_lastChild = child; }
 
 private:
-    void removeBetween(Node* previousChild, Node* nextChild, Node* oldChild);
-    void insertBeforeCommon(Node* nextChild, Node* oldChild);
+    void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
+    void insertBeforeCommon(Node& nextChild, Node& oldChild);
+    void updateTreeAfterInsertion(Node& child);
+    void willRemoveChildren();
+    void willRemoveChild(Node& child);
+
+    inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState&) const;
+    inline bool checkAcceptChild(const Node* newChild, const Node* oldChild, ExceptionState&) const;
+    inline bool containsConsideringHostElements(const Node&) const;
+    inline bool isChildTypeAllowed(const Node& child) const;
 
     void attachChildren(const AttachContext& = AttachContext());
     void detachChildren(const AttachContext& = AttachContext());
@@ -162,20 +171,7 @@ private:
 bool childAttachedAllowedWhenAttachingChildren(ContainerNode*);
 #endif
 
-inline ContainerNode* toContainerNode(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isContainerNode());
-    return static_cast<ContainerNode*>(node);
-}
-
-inline const ContainerNode* toContainerNode(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isContainerNode());
-    return static_cast<const ContainerNode*>(node);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toContainerNode(const ContainerNode*);
+DEFINE_NODE_TYPE_CASTS(ContainerNode, isContainerNode());
 
 inline ContainerNode::ContainerNode(TreeScope* treeScope, ConstructionType type)
     : Node(treeScope, type)
@@ -190,8 +186,8 @@ inline void ContainerNode::attachChildren(const AttachContext& context)
     childrenContext.resolvedStyle = 0;
 
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        ASSERT(!child->attached() || childAttachedAllowedWhenAttachingChildren(this));
-        if (!child->attached())
+        ASSERT(child->needsAttach() || childAttachedAllowedWhenAttachingChildren(this));
+        if (child->needsAttach())
             child->attach(childrenContext);
     }
 }
@@ -248,10 +244,10 @@ inline Node* Node::highestAncestor() const
 const int initialNodeVectorSize = 11;
 typedef Vector<RefPtr<Node>, initialNodeVectorSize> NodeVector;
 
-inline void getChildNodes(Node* node, NodeVector& nodes)
+inline void getChildNodes(Node& node, NodeVector& nodes)
 {
     ASSERT(!nodes.size());
-    for (Node* child = node->firstChild(); child; child = child->nextSibling())
+    for (Node* child = node.firstChild(); child; child = child->nextSibling())
         nodes.append(child);
 }
 
@@ -259,8 +255,8 @@ class ChildNodesLazySnapshot {
     WTF_MAKE_NONCOPYABLE(ChildNodesLazySnapshot);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit ChildNodesLazySnapshot(Node* parentNode)
-        : m_currentNode(parentNode->firstChild())
+    explicit ChildNodesLazySnapshot(Node& parentNode)
+        : m_currentNode(parentNode.firstChild())
         , m_currentIndex(0)
     {
         m_nextSnapshot = latestSnapshot;

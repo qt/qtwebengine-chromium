@@ -27,7 +27,7 @@
 #ifndef StyleMedia_h
 #define StyleMedia_h
 
-#include "core/page/DOMWindowProperty.h"
+#include "core/frame/DOMWindowProperty.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,7 +39,7 @@ class StyleMedia : public RefCounted<StyleMedia>, public DOMWindowProperty {
 public:
     static PassRefPtr<StyleMedia> create(Frame* frame) { return adoptRef(new StyleMedia(frame));}
 
-    String type() const;
+    AtomicString type() const;
     bool matchMedium(const String&) const;
 
 private:

@@ -8,11 +8,11 @@ this list of conditions and the following disclaimer.
 - Redistributions in binary form must reproduce the above copyright
 notice, this list of conditions and the following disclaimer in the
 documentation and/or other materials provided with the distribution.
-- Neither the name of Internet Society, IETF or IETF Trust, nor the 
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
 names of specific contributors, may be used to endorse or promote
 products derived from this software without specific prior written
 permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
@@ -30,6 +30,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include "main_FIX.h"
+#include "stack_alloc.h"
 #include "tuning_parameters.h"
 
 /* Compute gain to make warped filter coefficients have a zero mean log frequency response on a   */
@@ -156,8 +157,9 @@ void silk_noise_shape_analysis_FIX(
     opus_int32   refl_coef_Q16[ MAX_SHAPE_LPC_ORDER ];
     opus_int32   AR1_Q24[       MAX_SHAPE_LPC_ORDER ];
     opus_int32   AR2_Q24[       MAX_SHAPE_LPC_ORDER ];
-    opus_int16   x_windowed[    SHAPE_LPC_WIN_MAX ];
+    VARDECL( opus_int16, x_windowed );
     const opus_int16 *x_ptr, *pitch_res_ptr;
+    SAVE_STACK;
 
     /* Point to start of first LPC analysis block */
     x_ptr = x - psEnc->sCmn.la_shape;
@@ -258,6 +260,7 @@ void silk_noise_shape_analysis_FIX(
     /********************************************/
     /* Compute noise shaping AR coefs and gains */
     /********************************************/
+    ALLOC( x_windowed, psEnc->sCmn.shapeWinLength, opus_int16 );
     for( k = 0; k < psEnc->sCmn.nb_subfr; k++ ) {
         /* Apply window: sine slope followed by flat part followed by cosine slope */
         opus_int shift, slope_part, flat_part;
@@ -437,4 +440,5 @@ void silk_noise_shape_analysis_FIX(
         psEncCtrl->HarmShapeGain_Q14[ k ] = ( opus_int )silk_RSHIFT_ROUND( psShapeSt->HarmShapeGain_smth_Q16, 2 );
         psEncCtrl->Tilt_Q14[ k ]          = ( opus_int )silk_RSHIFT_ROUND( psShapeSt->Tilt_smth_Q16,          2 );
     }
+    RESTORE_STACK;
 }

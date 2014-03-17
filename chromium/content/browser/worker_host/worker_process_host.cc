@@ -25,6 +25,8 @@
 #include "content/browser/fileapi/fileapi_message_filter.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
+#include "content/browser/message_port_message_filter.h"
+#include "content/browser/message_port_service.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/database_message_filter.h"
@@ -33,7 +35,6 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
 #include "content/browser/resource_context_impl.h"
-#include "content/browser/worker_host/message_port_service.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/child_process_host_impl.h"
@@ -152,9 +153,11 @@ bool WorkerProcessHost::Init(int render_process_id) {
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
+    switches::kEnableServiceWorker,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
+    switches::kJavaScriptFlags
   };
   cmd_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(), kSwitchNames,
                              arraysize(kSwitchNames));
@@ -221,27 +224,31 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
       blob_storage_context,
       partition_.filesystem_context(),
       get_contexts_callback);
-  process_->GetHost()->AddFilter(resource_message_filter);
+  process_->AddFilter(resource_message_filter);
 
-  worker_message_filter_ = new WorkerMessageFilter(
-      render_process_id, resource_context_, partition_,
-      base::Bind(&WorkerServiceImpl::next_worker_route_id,
-                 base::Unretained(WorkerServiceImpl::GetInstance())));
-  process_->GetHost()->AddFilter(worker_message_filter_.get());
-  process_->GetHost()->AddFilter(new AppCacheDispatcherHost(
+  MessagePortMessageFilter* message_port_message_filter =
+      new MessagePortMessageFilter(
+          base::Bind(&WorkerServiceImpl::next_worker_route_id,
+                     base::Unretained(WorkerServiceImpl::GetInstance())));
+  process_->AddFilter(message_port_message_filter);
+  worker_message_filter_ = new WorkerMessageFilter(render_process_id,
+                                                   resource_context_,
+                                                   partition_,
+                                                   message_port_message_filter);
+  process_->AddFilter(worker_message_filter_.get());
+  process_->AddFilter(new AppCacheDispatcherHost(
       partition_.appcache_service(), process_->GetData().id));
-  process_->GetHost()->AddFilter(new FileAPIMessageFilter(
+  process_->AddFilter(new FileAPIMessageFilter(
       process_->GetData().id,
       url_request_context,
       partition_.filesystem_context(),
       blob_storage_context,
       stream_context));
-  process_->GetHost()->AddFilter(new FileUtilitiesMessageFilter(
+  process_->AddFilter(new FileUtilitiesMessageFilter(
       process_->GetData().id));
-  process_->GetHost()->AddFilter(new MimeRegistryMessageFilter());
-  process_->GetHost()->AddFilter(
-      new DatabaseMessageFilter(partition_.database_tracker()));
-  process_->GetHost()->AddFilter(new QuotaDispatcherHost(
+  process_->AddFilter(new MimeRegistryMessageFilter());
+  process_->AddFilter(new DatabaseMessageFilter(partition_.database_tracker()));
+  process_->AddFilter(new QuotaDispatcherHost(
       process_->GetData().id,
       partition_.quota_manager(),
       GetContentClient()->browser()->CreateQuotaPermissionContext()));
@@ -257,11 +264,10 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
           request_context_callback,
           resource_context_);
   socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
-  process_->GetHost()->AddFilter(socket_stream_dispatcher_host);
-  process_->GetHost()->AddFilter(
-      new WorkerDevToolsMessageFilter(process_->GetData().id));
-  process_->GetHost()->AddFilter(new IndexedDBDispatcherHost(
-      process_->GetData().id, partition_.indexed_db_context()));
+  process_->AddFilter(socket_stream_dispatcher_host);
+  process_->AddFilter(new WorkerDevToolsMessageFilter(process_->GetData().id));
+  process_->AddFilter(
+      new IndexedDBDispatcherHost(partition_.indexed_db_context()));
 }
 
 void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
@@ -318,6 +324,8 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
+                        OnForceKillWorkerProcess)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -364,8 +372,8 @@ void WorkerProcessHost::OnWorkerContextClosed(int worker_route_id) {
 
 void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
                                         const GURL& url,
-                                        const string16& name,
-                                        const string16& display_name,
+                                        const base::string16& name,
+                                        const base::string16& display_name,
                                         unsigned long estimated_size,
                                         bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerDatabase(
@@ -382,46 +390,25 @@ void WorkerProcessHost::OnAllowFileSystem(int worker_route_id,
 
 void WorkerProcessHost::OnAllowIndexedDB(int worker_route_id,
                                          const GURL& url,
-                                         const string16& name,
+                                         const base::string16& name,
                                          bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerIndexedDB(
       url, name, resource_context_, GetRenderViewIDsForWorker(worker_route_id));
+}
+
+void WorkerProcessHost::OnForceKillWorkerProcess() {
+  if (process_ && process_launched_)
+    base::KillProcess(
+          process_->GetData().handle, RESULT_CODE_NORMAL_EXIT, false);
+  else
+    RecordAction(UserMetricsAction("WorkerProcess_BadProcessToKill"));
 }
 
 void WorkerProcessHost::RelayMessage(
     const IPC::Message& message,
     WorkerMessageFilter* filter,
     int route_id) {
-  if (message.type() == WorkerMsg_PostMessage::ID) {
-    // We want to send the receiver a routing id for the new channel, so
-    // crack the message first.
-    string16 msg;
-    std::vector<int> sent_message_port_ids;
-    std::vector<int> new_routing_ids;
-    if (!WorkerMsg_PostMessage::Read(
-            &message, &msg, &sent_message_port_ids, &new_routing_ids)) {
-      return;
-    }
-    if (sent_message_port_ids.size() != new_routing_ids.size())
-      return;
-
-    for (size_t i = 0; i < sent_message_port_ids.size(); ++i) {
-      new_routing_ids[i] = filter->GetNextRoutingID();
-      MessagePortService::GetInstance()->UpdateMessagePort(
-          sent_message_port_ids[i], filter, new_routing_ids[i]);
-    }
-
-    filter->Send(new WorkerMsg_PostMessage(
-        route_id, msg, sent_message_port_ids, new_routing_ids));
-
-    // Send any queued messages to the sent message ports.  We can only do this
-    // after sending the above message, since it's the one that sets up the
-    // message port route which the queued messages are sent to.
-    for (size_t i = 0; i < sent_message_port_ids.size(); ++i) {
-      MessagePortService::GetInstance()->
-          SendQueuedMessagesIfPossible(sent_message_port_ids[i]);
-    }
-  } else if (message.type() == WorkerMsg_Connect::ID) {
+  if (message.type() == WorkerMsg_Connect::ID) {
     // Crack the SharedWorker Connect message to setup routing for the port.
     int sent_message_port_id;
     int new_routing_id;
@@ -431,7 +418,9 @@ void WorkerProcessHost::RelayMessage(
     }
     new_routing_id = filter->GetNextRoutingID();
     MessagePortService::GetInstance()->UpdateMessagePort(
-        sent_message_port_id, filter, new_routing_id);
+        sent_message_port_id,
+        filter->message_port_message_filter(),
+        new_routing_id);
 
     // Resend the message with the new routing id.
     filter->Send(new WorkerMsg_Connect(
@@ -583,7 +572,7 @@ net::URLRequestContext* WorkerProcessHost::GetRequestContext(
 
 WorkerProcessHost::WorkerInstance::WorkerInstance(
     const GURL& url,
-    const string16& name,
+    const base::string16& name,
     int worker_route_id,
     int parent_process_id,
     int64 main_resource_appcache_id,
@@ -604,7 +593,7 @@ WorkerProcessHost::WorkerInstance::WorkerInstance(
 WorkerProcessHost::WorkerInstance::WorkerInstance(
     const GURL& url,
     bool shared,
-    const string16& name,
+    const base::string16& name,
     ResourceContext* resource_context,
     const WorkerStoragePartition& partition)
     : url_(url),
@@ -629,7 +618,7 @@ WorkerProcessHost::WorkerInstance::~WorkerInstance() {
 // b) the names are both empty, and the urls are equal
 bool WorkerProcessHost::WorkerInstance::Matches(
     const GURL& match_url,
-    const string16& match_name,
+    const base::string16& match_name,
     const WorkerStoragePartition& partition,
     ResourceContext* resource_context) const {
   // Only match open shared workers.

@@ -31,57 +31,60 @@
 #ifndef WTF_PageAllocator_h
 #define WTF_PageAllocator_h
 
+#include "wtf/Assertions.h"
+#include "wtf/CPU.h"
+#include "wtf/WTFExport.h"
+#include <stdint.h>
+
 namespace WTF {
 
-// Our granulatity of page allocation is 64KB. This is a Windows limitation,
-// but we apply the same requirement for all platforms in order to keep
-// things simple and consistent.
-// We term these 64KB allocations "super pages". They're just a clump of
-// underlying 4KB system pages.
-static const size_t kSuperPageSize = 1 << 16; // 64KB
-static const size_t kSuperPageOffsetMask = kSuperPageSize - 1;
-static const size_t kSuperPageBaseMask = ~kSuperPageOffsetMask;
+#if OS(WIN)
+static const size_t kPageAllocationGranularityShift = 16; // 64KB
+#else
+static const size_t kPageAllocationGranularityShift = 12; // 4KB
+#endif
+static const size_t kPageAllocationGranularity = 1 << kPageAllocationGranularityShift;
+static const size_t kPageAllocationGranularityOffsetMask = kPageAllocationGranularity - 1;
+static const size_t kPageAllocationGranularityBaseMask = ~kPageAllocationGranularityOffsetMask;
 
 // All Blink-supported systems have 4096 sized system pages and can handle
 // permissions and commit / decommit at this granularity.
 static const size_t kSystemPageSize = 4096;
 static const size_t kSystemPageOffsetMask = kSystemPageSize - 1;
+static const size_t kSystemPageBaseMask = ~kSystemPageOffsetMask;
 
-static const size_t kNumSystemPagesPerSuperPage = kSuperPageSize / kSystemPageSize;
-
-// Allocate one or more super pages. Addresses in the range will be readable and
+// Allocate one or more pages. Addresses in the range will be readable and
 // writeable but not executable.
 // The requested address is just a hint; the actual address returned may
-// differ. The returned address will be aligned to kSuperPageSize.
-// len is in bytes, and must be a multiple of kSuperPageSize.
+// differ. The returned address will be aligned at least to align bytes.
+// len is in bytes, and must be a multiple of kPageAllocationGranularity.
+// align is in bytes, and must be a power-of-two multiple of
+// kPageAllocationGranularity.
+// If addr is null, then a suitable and randomized address will be chosen
+// automatically.
 // This call will exit the process if the allocation cannot be satisfied.
-void* allocSuperPages(void* addr, size_t len);
+WTF_EXPORT void* allocPages(void* addr, size_t len, size_t align);
 
-// Free one or more super pages.
+// Free one or more pages.
 // addr and len must match a previous call to allocPages().
-void freeSuperPages(void* addr, size_t len);
+WTF_EXPORT void freePages(void* addr, size_t len);
 
 // Mark one or more system pages as being inaccessible. This is not reversible.
 // Subsequently accessing any address in the range will fault, the addresses
 // will not be re-used by future allocations.
 // len must be a multiple of kSystemPageSize bytes.
-void setSystemPagesInaccessible(void* addr, size_t len);
+WTF_EXPORT void setSystemPagesInaccessible(void* addr, size_t len);
 
 // Decommit one or more system pages. Decommitted means that the physical memory
 // is released to the system, but the virtual address space remains reserved.
 // System pages are re-committed by writing to them.
 // Clients should not make any assumptions about the contents of decommitted
 // system pages, before or after they write to the page. The only guarantee
-// provided is that the contents of the system page will be deterministic again // after writing to it. In particlar note that system pages are not guaranteed
+// provided is that the contents of the system page will be deterministic again
+// after writing to it. In particlar note that system pages are not guaranteed
 // to be zero-filled upon re-commit.
 // len must be a multiple of kSystemPageSize bytes.
-void decommitSystemPages(void* addr, size_t len);
-
-// Returns a suitable pointer for starting to allocate super pages.
-// The pointer is not guaranteed to be "unused", but does represent an address
-// that has a good chance of being unused. The pointer is also randomized to
-// provide reasonable ASLR.
-char* getRandomSuperPageBase();
+WTF_EXPORT void decommitSystemPages(void* addr, size_t len);
 
 } // namespace WTF
 

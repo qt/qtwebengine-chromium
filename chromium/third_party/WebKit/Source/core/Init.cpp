@@ -31,17 +31,22 @@
 #include "config.h"
 #include "Init.h"
 
+#include "EventNames.h"
+#include "EventTargetNames.h"
+#include "EventTypeNames.h"
 #include "FetchInitiatorTypeNames.h"
 #include "FontFamilyNames.h"
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "MathMLNames.h"
 #include "SVGNames.h"
 #include "XLinkNames.h"
 #include "XMLNSNames.h"
 #include "XMLNames.h"
 #include "core/css/MediaFeatureNames.h"
-#include "core/platform/EventTracer.h"
-#include "core/platform/Partitions.h"
+#include "platform/EventTracer.h"
+#include "platform/Partitions.h"
+#include "platform/PlatformThreadData.h"
 #include "wtf/text/StringStatics.h"
 
 namespace WebCore {
@@ -62,13 +67,23 @@ void init()
     MathMLNames::init();
     XMLNSNames::init();
     XMLNames::init();
-    FontFamilyNames::init();
+    EventNames::init();
+    EventTargetNames::init();
+    EventTypeNames::init();
     FetchInitiatorTypeNames::init();
+    FontFamilyNames::init();
+    InputTypeNames::init();
     MediaFeatureNames::init();
     WTF::StringStatics::init();
     QualifiedName::init();
     Partitions::init();
     EventTracer::initialize();
+
+    // Ensure that the main thread's thread-local data is initialized before
+    // starting any worker threads.
+    PlatformThreadData::current();
+
+    StringImpl::freezeStaticStrings();
 }
 
 void shutdown()

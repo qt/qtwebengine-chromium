@@ -27,8 +27,14 @@ class MediaDecoderJob {
 
   // Callback when a decoder job finishes its work. Args: whether decode
   // finished successfully, presentation time, audio output bytes.
+  // If the presentation time is equal to kNoTimestamp(), the decoder job
+  // skipped rendering of the decoded output and the callback target should
+  // update its clock to avoid introducing extra delays to the next frame.
   typedef base::Callback<void(MediaCodecStatus, const base::TimeDelta&,
                               size_t)> DecoderCallback;
+  // Callback when a decoder job finishes releasing the output buffer.
+  // Args: audio output bytes, must be 0 for video.
+  typedef base::Callback<void(size_t)> ReleaseOutputCompletionCallback;
 
   virtual ~MediaDecoderJob();
 
@@ -63,6 +69,11 @@ class MediaDecoderJob {
   // Flush the decoder.
   void Flush();
 
+  // Enter prerolling state. The job must not currently be decoding.
+  void BeginPrerolling(const base::TimeDelta& preroll_timestamp);
+
+  bool prerolling() const { return prerolling_; }
+
   bool is_decoding() const { return !decode_cb_.is_null(); }
 
  protected:
@@ -70,12 +81,13 @@ class MediaDecoderJob {
                   MediaCodecBridge* media_codec_bridge,
                   const base::Closure& request_data_cb);
 
-  // Release the output buffer and render it.
+  // Release the output buffer at index |output_buffer_index| and render it if
+  // |render_output| is true. Upon completion, |callback| will be called.
   virtual void ReleaseOutputBuffer(
-      int outputBufferIndex, size_t size,
-      const base::TimeDelta& presentation_timestamp,
-      const DecoderCallback& callback,
-      MediaCodecStatus status) = 0;
+      int output_buffer_index,
+      size_t size,
+      bool render_output,
+      const ReleaseOutputCompletionCallback& callback) = 0;
 
   // Returns true if the "time to render" needs to be computed for frames in
   // this decoder job.
@@ -112,6 +124,8 @@ class MediaDecoderJob {
                       const DecoderCallback& callback);
 
   // Called on the UI thread to indicate that one decode cycle has completed.
+  // Completes any pending job destruction or any pending decode stop. If
+  // destruction was not pending, passes its arguments to |decode_cb_|.
   void OnDecodeCompleted(MediaCodecStatus status,
                          const base::TimeDelta& presentation_timestamp,
                          size_t audio_output_bytes);
@@ -130,7 +144,30 @@ class MediaDecoderJob {
   bool needs_flush_;
 
   // Whether input EOS is encountered.
+  // TODO(wolenetz/qinmin): Protect with a lock. See http://crbug.com/320043.
   bool input_eos_encountered_;
+
+  // Whether output EOS is encountered.
+  bool output_eos_encountered_;
+
+  // Tracks whether DecodeInternal() should skip decoding if the first access
+  // unit is EOS or empty, and report |MEDIA_CODEC_OUTPUT_END_OF_STREAM|. This
+  // is to work around some decoders that could crash otherwise. See
+  // http://b/11696552.
+  bool skip_eos_enqueue_;
+
+  // The timestamp the decoder needs to preroll to. If an access unit's
+  // timestamp is smaller than |preroll_timestamp_|, don't render it.
+  // TODO(qinmin): Comparing access unit's timestamp with |preroll_timestamp_|
+  // is not very accurate.
+  base::TimeDelta preroll_timestamp_;
+
+  // Indicates prerolling state. If true, this job has not yet decoded output
+  // that it will render, since the most recent of job construction or
+  // BeginPrerolling(). If false, |preroll_timestamp_| has been reached.
+  // TODO(qinmin): Comparing access unit's timestamp with |preroll_timestamp_|
+  // is not very accurate.
+  bool prerolling_;
 
   // Weak pointer passed to media decoder jobs for callbacks. It is bounded to
   // the decoder thread.

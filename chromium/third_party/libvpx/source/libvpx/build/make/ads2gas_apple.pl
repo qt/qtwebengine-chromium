@@ -46,7 +46,7 @@ while (<STDIN>)
     s/@/,:/g;
 
     # Comment character
-    s/;/@/g;
+    s/;/ @/g;
 
     # Hexadecimal constants prefaced by 0x
     s/#&/#0x/g;

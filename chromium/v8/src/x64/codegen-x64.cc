@@ -213,7 +213,7 @@ ModuloFunction CreateModuloFunction() {
   __ j(zero, &valid_result);
   __ fstp(0);  // Drop result in st(0).
   int64_t kNaNValue = V8_INT64_C(0x7ff8000000000000);
-  __ movq(rcx, kNaNValue, RelocInfo::NONE64);
+  __ movq(rcx, kNaNValue);
   __ movq(Operand(rsp, kPointerSize), rcx);
   __ movsd(xmm0, Operand(rsp, kPointerSize));
   __ jmp(&return_result);
@@ -263,8 +263,7 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
   // -----------------------------------
   if (mode == TRACK_ALLOCATION_SITE) {
     ASSERT(allocation_memento_found != NULL);
-    __ TestJSArrayForAllocationMemento(rdx, rdi);
-    __ j(equal, allocation_memento_found);
+    __ JumpIfJSArrayHasAllocationMemento(rdx, rdi, allocation_memento_found);
   }
 
   // Set transitioned map.
@@ -292,8 +291,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   Label allocated, new_backing_store, only_change_map, done;
 
   if (mode == TRACK_ALLOCATION_SITE) {
-    __ TestJSArrayForAllocationMemento(rdx, rdi);
-    __ j(equal, fail);
+    __ JumpIfJSArrayHasAllocationMemento(rdx, rdi, fail);
   }
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -340,7 +338,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   STATIC_ASSERT(FixedDoubleArray::kHeaderSize == FixedArray::kHeaderSize);
 
   Label loop, entry, convert_hole;
-  __ movq(r15, BitCast<int64_t, uint64_t>(kHoleNanInt64), RelocInfo::NONE64);
+  __ movq(r15, BitCast<int64_t, uint64_t>(kHoleNanInt64));
   // r15: the-hole NaN
   __ jmp(&entry);
 
@@ -386,7 +384,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // rbx: current element (smi-tagged)
   __ JumpIfNotSmi(rbx, &convert_hole);
   __ SmiToInteger32(rbx, rbx);
-  __ cvtlsi2sd(xmm0, rbx);
+  __ Cvtlsi2sd(xmm0, rbx);
   __ movsd(FieldOperand(r14, r9, times_8, FixedDoubleArray::kHeaderSize),
            xmm0);
   __ jmp(&entry);
@@ -418,8 +416,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   Label loop, entry, convert_hole, gc_required, only_change_map;
 
   if (mode == TRACK_ALLOCATION_SITE) {
-    __ TestJSArrayForAllocationMemento(rdx, rdi);
-    __ j(equal, fail);
+    __ JumpIfJSArrayHasAllocationMemento(rdx, rdi, fail);
   }
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -443,7 +440,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ movq(FieldOperand(r11, FixedArray::kLengthOffset), r14);
 
   // Prepare for conversion loop.
-  __ movq(rsi, BitCast<int64_t, uint64_t>(kHoleNanInt64), RelocInfo::NONE64);
+  __ movq(rsi, BitCast<int64_t, uint64_t>(kHoleNanInt64));
   __ LoadRoot(rdi, Heap::kTheHoleValueRootIndex);
   // rsi: the-hole NaN
   // rdi: pointer to the-hole
@@ -469,7 +466,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Non-hole double, copy value into a heap number.
   __ AllocateHeapNumber(rax, r15, &gc_required);
   // rax: new heap number
-  __ movq(FieldOperand(rax, HeapNumber::kValueOffset), r14);
+  __ MoveDouble(FieldOperand(rax, HeapNumber::kValueOffset), r14);
   __ movq(FieldOperand(r11,
                        r9,
                        times_pointer_size,
@@ -638,7 +635,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
   Label done;
 
-  __ movq(kScratchRegister, ExternalReference::math_exp_constants(0));
+  __ Move(kScratchRegister, ExternalReference::math_exp_constants(0));
   __ movsd(double_scratch, Operand(kScratchRegister, 0 * kDoubleSize));
   __ xorpd(result, result);
   __ ucomisd(double_scratch, input);
@@ -657,10 +654,10 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ and_(temp2, Immediate(0x7ff));
   __ shr(temp1, Immediate(11));
   __ mulsd(double_scratch, Operand(kScratchRegister, 5 * kDoubleSize));
-  __ movq(kScratchRegister, ExternalReference::math_exp_log_table());
+  __ Move(kScratchRegister, ExternalReference::math_exp_log_table());
   __ shl(temp1, Immediate(52));
   __ or_(temp1, Operand(kScratchRegister, temp2, times_8, 0));
-  __ movq(kScratchRegister, ExternalReference::math_exp_constants(0));
+  __ Move(kScratchRegister, ExternalReference::math_exp_constants(0));
   __ subsd(double_scratch, input);
   __ movsd(input, double_scratch);
   __ subsd(result, double_scratch);
@@ -677,8 +674,6 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
 #undef __
 
-
-static const int kNoCodeAgeSequenceLength = 6;
 
 static byte* GetNoCodeAgeSequence(uint32_t* length) {
   static bool initialized = false;
@@ -711,7 +706,7 @@ bool Code::IsYoungSequence(byte* sequence) {
 void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
                                MarkingParity* parity) {
   if (IsYoungSequence(sequence)) {
-    *age = kNoAge;
+    *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
     sequence++;  // Skip the kCallOpcode byte
@@ -723,30 +718,27 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
 }
 
 
-void Code::PatchPlatformCodeAge(byte* sequence,
+void Code::PatchPlatformCodeAge(Isolate* isolate,
+                                byte* sequence,
                                 Code::Age age,
                                 MarkingParity parity) {
   uint32_t young_length;
   byte* young_sequence = GetNoCodeAgeSequence(&young_length);
-  if (age == kNoAge) {
+  if (age == kNoAgeCodeAge) {
     CopyBytes(sequence, young_sequence, young_length);
     CPU::FlushICache(sequence, young_length);
   } else {
-    Code* stub = GetCodeAgeStub(age, parity);
+    Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length);
     patcher.masm()->call(stub->instruction_start());
-    for (int i = 0;
-         i < kNoCodeAgeSequenceLength - Assembler::kShortCallInstructionLength;
-         i++) {
-      patcher.masm()->nop();
-    }
+    patcher.masm()->Nop(
+        kNoCodeAgeSequenceLength - Assembler::kShortCallInstructionLength);
   }
 }
 
 
 Operand StackArgumentsAccessor::GetArgumentOperand(int index) {
   ASSERT(index >= 0);
-  ASSERT(base_reg_.is(rsp) || base_reg_.is(rbp));
   int receiver = (receiver_mode_ == ARGUMENTS_CONTAIN_RECEIVER) ? 1 : 0;
   int displacement_to_last_argument = base_reg_.is(rsp) ?
       kPCOnStackSize : kFPOnStackSize + kPCOnStackSize;

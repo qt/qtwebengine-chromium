@@ -7,7 +7,9 @@
 
 #include "ui/events/latency_info.h"
 
-namespace WebKit {
+#include "content/common/input/web_input_event_traits.h"
+
+namespace blink {
 class WebGestureEvent;
 class WebMouseEvent;
 class WebMouseWheelEvent;
@@ -26,15 +28,30 @@ class EventWithLatencyInfo {
       : event(e), latency(l) {}
 
   EventWithLatencyInfo() {}
+
+  bool CanCoalesceWith(const EventWithLatencyInfo& other)
+      const WARN_UNUSED_RESULT {
+    return WebInputEventTraits::CanCoalesce(other.event, event);
+  }
+
+  void CoalesceWith(const EventWithLatencyInfo& other) {
+    WebInputEventTraits::Coalesce(other.event, &event);
+    // When coalescing two input events, we keep the oldest LatencyInfo
+    // for Telemetry latency test since it will represent the longest
+    // latency.
+    if (other.latency.trace_id >= 0 &&
+        (latency.trace_id < 0 || other.latency.trace_id < latency.trace_id))
+      latency = other.latency;
+  }
 };
 
-typedef EventWithLatencyInfo<WebKit::WebGestureEvent>
+typedef EventWithLatencyInfo<blink::WebGestureEvent>
     GestureEventWithLatencyInfo;
-typedef EventWithLatencyInfo<WebKit::WebMouseWheelEvent>
+typedef EventWithLatencyInfo<blink::WebMouseWheelEvent>
     MouseWheelEventWithLatencyInfo;
-typedef EventWithLatencyInfo<WebKit::WebMouseEvent>
+typedef EventWithLatencyInfo<blink::WebMouseEvent>
     MouseEventWithLatencyInfo;
-typedef EventWithLatencyInfo<WebKit::WebTouchEvent>
+typedef EventWithLatencyInfo<blink::WebTouchEvent>
     TouchEventWithLatencyInfo;
 
 }  // namespace content

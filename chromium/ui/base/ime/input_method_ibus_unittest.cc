@@ -14,31 +14,21 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/ibus/ibus_text.h"
-#include "chromeos/dbus/ibus/mock_ibus_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
-#include "chromeos/ime/ibus_bridge.h"
-#include "chromeos/ime/mock_ime_candidate_window_handler.h"
-#include "chromeos/ime/mock_ime_engine_handler.h"
+#include "chromeos/ime/ibus_keymap.h"
+#include "chromeos/ime/ibus_text.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
+#include "ui/base/ime/chromeos/mock_ime_candidate_window_handler.h"
+#include "ui/base/ime/chromeos/mock_ime_engine_handler.h"
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/input_method_ibus.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/events/event.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
 namespace {
-const int kCreateInputContextMaxTrialCount = 10;
-const uint32 kTestIBusKeyVal1 = 97;
-const uint32 kTestIBusKeyVal2 = 30;
-const uint32 kTestIBusKeyVal3 = 0;
-const uint32 kTestIBusKeyCode1 = 98;
-const uint32 kTestIBusKeyCode2 = 48;
-const uint32 kTestIBusKeyCode3 = 1;
-const uint32 kTestIBusState1 = 99;
-const uint32 kTestIBusState2 = 46;
-const uint32 kTestIBusState3 = 8;
-
 typedef chromeos::IBusEngineHandlerInterface::KeyEventDoneCallback
     KeyEventCallback;
 
@@ -67,8 +57,6 @@ enum KeyEventHandlerBehavior {
 }  // namespace
 
 
-using chromeos::IBusInputContextClient;
-
 class TestableInputMethodIBus : public InputMethodIBus {
  public:
   explicit TestableInputMethodIBus(internal::InputMethodDelegate* delegate)
@@ -77,43 +65,17 @@ class TestableInputMethodIBus : public InputMethodIBus {
   }
 
   struct ProcessKeyEventPostIMEArgs {
-    ProcessKeyEventPostIMEArgs() : handled(false) {
-      std::memset(&event, 0, sizeof(XEvent));
-    }
-    XEvent event;
+    ProcessKeyEventPostIMEArgs() : event(NULL), handled(false) {}
+    const ui::KeyEvent* event;
     bool handled;
   };
 
-  struct IBusKeyEventFromNativeKeyEventResult {
-    IBusKeyEventFromNativeKeyEventResult() : keyval(0), keycode(0), state(0) {}
-    uint32 keyval;
-    uint32 keycode;
-    uint32 state;
-  };
-
   // InputMethodIBus override.
-  virtual void ProcessKeyEventPostIME(const base::NativeEvent& native_key_event,
-                                      uint32 ibus_state,
+  virtual void ProcessKeyEventPostIME(const ui::KeyEvent& key_event,
                                       bool handled) OVERRIDE {
-    process_key_event_post_ime_args_.event = *native_key_event;
+    process_key_event_post_ime_args_.event = &key_event;
     process_key_event_post_ime_args_.handled = handled;
     ++process_key_event_post_ime_call_count_;
-  }
-
-  // We can't call X11 related function without display in unit test, so
-  // override with mock function.
-  virtual void IBusKeyEventFromNativeKeyEvent(
-      const base::NativeEvent& native_event,
-      uint32* ibus_keyval,
-      uint32* ibus_keycode,
-      uint32* ibus_state) OVERRIDE {
-    EXPECT_TRUE(native_event);
-    EXPECT_TRUE(ibus_keyval);
-    EXPECT_TRUE(ibus_keycode);
-    EXPECT_TRUE(ibus_state);
-    *ibus_keyval = ibus_key_event_from_native_key_event_result_.keyval;
-    *ibus_keycode = ibus_key_event_from_native_key_event_result_.keycode;
-    *ibus_state = ibus_key_event_from_native_key_event_result_.state;
   }
 
   void ResetCallCount() {
@@ -128,11 +90,6 @@ class TestableInputMethodIBus : public InputMethodIBus {
     return process_key_event_post_ime_call_count_;
   }
 
-  IBusKeyEventFromNativeKeyEventResult*
-      mutable_ibus_key_event_from_native_key_event_result() {
-    return &ibus_key_event_from_native_key_event_result_;
-  }
-
   // Change access rights for testing.
   using InputMethodIBus::ExtractCompositionText;
   using InputMethodIBus::ResetContext;
@@ -140,60 +97,6 @@ class TestableInputMethodIBus : public InputMethodIBus {
  private:
   ProcessKeyEventPostIMEArgs process_key_event_post_ime_args_;
   int process_key_event_post_ime_call_count_;
-
-  IBusKeyEventFromNativeKeyEventResult
-      ibus_key_event_from_native_key_event_result_;
-};
-
-class CreateInputContextSuccessHandler {
- public:
-  explicit CreateInputContextSuccessHandler(const dbus::ObjectPath& object_path)
-      : object_path_(object_path) {
-  }
-
-  void Run(const std::string& client_name,
-           const chromeos::IBusClient::CreateInputContextCallback& callback) {
-    EXPECT_EQ("chrome", client_name);
-    callback.Run(object_path_);
-  }
-
- private:
-  dbus::ObjectPath object_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(CreateInputContextSuccessHandler);
-};
-
-class CreateInputContextNoResponseHandler {
- public:
-  CreateInputContextNoResponseHandler() {}
-  void Run(const std::string& client_name,
-           const chromeos::IBusClient::CreateInputContextCallback& callback) {
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CreateInputContextNoResponseHandler);
-};
-
-class CreateInputContextDelayHandler {
- public:
-  explicit CreateInputContextDelayHandler(const dbus::ObjectPath& object_path)
-    : object_path_(object_path) {
-  }
-
-  void Run(const std::string& client_name,
-           const chromeos::IBusClient::CreateInputContextCallback& callback) {
-    callback_ = callback;
-  }
-
-  void RunCallback() {
-    callback_.Run(object_path_);
-  }
-
- private:
-  dbus::ObjectPath object_path_;
-  chromeos::IBusClient::CreateInputContextCallback callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(CreateInputContextDelayHandler);
 };
 
 class SynchronousKeyEventHandler {
@@ -304,7 +207,7 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
 
     mock_ime_engine_handler_.reset(
         new chromeos::MockIMEEngineHandler());
-    chromeos::IBusBridge::Get()->SetEngineHandler(
+    chromeos::IBusBridge::Get()->SetCurrentEngineHandler(
         mock_ime_engine_handler_.get());
 
     mock_ime_candidate_window_handler_.reset(
@@ -320,7 +223,7 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
     if (ime_.get())
       ime_->SetFocusedTextInputClient(NULL);
     ime_.reset();
-    chromeos::IBusBridge::Get()->SetEngineHandler(NULL);
+    chromeos::IBusBridge::Get()->SetCurrentEngineHandler(NULL);
     chromeos::IBusBridge::Get()->SetCandidateWindowHandler(NULL);
     mock_ime_engine_handler_.reset();
     mock_ime_candidate_window_handler_.reset();
@@ -368,35 +271,38 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
     return input_type_;
   }
   virtual TextInputMode GetTextInputMode() const OVERRIDE {
-    return TEXT_INPUT_MODE_DEFAULT;
+    return input_mode_;
   }
   virtual bool CanComposeInline() const OVERRIDE {
     return can_compose_inline_;
   }
-  virtual gfx::Rect GetCaretBounds() OVERRIDE {
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE {
     return caret_bounds_;
   }
   virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE {
+                                             gfx::Rect* rect) const OVERRIDE {
     return false;
   }
-  virtual bool HasCompositionText() OVERRIDE {
+  virtual bool HasCompositionText() const OVERRIDE {
     CompositionText empty;
     return composition_text_ != empty;
   }
-  virtual bool GetTextRange(gfx::Range* range) OVERRIDE {
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE {
     *range = text_range_;
     return true;
   }
-  virtual bool GetCompositionTextRange(gfx::Range* range) OVERRIDE { return false; }
-  virtual bool GetSelectionRange(gfx::Range* range) OVERRIDE {
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE {
+    return false;
+  }
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE {
     *range = selection_range_;
     return true;
   }
 
   virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE { return false; }
   virtual bool DeleteRange(const gfx::Range& range) OVERRIDE { return false; }
-  virtual bool GetTextFromRange(const gfx::Range& range, string16* text) OVERRIDE {
+  virtual bool GetTextFromRange(const gfx::Range& range,
+                                string16* text) const OVERRIDE {
     *text = surrounding_text_.substr(range.GetMin(), range.length());
     return true;
   }
@@ -408,6 +314,9 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
   virtual void ExtendSelectionAndDelete(size_t before,
                                         size_t after) OVERRIDE { }
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE { }
+  virtual void OnCandidateWindowShown() OVERRIDE { }
+  virtual void OnCandidateWindowUpdated() OVERRIDE { }
+  virtual void OnCandidateWindowHidden() OVERRIDE { }
 
   bool HasNativeEvent() const {
     base::NativeEvent empty;
@@ -432,6 +341,7 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
     on_input_method_changed_call_count_ = 0;
 
     input_type_ = TEXT_INPUT_TYPE_NONE;
+    input_mode_ = TEXT_INPUT_MODE_DEFAULT;
     can_compose_inline_ = true;
     caret_bounds_ = gfx::Rect();
   }
@@ -456,6 +366,7 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
 
   // Variables that will be returned from the ui::TextInputClient functions.
   TextInputType input_type_;
+  TextInputMode input_mode_;
   bool can_compose_inline_;
   gfx::Rect caret_bounds_;
   gfx::Range text_range_;
@@ -570,7 +481,7 @@ TEST_F(InputMethodIBusTest, FocusIn_Text) {
   EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
   EXPECT_EQ(
       1,
-      mock_ime_candidate_window_handler_->set_cursor_location_call_count());
+      mock_ime_candidate_window_handler_->set_cursor_bounds_call_count());
   // ui::TextInputClient::OnInputMethodChanged() should be called when
   // ui::InputMethodIBus connects/disconnects to/from ibus-daemon and the
   // current text input type is not NONE.
@@ -613,16 +524,49 @@ TEST_F(InputMethodIBusTest, FocusOut_Password) {
   EXPECT_EQ(1, mock_ime_engine_handler_->focus_out_call_count());
 }
 
-// Confirm that IBusClient::FocusOut is NOT called.
-TEST_F(InputMethodIBusTest, FocusOut_Url) {
-  input_type_ = TEXT_INPUT_TYPE_TEXT;
+// FocusIn/FocusOut scenario test
+TEST_F(InputMethodIBusTest, Focus_Scenario) {
   ime_->Init(true);
+  // Confirm that both FocusIn and FocusOut are NOT called.
+  EXPECT_EQ(0, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
+  EXPECT_EQ(TEXT_INPUT_TYPE_NONE,
+            mock_ime_engine_handler_->last_text_input_context().type);
+  EXPECT_EQ(TEXT_INPUT_MODE_DEFAULT,
+            mock_ime_engine_handler_->last_text_input_context().mode);
+
+  input_type_ = TEXT_INPUT_TYPE_TEXT;
+  input_mode_ = TEXT_INPUT_MODE_LATIN;
+  ime_->OnTextInputTypeChanged(this);
+  // Confirm that only FocusIn is called, the TextInputType is TEXT and the
+  // TextInputMode is LATIN..
   EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
   EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
+  EXPECT_EQ(TEXT_INPUT_TYPE_TEXT,
+            mock_ime_engine_handler_->last_text_input_context().type);
+  EXPECT_EQ(TEXT_INPUT_MODE_LATIN,
+            mock_ime_engine_handler_->last_text_input_context().mode);
+
+  input_mode_ = TEXT_INPUT_MODE_KANA;
+  ime_->OnTextInputTypeChanged(this);
+  // Confirm that both FocusIn and FocusOut are NOT called.
+  EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
+  EXPECT_EQ(TEXT_INPUT_TYPE_TEXT,
+            mock_ime_engine_handler_->last_text_input_context().type);
+  EXPECT_EQ(TEXT_INPUT_MODE_LATIN,
+            mock_ime_engine_handler_->last_text_input_context().mode);
+
   input_type_ = TEXT_INPUT_TYPE_URL;
   ime_->OnTextInputTypeChanged(this);
-  EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
-  EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
+  // Confirm that both FocusIn and FocusOut are called and the TextInputType is
+  // URL.
+  EXPECT_EQ(2, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(1, mock_ime_engine_handler_->focus_out_call_count());
+  EXPECT_EQ(TEXT_INPUT_TYPE_URL,
+            mock_ime_engine_handler_->last_text_input_context().type);
+  EXPECT_EQ(TEXT_INPUT_MODE_KANA,
+            mock_ime_engine_handler_->last_text_input_context().mode);
 }
 
 // Test if the new |caret_bounds_| is correctly sent to ibus-daemon.
@@ -631,24 +575,24 @@ TEST_F(InputMethodIBusTest, OnCaretBoundsChanged) {
   ime_->Init(true);
   EXPECT_EQ(
       1,
-      mock_ime_candidate_window_handler_->set_cursor_location_call_count());
+      mock_ime_candidate_window_handler_->set_cursor_bounds_call_count());
   caret_bounds_ = gfx::Rect(1, 2, 3, 4);
   ime_->OnCaretBoundsChanged(this);
   EXPECT_EQ(
       2,
-      mock_ime_candidate_window_handler_->set_cursor_location_call_count());
+      mock_ime_candidate_window_handler_->set_cursor_bounds_call_count());
   caret_bounds_ = gfx::Rect(0, 2, 3, 4);
   ime_->OnCaretBoundsChanged(this);
   EXPECT_EQ(
       3,
-      mock_ime_candidate_window_handler_->set_cursor_location_call_count());
+      mock_ime_candidate_window_handler_->set_cursor_bounds_call_count());
   caret_bounds_ = gfx::Rect(0, 2, 3, 4);  // unchanged
   ime_->OnCaretBoundsChanged(this);
   // Current InputMethodIBus implementation performs the IPC regardless of the
   // bounds are changed or not.
   EXPECT_EQ(
       4,
-      mock_ime_candidate_window_handler_->set_cursor_location_call_count());
+      mock_ime_candidate_window_handler_->set_cursor_bounds_call_count());
 }
 
 TEST_F(InputMethodIBusTest, ExtractCompositionTextTest_NoAttribute) {
@@ -770,10 +714,8 @@ TEST_F(InputMethodIBusTest, ExtractCompositionTextTest_Selection) {
   // Set up ibus text with one underline attribute.
   chromeos::IBusText ibus_text;
   ibus_text.set_text(kSampleText);
-  chromeos::IBusText::SelectionAttribute selection;
-  selection.start_index = 1UL;
-  selection.end_index = 4UL;
-  ibus_text.mutable_selection_attributes()->push_back(selection);
+  ibus_text.set_selection_start(1UL);
+  ibus_text.set_selection_end(4UL);
 
   CompositionText composition_text;
   ime_->ExtractCompositionText(ibus_text, kCursorPos, &composition_text);
@@ -781,9 +723,9 @@ TEST_F(InputMethodIBusTest, ExtractCompositionTextTest_Selection) {
   EXPECT_EQ(kCursorPos, composition_text.selection.start());
   EXPECT_EQ(kCursorPos, composition_text.selection.end());
   ASSERT_EQ(1UL, composition_text.underlines.size());
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.start_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_start()),
             composition_text.underlines[0].start_offset);
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.end_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_end()),
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
@@ -798,24 +740,22 @@ TEST_F(InputMethodIBusTest,
   // Set up ibus text with one underline attribute.
   chromeos::IBusText ibus_text;
   ibus_text.set_text(kSampleText);
-  chromeos::IBusText::SelectionAttribute selection;
-  selection.start_index = kCursorPos;
-  selection.end_index = 4UL;
-  ibus_text.mutable_selection_attributes()->push_back(selection);
+  ibus_text.set_selection_start(kCursorPos);
+  ibus_text.set_selection_end(4UL);
 
   CompositionText composition_text;
   ime_->ExtractCompositionText(ibus_text, kCursorPos, &composition_text);
   EXPECT_EQ(UTF8ToUTF16(kSampleText), composition_text.text);
   // If the cursor position is same as selection bounds, selection start
   // position become opposit side of selection from cursor.
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.end_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_end()),
             composition_text.selection.start());
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, kCursorPos),
             composition_text.selection.end());
   ASSERT_EQ(1UL, composition_text.underlines.size());
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.start_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_start()),
             composition_text.underlines[0].start_offset);
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.end_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_end()),
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
@@ -829,24 +769,22 @@ TEST_F(InputMethodIBusTest, ExtractCompositionTextTest_SelectionEndWithCursor) {
   // Set up ibus text with one underline attribute.
   chromeos::IBusText ibus_text;
   ibus_text.set_text(kSampleText);
-  chromeos::IBusText::SelectionAttribute selection;
-  selection.start_index = 1UL;
-  selection.end_index = kCursorPos;
-  ibus_text.mutable_selection_attributes()->push_back(selection);
+  ibus_text.set_selection_start(1UL);
+  ibus_text.set_selection_end(kCursorPos);
 
   CompositionText composition_text;
   ime_->ExtractCompositionText(ibus_text, kCursorPos, &composition_text);
   EXPECT_EQ(UTF8ToUTF16(kSampleText), composition_text.text);
   // If the cursor position is same as selection bounds, selection start
   // position become opposit side of selection from cursor.
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.start_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_start()),
             composition_text.selection.start());
   EXPECT_EQ(GetOffsetInUTF16(kSampleText, kCursorPos),
             composition_text.selection.end());
   ASSERT_EQ(1UL, composition_text.underlines.size());
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.start_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_start()),
             composition_text.underlines[0].start_offset);
-  EXPECT_EQ(GetOffsetInUTF16(kSampleText, selection.end_index),
+  EXPECT_EQ(GetOffsetInUTF16(kSampleText, ibus_text.selection_end()),
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
@@ -972,31 +910,23 @@ class InputMethodIBusKeyEventTest : public InputMethodIBusTest {
 };
 
 TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseTest) {
-  XEvent event = {};
-  event.xkey.type = KeyPress;
-
-  // Set up IBusKeyEventFromNativeKeyEvent result.
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keyval
-      = kTestIBusKeyVal1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keycode
-      = kTestIBusKeyCode1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->state
-      = kTestIBusState1;
+  const int kFlags = ui::EF_SHIFT_DOWN;
+  ScopedXI2Event xevent;
+  xevent.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, kFlags);
+  const ui::KeyEvent event(xevent, true);
 
   // Do key event.
   input_type_ = TEXT_INPUT_TYPE_TEXT;
   ime_->OnTextInputTypeChanged(this);
-  ime_->DispatchKeyEvent(&event);
+  ime_->DispatchKeyEvent(event);
 
   // Check before state.
-  EXPECT_EQ(1,
-            mock_ime_engine_handler_->process_key_event_call_count());
-  EXPECT_EQ(kTestIBusKeyVal1,
-            mock_ime_engine_handler_->last_processed_keysym());
-  EXPECT_EQ(kTestIBusKeyCode1,
-            mock_ime_engine_handler_->last_processed_keycode());
-  EXPECT_EQ(kTestIBusState1,
-            mock_ime_engine_handler_->last_processed_state());
+  const ui::KeyEvent* key_event =
+      mock_ime_engine_handler_->last_processed_key_event();
+  EXPECT_EQ(1, mock_ime_engine_handler_->process_key_event_call_count());
+  EXPECT_EQ(ui::VKEY_A, key_event->key_code());
+  EXPECT_EQ("KeyA", key_event->code());
+  EXPECT_EQ(kFlags, key_event->flags());
   EXPECT_EQ(0, ime_->process_key_event_post_ime_call_count());
 
   // Do callback.
@@ -1004,8 +934,10 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseTest) {
 
   // Check the results
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
-  EXPECT_TRUE(IsEqualXKeyEvent(event,
-                               ime_->process_key_event_post_ime_args().event));
+  const ui::KeyEvent* stored_event =
+      ime_->process_key_event_post_ime_args().event;
+  EXPECT_TRUE(stored_event->HasNativeEvent());
+  EXPECT_TRUE(IsEqualXKeyEvent(*xevent, *(stored_event->native_event())));
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1014,45 +946,33 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseTest) {
   input_type_ = TEXT_INPUT_TYPE_TEXT;
   ime_->OnTextInputTypeChanged(this);
 
-  XEvent event = {};
-  event.xkey.type = KeyPress;
-
-  // Set up IBusKeyEventFromNativeKeyEvent result for first key event.
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keyval
-      = kTestIBusKeyVal1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keycode
-      = kTestIBusKeyCode1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->state
-      = kTestIBusState1;
+  const int kFlags = ui::EF_SHIFT_DOWN;
+  ScopedXI2Event xevent;
+  xevent.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_B, kFlags);
+  const ui::KeyEvent event(xevent, true);
 
   // Do key event.
-  ime_->DispatchKeyEvent(&event);
-  EXPECT_EQ(kTestIBusKeyVal1,
-            mock_ime_engine_handler_->last_processed_keysym());
-  EXPECT_EQ(kTestIBusKeyCode1,
-            mock_ime_engine_handler_->last_processed_keycode());
-  EXPECT_EQ(kTestIBusState1,
-            mock_ime_engine_handler_->last_processed_state());
+  ime_->DispatchKeyEvent(event);
+  const ui::KeyEvent* key_event =
+      mock_ime_engine_handler_->last_processed_key_event();
+  EXPECT_EQ(ui::VKEY_B, key_event->key_code());
+  EXPECT_EQ("KeyB", key_event->code());
+  EXPECT_EQ(kFlags, key_event->flags());
 
   KeyEventCallback first_callback =
       mock_ime_engine_handler_->last_passed_callback();
 
-  // Set up IBusKeyEventFromNativeKeyEvent result for second key event.
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keyval
-      = kTestIBusKeyVal2;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keycode
-      = kTestIBusKeyCode2;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->state
-      = kTestIBusState2;
-
   // Do key event again.
-  ime_->DispatchKeyEvent(&event);
-  EXPECT_EQ(kTestIBusKeyVal2,
-            mock_ime_engine_handler_->last_processed_keysym());
-  EXPECT_EQ(kTestIBusKeyCode2,
-            mock_ime_engine_handler_->last_processed_keycode());
-  EXPECT_EQ(kTestIBusState2,
-            mock_ime_engine_handler_->last_processed_state());
+  ScopedXI2Event xevent2;
+  xevent2.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_C, kFlags);
+  const ui::KeyEvent event2(xevent2, true);
+
+  ime_->DispatchKeyEvent(event2);
+  const ui::KeyEvent* key_event2 =
+      mock_ime_engine_handler_->last_processed_key_event();
+  EXPECT_EQ(ui::VKEY_C, key_event2->key_code());
+  EXPECT_EQ("KeyC", key_event2->code());
+  EXPECT_EQ(kFlags, key_event2->flags());
 
   // Check before state.
   EXPECT_EQ(2,
@@ -1064,8 +984,10 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseTest) {
 
   // Check the results for first key event.
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
-  EXPECT_TRUE(IsEqualXKeyEvent(event,
-                               ime_->process_key_event_post_ime_args().event));
+  const ui::KeyEvent* stored_event =
+      ime_->process_key_event_post_ime_args().event;
+  EXPECT_TRUE(stored_event->HasNativeEvent());
+  EXPECT_TRUE(IsEqualXKeyEvent(*xevent, *(stored_event->native_event())));
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 
   // Do callback for second key event.
@@ -1073,31 +995,24 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseTest) {
 
   // Check the results for second key event.
   EXPECT_EQ(2, ime_->process_key_event_post_ime_call_count());
-  EXPECT_TRUE(IsEqualXKeyEvent(event,
-                               ime_->process_key_event_post_ime_args().event));
+  stored_event = ime_->process_key_event_post_ime_args().event;
+  EXPECT_TRUE(stored_event->HasNativeEvent());
+  EXPECT_TRUE(IsEqualXKeyEvent(*xevent2, *(stored_event->native_event())));
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
 
 TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseResetTest) {
-  XEvent event = {};
-  event.xkey.type = KeyPress;
-
-  // Set up IBusKeyEventFromNativeKeyEvent result.
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keyval
-      = kTestIBusKeyVal1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->keycode
-      = kTestIBusKeyCode1;
-  ime_->mutable_ibus_key_event_from_native_key_event_result()->state
-      = kTestIBusState1;
+  ScopedXI2Event xevent;
+  xevent.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_SHIFT_DOWN);
+  const ui::KeyEvent event(xevent, true);
 
   // Do key event.
   input_type_ = TEXT_INPUT_TYPE_TEXT;
   ime_->OnTextInputTypeChanged(this);
-  ime_->DispatchKeyEvent(&event);
+  ime_->DispatchKeyEvent(event);
 
   // Check before state.
-  EXPECT_EQ(1,
-            mock_ime_engine_handler_->process_key_event_call_count());
+  EXPECT_EQ(1, mock_ime_engine_handler_->process_key_event_call_count());
   EXPECT_EQ(0, ime_->process_key_event_post_ime_call_count());
 
   ime_->ResetContext();
@@ -1107,7 +1022,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseResetTest) {
 
   EXPECT_EQ(0, ime_->process_key_event_post_ime_call_count());
 }
-
 // TODO(nona): Introduce ProcessKeyEventPostIME tests(crbug.com/156593).
 
 }  // namespace ui

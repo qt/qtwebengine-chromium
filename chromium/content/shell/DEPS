@@ -22,4 +22,12 @@ include_rules = [
 
   # For WebTestRunner library
   "+third_party/WebKit/public/testing",
+
+  "+components/breakpad",
 ]
+
+specific_include_rules = {
+  "shell_views\.cc": [
+    "+ui/wm/test"
+  ],
+}

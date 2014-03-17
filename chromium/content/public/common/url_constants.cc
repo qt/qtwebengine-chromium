@@ -12,17 +12,16 @@ const char kBlobScheme[] = "blob";
 // Before adding new chrome schemes please check with security@chromium.org.
 // There are security implications associated with introducing new schemes.
 const char kChromeDevToolsScheme[] = "chrome-devtools";
-const char kChromeInternalScheme[] = "chrome-internal";
 const char kChromeUIScheme[] = "chrome";
 const char kDataScheme[] = "data";
 const char kFileScheme[] = "file";
 const char kFileSystemScheme[] = "filesystem";
-const char kFtpScheme[] = "ftp";
-const char kGuestScheme[] = "chrome-guest";
 }  // namespace chrome
 
 namespace content {
 
+const char kFtpScheme[] = "ftp";
+const char kGuestScheme[] = "chrome-guest";
 const char kHttpScheme[] = "http";
 const char kHttpsScheme[] = "https";
 const char kJavaScriptScheme[] = "javascript";

@@ -156,28 +156,55 @@ def CreateLessThanOrEqualRegex(number):
   return regex
 
 
-def Search(git_repo, svn_rev, is_mirror, refspec='FETCH_HEAD', fetch_url=None):
-  """Return the Git commit id fuzzy matching the given SVN revision.
+class SearchError(Exception):
+  pass
 
-  If fetch_url is not None, will update repo if revision is not found."""
-  _, output = Git(git_repo, 'cat-file commit %s' % refspec, is_mirror)
-  match = re.match(r'git-svn-id: [^\s@]+@(\d+) \S+$', output.splitlines()[-1])
-  assert match, 'no match on %s' % output
-  if int(match.group(1)) < int(svn_rev) and fetch_url:
+
+def _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex):
+  def _FindRevForCommitish(git_repo, commitish, is_mirror):
+    _, output = Git(git_repo, 'cat-file commit %s' % commitish, is_mirror)
+    match = re.match(r'git-svn-id: [^\s@]+@(\d+) \S+$', output.splitlines()[-1])
+    assert match, 'no match on %s' % output
+    return int(match.group(1))
+
+  # Check if svn_rev is newer than the current refspec revision.
+  found_rev = _FindRevForCommitish(git_repo, refspec, is_mirror)
+  if found_rev < int(svn_rev) and fetch_url:
     if VERBOSE:
-      print 'Fetching %s %s [%s < %s]' % (git_repo, refspec,
-                                          match.group(1), svn_rev)
+      print 'Fetching %s %s [%s < %s]' % (git_repo, refspec, found_rev, svn_rev)
     Fetch(git_repo, fetch_url, is_mirror)
 
-  regex = CreateLessThanOrEqualRegex(svn_rev)
+  # Find the first commit matching the given git-svn-id regex.
   _, output = Git(
       git_repo,
       ('log -E --grep="^git-svn-id: [^@]*@%s [A-Za-z0-9-]*$" '
        '-1 --format="%%H" %s') % (regex, refspec),
       is_mirror)
   output = output.strip()
+  if not re.match('^[0-9a-fA-F]{40}$', output):
+    raise SearchError('Cannot find revision %s in %s' % (svn_rev, git_repo))
 
-  print '%s: %s <-> %s' % (git_repo, output, svn_rev)
-  if re.match('^[0-9a-fA-F]{40}$', output):
-    return output
-  raise Exception('Cannot find revision %s in %s' % (svn_rev, git_repo))
+  # Check if it actually matched the svn_rev that was requested.
+  found_rev = _FindRevForCommitish(git_repo, output, is_mirror)
+  found_msg = svn_rev
+  if found_rev != int(svn_rev):
+    found_msg = '%s [actual: %s]' % (svn_rev, found_rev)
+  print '%s: %s <-> %s' % (git_repo, output, found_msg)
+  return output
+
+
+def SearchExact(git_repo, svn_rev, is_mirror, refspec='FETCH_HEAD',
+    fetch_url=None):
+  """Return the Git commit id exactly matching the given SVN revision.
+
+  If fetch_url is not None, will update repo if revision is newer."""
+  regex = str(svn_rev)
+  return _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex)
+
+
+def Search(git_repo, svn_rev, is_mirror, refspec='FETCH_HEAD', fetch_url=None):
+  """Return the Git commit id fuzzy matching the given SVN revision.
+
+  If fetch_url is not None, will update repo if revision is newer."""
+  regex = CreateLessThanOrEqualRegex(svn_rev)
+  return _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex)

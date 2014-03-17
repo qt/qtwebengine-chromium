@@ -17,6 +17,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/win/window_impl.h"
+#include "ui/views/layout/layout_constants.h"
 
 namespace views {
 
@@ -29,8 +30,6 @@ const int kItemTopMargin = 3;
 const int kItemBottomMargin = 4;
 // Margins between the left of the item and the icon.
 const int kItemLeftMargin = 4;
-// Margins between the right of the item and the label.
-const int kItemRightMargin = 10;
 // The width for displaying the sub-menu arrow.
 const int kArrowWidth = 10;
 
@@ -105,7 +104,7 @@ class MenuHostWindow : public gfx::WindowImpl {
     if (data != NULL) {
       gfx::Font font;
       lpmis->itemWidth = font.GetStringWidth(data->label) + kIconWidth +
-          kItemLeftMargin + kItemRightMargin -
+          kItemLeftMargin + views::kItemLabelSpacing -
           GetSystemMetrics(SM_CXMENUCHECK);
       if (data->submenu)
         lpmis->itemWidth += kArrowWidth;
@@ -150,7 +149,7 @@ class MenuHostWindow : public gfx::WindowImpl {
       rect.top += kItemTopMargin;
       // Should we add kIconWidth only when icon.width() != 0 ?
       rect.left += kItemLeftMargin + kIconWidth;
-      rect.right -= kItemRightMargin;
+      rect.right -= views::kItemLabelSpacing;
       UINT format = DT_TOP | DT_SINGLELINE;
       // Check whether the mnemonics should be underlined.
       BOOL underline_mnemonics;
@@ -183,8 +182,7 @@ class MenuHostWindow : public gfx::WindowImpl {
 
       // Draw the icon after the label, otherwise it would be covered
       // by the label.
-      gfx::ImageSkiaRep icon_image_rep =
-          data->icon.GetRepresentation(ui::SCALE_FACTOR_100P);
+      gfx::ImageSkiaRep icon_image_rep = data->icon.GetRepresentation(1.0f);
       if (data->icon.width() != 0 && data->icon.height() != 0) {
         gfx::Canvas canvas(icon_image_rep, false);
         skia::DrawToNativeContext(

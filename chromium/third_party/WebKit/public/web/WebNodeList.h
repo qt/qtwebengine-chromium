@@ -34,11 +34,11 @@
 #include "../platform/WebCommon.h"
 
 namespace WebCore { class NodeList; }
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
-namespace WebKit {
+namespace blink {
 class WebNode;
 
 // Provides readonly access to some properties of a DOM node.
@@ -54,13 +54,13 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebNodeList&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebNodeList&);
 
-    WEBKIT_EXPORT unsigned length() const;
-    WEBKIT_EXPORT WebNode item(size_t) const;
+    BLINK_EXPORT unsigned length() const;
+    BLINK_EXPORT WebNode item(size_t) const;
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebNodeList(const WTF::PassRefPtr<WebCore::NodeList>&);
 #endif
 
@@ -69,6 +69,6 @@ private:
     WebCore::NodeList* m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

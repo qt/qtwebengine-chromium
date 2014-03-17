@@ -260,8 +260,8 @@ bool Ordinal<Traits>::EqualsOrBothInvalid(const Ordinal& other) const {
 
 template <typename Traits>
 std::string Ordinal<Traits>::ToDebugString() const {
-  std::string debug_string;
-  base::JsonDoubleQuote(bytes_, false /* put_in_quotes */, &debug_string);
+  std::string debug_string =
+      base::EscapeBytesAsInvalidJSONString(bytes_, false /* put_in_quotes */);
   if (!is_valid_) {
     debug_string = "INVALID[" + debug_string + "]";
   }
@@ -401,7 +401,7 @@ int Ordinal<Traits>::AddDigitValue(std::string* bytes,
   DCHECK_GE(i, 0U);
   DCHECK_LT(i, bytes->length());
 
-  for (int j = i; j >= 0 && digit_value > 0; --j) {
+  for (int j = static_cast<int>(i); j >= 0 && digit_value > 0; --j) {
     int byte_j_value = GetDigitValue(*bytes, j) + digit_value;
     digit_value = byte_j_value / kRadix;
     DCHECK_LE(digit_value, 1);

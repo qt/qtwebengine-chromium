@@ -28,7 +28,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "wtf/Compiler.h"
 #include "wtf/PassRefPtr.h"
@@ -38,15 +38,16 @@
 namespace WebCore {
 
 class ExceptionState;
-class ScriptExecutionContext;
+class ExecutionContext;
 class SpeechRecognitionController;
 class SpeechRecognitionError;
 class SpeechRecognitionResult;
 class SpeechRecognitionResultList;
 
-class SpeechRecognition : public RefCounted<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTarget {
+class SpeechRecognition : public RefCounted<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(SpeechRecognition);
 public:
-    static PassRefPtr<SpeechRecognition> create(ScriptExecutionContext*);
+    static PassRefPtr<SpeechRecognition> create(ExecutionContext*);
     ~SpeechRecognition();
 
     // Attributes.
@@ -81,13 +82,10 @@ public:
 
     // EventTarget.
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // ActiveDOMObject.
     virtual void stop() OVERRIDE;
-
-    using RefCounted<SpeechRecognition>::ref;
-    using RefCounted<SpeechRecognition>::deref;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audiostart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(soundstart);
@@ -104,22 +102,13 @@ public:
 private:
     friend class RefCounted<SpeechRecognition>;
 
-    explicit SpeechRecognition(ScriptExecutionContext*);
-
-
-    // EventTarget
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-    virtual EventTargetData* eventTargetData() OVERRIDE { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE { return &m_eventTargetData; }
+    explicit SpeechRecognition(ExecutionContext*);
 
     RefPtr<SpeechGrammarList> m_grammars;
     String m_lang;
     bool m_continuous;
     bool m_interimResults;
     unsigned long m_maxAlternatives;
-
-    EventTargetData m_eventTargetData;
 
     SpeechRecognitionController* m_controller;
     bool m_stoppedByActiveDOMObject;

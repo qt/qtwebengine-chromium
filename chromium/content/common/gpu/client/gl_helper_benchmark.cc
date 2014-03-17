@@ -43,8 +43,8 @@
 
 namespace content {
 
-using WebKit::WebGLId;
-using WebKit::WebGraphicsContext3D;
+using blink::WebGLId;
+using blink::WebGraphicsContext3D;
 
 content::GLHelper::ScalerQuality kQualities[] = {
   content::GLHelper::SCALER_QUALITY_BEST,
@@ -66,7 +66,8 @@ class GLHelperTest : public testing::Test {
         CreateOffscreenContext(attributes);
     context_->makeContextCurrent();
 
-    helper_.reset(new content::GLHelper(context_.get()));
+    helper_.reset(
+        new content::GLHelper(context_.get(), context_->GetContextSupport()));
     helper_scaling_.reset(new content::GLHelperScaling(
         context_.get(),
         helper_.get()));
@@ -101,14 +102,15 @@ class GLHelperTest : public testing::Test {
         std::vector<gfx::PNGCodec::Comment>(),
         &compressed));
     ASSERT_TRUE(compressed.size());
-    FILE* f = file_util::OpenFile(filename, "wb");
+    FILE* f = base::OpenFile(filename, "wb");
     ASSERT_TRUE(f);
     ASSERT_EQ(fwrite(&*compressed.begin(), 1, compressed.size(), f),
               compressed.size());
-    file_util::CloseFile(f);
+    base::CloseFile(f);
   }
 
-  scoped_ptr<WebKit::WebGraphicsContext3D> context_;
+  scoped_ptr<webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl>
+      context_;
   scoped_ptr<content::GLHelper> helper_;
   scoped_ptr<content::GLHelperScaling> helper_scaling_;
   std::deque<GLHelperScaling::ScaleOp> x_ops_, y_ops_;
@@ -294,7 +296,7 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
       std::string filename = base::StringPrintf("testoutput_%s_%d.ppm",
                                                 kQualityNames[q],
                                                 percents[p]);
-      LOG(INFO) << "Writing " <<  filename;
+      VLOG(0) << "Writing " <<  filename;
       SaveToFile(&output_pixels, base::FilePath::FromUTF8Unsafe(filename));
     }
   }

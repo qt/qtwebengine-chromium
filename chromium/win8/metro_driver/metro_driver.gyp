@@ -64,6 +64,7 @@
             'metro_driver_version_resources',
           ],
           'sources': [
+            'display_properties.cc',
             'metro_driver.cc',
             'metro_driver.h',
             'stdafx.h',
@@ -74,7 +75,7 @@
           'conditions': [
             ['use_aura==1', {
               'dependencies': [
-                '../win8.gyp:metro_viewer',
+                '../win8.gyp:metro_viewer_constants',
               ],
               'sources': [
                 'chrome_app_view_ash.cc',
@@ -83,6 +84,9 @@
                 'direct3d_helper.h',
                 'file_picker_ash.cc',
                 'file_picker_ash.h',
+              ],
+              'includes': [
+                'ime/ime.gypi',
               ],
             }, {  # use_aura!=1
               'sources': [

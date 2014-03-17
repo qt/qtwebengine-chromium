@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 
+#include "base/command_line.h"
+
 namespace gfx {
 
 // static
@@ -23,7 +25,11 @@ class SurfaceFactoryOzoneStub : public SurfaceFactoryOzone {
       gfx::AcceleratedWidget w) OVERRIDE {
     return 0;
   }
-  virtual bool LoadEGLGLES2Bindings() OVERRIDE { return true; }
+  virtual bool LoadEGLGLES2Bindings(
+      AddGLLibraryCallback add_gl_library,
+      SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE {
+    return true;
+  }
   virtual bool AttemptToResizeAcceleratedWidget(
       gfx::AcceleratedWidget w,
       const gfx::Rect& bounds) OVERRIDE {
@@ -42,7 +48,7 @@ SurfaceFactoryOzone::~SurfaceFactoryOzone() {
 }
 
 SurfaceFactoryOzone* SurfaceFactoryOzone::GetInstance() {
-  CHECK(impl_) << "SurfaceFactoryOzone accessed before constructed";
+  CHECK(impl_) << "No SurfaceFactoryOzone implementation set.";
   return impl_;
 }
 
@@ -65,8 +71,17 @@ intptr_t SurfaceFactoryOzone::GetNativeDisplay() {
   return 0;
 }
 
-bool SurfaceFactoryOzone::SchedulePageFlip(gfx::AcceleratedWidget) {
+bool SurfaceFactoryOzone::SchedulePageFlip(gfx::AcceleratedWidget w) {
   return true;
+}
+
+SkCanvas* SurfaceFactoryOzone::GetCanvasForWidget(gfx::AcceleratedWidget w) {
+  return NULL;
+}
+
+const int32* SurfaceFactoryOzone::GetEGLSurfaceProperties(
+    const int32* desired_attributes) {
+  return desired_attributes;
 }
 
 // static

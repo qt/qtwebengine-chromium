@@ -5,9 +5,9 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
@@ -22,7 +22,7 @@
 #include "ui/gfx/rect.h"
 
 using testing::_;
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace autofill {
 
@@ -36,14 +36,15 @@ const int kAutofillProfileId = 1;
 
 class MockAutofillDriver : public TestAutofillDriver {
  public:
-  explicit MockAutofillDriver(content::WebContents* web_contents)
-      : TestAutofillDriver(web_contents) {}
-
+  MockAutofillDriver() {}
   // Mock methods to enable testability.
   MOCK_METHOD1(SetRendererActionOnFormDataReception,
                void(RendererFormDataAction action));
+  MOCK_METHOD1(RendererShouldAcceptDataListSuggestion,
+               void(const base::string16&));
   MOCK_METHOD0(RendererShouldClearFilledForm, void());
   MOCK_METHOD0(RendererShouldClearPreviewedForm, void());
+  MOCK_METHOD1(RendererShouldSetNodeText, void(const base::string16&));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAutofillDriver);
@@ -95,30 +96,24 @@ class MockAutofillManager : public AutofillManager {
 
 }  // namespace
 
-class AutofillExternalDelegateUnitTest
-    : public ChromeRenderViewHostTestHarness {
+class AutofillExternalDelegateUnitTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
-    ChromeRenderViewHostTestHarness::SetUp();
-    autofill_driver_.reset(new MockAutofillDriver(web_contents()));
+    autofill_driver_.reset(new MockAutofillDriver());
     autofill_manager_.reset(
         new MockAutofillManager(autofill_driver_.get(),
                                 &manager_delegate_));
     external_delegate_.reset(
         new AutofillExternalDelegate(
-            web_contents(),
             autofill_manager_.get(), autofill_driver_.get()));
   }
 
   virtual void TearDown() OVERRIDE {
     // Order of destruction is important as AutofillManager relies on
-    // PersonalDataManager to be around when it gets destroyed. Also, a real
-    // AutofillManager is tied to the lifetime of the WebContents, so it must
-    // be destroyed at the destruction of the WebContents.
+    // PersonalDataManager to be around when it gets destroyed.
     autofill_manager_.reset();
     external_delegate_.reset();
     autofill_driver_.reset();
-    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   // Issue an OnQuery call with the given |query_id|.
@@ -136,6 +131,8 @@ class AutofillExternalDelegateUnitTest
   scoped_ptr<MockAutofillDriver> autofill_driver_;
   scoped_ptr<MockAutofillManager> autofill_manager_;
   scoped_ptr<AutofillExternalDelegate> external_delegate_;
+
+  base::MessageLoop message_loop_;
 };
 
 // Test that our external delegate called the virtual methods at the right time.
@@ -272,9 +269,9 @@ TEST_F(AutofillExternalDelegateUnitTest, UpdateDataListWhileShowingPopup) {
                                             autofill_item,
                                             autofill_ids);
 
-  // This would normally get called from ShowAutofillPopup, but it is mocked
+  // This would normally get called from ShowAutofillPopup, but it is mocked so
   // we need to call OnPopupShown ourselves.
-  external_delegate_->OnPopupShown(NULL);
+  external_delegate_->OnPopupShown();
 
   // Update the current data list and ensure the popup is updated.
   data_list_items.push_back(base::string16());
@@ -433,6 +430,18 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
       WebAutofillClient::MenuItemIDPasswordEntry);
 }
 
+// Test that the driver is directed to accept the data list after being notified
+// that the user accepted the data list suggestion.
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateAcceptSuggestion) {
+  EXPECT_CALL(manager_delegate_, HideAutofillPopup());
+  base::string16 dummy_string(ASCIIToUTF16("baz qux"));
+  EXPECT_CALL(*autofill_driver_,
+              RendererShouldAcceptDataListSuggestion(dummy_string));
+  external_delegate_->DidAcceptSuggestion(
+      dummy_string,
+      WebAutofillClient::MenuItemIDDataListEntry);
+}
+
 // Test that the driver is directed to clear the form after being notified that
 // the user accepted the suggestion to clear the form.
 TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearForm) {
@@ -468,6 +477,16 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateHideWarning) {
                                             autofill_items,
                                             autofill_items,
                                             autofill_ids);
+}
+
+TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateSetNodeText) {
+  EXPECT_CALL(manager_delegate_, HideAutofillPopup());
+  base::string16 dummy_string(ASCIIToUTF16("baz foo"));
+  EXPECT_CALL(*autofill_driver_,
+              RendererShouldSetNodeText(dummy_string));
+  external_delegate_->DidAcceptSuggestion(
+      dummy_string,
+      WebAutofillClient::MenuItemIDAutocompleteEntry);
 }
 
 }  // namespace autofill

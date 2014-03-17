@@ -39,9 +39,9 @@ namespace WebCore {
 
 using namespace XPath;
 
-PassRefPtr<XPathExpression> XPathEvaluator::createExpression(const String& expression, XPathNSResolver* resolver, ExceptionState& es)
+PassRefPtr<XPathExpression> XPathEvaluator::createExpression(const String& expression, PassRefPtr<XPathNSResolver> resolver, ExceptionState& exceptionState)
 {
-    return XPathExpression::createExpression(expression, resolver, es);
+    return XPathExpression::createExpression(expression, resolver, exceptionState);
 }
 
 PassRefPtr<XPathNSResolver> XPathEvaluator::createNSResolver(Node* nodeResolver)
@@ -50,18 +50,23 @@ PassRefPtr<XPathNSResolver> XPathEvaluator::createNSResolver(Node* nodeResolver)
 }
 
 PassRefPtr<XPathResult> XPathEvaluator::evaluate(const String& expression, Node* contextNode,
-    XPathNSResolver* resolver, unsigned short type, XPathResult* result, ExceptionState& es)
+    PassRefPtr<XPathNSResolver> resolver, unsigned short type, XPathResult* result, ExceptionState& exceptionState)
 {
-    if (!isValidContextNode(contextNode)) {
-        es.throwDOMException(NotSupportedError);
+    if (!contextNode) {
+        exceptionState.throwDOMException(NotSupportedError, "The context node provided is null.");
         return 0;
     }
 
-    RefPtr<XPathExpression> expr = createExpression(expression, resolver, es);
-    if (es.hadException())
+    if (!isValidContextNode(contextNode)) {
+        exceptionState.throwDOMException(NotSupportedError, "The node provided is '" + contextNode->nodeName() + "', which is not a valid context node type.");
+        return 0;
+    }
+
+    RefPtr<XPathExpression> expr = createExpression(expression, resolver, exceptionState);
+    if (exceptionState.hadException())
         return 0;
 
-    return expr->evaluate(contextNode, type, result, es);
+    return expr->evaluate(contextNode, type, result, exceptionState);
 }
 
 }

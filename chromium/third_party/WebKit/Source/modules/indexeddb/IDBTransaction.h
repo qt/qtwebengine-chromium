@@ -29,12 +29,13 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMError.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IndexedDB.h"
+#include "public/platform/WebIDBDatabase.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefCounted.h"
 
@@ -44,27 +45,26 @@ class DOMError;
 class ExceptionState;
 class IDBCursor;
 class IDBDatabase;
-class IDBDatabaseBackendInterface;
 class IDBObjectStore;
 class IDBOpenDBRequest;
 struct IDBObjectStoreMetadata;
 
-class IDBTransaction : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTarget, public ActiveDOMObject {
+class IDBTransaction : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTargetWithInlineData, public ActiveDOMObject {
+    REFCOUNTED_EVENT_TARGET(IDBTransaction);
+
 public:
-    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode, IDBDatabase*);
-    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
+    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode, IDBDatabase*);
+    static PassRefPtr<IDBTransaction> create(ExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
     virtual ~IDBTransaction();
 
     static const AtomicString& modeReadOnly();
     static const AtomicString& modeReadWrite();
     static const AtomicString& modeVersionChange();
-    static const AtomicString& modeReadOnlyLegacy();
-    static const AtomicString& modeReadWriteLegacy();
 
     static IndexedDB::TransactionMode stringToMode(const String&, ExceptionState&);
     static const AtomicString& modeToString(IndexedDB::TransactionMode);
 
-    IDBDatabaseBackendInterface* backendDB() const;
+    blink::WebIDBDatabase* backendDB() const;
 
     int64_t id() const { return m_id; }
     bool isActive() const { return m_state == Active; }
@@ -94,30 +94,20 @@ public:
     virtual void onComplete();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
-    virtual bool canSuspend() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
-    using RefCounted<IDBTransaction>::ref;
-    using RefCounted<IDBTransaction>::deref;
-
 private:
-    IDBTransaction(ScriptExecutionContext*, int64_t, const Vector<String>&, IndexedDB::TransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
+    IDBTransaction(ExecutionContext*, int64_t, const Vector<String>&, IndexedDB::TransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
 
     void enqueueEvent(PassRefPtr<Event>);
-
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
 
     enum State {
         Inactive, // Created or started, but not in an event callback
@@ -147,8 +137,6 @@ private:
     typedef HashMap<RefPtr<IDBObjectStore>, IDBObjectStoreMetadata> IDBObjectStoreMetadataMap;
     IDBObjectStoreMetadataMap m_objectStoreCleanupMap;
     IDBDatabaseMetadata m_previousMetadata;
-
-    EventTargetData m_eventTargetData;
 };
 
 } // namespace WebCore

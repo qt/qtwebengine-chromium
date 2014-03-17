@@ -32,19 +32,19 @@
 #include "WebNotification.h"
 
 #include "WebTextDirection.h"
-#include "core/dom/Event.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "core/events/Event.h"
 #include "core/page/WindowFocusAllowedIndicator.h"
-#include "modules/notifications/Notification.h"
+#include "modules/notifications/NotificationBase.h"
+#include "platform/UserGestureIndicator.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
-class WebNotificationPrivate : public Notification {
+class WebNotificationPrivate : public NotificationBase {
 };
 
 void WebNotification::reset()
@@ -102,17 +102,12 @@ WebString WebNotification::replaceId() const
     return m_private->tag();
 }
 
-void WebNotification::detachPresenter()
-{
-    m_private->detachPresenter();
-}
-
 void WebNotification::dispatchDisplayEvent()
 {
     m_private->dispatchShowEvent();
 }
 
-void WebNotification::dispatchErrorEvent(const WebKit::WebString& /* errorMessage */)
+void WebNotification::dispatchErrorEvent(const blink::WebString& /* errorMessage */)
 {
     // FIXME: errorMessage not supported by WebCore yet
     m_private->dispatchErrorEvent();
@@ -129,20 +124,20 @@ void WebNotification::dispatchClickEvent()
     m_private->dispatchClickEvent();
 }
 
-WebNotification::WebNotification(const WTF::PassRefPtr<Notification>& notification)
+WebNotification::WebNotification(const WTF::PassRefPtr<NotificationBase>& notification)
     : m_private(static_cast<WebNotificationPrivate*>(notification.leakRef()))
 {
 }
 
-WebNotification& WebNotification::operator=(const WTF::PassRefPtr<Notification>& notification)
+WebNotification& WebNotification::operator=(const WTF::PassRefPtr<NotificationBase>& notification)
 {
     assign(static_cast<WebNotificationPrivate*>(notification.leakRef()));
     return *this;
 }
 
-WebNotification::operator WTF::PassRefPtr<Notification>() const
+WebNotification::operator WTF::PassRefPtr<NotificationBase>() const
 {
-    return WTF::PassRefPtr<Notification>(const_cast<WebNotificationPrivate*>(m_private));
+    return WTF::PassRefPtr<NotificationBase>(const_cast<WebNotificationPrivate*>(m_private));
 }
 
 void WebNotification::assign(WebNotificationPrivate* p)
@@ -153,4 +148,4 @@ void WebNotification::assign(WebNotificationPrivate* p)
     m_private = p;
 }
 
-} // namespace WebKit
+} // namespace blink

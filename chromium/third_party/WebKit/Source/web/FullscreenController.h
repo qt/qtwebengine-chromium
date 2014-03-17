@@ -31,7 +31,7 @@
 #ifndef FullscreenController_h
 #define FullscreenController_h
 
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -40,7 +40,7 @@ class Element;
 class Frame;
 }
 
-namespace WebKit {
+namespace blink {
 class WebViewImpl;
 
 class FullscreenController {

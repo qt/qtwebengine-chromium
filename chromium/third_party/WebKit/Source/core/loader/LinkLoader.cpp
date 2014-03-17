@@ -37,10 +37,9 @@
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/html/LinkRelAttribute.h"
-#include "core/loader/Prerenderer.h"
-#include "core/page/Settings.h"
-#include "core/platform/PrerenderHandle.h"
-#include "core/platform/network/DNS.h"
+#include "core/loader/PrerenderHandle.h"
+#include "core/frame/Settings.h"
+#include "platform/network/DNS.h"
 
 namespace WebCore {
 
@@ -53,10 +52,6 @@ LinkLoader::LinkLoader(LinkLoaderClient* client)
 
 LinkLoader::~LinkLoader()
 {
-    if (m_cachedLinkResource)
-        m_cachedLinkResource->removeClient(this);
-    if (m_prerenderHandle)
-        m_prerenderHandle->removeClient();
 }
 
 void LinkLoader::linkLoadTimerFired(Timer<LinkLoader>* timer)
@@ -73,15 +68,14 @@ void LinkLoader::linkLoadingErrorTimerFired(Timer<LinkLoader>* timer)
 
 void LinkLoader::notifyFinished(Resource* resource)
 {
-    ASSERT_UNUSED(resource, m_cachedLinkResource.get() == resource);
+    ASSERT(this->resource() == resource);
 
-    if (m_cachedLinkResource->errorOccurred())
+    if (resource->errorOccurred())
         m_linkLoadingErrorTimer.startOneShot(0);
     else
         m_linkLoadTimer.startOneShot(0);
 
-    m_cachedLinkResource->removeClient(this);
-    m_cachedLinkResource = 0;
+    clearResource();
 }
 
 void LinkLoader::didStartPrerender()
@@ -114,30 +108,25 @@ bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& ty
             prefetchDNS(href.host());
     }
 
+    // FIXME(crbug.com/323096): Should take care of import.
     if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource()) && href.isValid() && document.frame()) {
         if (!m_client->shouldLoadLink())
             return false;
         Resource::Type type = relAttribute.isLinkSubresource() ?  Resource::LinkSubresource : Resource::LinkPrefetch;
         FetchRequest linkRequest(ResourceRequest(document.completeURL(href)), FetchInitiatorTypeNames::link);
-        if (m_cachedLinkResource) {
-            m_cachedLinkResource->removeClient(this);
-            m_cachedLinkResource = 0;
-        }
-        m_cachedLinkResource = document.fetcher()->fetchLinkResource(type, linkRequest);
-        if (m_cachedLinkResource)
-            m_cachedLinkResource->addClient(this);
+        setResource(document.fetcher()->fetchLinkResource(type, linkRequest));
     }
 
     if (relAttribute.isLinkPrerender()) {
-        if (!m_prerenderHandle) {
-            m_prerenderHandle = document.prerenderer()->render(this, href);
-        } else if (m_prerenderHandle->url() != href) {
-            m_prerenderHandle->cancel();
-            m_prerenderHandle = document.prerenderer()->render(this, href);
+        if (!m_prerender) {
+            m_prerender = PrerenderHandle::create(document, this, href);
+        } else if (m_prerender->url() != href) {
+            m_prerender->cancel();
+            m_prerender = PrerenderHandle::create(document, this, href);
         }
-    } else if (m_prerenderHandle) {
-        m_prerenderHandle->cancel();
-        m_prerenderHandle = 0;
+    } else if (m_prerender) {
+        m_prerender->cancel();
+        m_prerender.clear();
     }
     return true;
 }
@@ -146,10 +135,9 @@ void LinkLoader::released()
 {
     // Only prerenders need treatment here; other links either use the Resource interface, or are notionally
     // atomic (dns prefetch).
-    if (m_prerenderHandle) {
-        m_prerenderHandle->cancel();
-        m_prerenderHandle->removeClient();
-        m_prerenderHandle.clear();
+    if (m_prerender) {
+        m_prerender->cancel();
+        m_prerender.clear();
     }
 }
 

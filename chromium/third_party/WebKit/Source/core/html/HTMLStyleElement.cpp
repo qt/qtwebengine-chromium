@@ -29,8 +29,8 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventSender.h"
+#include "core/events/Event.h"
+#include "core/events/EventSender.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
@@ -40,18 +40,17 @@ using namespace HTMLNames;
 
 static StyleEventSender& styleLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(StyleEventSender, sharedLoadEventSender, (eventNames().loadEvent));
+    DEFINE_STATIC_LOCAL(StyleEventSender, sharedLoadEventSender, (EventTypeNames::load));
     return sharedLoadEventSender;
 }
 
-inline HTMLStyleElement::HTMLStyleElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : HTMLElement(tagName, document)
+inline HTMLStyleElement::HTMLStyleElement(Document& document, bool createdByParser)
+    : HTMLElement(styleTag, document)
     , StyleElement(&document, createdByParser)
     , m_firedLoad(false)
     , m_loadedSheet(false)
     , m_scopedStyleRegistrationState(NotRegistered)
 {
-    ASSERT(hasTagName(styleTag));
     ScriptWrappable::init(this);
 }
 
@@ -64,9 +63,9 @@ HTMLStyleElement::~HTMLStyleElement()
     styleLoadEventSender().cancelEvent(this);
 }
 
-PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<HTMLStyleElement> HTMLStyleElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLStyleElement(tagName, document, createdByParser));
+    return adoptRef(new HTMLStyleElement(document, createdByParser));
 }
 
 void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -75,7 +74,7 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_sheet->setTitle(value);
     } else if (name == scopedAttr && ContextFeatures::styleScopedEnabled(&document())) {
         scopedAttributeChanged(!value.isNull());
-    } else if (name == mediaAttr && inDocument() && document().renderer() && m_sheet) {
+    } else if (name == mediaAttr && inDocument() && document().isActive() && m_sheet) {
         m_sheet->setMediaQueries(MediaQuerySet::create(value));
         // FIXME: This shold be RecalcStyleDeferred.
         document().modifiedStyleSheet(m_sheet.get(), RecalcStyleImmediately);
@@ -115,8 +114,8 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
     if (m_scopedStyleRegistrationState != RegisteredAsScoped)
         return;
 
-    document().styleEngine()->removeStyleSheetCandidateNode(this, parentNode());
     unregisterWithScopingNode(parentNode());
+    document().styleEngine()->removeStyleSheetCandidateNode(this, parentNode());
 
     // As any <style> in a shadow tree is treated as "scoped",
     // need to add the <style> to its shadow root.
@@ -124,6 +123,9 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
         registerWithScopingNode(false);
 
     document().styleEngine()->addStyleSheetCandidateNode(this, false);
+    // FIXME: currently need to use FullStyleUpdate here.
+    // Because ShadowTreeStyleSheetCollection doesn't know old scoping node.
+    // So setNeedsStyleRecalc for old scoping node is not invoked.
     document().modifiedStyleSheet(sheet());
 }
 
@@ -256,7 +258,7 @@ void HTMLStyleElement::dispatchPendingLoadEvents()
 void HTMLStyleElement::dispatchPendingEvent(StyleEventSender* eventSender)
 {
     ASSERT_UNUSED(eventSender, eventSender == &styleLoadEventSender());
-    dispatchEvent(Event::create(m_loadedSheet ? eventNames().loadEvent : eventNames().errorEvent));
+    dispatchEvent(Event::create(m_loadedSheet ? EventTypeNames::load : EventTypeNames::error));
 }
 
 void HTMLStyleElement::notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred)

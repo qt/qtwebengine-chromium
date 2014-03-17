@@ -5,20 +5,16 @@
 #include "components/autofill/core/browser/address.h"
 
 #include <stddef.h>
+#include <algorithm>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_type.h"
-
-namespace {
-
-const char16 kAddressSplitChars[] = {'-', ',', '#', '.', ' ', 0};
-
-}  // namespace
 
 namespace autofill {
 
@@ -34,12 +30,13 @@ Address& Address::operator=(const Address& address) {
   if (this == &address)
     return *this;
 
-  line1_ = address.line1_;
-  line2_ = address.line2_;
+  street_address_ = address.street_address_;
+  dependent_locality_ = address.dependent_locality_;
   city_ = address.city_;
   state_ = address.state_;
   country_code_ = address.country_code_;
   zip_code_ = address.zip_code_;
+  sorting_code_ = address.sorting_code_;
   return *this;
 }
 
@@ -47,10 +44,13 @@ base::string16 Address::GetRawInfo(ServerFieldType type) const {
   DCHECK_EQ(ADDRESS_HOME, AutofillType(type).group());
   switch (type) {
     case ADDRESS_HOME_LINE1:
-      return line1_;
+      return street_address_.size() > 0 ? street_address_[0] : base::string16();
 
     case ADDRESS_HOME_LINE2:
-      return line2_;
+      return street_address_.size() > 1 ? street_address_[1] : base::string16();
+
+    case ADDRESS_HOME_DEPENDENT_LOCALITY:
+      return dependent_locality_;
 
     case ADDRESS_HOME_CITY:
       return city_;
@@ -61,10 +61,17 @@ base::string16 Address::GetRawInfo(ServerFieldType type) const {
     case ADDRESS_HOME_ZIP:
       return zip_code_;
 
+    case ADDRESS_HOME_SORTING_CODE:
+      return sorting_code_;
+
     case ADDRESS_HOME_COUNTRY:
       return ASCIIToUTF16(country_code_);
 
+    case ADDRESS_HOME_STREET_ADDRESS:
+      return JoinString(street_address_, '\n');
+
     default:
+      NOTREACHED();
       return base::string16();
   }
 }
@@ -73,11 +80,21 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
   DCHECK_EQ(ADDRESS_HOME, AutofillType(type).group());
   switch (type) {
     case ADDRESS_HOME_LINE1:
-      line1_ = value;
+      if (street_address_.empty())
+        street_address_.resize(1);
+      street_address_[0] = value;
+      TrimStreetAddress();
       break;
 
     case ADDRESS_HOME_LINE2:
-      line2_ = value;
+      if (street_address_.size() < 2)
+        street_address_.resize(2);
+      street_address_[1] = value;
+      TrimStreetAddress();
+      break;
+
+    case ADDRESS_HOME_DEPENDENT_LOCALITY:
+      dependent_locality_ = value;
       break;
 
     case ADDRESS_HOME_CITY:
@@ -98,6 +115,14 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
       zip_code_ = value;
       break;
 
+    case ADDRESS_HOME_SORTING_CODE:
+      sorting_code_ = value;
+      break;
+
+    case ADDRESS_HOME_STREET_ADDRESS:
+      base::SplitString(value, char16('\n'), &street_address_);
+      break;
+
     default:
       NOTREACHED();
   }
@@ -105,14 +130,8 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
 
 base::string16 Address::GetInfo(const AutofillType& type,
                                 const std::string& app_locale) const {
-  if (type.html_type() == HTML_TYPE_COUNTRY_CODE) {
+  if (type.html_type() == HTML_TYPE_COUNTRY_CODE)
     return ASCIIToUTF16(country_code_);
-  } else if (type.html_type() == HTML_TYPE_STREET_ADDRESS) {
-    base::string16 address = line1_;
-    if (!line2_.empty())
-      address += ASCIIToUTF16(", ") + line2_;
-    return address;
-  }
 
   ServerFieldType storable_type = type.GetStorableType();
   if (storable_type == ADDRESS_HOME_COUNTRY && !country_code_.empty())
@@ -132,13 +151,6 @@ bool Address::SetInfo(const AutofillType& type,
 
     country_code_ = StringToUpperASCII(UTF16ToASCII(value));
     return true;
-  } else if (type.html_type() == HTML_TYPE_STREET_ADDRESS) {
-    // Don't attempt to parse the address into lines, since this is potentially
-    // a user-entered address in the user's own format, so the code would have
-    // to rely on iffy heuristics at best.  Instead, just give up when importing
-    // addresses like this.
-    line1_ = line2_ = base::string16();
-    return false;
   }
 
   ServerFieldType storable_type = type.GetStorableType();
@@ -147,7 +159,28 @@ bool Address::SetInfo(const AutofillType& type,
     return !country_code_.empty();
   }
 
+  // If the address doesn't have any newlines, don't attempt to parse it into
+  // lines, since this is potentially a user-entered address in the user's own
+  // format, so the code would have to rely on iffy heuristics at best.
+  // Instead, just give up when importing addresses like this.
+  if (storable_type == ADDRESS_HOME_STREET_ADDRESS && !value.empty() &&
+      value.find(char16('\n')) == base::string16::npos) {
+    street_address_.clear();
+    return false;
+  }
+
   SetRawInfo(storable_type, value);
+
+  // Likewise, give up when importing addresses with any entirely blank lines.
+  // There's a good chance that this formatting is not intentional, but it's
+  // also not obviously safe to just strip the newlines.
+  if (storable_type == ADDRESS_HOME_STREET_ADDRESS &&
+      std::find(street_address_.begin(), street_address_.end(),
+                base::string16()) != street_address_.end()) {
+    street_address_.clear();
+    return false;
+  }
+
   return true;
 }
 
@@ -165,10 +198,19 @@ void Address::GetMatchingTypes(const base::string16& text,
 void Address::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
   supported_types->insert(ADDRESS_HOME_LINE1);
   supported_types->insert(ADDRESS_HOME_LINE2);
+  supported_types->insert(ADDRESS_HOME_STREET_ADDRESS);
+  supported_types->insert(ADDRESS_HOME_DEPENDENT_LOCALITY);
   supported_types->insert(ADDRESS_HOME_CITY);
   supported_types->insert(ADDRESS_HOME_STATE);
   supported_types->insert(ADDRESS_HOME_ZIP);
+  supported_types->insert(ADDRESS_HOME_SORTING_CODE);
   supported_types->insert(ADDRESS_HOME_COUNTRY);
+}
+
+void Address::TrimStreetAddress() {
+  while (!street_address_.empty() && street_address_.back().empty()) {
+    street_address_.pop_back();
+  }
 }
 
 }  // namespace autofill

@@ -5,32 +5,41 @@
 #ifndef CONTENT_RENDERER_RENDERER_WEBCOLORCHOOSER_IMPL_H_
 #define CONTENT_RENDERER_RENDERER_WEBCOLORCHOOSER_IMPL_H_
 
+#include <vector>
+
 #include "base/compiler_specific.h"
+#include "content/public/common/color_suggestion.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebColorChooser.h"
 #include "third_party/WebKit/public/web/WebColorChooserClient.h"
 #include "third_party/skia/include/core/SkColor.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
 namespace content {
 class RenderViewImpl;
 
-class RendererWebColorChooserImpl : public WebKit::WebColorChooser,
+class RendererWebColorChooserImpl : public blink::WebColorChooser,
                                     public RenderViewObserver {
  public:
   explicit RendererWebColorChooserImpl(RenderViewImpl* sender,
-                                       WebKit::WebColorChooserClient*);
+                                       blink::WebColorChooserClient*);
   virtual ~RendererWebColorChooserImpl();
 
-  virtual void setSelectedColor(const WebKit::WebColor);
+  virtual void setSelectedColor(const blink::WebColor);
   virtual void endChooser();
 
-  void Open(SkColor initial_color);
+  void Open(SkColor initial_color,
+            const std::vector<content::ColorSuggestion>& suggestions);
 
-  WebKit::WebColorChooserClient* client() { return client_; }
+  blink::WebColorChooserClient* client() { return client_; }
+
+  // Don't destroy the RendererWebColorChooserImpl when the RenderViewImpl goes
+  // away. RendererWebColorChooserImpl is owned by
+  // blink::ColorChooserUIController.
+  virtual void OnDestruct() OVERRIDE {}
 
  private:
   // RenderViewObserver implementation.
@@ -40,7 +49,7 @@ class RendererWebColorChooserImpl : public WebKit::WebColorChooser,
   void OnDidEndColorChooser(int color_chooser_id);
 
   int identifier_;
-  WebKit::WebColorChooserClient* client_;
+  blink::WebColorChooserClient* client_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererWebColorChooserImpl);
 };

@@ -202,7 +202,8 @@ class MsvsSettings(object):
 
   def AdjustLibraries(self, libraries):
     """Strip -l from library if it's specified with that."""
-    return [lib[2:] if lib.startswith('-l') else lib for lib in libraries]
+    libs = [lib[2:] if lib.startswith('-l') else lib for lib in libraries]
+    return [lib + '.lib' if not lib.endswith('.lib') else lib for lib in libs]
 
   def _GetAndMunge(self, field, path, default, prefix, append, map):
     """Retrieve a value from |field| at |path| or return |default|. If
@@ -336,6 +337,7 @@ class MsvsSettings(object):
     cl('Optimization',
        map={'0': 'd', '1': '1', '2': '2', '3': 'x'}, prefix='/O', default='2')
     cl('InlineFunctionExpansion', prefix='/Ob')
+    cl('DisableSpecificWarnings', prefix='/wd')
     cl('StringPooling', map={'true': '/GF'})
     cl('EnableFiberSafeOptimizations', map={'true': '/GT'})
     cl('OmitFramePointers', map={'false': '-', 'true': ''}, prefix='/Oy')
@@ -361,7 +363,7 @@ class MsvsSettings(object):
     cl('AdditionalOptions', prefix='')
     cflags.extend(['/FI' + f for f in self._Setting(
         ('VCCLCompilerTool', 'ForcedIncludeFiles'), config, default=[])])
-    if self.vs_version.short_name == '2013' or self.vs_version == '2013e':
+    if self.vs_version.short_name in ('2013', '2013e'):
       # New flag required in 2013 to maintain previous PDB behavior.
       cflags.append('/FS')
     # ninja handles parallelism by itself, don't have the compiler do it too.
@@ -418,6 +420,7 @@ class MsvsSettings(object):
     libflags.extend(self._GetAdditionalLibraryDirectories(
         'VCLibrarianTool', config, gyp_to_build_path))
     lib('LinkTimeCodeGeneration', map={'true': '/LTCG'})
+    lib('TargetMachine', map={'1': 'X86', '17': 'X64'}, prefix='/MACHINE:')
     lib('AdditionalOptions')
     return libflags
 
@@ -439,6 +442,17 @@ class MsvsSettings(object):
     if def_file:
       ldflags.append('/DEF:"%s"' % def_file)
 
+  def GetPGDName(self, config, expand_special):
+    """Gets the explicitly overridden pgd name for a target or returns None
+    if it's not overridden."""
+    config = self._TargetConfig(config)
+    output_file = self._Setting(
+        ('VCLinkerTool', 'ProfileGuidedDatabase'), config)
+    if output_file:
+      output_file = expand_special(self.ConvertVSMacros(
+          output_file, config=config))
+    return output_file
+
   def GetLdflags(self, config, gyp_to_build_path, expand_special,
                  manifest_base_name, is_executable):
     """Returns the flags that need to be added to link commands, and the
@@ -453,20 +467,35 @@ class MsvsSettings(object):
     ldflags.extend(self._GetAdditionalLibraryDirectories(
         'VCLinkerTool', config, gyp_to_build_path))
     ld('DelayLoadDLLs', prefix='/DELAYLOAD:')
+    ld('TreatLinkerWarningAsErrors', prefix='/WX',
+       map={'true': '', 'false': ':NO'})
     out = self.GetOutputName(config, expand_special)
     if out:
       ldflags.append('/OUT:' + out)
     pdb = self.GetPDBName(config, expand_special)
     if pdb:
       ldflags.append('/PDB:' + pdb)
+    pgd = self.GetPGDName(config, expand_special)
+    if pgd:
+      ldflags.append('/PGD:' + pgd)
     map_file = self.GetMapFileName(config, expand_special)
     ld('GenerateMapFile', map={'true': '/MAP:' + map_file if map_file
         else '/MAP'})
     ld('MapExports', map={'true': '/MAPINFO:EXPORTS'})
     ld('AdditionalOptions', prefix='')
-    ld('SubSystem', map={'1': 'CONSOLE', '2': 'WINDOWS'}, prefix='/SUBSYSTEM:')
+
+    minimum_required_version = self._Setting(
+        ('VCLinkerTool', 'MinimumRequiredVersion'), config, default='')
+    if minimum_required_version:
+      minimum_required_version = ',' + minimum_required_version
+    ld('SubSystem',
+       map={'1': 'CONSOLE%s' % minimum_required_version,
+            '2': 'WINDOWS%s' % minimum_required_version},
+       prefix='/SUBSYSTEM:')
+
     ld('TerminalServerAware', map={'1': ':NO', '2': ''}, prefix='/TSAWARE')
     ld('LinkIncremental', map={'1': ':NO', '2': ''}, prefix='/INCREMENTAL')
+    ld('BaseAddress', prefix='/BASE:')
     ld('FixedBaseAddress', map={'1': ':NO', '2': ''}, prefix='/FIXED')
     ld('RandomizedBaseAddress',
         map={'1': ':NO', '2': ''}, prefix='/DYNAMICBASE')
@@ -474,7 +503,10 @@ class MsvsSettings(object):
         map={'1': ':NO', '2': ''}, prefix='/NXCOMPAT')
     ld('OptimizeReferences', map={'1': 'NOREF', '2': 'REF'}, prefix='/OPT:')
     ld('EnableCOMDATFolding', map={'1': 'NOICF', '2': 'ICF'}, prefix='/OPT:')
-    ld('LinkTimeCodeGeneration', map={'1': '/LTCG'})
+    ld('LinkTimeCodeGeneration',
+        map={'1': '', '2': ':PGINSTRUMENT', '3': ':PGOPTIMIZE',
+             '4': ':PGUPDATE'},
+        prefix='/LTCG')
     ld('IgnoreDefaultLibraryNames', prefix='/NODEFAULTLIB:')
     ld('ResourceOnlyDLL', map={'true': '/NOENTRY'})
     ld('EntryPointSymbol', prefix='/ENTRY:')
@@ -499,18 +531,26 @@ class MsvsSettings(object):
       ldflags.append('/NXCOMPAT')
 
     have_def_file = filter(lambda x: x.startswith('/DEF:'), ldflags)
-    manifest_flags, intermediate_manifest_file = self._GetLdManifestFlags(
-        config, manifest_base_name, is_executable and not have_def_file)
+    manifest_flags, manifest_files = self._GetLdManifestFlags(
+        config, manifest_base_name, gyp_to_build_path,
+        is_executable and not have_def_file)
     ldflags.extend(manifest_flags)
-    manifest_files = self._GetAdditionalManifestFiles(config, gyp_to_build_path)
-    manifest_files.append(intermediate_manifest_file)
-
     return ldflags, manifest_files
 
-  def _GetLdManifestFlags(self, config, name, allow_isolation):
+  def _GetLdManifestFlags(self, config, name, gyp_to_build_path,
+                          allow_isolation):
     """Returns the set of flags that need to be added to the link to generate
-    a default manifest, as well as the name of the generated file."""
-    # The manifest is generated by default.
+    a default manifest, as well as the list of all the manifest files to be
+    merged by the manifest tool."""
+    generate_manifest = self._Setting(('VCLinkerTool', 'GenerateManifest'),
+                                      config,
+                                      default='true')
+    if generate_manifest != 'true':
+      # This means not only that the linker should not generate the intermediate
+      # manifest but also that the manifest tool should do nothing even when
+      # additional manifests are specified.
+      return ['/MANIFEST:NO'], []
+
     output_name = name + '.intermediate.manifest'
     flags = [
       '/MANIFEST',
@@ -538,7 +578,11 @@ class MsvsSettings(object):
 
     if allow_isolation:
       flags.append('/ALLOWISOLATION')
-    return flags, output_name
+
+    manifest_files = [output_name]
+    manifest_files += self._GetAdditionalManifestFiles(config,
+                                                       gyp_to_build_path)
+    return flags, manifest_files
 
   def _GetAdditionalManifestFiles(self, config, gyp_to_build_path):
     """Gets additional manifest files that are added to the default one
@@ -847,3 +891,22 @@ def VerifyMissingSources(sources, build_dir, generator_flags, gyp_to_ninja):
       # path for a slightly less crazy looking output.
       cleaned_up = [os.path.normpath(x) for x in missing]
       raise Exception('Missing input files:\n%s' % '\n'.join(cleaned_up))
+
+# Sets some values in default_variables, which are required for many
+# generators, run on Windows.
+def CalculateCommonVariables(default_variables, params):
+  generator_flags = params.get('generator_flags', {})
+
+  # Set a variable so conditions can be based on msvs_version.
+  msvs_version = gyp.msvs_emulation.GetVSVersion(generator_flags)
+  default_variables['MSVS_VERSION'] = msvs_version.ShortName()
+
+  # To determine processor word size on Windows, in addition to checking
+  # PROCESSOR_ARCHITECTURE (which reflects the word size of the current
+  # process), it is also necessary to check PROCESSOR_ARCHITEW6432 (which
+  # contains the actual word size of the system when running thru WOW64).
+  if ('64' in os.environ.get('PROCESSOR_ARCHITECTURE', '') or
+      '64' in os.environ.get('PROCESSOR_ARCHITEW6432', '')):
+    default_variables['MSVS_OS_BITS'] = 64
+  else:
+    default_variables['MSVS_OS_BITS'] = 32

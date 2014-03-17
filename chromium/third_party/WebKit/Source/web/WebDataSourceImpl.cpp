@@ -40,7 +40,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static OwnPtr<WebPluginLoadObserver>& nextPluginLoadObserver()
 {
@@ -79,6 +79,11 @@ bool WebDataSourceImpl::hasUnreachableURL() const
 WebURL WebDataSourceImpl::unreachableURL() const
 {
     return DocumentLoader::unreachableURL();
+}
+
+void WebDataSourceImpl::appendRedirect(const WebURL& url)
+{
+    DocumentLoader::appendRedirect(url);
 }
 
 void WebDataSourceImpl::redirectChain(WebVector<WebURL>& result) const
@@ -180,4 +185,4 @@ WebDataSourceImpl::~WebDataSourceImpl()
 {
 }
 
-} // namespace WebKit
+} // namespace blink

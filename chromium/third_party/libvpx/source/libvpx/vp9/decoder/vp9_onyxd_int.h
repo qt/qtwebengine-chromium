@@ -25,7 +25,7 @@ typedef struct VP9Decompressor {
   VP9D_CONFIG oxcf;
 
   const uint8_t *source;
-  uint32_t source_sz;
+  size_t source_sz;
 
   int64_t last_time_stamp;
   int ready_for_new_data;
@@ -39,6 +39,16 @@ typedef struct VP9Decompressor {
 
   int do_loopfilter_inline;  // apply loopfilter to available rows immediately
   VP9Worker lf_worker;
+
+  VP9Worker *tile_workers;
+  int num_tile_workers;
+
+  /* Each tile column has its own MODE_INFO stream. This array indexes them by
+     tile column index. */
+  MODE_INFO **mi_streams;
+
+  ENTROPY_CONTEXT *above_context[MAX_MB_PLANE];
+  PARTITION_CONTEXT *above_seg_context;
 } VP9D_COMP;
 
-#endif  // VP9_DECODER_VP9_TREEREADER_H_
+#endif  // VP9_DECODER_VP9_ONYXD_INT_H_

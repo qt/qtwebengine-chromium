@@ -23,10 +23,10 @@
         '<(grit_out_dir)',
       ],
       'sources': [
-        'app_launch_for_metro_restart_win.cc',
-        'app_launch_for_metro_restart_win.h',
-        'app_launcher.cc',
-        'app_launcher.h',
+        'app_keep_alive_service.cc',
+        'app_keep_alive_service.h',
+        'app_keep_alive_service_factory.cc',
+        'app_keep_alive_service_factory.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -39,27 +39,13 @@
         'app_restore_service.h',
         'app_restore_service_factory.cc',
         'app_restore_service_factory.h',
-        'app_shim/app_shim_handler_mac.cc',
-        'app_shim/app_shim_handler_mac.h',
-        'app_shim/app_shim_host_mac.cc',
-        'app_shim/app_shim_host_mac.h',
-        'app_shim/app_shim_host_manager_mac.h',
-        'app_shim/app_shim_host_manager_mac.mm',
-        'app_shim/app_shim_mac.cc',
-        'app_shim/app_shim_mac.h',
-        'app_shim/chrome_main_app_mode_mac.mm',
-        'app_shim/extension_app_shim_handler_mac.cc',
-        'app_shim/extension_app_shim_handler_mac.h',
         'app_window_contents.cc',
         'app_window_contents.h',
         'apps_client.cc',
         'apps_client.h',
-        'field_trial_names.cc',
-        'field_trial_names.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',
-        'native_app_window.h',
         'pref_names.cc',
         'pref_names.h',
         'prefs.cc',
@@ -76,6 +62,9 @@
         'shell_window_registry.h',
         'switches.cc',
         'switches.h',
+        'ui/native_app_window.h',
+        'ui/views/shell_window_frame_view.cc',
+        'ui/views/shell_window_frame_view.h',
       ],
       'conditions': [
         ['chromeos==1',
@@ -92,9 +81,69 @@
             ],
           }
         ],
+        ['toolkit_views==1', {
+          'dependencies': [
+            '../ui/base/strings/ui_strings.gyp:ui_strings',
+            '../ui/views/views.gyp:views',
+          ],
+        }, {  # toolkit_views==0
+          'sources/': [
+            ['exclude', 'ui/views/'],
+          ],
+        }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },
-  ],
+  ],  # targets
+  'conditions': [
+    ['chromeos==1', {
+      'targets': [
+        {
+          'target_name': 'app_shell',
+          'type': 'executable',
+          'defines!': ['CONTENT_IMPLEMENTATION'],
+          'variables': {
+            'chromium_code': 1,
+          },
+          'dependencies': [
+            'apps',
+            'chrome_resources.gyp:packed_resources',
+            'test_support_common',
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_prefs_test_support',
+            '../content/content.gyp:content',
+            '../content/content_shell_and_tests.gyp:content_shell_lib',
+            '../skia/skia.gyp:skia',
+            '../ui/views/views.gyp:views',
+            '../ui/wm/wm.gyp:wm_test_support',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'shell/shell_app_sorting.cc',
+            'shell/shell_app_sorting.h',
+            'shell/shell_browser_context.cc',
+            'shell/shell_browser_context.h',
+            'shell/shell_browser_main_parts.cc',
+            'shell/shell_browser_main_parts.h',
+            'shell/shell_content_browser_client.cc',
+            'shell/shell_content_browser_client.h',
+            'shell/shell_content_client.cc',
+            'shell/shell_content_client.h',
+            'shell/shell_extensions_browser_client.cc',
+            'shell/shell_extensions_browser_client.h',
+            'shell/shell_extensions_client.cc',
+            'shell/shell_extensions_client.h',
+            'shell/shell_main_delegate.cc',
+            'shell/shell_main_delegate.h',
+            'shell/shell_main.cc',
+            'shell/web_view_window.cc',
+            'shell/web_view_window.cc',
+          ],
+        },
+      ],  # targets
+    }],  # chromeos==1
+  ],  # conditions
 }

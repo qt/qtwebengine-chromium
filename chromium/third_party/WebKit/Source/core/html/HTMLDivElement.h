@@ -30,21 +30,16 @@ namespace WebCore {
 class HTMLDivElement : public HTMLElement {
 public:
     static PassRefPtr<HTMLDivElement> create(Document&);
-    static PassRefPtr<HTMLDivElement> create(const QualifiedName&, Document&);
 
 protected:
-    HTMLDivElement(const QualifiedName&, Document&);
+    explicit HTMLDivElement(Document&);
 
 private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 };
 
-inline HTMLDivElement* toHTMLDivElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::divTag));
-    return static_cast<HTMLDivElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLDivElement, hasTagName(HTMLNames::divTag));
 
 } // namespace WebCore
 

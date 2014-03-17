@@ -33,8 +33,8 @@
 #if CONFIG_ONESHOTQ
 #define ONE_SHOT_Q_ESTIMATE 0
 #define STRICT_ONE_SHOT_Q 0
-#define DISABLE_RC_LONG_TERM_MEM 0
 #endif
+#define DISABLE_RC_LONG_TERM_MEM 0
 
 // #define MODE_TEST_HIT_STATS
 
@@ -49,7 +49,8 @@
 
 #define KEY_FRAME_CONTEXT 5
 
-#define MAX_MODES 36
+#define MAX_MODES 30
+#define MAX_REFS  6
 
 #define MIN_THRESHMULT  32
 #define MAX_THRESHMULT  512
@@ -61,16 +62,11 @@
 #define INTRA_ZBIN_BOOST     0
 
 typedef struct {
-  nmv_context nmvc;
   int nmvjointcost[MV_JOINTS];
   int nmvcosts[2][MV_VALS];
   int nmvcosts_hp[2][MV_VALS];
 
   vp9_prob segment_pred_probs[PREDICTION_PROBS];
-  vp9_prob intra_inter_prob[INTRA_INTER_CONTEXTS];
-  vp9_prob comp_inter_prob[COMP_INTER_CONTEXTS];
-  vp9_prob single_ref_prob[REF_CONTEXTS][2];
-  vp9_prob comp_ref_prob[REF_CONTEXTS];
 
   unsigned char *last_frame_seg_map_copy;
 
@@ -79,20 +75,8 @@ typedef struct {
   // 0 = ZERO_MV, MV
   signed char last_mode_lf_deltas[MAX_MODE_LF_DELTAS];
 
-  vp9_coeff_probs_model coef_probs[TX_SIZES][BLOCK_TYPES];
-
-  vp9_prob y_mode_prob[4][INTRA_MODES - 1];
-  vp9_prob uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
-  vp9_prob partition_prob[2][NUM_PARTITION_CONTEXTS][PARTITION_TYPES - 1];
-
-  vp9_prob switchable_interp_prob[SWITCHABLE_FILTERS + 1]
-                                 [SWITCHABLE_FILTERS - 1];
-
   int inter_mode_counts[INTER_MODE_CONTEXTS][INTER_MODES - 1][2];
-  vp9_prob inter_mode_probs[INTER_MODE_CONTEXTS][INTER_MODES - 1];
-
-  struct tx_probs tx_probs;
-  vp9_prob mbskip_probs[MBSKIP_CONTEXTS];
+  FRAME_CONTEXT fc;
 } CODING_CONTEXT;
 
 typedef struct {
@@ -169,19 +153,12 @@ typedef enum {
   THR_COMP_NEARGA,
   THR_COMP_NEWGA,
 
-  THR_SPLITMV,
-  THR_SPLITG,
-  THR_SPLITA,
-  THR_COMP_SPLITLA,
-  THR_COMP_SPLITGA,
-
   THR_ZEROMV,
   THR_ZEROG,
   THR_ZEROA,
   THR_COMP_ZEROLA,
   THR_COMP_ZEROGA,
 
-  THR_B_PRED,
   THR_H_PRED,
   THR_V_PRED,
   THR_D135_PRED,
@@ -191,6 +168,15 @@ typedef enum {
   THR_D117_PRED,
   THR_D45_PRED,
 } THR_MODES;
+
+typedef enum {
+  THR_LAST,
+  THR_GOLD,
+  THR_ALTR,
+  THR_COMP_LA,
+  THR_COMP_GA,
+  THR_INTRA,
+} THR_MODES_SUB8X8;
 
 typedef enum {
   DIAMOND = 0,
@@ -244,7 +230,14 @@ typedef enum {
 #define ALL_INTRA_MODES 0x3FF
 #define INTRA_DC_ONLY 0x01
 #define INTRA_DC_TM ((1 << TM_PRED) | (1 << DC_PRED))
+#define INTRA_DC_H_V ((1 << DC_PRED) | (1 << V_PRED) | (1 << H_PRED))
 #define INTRA_DC_TM_H_V (INTRA_DC_TM | (1 << V_PRED) | (1 << H_PRED))
+
+typedef enum {
+  LAST_FRAME_PARTITION_OFF = 0,
+  LAST_FRAME_PARTITION_LOW_MOTION = 1,
+  LAST_FRAME_PARTITION_ALL = 2
+} LAST_FRAME_PARTITION_METHOD;
 
 typedef struct {
   int RD;
@@ -254,20 +247,21 @@ typedef struct {
   SUBPEL_SEARCH_METHODS subpel_search_method;
   int subpel_iters_per_step;
   int thresh_mult[MAX_MODES];
+  int thresh_mult_sub8x8[MAX_REFS];
   int max_step_search_steps;
   int reduce_first_step_size;
   int auto_mv_step_size;
   int optimize_coefficients;
   int static_segmentation;
+  int variance_adaptive_quantization;
   int comp_inter_joint_search_thresh;
   int adaptive_rd_thresh;
   int skip_encode_sb;
   int skip_encode_frame;
-  int use_lastframe_partitioning;
+  LAST_FRAME_PARTITION_METHOD use_lastframe_partitioning;
   TX_SIZE_SEARCH_METHOD tx_size_search_method;
   int use_lp32x32fdct;
   int use_avoid_tested_higherror;
-  int partition_by_variance;
   int use_one_partition_size_always;
   int less_rectangular_check;
   int use_square_partition_only;
@@ -275,13 +269,11 @@ typedef struct {
   int reference_masking;
   BLOCK_SIZE always_this_block_size;
   int auto_min_max_partition_size;
-  int auto_min_max_partition_interval;
-  int auto_min_max_partition_count;
   BLOCK_SIZE min_partition_size;
   BLOCK_SIZE max_partition_size;
   int adjust_partitioning_from_last_frame;
   int last_partitioning_redo_frequency;
-  int disable_splitmv;
+  int disable_split_mask;
   int using_small_partition_info;
   // TODO(jingning): combine the related motion search speed features
   int adaptive_motion_search;
@@ -295,8 +287,8 @@ typedef struct {
   // A source variance threshold below which filter search is disabled
   // Choose a very large value (UINT_MAX) to use 8-tap always
   unsigned int disable_filter_search_var_thresh;
-  int intra_y_mode_mask;
-  int intra_uv_mode_mask;
+  int intra_y_mode_mask[TX_SIZES];
+  int intra_uv_mode_mask[TX_SIZES];
   int use_rd_breakout;
   int use_uv_intra_rd_estimate;
   int use_fast_lpf_pick;
@@ -324,6 +316,7 @@ typedef struct VP9_COMP {
   MACROBLOCK mb;
   VP9_COMMON common;
   VP9_CONFIG oxcf;
+  struct rdcost_block_args rdcost_stack;
 
   struct lookahead_ctx    *lookahead;
   struct lookahead_entry  *source;
@@ -338,13 +331,13 @@ typedef struct VP9_COMP {
   YV12_BUFFER_CONFIG scaled_source;
 
   unsigned int frames_till_alt_ref_frame;
-  int source_alt_ref_pending; // frame in src_buffers has been identified to be encoded as an alt ref
-  int source_alt_ref_active;  // an alt ref frame has been encoded and is usable
+  int source_alt_ref_pending;
+  int source_alt_ref_active;
 
-  int is_src_frame_alt_ref;   // source of frame to encode is an exact copy of an alt ref frame
+  int is_src_frame_alt_ref;
 
-  int gold_is_last; // golden frame same as last frame ( short circuit gold searches)
-  int alt_is_last;  // Alt reference frame same as last ( short circuit altref search)
+  int gold_is_last;  // gold same as last frame ( short circuit gold searches)
+  int alt_is_last;  // Alt same as last ( short circuit altref search)
   int gold_is_alt;  // don't do both alt and gold search ( just do gold).
 
   int scaled_ref_idx[3];
@@ -381,19 +374,19 @@ typedef struct VP9_COMP {
   // Ambient reconstruction err target for force key frames
   int ambient_err;
 
-  unsigned int mode_check_freq[MAX_MODES];
-  unsigned int mode_test_hit_counts[MAX_MODES];
   unsigned int mode_chosen_counts[MAX_MODES];
+  unsigned int sub8x8_mode_chosen_counts[MAX_REFS];
   int64_t mode_skip_mask;
   int ref_frame_mask;
   int set_ref_frame_mask;
 
-  int rd_threshes[BLOCK_SIZES][MAX_MODES];
+  int rd_threshes[MAX_SEGMENTS][BLOCK_SIZES][MAX_MODES];
   int rd_thresh_freq_fact[BLOCK_SIZES][MAX_MODES];
+  int rd_thresh_sub8x8[MAX_SEGMENTS][BLOCK_SIZES][MAX_REFS];
+  int rd_thresh_freq_sub8x8[BLOCK_SIZES][MAX_REFS];
 
   int64_t rd_comp_pred_diff[NB_PREDICTION_TYPES];
-  // FIXME(rbultje) int64_t?
-  int rd_prediction_type_threshes[4][NB_PREDICTION_TYPES];
+  int64_t rd_prediction_type_threshes[4][NB_PREDICTION_TYPES];
   unsigned int intra_inter_count[INTRA_INTER_CONTEXTS][2];
   unsigned int comp_inter_count[COMP_INTER_CONTEXTS][2];
   unsigned int single_ref_count[REF_CONTEXTS][2][2];
@@ -403,9 +396,9 @@ typedef struct VP9_COMP {
   // FIXME(rbultje) can this overflow?
   int rd_tx_select_threshes[4][TX_MODES];
 
-  int64_t rd_filter_diff[SWITCHABLE_FILTERS + 1];
-  int64_t rd_filter_threshes[4][SWITCHABLE_FILTERS + 1];
-  int64_t rd_filter_cache[SWITCHABLE_FILTERS + 1];
+  int64_t rd_filter_diff[SWITCHABLE_FILTER_CONTEXTS];
+  int64_t rd_filter_threshes[4][SWITCHABLE_FILTER_CONTEXTS];
+  int64_t rd_filter_cache[SWITCHABLE_FILTER_CONTEXTS];
 
   int RDMULT;
   int RDDIV;
@@ -423,14 +416,14 @@ typedef struct VP9_COMP {
   double gf_rate_correction_factor;
 
   unsigned int frames_since_golden;
-  int frames_till_gf_update_due;      // Count down till next GF
+  int frames_till_gf_update_due;  // Count down till next GF
 
-  int gf_overspend_bits;            // Total bits overspent becasue of GF boost (cumulative)
+  int gf_overspend_bits;  // cumulative bits overspent because of GF boost
 
-  int non_gf_bitrate_adjustment;     // Used in the few frames following a GF to recover the extra bits spent in that GF
+  int non_gf_bitrate_adjustment;  // Following GF to recover extra bits spent
 
-  int kf_overspend_bits;            // Extra bits spent on key frames that need to be recovered on inter frames
-  int kf_bitrate_adjustment;        // Current number of bit s to try and recover on each inter frame.
+  int kf_overspend_bits;  // Bits spent on key frames to be recovered on inters
+  int kf_bitrate_adjustment;  // number of bits to recover on each inter frame.
   int max_gf_interval;
   int baseline_gf_interval;
   int active_arnr_frames;           // <= cpi->oxcf.arnr_max_frames
@@ -438,9 +431,9 @@ typedef struct VP9_COMP {
 
   int64_t key_frame_count;
   int prior_key_frame_distance[KEY_FRAME_CONTEXT];
-  int per_frame_bandwidth;          // Current section per frame bandwidth target
-  int av_per_frame_bandwidth;        // Average frame size target for clip
-  int min_frame_bandwidth;          // Minimum allocation that should be used for any frame
+  int per_frame_bandwidth;  // Current section per frame bandwidth target
+  int av_per_frame_bandwidth;  // Average frame size target for clip
+  int min_frame_bandwidth;  // Minimum allocation used for any frame
   int inter_frame_target;
   double output_framerate;
   int64_t last_time_stamp_seen;
@@ -482,7 +475,7 @@ typedef struct VP9_COMP {
 
   int y_mode_count[4][INTRA_MODES];
   int y_uv_mode_count[INTRA_MODES][INTRA_MODES];
-  unsigned int partition_count[NUM_PARTITION_CONTEXTS][PARTITION_TYPES];
+  unsigned int partition_count[PARTITION_CONTEXTS][PARTITION_TYPES];
 
   nmv_context_counts NMVcount;
 
@@ -536,7 +529,8 @@ typedef struct VP9_COMP {
   unsigned int max_mv_magnitude;
   int mv_step_param;
 
-  // Data used for real time conferencing mode to help determine if it would be good to update the gf
+  // Data used for real time conferencing mode to help determine if it
+  // would be good to update the gf
   int inter_zz_count;
   int gf_bad_count;
   int gf_update_recommended;
@@ -647,10 +641,10 @@ typedef struct VP9_COMP {
 
   int dummy_packing;    /* flag to indicate if packing is dummy */
 
-  unsigned int switchable_interp_count[SWITCHABLE_FILTERS + 1]
+  unsigned int switchable_interp_count[SWITCHABLE_FILTER_CONTEXTS]
                                       [SWITCHABLE_FILTERS];
 
-  unsigned int txfm_stepdown_count[TX_SIZES];
+  unsigned int tx_stepdown_count[TX_SIZES];
 
   int initial_width;
   int initial_height;
@@ -681,6 +675,13 @@ typedef struct VP9_COMP {
   // Debug / test stats
   int64_t mode_test_hits[BLOCK_SIZES];
 #endif
+
+  /* Y,U,V,(A) */
+  ENTROPY_CONTEXT *above_context[MAX_MB_PLANE];
+  ENTROPY_CONTEXT left_context[MAX_MB_PLANE][16];
+
+  PARTITION_CONTEXT *above_seg_context;
+  PARTITION_CONTEXT left_seg_context[8];
 } VP9_COMP;
 
 static int get_ref_frame_idx(VP9_COMP *cpi, MV_REFERENCE_FRAME ref_frame) {
@@ -713,9 +714,14 @@ void vp9_activity_masking(VP9_COMP *cpi, MACROBLOCK *x);
 
 void vp9_set_speed_features(VP9_COMP *cpi);
 
-extern int vp9_calc_ss_err(YV12_BUFFER_CONFIG *source,
-                           YV12_BUFFER_CONFIG *dest);
+int vp9_calc_ss_err(YV12_BUFFER_CONFIG *source, YV12_BUFFER_CONFIG *dest);
 
-extern void vp9_alloc_compressor_data(VP9_COMP *cpi);
+void vp9_alloc_compressor_data(VP9_COMP *cpi);
+
+int vp9_compute_qdelta(VP9_COMP *cpi, double qstart, double qtarget);
+
+static int get_token_alloc(int mb_rows, int mb_cols) {
+  return mb_rows * mb_cols * (48 * 16 + 4);
+}
 
 #endif  // VP9_ENCODER_VP9_ONYX_INT_H_

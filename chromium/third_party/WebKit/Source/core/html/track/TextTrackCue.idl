@@ -24,30 +24,17 @@
  */
 
 [
-    EnabledAtRuntime=VideoTrack,
-    Constructor(double startTime, double endTime, DOMString text),
-    ConstructorCallWith=ScriptExecutionContext
+    Custom=ToV8,
+    CustomConstructor(double startTime, double endTime, DOMString text),
+    RuntimeEnabled=VideoTrack,
 ] interface TextTrackCue : EventTarget {
     readonly attribute TextTrack track;
 
     attribute DOMString id;
-    [SetterRaisesException] attribute double startTime;
-    [SetterRaisesException] attribute double endTime;
+    [RaisesException=Setter] attribute double startTime;
+    [RaisesException=Setter] attribute double endTime;
     attribute boolean pauseOnExit;
-
-    [SetterRaisesException] attribute DOMString vertical;
-    attribute boolean snapToLines;
-    [SetterRaisesException] attribute long line;
-    [SetterRaisesException] attribute long position;
-    [SetterRaisesException] attribute long size;
-    [SetterRaisesException] attribute DOMString align;
-
-    attribute DOMString text;
-    DocumentFragment getCueAsHTML();
 
     attribute EventHandler onenter;
     attribute EventHandler onexit;
-
-    [Conditional=WEBVTT_REGIONS] attribute DOMString regionId;
 };
-

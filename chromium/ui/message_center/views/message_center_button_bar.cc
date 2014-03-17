@@ -24,12 +24,15 @@
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/grid_layout.h"
+#include "ui/views/painter.h"
 
 namespace message_center {
 
 namespace {
 const int kButtonSize = 40;
 const int kChevronWidth = 8;
+const int kFooterTopMargin = 6;
+const int kFooterBottomMargin = 3;
 const int kFooterLeftMargin = 20;
 const int kFooterRightMargin = 14;
 }  // namespace
@@ -48,7 +51,6 @@ class NotificationCenterButton : public views::ToggleImageButton {
  protected:
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
 
  private:
   gfx::Size size_;
@@ -72,18 +74,15 @@ NotificationCenterButton::NotificationCenterButton(
   if (text_id)
     SetTooltipText(resource_bundle.GetLocalizedString(text_id));
 
-  set_focusable(true);
+  SetFocusable(true);
   set_request_focus_on_press(false);
+
+  SetFocusPainter(views::Painter::CreateSolidFocusPainter(
+      kFocusBorderColor,
+      gfx::Insets(1, 2, 2, 2)));
 }
 
 gfx::Size NotificationCenterButton::GetPreferredSize() { return size_; }
-
-void NotificationCenterButton::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    canvas->DrawRect(gfx::Rect(2, 1, width() - 4, height() - 3),
-                     kFocusBorderColor);
-  }
-}
 
 // MessageCenterButtonBar /////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -115,7 +114,7 @@ MessageCenterButtonBar::MessageCenterButtonBar(
   title_arrow_->set_size(gfx::Size(kChevronWidth, kButtonSize));
 
   // Keyboardists can use the gear button to switch modes.
-  title_arrow_->set_focusable(false);
+  title_arrow_->SetFocusable(false);
   AddChildView(title_arrow_);
 
   gfx::Font notification_label_font =
@@ -183,8 +182,10 @@ void MessageCenterButtonBar::ViewVisibilityChanged() {
   int image_margin = std::max(0, (kButtonSize - settings_image->width()) / 2);
   views::GridLayout* layout = new views::GridLayout(this);
   SetLayoutManager(layout);
-  layout->SetInsets(
-      0, kFooterLeftMargin, 0, std::max(0, kFooterRightMargin - image_margin));
+  layout->SetInsets(kFooterTopMargin,
+                    kFooterLeftMargin,
+                    kFooterBottomMargin,
+                    std::max(0, kFooterRightMargin - image_margin));
   views::ColumnSet* column = layout->AddColumnSet(0);
   if (title_arrow_->visible()) {
     // Column for the left-arrow used to back out of settings.

@@ -9,7 +9,7 @@
 
 #include "base/mac/mac_util.h"
 #include "base/memory/ref_counted.h"
-#include "skia/ext/bitmap_platform_device_data.h"
+#include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkMatrix.h"
@@ -57,37 +57,13 @@ static CGContextRef CGContextForData(void* data, int width, int height) {
 
 }  // namespace
 
-BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
-    CGContextRef bitmap)
-    : bitmap_context_(bitmap),
-      config_dirty_(true),  // Want to load the config next time.
-      transform_(SkMatrix::I()) {
-  SkASSERT(bitmap_context_);
-  // Initialize the clip region to the entire bitmap.
-
-  SkIRect rect;
-  rect.set(0, 0,
-           CGBitmapContextGetWidth(bitmap_context_),
-           CGBitmapContextGetHeight(bitmap_context_));
-  clip_region_ = SkRegion(rect);
-  CGContextRetain(bitmap_context_);
-  // We must save the state once so that we can use the restore/save trick
-  // in LoadConfig().
-  CGContextSaveGState(bitmap_context_);
-}
-
-BitmapPlatformDevice::BitmapPlatformDeviceData::~BitmapPlatformDeviceData() {
-  if (bitmap_context_)
-    CGContextRelease(bitmap_context_);
-}
-
-void BitmapPlatformDevice::BitmapPlatformDeviceData::ReleaseBitmapContext() {
+void BitmapPlatformDevice::ReleaseBitmapContext() {
   SkASSERT(bitmap_context_);
   CGContextRelease(bitmap_context_);
   bitmap_context_ = NULL;
 }
 
-void BitmapPlatformDevice::BitmapPlatformDeviceData::SetMatrixClip(
+void BitmapPlatformDevice::SetMatrixClip(
     const SkMatrix& transform,
     const SkRegion& region) {
   transform_ = transform;
@@ -95,7 +71,7 @@ void BitmapPlatformDevice::BitmapPlatformDeviceData::SetMatrixClip(
   config_dirty_ = true;
 }
 
-void BitmapPlatformDevice::BitmapPlatformDeviceData::LoadConfig() {
+void BitmapPlatformDevice::LoadConfig() {
   if (!config_dirty_ || !bitmap_context_)
     return;  // Nothing to do.
   config_dirty_ = false;
@@ -127,7 +103,8 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
   SkBitmap bitmap;
   // TODO: verify that the CG Context's pixels will have tight rowbytes or pass in the correct
   // rowbytes for the case when context != NULL.
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height, 0,
+                   is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
 
   void* data;
   if (context) {
@@ -138,8 +115,6 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
       return NULL;
     data = bitmap.getPixels();
   }
-
-  bitmap.setIsOpaque(is_opaque);
 
   // If we were given data, then don't clobber it!
 #ifndef NDEBUG
@@ -157,8 +132,7 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
   } else
     CGContextRetain(context);
 
-  BitmapPlatformDevice* rv = new BitmapPlatformDevice(
-      skia::AdoptRef(new BitmapPlatformDeviceData(context)), bitmap);
+  BitmapPlatformDevice* rv = new BitmapPlatformDevice(context, bitmap);
 
   // The device object took ownership of the graphics context with its own
   // CGContextRetain call.
@@ -197,37 +171,53 @@ BitmapPlatformDevice* BitmapPlatformDevice::CreateWithData(uint8_t* data,
 // The device will own the bitmap, which corresponds to also owning the pixel
 // data. Therefore, we do not transfer ownership to the SkBitmapDevice's bitmap.
 BitmapPlatformDevice::BitmapPlatformDevice(
-    const skia::RefPtr<BitmapPlatformDeviceData>& data, const SkBitmap& bitmap)
+    CGContextRef context, const SkBitmap& bitmap)
     : SkBitmapDevice(bitmap),
-      data_(data) {
+      bitmap_context_(context),
+      config_dirty_(true),  // Want to load the config next time.
+      transform_(SkMatrix::I()) {
   SetPlatformDevice(this, this);
+  SkASSERT(bitmap_context_);
+  // Initialize the clip region to the entire bitmap.
+
+  SkIRect rect;
+  rect.set(0, 0,
+           CGBitmapContextGetWidth(bitmap_context_),
+           CGBitmapContextGetHeight(bitmap_context_));
+  clip_region_ = SkRegion(rect);
+  CGContextRetain(bitmap_context_);
+  // We must save the state once so that we can use the restore/save trick
+  // in LoadConfig().
+  CGContextSaveGState(bitmap_context_);
 }
 
 BitmapPlatformDevice::~BitmapPlatformDevice() {
+  if (bitmap_context_)
+    CGContextRelease(bitmap_context_);
 }
 
 CGContextRef BitmapPlatformDevice::GetBitmapContext() {
-  data_->LoadConfig();
-  return data_->bitmap_context();
+  LoadConfig();
+  return bitmap_context_;
 }
 
 void BitmapPlatformDevice::setMatrixClip(const SkMatrix& transform,
                                          const SkRegion& region,
                                          const SkClipStack&) {
-  data_->SetMatrixClip(transform, region);
+  SetMatrixClip(transform, region);
 }
 
 void BitmapPlatformDevice::DrawToNativeContext(CGContextRef context, int x,
                                                int y, const CGRect* src_rect) {
   bool created_dc = false;
-  if (!data_->bitmap_context()) {
+  if (!bitmap_context_) {
     created_dc = true;
     GetBitmapContext();
   }
 
   // this should not make a copy of the bits, since we're not doing
   // anything to trigger copy on write
-  CGImageRef image = CGBitmapContextCreateImage(data_->bitmap_context());
+  CGImageRef image = CGBitmapContextCreateImage(bitmap_context_);
   CGRect bounds;
   bounds.origin.x = x;
   bounds.origin.y = y;
@@ -245,7 +235,7 @@ void BitmapPlatformDevice::DrawToNativeContext(CGContextRef context, int x,
   CGImageRelease(image);
 
   if (created_dc)
-    data_->ReleaseBitmapContext();
+    ReleaseBitmapContext();
 }
 
 SkBaseDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
@@ -285,13 +275,13 @@ bool PlatformBitmap::Allocate(int width, int height, bool is_opaque) {
   if (RasterDeviceTooBigToAllocate(width, height))
     return false;
     
-  bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height, width * 4);
+  bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height, width * 4,
+                    is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
   if (!bitmap_.allocPixels())
       return false;
 
   if (!is_opaque)
     bitmap_.eraseColor(0);
-  bitmap_.setIsOpaque(is_opaque);
 
   surface_ = CGContextForData(bitmap_.getPixels(), bitmap_.width(),
                               bitmap_.height());

@@ -25,12 +25,12 @@
 #ifndef AudioBufferSourceNode_h
 #define AudioBufferSourceNode_h
 
-#include "core/platform/audio/AudioBus.h"
+#include "platform/audio/AudioBus.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "modules/webaudio/AudioParam.h"
 #include "modules/webaudio/AudioScheduledSourceNode.h"
 #include "modules/webaudio/PannerNode.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Threading.h"
@@ -52,9 +52,8 @@ public:
     virtual void process(size_t framesToProcess);
     virtual void reset();
 
-    // setBuffer() is called on the main thread.  This is the buffer we use for playback.
-    // returns true on success.
-    bool setBuffer(AudioBuffer*);
+    // setBuffer() is called on the main thread. This is the buffer we use for playback.
+    void setBuffer(AudioBuffer*, ExceptionState&);
     AudioBuffer* buffer() { return m_buffer.get(); }
 
     // numberOfChannels() returns the number of output channels.  This value equals the number of channels from the buffer.
@@ -62,10 +61,12 @@ public:
     unsigned numberOfChannels();
 
     // Play-state
-    void startGrain(double when, double grainOffset);
-    void startGrain(double when, double grainOffset, double grainDuration);
+    void start(ExceptionState&);
+    void start(double when, ExceptionState&);
+    void start(double when, double grainOffset, ExceptionState&);
+    void start(double when, double grainOffset, double grainDuration, ExceptionState&);
 
-    void noteGrainOn(double when, double grainOffset, double grainDuration);
+    void noteGrainOn(double when, double grainOffset, double grainDuration, ExceptionState&);
 
     // Note: the attribute was originally exposed as .looping, but to be more consistent in naming with <audio>
     // and with how it's described in the specification, the proper attribute name is .loop
@@ -95,6 +96,8 @@ public:
 private:
     AudioBufferSourceNode(AudioContext*, float sampleRate);
 
+    void startPlaying(bool isGrain, double when, double grainOffset, double grainDuration, ExceptionState&);
+
     // Returns true on success.
     bool renderFromBuffer(AudioBus*, unsigned destinationFrameOffset, size_t numberOfFrames);
 
@@ -105,8 +108,8 @@ private:
     RefPtr<AudioBuffer> m_buffer;
 
     // Pointers for the buffer and destination.
-    OwnArrayPtr<const float*> m_sourceChannels;
-    OwnArrayPtr<float*> m_destinationChannels;
+    OwnPtr<const float*[]> m_sourceChannels;
+    OwnPtr<float*[]> m_destinationChannels;
 
     // Used for the "gain" and "playbackRate" attributes.
     RefPtr<AudioParam> m_gain;

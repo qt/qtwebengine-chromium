@@ -37,7 +37,7 @@
 
 #include <string.h>
 
-namespace WebKit {
+namespace blink {
 
 // The classes defined in this file are intended to be used with
 // WebWidget's handleInputEvent method.  These event types are cross-
@@ -118,6 +118,7 @@ public:
         GestureScrollUpdateWithoutPropagation,
         GestureFlingStart,
         GestureFlingCancel,
+        GestureShowPress,
         GestureTap,
         GestureTapUnconfirmed,
         GestureTapDown,
@@ -234,6 +235,7 @@ public:
             || type == GestureTapUnconfirmed
             || type == GestureTapDown
             || type == GestureTapCancel
+            || type == GestureShowPress
             || type == GestureDoubleTap
             || type == GestureTwoFingerTap
             || type == GestureLongPress
@@ -302,7 +304,7 @@ public:
 
     // Sets keyIdentifier based on the value of windowsKeyCode.  This is
     // handy for generating synthetic keyboard events.
-    WEBKIT_EXPORT void setKeyIdentifierFromWindowsKeyCode();
+    BLINK_EXPORT void setKeyIdentifierFromWindowsKeyCode();
 
     static int windowsKeyCodeWithoutLocation(int keycode);
     static int locationModifiersFromWindowsKeyCode(int keycode);
@@ -423,6 +425,11 @@ public:
         struct {
             float width;
             float height;
+        } showPress;
+
+        struct {
+            float width;
+            float height;
         } longPress;
 
         struct {
@@ -489,6 +496,6 @@ public:
 
 #pragma pack(pop)
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

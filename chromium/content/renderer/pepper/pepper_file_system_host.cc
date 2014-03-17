@@ -15,32 +15,14 @@
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace content {
-
-namespace {
-
-bool LooksLikeAGuid(const std::string& fsid) {
-  const size_t kExpectedFsIdSize = 32;
-  if (fsid.size() != kExpectedFsIdSize)
-    return false;
-  for (std::string::const_iterator it = fsid.begin(); it != fsid.end(); ++it) {
-    if (('A' <= *it && *it <= 'F') ||
-        ('0' <= *it && *it <= '9'))
-      continue;
-    return false;
-  }
-  return true;
-}
-
-}  // namespace
 
 PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
                                            PP_Instance instance,
@@ -51,6 +33,20 @@ PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
       type_(type),
       opened_(false),
       called_open_(false),
+      weak_factory_(this) {
+}
+
+PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
+                                           PP_Instance instance,
+                                           PP_Resource resource,
+                                           const GURL& root_url,
+                                           PP_FileSystemType type)
+    : ResourceHost(host->GetPpapiHost(), instance, resource),
+      renderer_ppapi_host_(host),
+      type_(type),
+      opened_(true),
+      root_url_(root_url),
+      called_open_(true),
       weak_factory_(this) {
 }
 
@@ -102,33 +98,21 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
     return PP_ERROR_INPROGRESS;
   called_open_ = true;
 
-  fileapi::FileSystemType file_system_type;
-  switch (type_) {
-    case PP_FILESYSTEMTYPE_LOCALTEMPORARY:
-      file_system_type = fileapi::kFileSystemTypeTemporary;
-      break;
-    case PP_FILESYSTEMTYPE_LOCALPERSISTENT:
-      file_system_type = fileapi::kFileSystemTypePersistent;
-      break;
-    case PP_FILESYSTEMTYPE_EXTERNAL:
-      file_system_type = fileapi::kFileSystemTypeExternal;
-      break;
-    default:
-      return PP_ERROR_FAILED;
-  }
+  fileapi::FileSystemType file_system_type =
+      ppapi::PepperFileSystemTypeToFileSystemType(type_);
+  if (file_system_type == fileapi::kFileSystemTypeUnknown)
+    return PP_ERROR_FAILED;
 
-  PepperPluginInstance* plugin_instance =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (!plugin_instance)
+  GURL document_url = renderer_ppapi_host_->GetDocumentURL(pp_instance());
+  if (!document_url.is_valid())
     return PP_ERROR_FAILED;
 
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
   reply_context_ = context->MakeReplyMessageContext();
   file_system_dispatcher->OpenFileSystem(
-      GURL(plugin_instance->GetContainer()->element().document().url()).
-          GetOrigin(),
-      file_system_type, expected_size, true /* create */,
+      document_url.GetOrigin(),
+      file_system_type,
       base::Bind(&PepperFileSystemHost::DidOpenFileSystem,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&PepperFileSystemHost::DidFailOpenFileSystem,
@@ -138,18 +122,28 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
 
 int32_t PepperFileSystemHost::OnHostMsgInitIsolatedFileSystem(
     ppapi::host::HostMessageContext* context,
-    const std::string& fsid) {
+    const std::string& fsid,
+    PP_IsolatedFileSystemType_Private type) {
+  // Do not allow multiple opens.
+  if (called_open_)
+    return PP_ERROR_INPROGRESS;
   called_open_ = true;
+
   // Do a sanity check.
-  if (!LooksLikeAGuid(fsid))
+  if (!fileapi::ValidateIsolatedFileSystemId(fsid))
     return PP_ERROR_BADARGUMENT;
+
   RenderView* view =
       renderer_ppapi_host_->GetRenderViewForInstance(pp_instance());
   if (!view)
     return PP_ERROR_FAILED;
+
   const GURL& url = view->GetWebView()->mainFrame()->document().url();
+  const std::string root_name = ppapi::IsolatedFileSystemTypeToRootName(type);
+  if (root_name.empty())
+    return PP_ERROR_BADARGUMENT;
   root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
-      url.GetOrigin(), fsid, "crxfs"));
+      url.GetOrigin(), fsid, root_name));
   opened_ = true;
   return PP_OK;
 }

@@ -160,7 +160,8 @@ void PrioritizedResourceManager::PushTexturePrioritiesToBackings() {
       memory_visible_and_nearby_bytes_;
 }
 
-void PrioritizedResourceManager::UpdateBackingsInDrawingImplTree() {
+void PrioritizedResourceManager::UpdateBackingsState(
+    ResourceProvider* resource_provider) {
   TRACE_EVENT0("cc",
                "PrioritizedResourceManager::UpdateBackingsInDrawingImplTree");
   DCHECK(proxy_->IsImplThread() && proxy_->IsMainThreadBlocked());
@@ -169,7 +170,7 @@ void PrioritizedResourceManager::UpdateBackingsInDrawingImplTree() {
   for (BackingList::iterator it = backings_.begin(); it != backings_.end();
        ++it) {
     PrioritizedResource::Backing* backing = (*it);
-    backing->UpdateInDrawingImplTree();
+    backing->UpdateState(resource_provider);
   }
   SortBackings();
   AssertInvariants();
@@ -240,7 +241,7 @@ void PrioritizedResourceManager::AcquireBackingTextureIfNeeded(
   // First try to recycle
   for (BackingList::iterator it = backings_.begin(); it != backings_.end();
        ++it) {
-    if (!(*it)->CanBeRecycled())
+    if (!(*it)->CanBeRecycledIfNotInExternalUse())
       break;
     if (resource_provider->InUseByConsumer((*it)->id()))
       continue;
@@ -298,7 +299,8 @@ bool PrioritizedResourceManager::EvictBackingsToReduceMemory(
             backing->request_priority_at_last_priority_update(),
             priority_cutoff))
       break;
-    if (eviction_policy == EVICT_ONLY_RECYCLABLE && !backing->CanBeRecycled())
+    if (eviction_policy == EVICT_ONLY_RECYCLABLE &&
+        !backing->CanBeRecycledIfNotInExternalUse())
       break;
     if (unlink_policy == UNLINK_BACKINGS && backing->owner())
       backing->owner()->Unlink();
@@ -320,12 +322,18 @@ void PrioritizedResourceManager::ReduceWastedMemory(
        ++it) {
     if ((*it)->owner())
       break;
+    if ((*it)->in_parent_compositor())
+      continue;
     wasted_memory += (*it)->bytes();
   }
-  size_t ten_percent_of_memory = memory_available_bytes_ / 10;
-  if (wasted_memory > ten_percent_of_memory)
+  size_t wasted_memory_to_allow = memory_available_bytes_ / 10;
+  // If the external priority cutoff indicates that unused memory should be
+  // freed, then do not allow any memory for texture recycling.
+  if (external_priority_cutoff_ != PriorityCalculator::AllowEverythingCutoff())
+    wasted_memory_to_allow = 0;
+  if (wasted_memory > wasted_memory_to_allow)
     EvictBackingsToReduceMemory(MemoryUseBytes() -
-                                (wasted_memory - ten_percent_of_memory),
+                                (wasted_memory - wasted_memory_to_allow),
                                 PriorityCalculator::AllowEverythingCutoff(),
                                 EVICT_ONLY_RECYCLABLE,
                                 DO_NOT_UNLINK_BACKINGS,
@@ -365,6 +373,7 @@ bool PrioritizedResourceManager::ReduceMemoryOnImplThread(
     ResourceProvider* resource_provider) {
   DCHECK(proxy_->IsImplThread());
   DCHECK(resource_provider);
+
   // If we are in the process of uploading a new frame then the backings at the
   // very end of the list are not sorted by priority. Sort them before doing the
   // eviction.
@@ -375,18 +384,6 @@ bool PrioritizedResourceManager::ReduceMemoryOnImplThread(
                                      EVICT_ANYTHING,
                                      DO_NOT_UNLINK_BACKINGS,
                                      resource_provider);
-}
-
-void PrioritizedResourceManager::ReduceWastedMemoryOnImplThread(
-    ResourceProvider* resource_provider) {
-  DCHECK(proxy_->IsImplThread());
-  DCHECK(resource_provider);
-  // If we are in the process of uploading a new frame then the backings at the
-  // very end of the list are not sorted by priority. Sort them before doing the
-  // eviction.
-  if (backings_tail_not_sorted_)
-    SortBackings();
-  ReduceWastedMemory(resource_provider);
 }
 
 void PrioritizedResourceManager::UnlinkAndClearEvictedBackings() {
@@ -456,6 +453,7 @@ PrioritizedResource::Backing* PrioritizedResourceManager::CreateBacking(
   ResourceProvider::ResourceId resource_id =
       resource_provider->CreateManagedResource(
           size,
+          GL_TEXTURE_2D,
           GL_CLAMP_TO_EDGE,
           ResourceProvider::TextureUsageAny,
           format);
@@ -535,12 +533,12 @@ void PrioritizedResourceManager::AssertInvariants() {
         (!backings_tail_not_sorted_ ||
          !backing->was_above_priority_cutoff_at_last_priority_update()))
       DCHECK(CompareBackings(previous_backing, backing));
-    if (!backing->CanBeRecycled())
+    if (!backing->CanBeRecycledIfNotInExternalUse())
       reached_unrecyclable = true;
     if (reached_unrecyclable)
-      DCHECK(!backing->CanBeRecycled());
+      DCHECK(!backing->CanBeRecycledIfNotInExternalUse());
     else
-      DCHECK(backing->CanBeRecycled());
+      DCHECK(backing->CanBeRecycledIfNotInExternalUse());
     previous_backing = backing;
   }
 #endif

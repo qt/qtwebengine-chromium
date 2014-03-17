@@ -33,10 +33,17 @@
 
 #include "core/animation/TimedItem.h"
 #include "core/animation/Timing.h"
-#include "core/platform/animation/AnimationUtilities.h"
+#include "platform/animation/AnimationUtilities.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
+
+static inline double multiplyZeroAlwaysGivesZero(double x, double y)
+{
+    ASSERT(!isNull(x));
+    ASSERT(!isNull(y));
+    return x && y ? x * y : 0;
+}
 
 static inline TimedItem::Phase calculatePhase(double activeDuration, double localTime, const Timing& specified)
 {
@@ -100,20 +107,20 @@ static inline double calculateScaledActiveTime(double activeDuration, double act
     if (isNull(activeTime))
         return nullValue();
 
-    ASSERT(activeTime >= 0);
-
-    return (specified.playbackRate < 0 ? activeTime - activeDuration : activeTime) * specified.playbackRate + startOffset;
+    ASSERT(activeTime >= 0 && activeTime <= activeDuration);
+    return multiplyZeroAlwaysGivesZero(specified.playbackRate < 0 ? activeTime - activeDuration : activeTime, specified.playbackRate) + startOffset;
 }
 
 static inline bool endsOnIterationBoundary(double iterationCount, double iterationStart)
 {
+    ASSERT(std::isfinite(iterationCount));
     return !fmod(iterationCount + iterationStart, 1);
 }
 
 static inline double calculateIterationTime(double iterationDuration, double repeatedDuration, double scaledActiveTime, double startOffset, const Timing& specified)
 {
-    ASSERT(iterationDuration >= 0);
-    ASSERT(repeatedDuration == iterationDuration * specified.iterationCount);
+    ASSERT(iterationDuration > 0);
+    ASSERT(repeatedDuration == multiplyZeroAlwaysGivesZero(iterationDuration, specified.iterationCount));
 
     if (isNull(scaledActiveTime))
         return nullValue();
@@ -121,18 +128,17 @@ static inline double calculateIterationTime(double iterationDuration, double rep
     ASSERT(scaledActiveTime >= 0);
     ASSERT(scaledActiveTime <= repeatedDuration + startOffset);
 
-    if (!iterationDuration)
-        return 0;
-
-    if (scaledActiveTime - startOffset == repeatedDuration && specified.iterationCount && endsOnIterationBoundary(specified.iterationCount, specified.iterationStart))
+    if (!std::isfinite(scaledActiveTime)
+        || (scaledActiveTime - startOffset == repeatedDuration && specified.iterationCount && endsOnIterationBoundary(specified.iterationCount, specified.iterationStart)))
         return iterationDuration;
 
+    ASSERT(std::isfinite(scaledActiveTime));
     return fmod(scaledActiveTime, iterationDuration);
 }
 
 static inline double calculateCurrentIteration(double iterationDuration, double iterationTime, double scaledActiveTime, const Timing& specified)
 {
-    ASSERT(iterationDuration >= 0);
+    ASSERT(iterationDuration > 0);
     ASSERT(isNull(iterationTime) || iterationTime >= 0);
 
     if (isNull(scaledActiveTime))
@@ -144,9 +150,6 @@ static inline double calculateCurrentIteration(double iterationDuration, double 
 
     if (!scaledActiveTime)
         return 0;
-
-    if (!iterationDuration)
-        return floor(specified.iterationStart + specified.iterationCount);
 
     if (iterationTime == iterationDuration)
         return specified.iterationStart + specified.iterationCount - 1;
@@ -183,9 +186,13 @@ static inline double calculateTransformedTime(double currentIteration, double it
     double directedTime = calculateDirectedTime(currentIteration, iterationDuration, iterationTime, specified);
     if (isNull(directedTime))
         return nullValue();
-    return specified.timingFunction ?
-        iterationDuration * specified.timingFunction->evaluate(directedTime / iterationDuration, accuracyForDuration(iterationDuration)) :
-        directedTime;
+    if (!std::isfinite(iterationDuration))
+        return directedTime;
+    double timeFraction = directedTime / iterationDuration;
+    ASSERT(timeFraction >= 0 && timeFraction <= 1);
+    return specified.timingFunction
+        ? multiplyZeroAlwaysGivesZero(iterationDuration, specified.timingFunction->evaluate(timeFraction, accuracyForDuration(iterationDuration)))
+        : directedTime;
 }
 
 } // namespace WebCore

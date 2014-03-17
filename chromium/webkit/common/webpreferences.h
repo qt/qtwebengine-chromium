@@ -5,7 +5,7 @@
 // A struct for managing webkit's settings.
 //
 // Adding new values to this class probably involves updating
-// WebKit::WebSettings, content/common/view_messages.h, browser/tab_contents/
+// blink::WebSettings, content/common/view_messages.h, browser/tab_contents/
 // render_view_host_delegate_helper.cc, and browser/profiles/profile.cc.
 
 #ifndef WEBKIT_COMMON_WEBPREFERENCES_H__
@@ -19,7 +19,7 @@
 #include "url/gurl.h"
 #include "webkit/common/webkit_common_export.h"
 
-namespace WebKit {
+namespace blink {
 class WebView;
 }
 
@@ -78,6 +78,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_scripts_to_close_windows;
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
+  bool xslt_enabled;
   bool xss_auditor_enabled;
   // We don't use dns_prefetching_enabled to disable DNS prefetching.  Instead,
   // we disable the feature at a lower layer so that we catch non-WebKit uses
@@ -90,9 +91,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool caret_browsing_enabled;
   bool hyperlink_auditing_enabled;
   bool is_online;
-  bool user_style_sheet_enabled;
-  GURL user_style_sheet_location;
-  bool author_and_user_styles_enabled;
   bool allow_universal_access_from_file_urls;
   bool allow_file_access_from_file_urls;
   bool webaudio_enabled;
@@ -104,9 +102,11 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool accelerated_compositing_for_overflow_scroll_enabled;
+  bool universal_accelerated_compositing_for_overflow_scroll_enabled;
   bool accelerated_compositing_for_scrollable_frames_enabled;
   bool composited_scrolling_for_frames_enabled;
   bool mock_scrollbars_enabled;
+  bool layer_squashing_enabled;
   bool threaded_html_parser;
   bool show_paint_rects;
   bool asynchronous_spell_checking_enabled;
@@ -119,6 +119,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool accelerated_2d_canvas_enabled;
   int minimum_accelerated_2d_canvas_size;
   bool antialiased_2d_canvas_disabled;
+  int accelerated_2d_canvas_msaa_sample_count;
   bool accelerated_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
@@ -128,10 +129,9 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_running_insecure_content;
   bool password_echo_enabled;
   bool should_print_backgrounds;
+  bool should_clear_document_background;
   bool enable_scroll_animator;
   bool visual_word_movement_enabled;
-  bool css_sticky_position_enabled;
-  bool css_shaders_enabled;
   bool css_variables_enabled;
   bool lazy_layout_enabled;
   bool region_based_columns_enabled;
@@ -139,6 +139,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool device_supports_touch;
   bool device_supports_mouse;
   bool touch_adjustment_enabled;
+  int pointer_events_max_touch_points;
   bool fixed_position_creates_stacking_context;
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
@@ -147,6 +148,8 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   webkit_glue::EditingBehavior editing_behavior;
   bool supports_multiple_windows;
   bool viewport_enabled;
+  bool viewport_meta_enabled;
+  bool main_frame_resizes_are_orientation_changes;
   bool initialize_at_minimum_page_scale;
   bool smart_insert_delete_enabled;
   bool spatial_navigation_enabled;
@@ -154,6 +157,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool pinch_virtual_viewport_enabled;
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
+  bool compositor_touch_hit_testing;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -165,6 +169,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;
   float font_scale_factor;
+  float device_scale_adjustment;
   bool force_enable_zoom;
   bool double_tap_to_zoom_enabled;
   bool user_gesture_required_for_media_playback;
@@ -175,7 +180,12 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool wide_viewport_quirk;
   bool use_wide_viewport;
   bool viewport_meta_layout_size_quirk;
+  bool viewport_meta_merge_content_quirk;
+  bool viewport_meta_non_user_scalable_quirk;
   bool viewport_meta_zero_values_quirk;
+  bool clobber_user_agent_initial_scale_quirk;
+  bool ignore_main_frame_overflow_hidden_quirk;
+  bool report_screen_size_in_physical_pixels_quirk;
 #endif
 
   // We try to keep the default values the same as the default values in

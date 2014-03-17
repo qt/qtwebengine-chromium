@@ -225,7 +225,7 @@ def _ToolSetOrAppend(tools, tool_name, setting, value, only_if_unset=False):
   tool = tools[tool_name]
   if tool.get(setting):
     if only_if_unset: return
-    if type(tool[setting]) == list:
+    if type(tool[setting]) == list and type(value) == list:
       tool[setting] += value
     else:
       raise TypeError(
@@ -1203,6 +1203,24 @@ def _GetOutputFilePathAndTool(spec, msbuild):
   return out_file, vc_tool, msbuild_tool
 
 
+def _GetOutputTargetExt(spec):
+  """Returns the extension for this target, including the dot
+
+  If product_extension is specified, set target_extension to this to avoid
+  MSB8012, returns None otherwise. Ignores any target_extension settings in
+  the input files.
+
+  Arguments:
+    spec: The target dictionary containing the properties of the target.
+  Returns:
+    A string with the extension, or None
+  """
+  target_extension = spec.get('product_extension')
+  if target_extension:
+    return '.' + target_extension
+  return None
+
+
 def _GetDefines(config):
   """Returns the list of preprocessor definitions for this configuation.
 
@@ -1393,6 +1411,11 @@ def _AdjustSourcesAndConvertToFilterHierarchy(
   sources = [i.split('\\') for i in sources]
   sources = _ConvertSourcesToFilterHierarchy(sources, excluded=fully_excluded,
                                              list_excluded=list_excluded)
+
+  # Prune filters with a single child to flatten ugly directory structures
+  # such as ../../src/modules/module1 etc.
+  while len(sources) == 1 and isinstance(sources[0], MSVSProject.Filter):
+    sources = sources[0].contents
 
   return sources, excluded_sources, excluded_idl
 
@@ -2652,6 +2675,9 @@ def _GetMSBuildAttributes(spec, config, build_file):
     out_file = msbuild_settings[msbuild_tool].get('OutputFile')
     if out_file:
       msbuild_attributes['TargetPath'] = _FixPath(out_file)
+    target_ext = msbuild_settings[msbuild_tool].get('TargetExt')
+    if target_ext:
+      msbuild_attributes['TargetExt'] = target_ext
 
   return msbuild_attributes
 
@@ -2687,6 +2713,9 @@ def _GetMSBuildConfigurationGlobalProperties(spec, configurations, build_file):
     if attributes.get('TargetPath'):
       _AddConditionalProperty(properties, condition, 'TargetPath',
                               attributes['TargetPath'])
+    if attributes.get('TargetExt'):
+      _AddConditionalProperty(properties, condition, 'TargetExt',
+                              attributes['TargetExt'])
 
     if new_paths:
       _AddConditionalProperty(properties, condition, 'ExecutablePath',
@@ -2807,6 +2836,7 @@ def _FinalizeMSBuildSettings(spec, configuration):
   libraries = _GetLibraries(spec)
   library_dirs = _GetLibraryDirs(configuration)
   out_file, _, msbuild_tool = _GetOutputFilePathAndTool(spec, msbuild=True)
+  target_ext = _GetOutputTargetExt(spec)
   defines = _GetDefines(configuration)
   if converted:
     # Visual Studio 2010 has TR1
@@ -2844,6 +2874,9 @@ def _FinalizeMSBuildSettings(spec, configuration):
   if out_file:
     _ToolAppend(msbuild_settings, msbuild_tool, 'OutputFile', out_file,
                 only_if_unset=True)
+  if target_ext:
+    _ToolAppend(msbuild_settings, msbuild_tool, 'TargetExt', target_ext,
+                only_if_unset=True)
   # Add defines.
   _ToolAppend(msbuild_settings, 'ClCompile',
               'PreprocessorDefinitions', defines)
@@ -2859,7 +2892,7 @@ def _FinalizeMSBuildSettings(spec, configuration):
     _ToolAppend(msbuild_settings, 'ClCompile',
                 'PrecompiledHeaderFile', precompiled_header)
     _ToolAppend(msbuild_settings, 'ClCompile',
-                'ForcedIncludeFiles', precompiled_header)
+                'ForcedIncludeFiles', [precompiled_header])
   # Loadable modules don't generate import libraries;
   # tell dependent projects to not expect one.
   if spec['type'] == 'loadable_module':

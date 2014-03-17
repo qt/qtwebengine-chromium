@@ -128,9 +128,13 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   //   TYPE_JAVA behaves in essence like TYPE_UI, except during construction
   //   where it does not use the main thread specific pump factory.
   //
+  // TYPE_CUSTOM
+  //   MessagePump was supplied to constructor.
+  //
   enum Type {
     TYPE_DEFAULT,
     TYPE_UI,
+    TYPE_CUSTOM,
 #if defined(TOOLKIT_GTK)
     TYPE_GPU,
 #endif
@@ -143,6 +147,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Normally, it is not necessary to instantiate a MessageLoop.  Instead, it
   // is typical to make use of the current thread's MessageLoop instance.
   explicit MessageLoop(Type type = TYPE_DEFAULT);
+  // Creates a TYPE_CUSTOM MessageLoop with the supplied MessagePump, which must
+  // be non-NULL.
+  explicit MessageLoop(scoped_ptr<base::MessagePump> pump);
   virtual ~MessageLoop();
 
   // Returns the MessageLoop object for the current thread, or null if none.
@@ -155,6 +162,12 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // MessagePump implementation for 'TYPE_UI'. Returns true if the factory
   // was successfully registered.
   static bool InitMessagePumpForUIFactory(MessagePumpFactory* factory);
+
+  // Creates the default MessagePump based on |type|. Caller owns return
+  // value.
+  // TODO(sky): convert this and InitMessagePumpForUIFactory() to return a
+  // scoped_ptr.
+  static MessagePump* CreateMessagePumpForType(Type type);
 
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These observers are notified prior to MessageLoop::current()
@@ -442,6 +455,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   friend class internal::IncomingTaskQueue;
   friend class RunLoop;
 
+  // Configures various members for the two constructors.
+  void Init();
+
   // A function to encapsulate all the exception handling capability in the
   // stacks around the running of a main message loop.  It will run the message
   // loop in a SEH try block or not depending on the set_SEH_restoration()
@@ -504,7 +520,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   virtual void GetQueueingInformation(size_t* queue_size,
                                       TimeDelta* queueing_delay) OVERRIDE;
 
-  Type type_;
+  const Type type_;
 
   // A list of tasks that need to be processed by this instance.  Note that
   // this queue is only accessed (push/pop) by our current thread.
@@ -585,10 +601,6 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
     DCHECK_EQ(MessageLoop::TYPE_UI, loop->type());
     return static_cast<MessageLoopForUI*>(loop);
   }
-
-#if defined(OS_WIN)
-  void DidProcessMessage(const MSG& message);
-#endif  // defined(OS_WIN)
 
 #if defined(OS_IOS)
   // On iOS, the main message loop cannot be Run().  Instead call Attach(),

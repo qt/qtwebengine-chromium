@@ -24,7 +24,6 @@
 namespace {
 
 const char kEmptyBlobStorageMessage[] = "No available blob data.";
-const char kRemove[] = "Remove";
 const char kContentType[] = "Content Type: ";
 const char kContentDisposition[] = "Content Disposition: ";
 const char kCount[] = "Count: ";
@@ -160,18 +159,6 @@ void ViewBlobInternalsJob::GenerateHTML(std::string* out) const {
     for (BlobStorageContext::BlobURLMap::const_iterator iter =
              blob_storage_context_->public_blob_urls_.begin();
          iter != blob_storage_context_->public_blob_urls_.end();
-         ++iter) {
-      AddHTMLBoldText(iter->first.spec(), out);
-      StartHTMLList(out);
-      AddHTMLListItem(kUUID, iter->second, out);
-      EndHTMLList(out);
-    }
-  }
-  if (!blob_storage_context_->deprecated_blob_urls_.empty()) {
-    AddHorizontalRule(out);
-    for (BlobStorageContext::BlobURLMap::const_iterator iter =
-             blob_storage_context_->deprecated_blob_urls_.begin();
-         iter != blob_storage_context_->deprecated_blob_urls_.end();
          ++iter) {
       AddHTMLBoldText(iter->first.spec(), out);
       StartHTMLList(out);

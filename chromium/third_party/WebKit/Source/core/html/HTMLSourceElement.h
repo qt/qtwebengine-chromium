@@ -27,26 +27,25 @@
 #define HTMLSourceElement_h
 
 #include "core/html/HTMLElement.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
 class HTMLSourceElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLSourceElement> create(Document& document) { return create(HTMLNames::sourceTag, document); }
-    static PassRefPtr<HTMLSourceElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLSourceElement> create(Document&);
 
-    String media() const;
-    String type() const;
+    const AtomicString& media() const;
+    const AtomicString& type() const;
     void setSrc(const String&);
-    void setMedia(const String&);
-    void setType(const String&);
+    void setMedia(const AtomicString&);
+    void setType(const AtomicString&);
 
     void scheduleErrorEvent();
     void cancelPendingErrorEvent();
 
 private:
-    HTMLSourceElement(const QualifiedName&, Document&);
+    explicit HTMLSourceElement(Document&);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -57,11 +56,7 @@ private:
     Timer<HTMLSourceElement> m_errorEventTimer;
 };
 
-inline HTMLSourceElement* toHTMLSourceElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::sourceTag));
-    return static_cast<HTMLSourceElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLSourceElement, hasTagName(HTMLNames::sourceTag));
 
 } // namespace WebCore
 

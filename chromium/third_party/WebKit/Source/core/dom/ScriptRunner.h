@@ -27,7 +27,7 @@
 #define ScriptRunner_h
 
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -52,6 +52,7 @@ public:
     void suspend();
     void resume();
     void notifyScriptReady(ScriptLoader*, ExecutionType);
+    void notifyScriptLoadError(ScriptLoader*, ExecutionType);
 
 private:
     explicit ScriptRunner(Document*);

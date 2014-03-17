@@ -7,8 +7,6 @@
 
 #include "cc/resources/single_release_callback.h"
 
-namespace WebKit { class WebGraphicsContext3D; }
-
 namespace cc {
 class ResourceUpdateQueue;
 class TextureMailbox;
@@ -18,10 +16,6 @@ class TextureLayerClient {
   // Called to prepare this layer's texture for compositing.
   // Returns the texture ID to be used for compositing.
   virtual unsigned PrepareTexture() = 0;
-
-  // Returns the context that is providing the texture. Used for rate limiting
-  // and detecting lost context.
-  virtual WebKit::WebGraphicsContext3D* Context3d() = 0;
 
   // Returns true and provides a mailbox if a new frame is available.
   // Returns false if no new data is available

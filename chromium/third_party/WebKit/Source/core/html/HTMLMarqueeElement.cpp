@@ -34,17 +34,16 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLMarqueeElement::HTMLMarqueeElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLMarqueeElement::HTMLMarqueeElement(Document& document)
+    : HTMLElement(marqueeTag, document)
     , ActiveDOMObject(&document)
 {
-    ASSERT(hasTagName(marqueeTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(Document& document)
 {
-    RefPtr<HTMLMarqueeElement> marqueeElement(adoptRef(new HTMLMarqueeElement(tagName, document)));
+    RefPtr<HTMLMarqueeElement> marqueeElement(adoptRef(new HTMLMarqueeElement(document)));
     marqueeElement->suspendIfNeeded();
     return marqueeElement.release();
 }
@@ -128,10 +127,10 @@ int HTMLMarqueeElement::scrollAmount() const
     return ok && scrollAmount >= 0 ? scrollAmount : RenderStyle::initialMarqueeIncrement().intValue();
 }
 
-void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionState& es)
+void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionState& exceptionState)
 {
     if (scrollAmount < 0)
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(scrollAmount) + ") is negative.");
     else
         setIntegralAttribute(scrollamountAttr, scrollAmount);
 }
@@ -143,10 +142,10 @@ int HTMLMarqueeElement::scrollDelay() const
     return ok && scrollDelay >= 0 ? scrollDelay : RenderStyle::initialMarqueeSpeed();
 }
 
-void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionState& es)
+void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionState& exceptionState)
 {
     if (scrollDelay < 0)
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(scrollDelay) + ") is negative.");
     else
         setIntegralAttribute(scrolldelayAttr, scrollDelay);
 }
@@ -158,20 +157,15 @@ int HTMLMarqueeElement::loop() const
     return ok && loopValue > 0 ? loopValue : -1;
 }
 
-void HTMLMarqueeElement::setLoop(int loop, ExceptionState& es)
+void HTMLMarqueeElement::setLoop(int loop, ExceptionState& exceptionState)
 {
     if (loop <= 0 && loop != -1)
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(loop) + ") is neither positive nor -1.");
     else
         setIntegralAttribute(loopAttr, loop);
 }
 
-bool HTMLMarqueeElement::canSuspend() const
-{
-    return true;
-}
-
-void HTMLMarqueeElement::suspend(ReasonForSuspension)
+void HTMLMarqueeElement::suspend()
 {
     if (RenderMarquee* marqueeRenderer = renderMarquee())
         marqueeRenderer->suspend();

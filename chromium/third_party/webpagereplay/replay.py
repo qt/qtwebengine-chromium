@@ -53,6 +53,7 @@ import dnsproxy
 import httparchive
 import httpclient
 import httpproxy
+import net_configs
 import platformsettings
 import replayspdyserver
 import script_injector
@@ -120,7 +121,8 @@ def AddWebProxy(server_manager, options, host, real_dns_lookup, http_archive,
         inject_script,
         options.diff_unknown_requests,
         cache_misses=cache_misses,
-        use_closest_match=options.use_closest_match)
+        use_closest_match=options.use_closest_match,
+        scramble_images=options.scramble_images)
     server_manager.Append(
         replayspdyserver.ReplaySpdyServer, archive_fetch,
         custom_handlers, host=host, port=options.port,
@@ -131,7 +133,8 @@ def AddWebProxy(server_manager, options, host, real_dns_lookup, http_archive,
         http_archive, real_dns_lookup,
         inject_script,
         options.diff_unknown_requests, options.record,
-        cache_misses=cache_misses, use_closest_match=options.use_closest_match)
+        cache_misses=cache_misses, use_closest_match=options.use_closest_match,
+        scramble_images=options.scramble_images)
     server_manager.AppendRecordCallback(archive_fetch.SetRecordMode)
     server_manager.AppendReplayCallback(archive_fetch.SetReplayMode)
     server_manager.Append(
@@ -176,15 +179,6 @@ class OptionsWrapper(object):
       ('net', ('down', 'up', 'delay_ms')),
       ('server', ('server_mode',)),
   )
-  # The --net values come from http://www.webpagetest.org/.
-  # https://sites.google.com/a/webpagetest.org/docs/other-resources/2011-fcc-broadband-data
-  _NET_CONFIGS = (
-      # key           --down         --up  --delay_ms
-      ('dsl',   ('1536Kbit/s', '384Kbit/s',       '50')),
-      ('cable', (   '5Mbit/s',   '1Mbit/s',       '28')),
-      ('fios',  (  '20Mbit/s',   '5Mbit/s',        '4')),
-  )
-  NET_CHOICES = [key for key, values in _NET_CONFIGS]
 
   def __init__(self, options, parser):
     self._options = options
@@ -250,10 +244,10 @@ class OptionsWrapper(object):
     """Set options that depend on the values of other options."""
     if self.append and not self.record:
       self._options.record = True
-    for net_choice, values in self._NET_CONFIGS:
-      if net_choice == self.net:
-        self._options.down, self._options.up, self._options.delay_ms = values
-        self._nondefaults.update(['down', 'up', 'delay_ms'])
+    if self.net:
+      self._options.down, self._options.up, self._options.delay_ms = \
+          net_configs.GetNetConfig(self.net)
+      self._nondefaults.update(['down', 'up', 'delay_ms'])
     if not self.shaping_port:
       self._options.shaping_port = self.port
     if not self.ssl_shaping_port:
@@ -276,8 +270,8 @@ class OptionsWrapper(object):
     """Returns True iff the options require root access."""
     return (self.shaping_dummynet or
             self.dns_forwarding or
-            self.port < 1024 or
-            self.ssl_port < 1024) and self.admin_check
+            (self.port and self.port < 1024) or
+            (self.port and self.ssl_port < 1024)) and self.admin_check
 
 
 def replay(options, replay_filename):
@@ -424,9 +418,9 @@ def GetOptionParser():
   network_group.add_option('--net', default=None,
       action='store',
       type='choice',
-      choices=OptionsWrapper.NET_CHOICES,
+      choices=net_configs.NET_CONFIG_NAMES,
       help='Select a set of network options: %s.' % ', '.join(
-          OptionsWrapper.NET_CHOICES))
+          net_configs.NET_CONFIG_NAMES))
   network_group.add_option('--shaping_type', default='dummynet',
       action='store',
       choices=('dummynet', 'proxy'),
@@ -504,6 +498,10 @@ def GetOptionParser():
       type='int',
       help='Port on which to apply traffic shaping.  Defaults to the '
            'listen port (--port)')
+  harness_group.add_option('--scramble_images', default=False,
+      action='store_true',
+      dest='scramble_images',
+      help='Scramble image responses.')
   harness_group.add_option('--ssl_shaping_port', default=None,
       action='store',
       type='int',

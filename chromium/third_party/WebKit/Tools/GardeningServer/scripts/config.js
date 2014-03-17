@@ -49,6 +49,7 @@ config.kPlatforms = {
             'WebKit Mac10.7 (dbg)': {version: 'lion', debug: true},
             'WebKit Mac10.8': {version: 'mountainlion'},
             'WebKit Mac10.8 (retina)': {version: 'retina'},
+            'WebKit Mac10.9': {version: 'mavericks'},
             'WebKit Android (Nexus4)': {version: 'android'},
         },
         resultsDirectoryNameFromBuilderName: function(builderName) {
@@ -71,6 +72,7 @@ config.kRietveldURL = "https://codereview.chromium.org";
 var kTenMinutesInMilliseconds = 10 * 60 * 1000;
 config.kUpdateFrequency = kTenMinutesInMilliseconds;
 config.kRelativeTimeUpdateFrequency = 1000 * 60;
+config.kTreeStatusUpdateFrequency = 1000 * 30;
 
 config.currentBuilders = function() {
     return config.kPlatforms[config.currentPlatform].builders;

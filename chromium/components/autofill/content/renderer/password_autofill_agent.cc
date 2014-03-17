@@ -9,10 +9,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/password_form_conversion_utils.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_autofill_util.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "content/public/renderer/render_view.h"
@@ -37,7 +38,7 @@ namespace {
 static const size_t kMaximumTextSizeForAutocomplete = 1000;
 
 // Maps element names to the actual elements to simplify form filling.
-typedef std::map<base::string16, WebKit::WebInputElement>
+typedef std::map<base::string16, blink::WebInputElement>
     FormInputElementMap;
 
 // Utility struct for form lookup and autofill. When we parse the DOM to look up
@@ -46,7 +47,7 @@ typedef std::map<base::string16, WebKit::WebInputElement>
 // to fill the form, the FindFormElements function stores the pointers
 // in a FormElements* result, referenced to ensure they are safe to use.
 struct FormElements {
-  WebKit::WebFormElement form_element;
+  blink::WebFormElement form_element;
   FormInputElementMap input_elements;
 };
 
@@ -54,14 +55,14 @@ typedef std::vector<FormElements*> FormElementsList;
 
 // Helper to search the given form element for the specified input elements
 // in |data|, and add results to |result|.
-static bool FindFormInputElements(WebKit::WebFormElement* fe,
+static bool FindFormInputElements(blink::WebFormElement* fe,
                                   const FormData& data,
                                   FormElements* result) {
   // Loop through the list of elements we need to find on the form in order to
   // autofill it. If we don't find any one of them, abort processing this
   // form; it can't be the right one.
   for (size_t j = 0; j < data.fields.size(); j++) {
-    WebKit::WebVector<WebKit::WebNode> temp_elements;
+    blink::WebVector<blink::WebNode> temp_elements;
     fe->getNamedElements(data.fields[j].name, temp_elements);
 
     // Match the first input element, if any.
@@ -71,7 +72,7 @@ static bool FindFormInputElements(WebKit::WebFormElement* fe,
     // of "name" attribute) so is it considered not found.
     bool found_input = false;
     for (size_t i = 0; i < temp_elements.size(); ++i) {
-      if (temp_elements[i].to<WebKit::WebElement>().hasTagName("input")) {
+      if (temp_elements[i].to<blink::WebElement>().hasTagName("input")) {
         // Check for a non-unique match.
         if (found_input) {
           found_input = false;
@@ -80,8 +81,8 @@ static bool FindFormInputElements(WebKit::WebFormElement* fe,
 
         // Only fill saved passwords into password fields and usernames into
         // text fields.
-        WebKit::WebInputElement input_element =
-            temp_elements[i].to<WebKit::WebInputElement>();
+        blink::WebInputElement input_element =
+            temp_elements[i].to<blink::WebInputElement>();
         if (input_element.isPasswordField() !=
             (data.fields[j].form_control_type == "password"))
           continue;
@@ -109,12 +110,12 @@ static bool FindFormInputElements(WebKit::WebFormElement* fe,
 }
 
 // Helper to locate form elements identified by |data|.
-void FindFormElements(WebKit::WebView* view,
+void FindFormElements(blink::WebView* view,
                       const FormData& data,
                       FormElementsList* results) {
   DCHECK(view);
   DCHECK(results);
-  WebKit::WebFrame* main_frame = view->mainFrame();
+  blink::WebFrame* main_frame = view->mainFrame();
   if (!main_frame)
     return;
 
@@ -123,8 +124,8 @@ void FindFormElements(WebKit::WebView* view,
   rep.ClearRef();
 
   // Loop through each frame.
-  for (WebKit::WebFrame* f = main_frame; f; f = f->traverseNext(false)) {
-    WebKit::WebDocument doc = f->document();
+  for (blink::WebFrame* f = main_frame; f; f = f->traverseNext(false)) {
+    blink::WebDocument doc = f->document();
     if (!doc.isHTMLDocument())
       continue;
 
@@ -132,11 +133,11 @@ void FindFormElements(WebKit::WebView* view,
     if (data.origin != full_origin.ReplaceComponents(rep))
       continue;
 
-    WebKit::WebVector<WebKit::WebFormElement> forms;
+    blink::WebVector<blink::WebFormElement> forms;
     doc.forms(forms);
 
     for (size_t i = 0; i < forms.size(); ++i) {
-      WebKit::WebFormElement fe = forms[i];
+      blink::WebFormElement fe = forms[i];
 
       GURL full_action(f->document().completeURL(fe.action()));
       if (full_action.is_empty()) {
@@ -160,44 +161,11 @@ void FindFormElements(WebKit::WebView* view,
   }
 }
 
-bool IsElementEditable(const WebKit::WebInputElement& element) {
+bool IsElementEditable(const blink::WebInputElement& element) {
   return element.isEnabled() && !element.isReadOnly();
 }
 
-void FillForm(FormElements* fe, const FormData& data) {
-  if (!fe->form_element.autoComplete())
-    return;
-
-  std::map<base::string16, base::string16> data_map;
-  for (size_t i = 0; i < data.fields.size(); i++)
-    data_map[data.fields[i].name] = data.fields[i].value;
-
-  for (FormInputElementMap::iterator it = fe->input_elements.begin();
-       it != fe->input_elements.end(); ++it) {
-    WebKit::WebInputElement element = it->second;
-    // Don't fill a form that has pre-filled values distinct from the ones we
-    // want to fill with.
-    if (!element.value().isEmpty() && element.value() != data_map[it->first])
-      return;
-
-    // Don't fill forms with uneditable fields or fields with autocomplete
-    // disabled.
-    if (!IsElementEditable(element) || !element.autoComplete())
-      return;
-  }
-
-  for (FormInputElementMap::iterator it = fe->input_elements.begin();
-       it != fe->input_elements.end(); ++it) {
-    WebKit::WebInputElement element = it->second;
-
-    // TODO(tkent): Check maxlength and pattern.
-    element.setValue(data_map[it->first]);
-    element.setAutofilled(true);
-    element.dispatchFormControlChangeEvent();
-  }
-}
-
-void SetElementAutofilled(WebKit::WebInputElement* element, bool autofilled) {
+void SetElementAutofilled(blink::WebInputElement* element, bool autofilled) {
   if (element->isAutofilled() == autofilled)
     return;
   element->setAutofilled(autofilled);
@@ -229,7 +197,7 @@ PasswordAutofillAgent::~PasswordAutofillAgent() {
 }
 
 bool PasswordAutofillAgent::TextFieldDidEndEditing(
-    const WebKit::WebInputElement& element) {
+    const blink::WebInputElement& element) {
   LoginToPasswordInfoMap::const_iterator iter =
       login_to_password_info_.find(element);
   if (iter == login_to_password_info_.end())
@@ -242,20 +210,22 @@ bool PasswordAutofillAgent::TextFieldDidEndEditing(
   if (!fill_data.wait_for_username)
     return false;
 
-  WebKit::WebInputElement password = iter->second.password_field;
+  blink::WebInputElement password = iter->second.password_field;
   if (!IsElementEditable(password))
     return false;
 
-  WebKit::WebInputElement username = element;  // We need a non-const.
+  blink::WebInputElement username = element;  // We need a non-const.
 
   // Do not set selection when ending an editing session, otherwise it can
   // mess with focus.
-  FillUserNameAndPassword(&username, &password, fill_data, true, false);
+  FillUserNameAndPassword(&username, &password, fill_data,
+                          true /* exact_username_match */,
+                          false /* set_selection */);
   return true;
 }
 
 bool PasswordAutofillAgent::TextDidChangeInTextField(
-    const WebKit::WebInputElement& element) {
+    const blink::WebInputElement& element) {
   LoginToPasswordInfoMap::const_iterator iter =
       login_to_password_info_.find(element);
   if (iter == login_to_password_info_.end())
@@ -263,8 +233,8 @@ bool PasswordAutofillAgent::TextDidChangeInTextField(
 
   // The input text is being changed, so any autofilled password is now
   // outdated.
-  WebKit::WebInputElement username = element;  // We need a non-const.
-  WebKit::WebInputElement password = iter->second.password_field;
+  blink::WebInputElement username = element;  // We need a non-const.
+  blink::WebInputElement password = iter->second.password_field;
   SetElementAutofilled(&username, false);
   if (password.isAutofilled()) {
     password.setValue(base::string16());
@@ -275,9 +245,9 @@ bool PasswordAutofillAgent::TextDidChangeInTextField(
   if (iter->second.fill_data.wait_for_username)
     return false;
 
-  if (!IsElementEditable(element) ||
-      !element.isText() ||
-      !element.autoComplete()) {
+  if (!IsElementEditable(element) || !element.isText() ||
+      (!ShouldIgnoreAutocompleteOffForPasswordFields() &&
+       !element.autoComplete())) {
     return false;
   }
 
@@ -289,7 +259,7 @@ bool PasswordAutofillAgent::TextDidChangeInTextField(
     return true;
   }
 
-  WebKit::WebString name = element.nameForAutofill();
+  blink::WebString name = element.nameForAutofill();
   if (name.isEmpty())
     return false;  // If the field has no name, then we won't have values.
 
@@ -303,8 +273,8 @@ bool PasswordAutofillAgent::TextDidChangeInTextField(
 }
 
 bool PasswordAutofillAgent::TextFieldHandlingKeyDown(
-    const WebKit::WebInputElement& element,
-    const WebKit::WebKeyboardEvent& event) {
+    const blink::WebInputElement& element,
+    const blink::WebKeyboardEvent& event) {
   // If using the new Autofill UI that lives in the browser, it will handle
   // keypresses before this function. This is not currently an issue but if
   // the keys handled there or here change, this issue may appear.
@@ -320,29 +290,31 @@ bool PasswordAutofillAgent::TextFieldHandlingKeyDown(
 }
 
 bool PasswordAutofillAgent::DidAcceptAutofillSuggestion(
-    const WebKit::WebNode& node,
-    const WebKit::WebString& value) {
-  WebKit::WebInputElement input;
+    const blink::WebNode& node,
+    const blink::WebString& username) {
+  blink::WebInputElement input;
   PasswordInfo password;
   if (!FindLoginInfo(node, &input, &password))
     return false;
 
-  // Set the incoming |value| in the text field and |FillUserNameAndPassword|
+  // Set the incoming |username| in the text field and |FillUserNameAndPassword|
   // will do the rest.
-  input.setValue(value, true);
+  input.setValue(username, true);
   return FillUserNameAndPassword(&input, &password.password_field,
-                                 password.fill_data, true, true);
+                                 password.fill_data,
+                                 true /* exact_username_match */,
+                                 true /* set_selection */);
 }
 
 bool PasswordAutofillAgent::DidClearAutofillSelection(
-    const WebKit::WebNode& node) {
-  WebKit::WebInputElement input;
+    const blink::WebNode& node) {
+  blink::WebInputElement input;
   PasswordInfo password;
   return FindLoginInfo(node, &input, &password);
 }
 
 bool PasswordAutofillAgent::ShowSuggestions(
-    const WebKit::WebInputElement& element) {
+    const blink::WebInputElement& element) {
   LoginToPasswordInfoMap::const_iterator iter =
       login_to_password_info_.find(element);
   if (iter == login_to_password_info_.end())
@@ -352,18 +324,18 @@ bool PasswordAutofillAgent::ShowSuggestions(
 }
 
 bool PasswordAutofillAgent::OriginCanAccessPasswordManager(
-    const WebKit::WebSecurityOrigin& origin) {
+    const blink::WebSecurityOrigin& origin) {
   return origin.canAccessPasswordManager();
 }
 
-void PasswordAutofillAgent::OnDynamicFormsSeen(WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::OnDynamicFormsSeen(blink::WebFrame* frame) {
   SendPasswordForms(frame, false /* only_visible */);
 }
 
-void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
+void PasswordAutofillAgent::SendPasswordForms(blink::WebFrame* frame,
                                               bool only_visible) {
   // Make sure that this security origin is allowed to use password manager.
-  WebKit::WebSecurityOrigin origin = frame->document().securityOrigin();
+  blink::WebSecurityOrigin origin = frame->document().securityOrigin();
   if (!OriginCanAccessPasswordManager(origin))
     return;
 
@@ -371,12 +343,12 @@ void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
   if (IsWebpageEmpty(frame))
     return;
 
-  WebKit::WebVector<WebKit::WebFormElement> forms;
+  blink::WebVector<blink::WebFormElement> forms;
   frame->document().forms(forms);
 
   std::vector<PasswordForm> password_forms;
   for (size_t i = 0; i < forms.size(); ++i) {
-    const WebKit::WebFormElement& form = forms[i];
+    const blink::WebFormElement& form = forms[i];
 
     // If requested, ignore non-rendered forms, e.g. those styled with
     // display:none.
@@ -420,14 +392,14 @@ void PasswordAutofillAgent::DidStartLoading() {
   }
 }
 
-void PasswordAutofillAgent::DidFinishDocumentLoad(WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::DidFinishDocumentLoad(blink::WebFrame* frame) {
   // The |frame| contents have been parsed, but not yet rendered.  Let the
   // PasswordManager know that forms are loaded, even though we can't yet tell
   // whether they're visible.
   SendPasswordForms(frame, false);
 }
 
-void PasswordAutofillAgent::DidFinishLoad(WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::DidFinishLoad(blink::WebFrame* frame) {
   // The |frame| contents have been rendered.  Let the PasswordManager know
   // which of the loaded frames are actually visible to the user.  This also
   // triggers the "Save password?" infobar if the user just submitted a password
@@ -435,26 +407,28 @@ void PasswordAutofillAgent::DidFinishLoad(WebKit::WebFrame* frame) {
   SendPasswordForms(frame, true);
 }
 
-void PasswordAutofillAgent::FrameDetached(WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::FrameDetached(blink::WebFrame* frame) {
   FrameClosing(frame);
 }
 
-void PasswordAutofillAgent::FrameWillClose(WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::FrameWillClose(blink::WebFrame* frame) {
   FrameClosing(frame);
 }
 
 void PasswordAutofillAgent::WillSendSubmitEvent(
-    WebKit::WebFrame* frame,
-    const WebKit::WebFormElement& form) {
+    blink::WebFrame* frame,
+    const blink::WebFormElement& form) {
   // Some login forms have onSubmit handlers that put a hash of the password
   // into a hidden field and then clear the password (http://crbug.com/28910).
   // This method gets called before any of those handlers run, so save away
   // a copy of the password in case it gets lost.
-  provisionally_saved_forms_[frame].reset(CreatePasswordForm(form).release());
+  scoped_ptr<PasswordForm> password_form(CreatePasswordForm(form));
+  if (password_form)
+    provisionally_saved_forms_[frame].reset(password_form.release());
 }
 
-void PasswordAutofillAgent::WillSubmitForm(WebKit::WebFrame* frame,
-                                           const WebKit::WebFormElement& form) {
+void PasswordAutofillAgent::WillSubmitForm(blink::WebFrame* frame,
+                                           const blink::WebFormElement& form) {
   scoped_ptr<PasswordForm> submitted_form = CreatePasswordForm(form);
 
   // If there is a provisionally saved password, copy over the previous
@@ -480,7 +454,28 @@ void PasswordAutofillAgent::WillSubmitForm(WebKit::WebFrame* frame,
   }
 }
 
-void PasswordAutofillAgent::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
+blink::WebFrame* PasswordAutofillAgent::CurrentOrChildFrameWithSavedForms(
+    const blink::WebFrame* current_frame) {
+  for (FrameToPasswordFormMap::const_iterator it =
+           provisionally_saved_forms_.begin();
+       it != provisionally_saved_forms_.end();
+       ++it) {
+    blink::WebFrame* form_frame = it->first;
+    // The check that the returned frame is related to |current_frame| is mainly
+    // for double-checking. There should not be any unrelated frames in
+    // |provisionally_saved_forms_|, because the map is cleared after
+    // navigation. If there are reasons to remove this check in the future and
+    // keep just the first frame found, it might be a good idea to add a UMA
+    // statistic or a similar check on how many frames are here to choose from.
+    if (current_frame == form_frame ||
+        current_frame->findChildByName(form_frame->uniqueName())) {
+      return form_frame;
+    }
+  }
+  return NULL;
+}
+
+void PasswordAutofillAgent::DidStartProvisionalLoad(blink::WebFrame* frame) {
   if (!frame->parent()) {
     // If the navigation is not triggered by a user gesture, e.g. by some ajax
     // callback, then inherit the submitted password form from the previous
@@ -488,12 +483,13 @@ void PasswordAutofillAgent::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
     // [http://crbug/43219]. Note that there are still some sites that this
     // fails for because they use some element other than a submit button to
     // trigger submission (which means WillSendSubmitEvent will not be called).
-    if (!WebKit::WebUserGestureIndicator::isProcessingUserGesture() &&
-        provisionally_saved_forms_[frame].get()) {
+    blink::WebFrame* form_frame = CurrentOrChildFrameWithSavedForms(frame);
+    if (!blink::WebUserGestureIndicator::isProcessingUserGesture() &&
+        provisionally_saved_forms_[form_frame].get()) {
       Send(new AutofillHostMsg_PasswordFormSubmitted(
           routing_id(),
-          *provisionally_saved_forms_[frame]));
-      provisionally_saved_forms_.erase(frame);
+          *provisionally_saved_forms_[form_frame]));
+      provisionally_saved_forms_.erase(form_frame);
     }
     // Clear the whole map during main frame navigation.
     provisionally_saved_forms_.clear();
@@ -516,20 +512,20 @@ void PasswordAutofillAgent::OnFillPasswordForm(
   for (iter = forms.begin(); iter != forms.end(); ++iter) {
     scoped_ptr<FormElements> form_elements(*iter);
 
-    // If wait_for_username is true, we don't want to initially fill the form
-    // until the user types in a valid username.
-    if (!form_data.wait_for_username)
-      FillForm(form_elements.get(), form_data.basic_data);
-
     // Attach autocomplete listener to enable selecting alternate logins.
     // First, get pointers to username element.
-    WebKit::WebInputElement username_element =
+    blink::WebInputElement username_element =
         form_elements->input_elements[form_data.basic_data.fields[0].name];
 
     // Get pointer to password element. (We currently only support single
     // password forms).
-    WebKit::WebInputElement password_element =
+    blink::WebInputElement password_element =
         form_elements->input_elements[form_data.basic_data.fields[1].name];
+
+    // If wait_for_username is true, we don't want to initially fill the form
+    // until the user types in a valid username.
+    if (!form_data.wait_for_username)
+      FillFormOnPasswordRecieved(form_data, username_element, password_element);
 
     // We might have already filled this form if there are two <form> elements
     // with identical markup.
@@ -590,12 +586,12 @@ void PasswordAutofillAgent::GetSuggestions(
 
 bool PasswordAutofillAgent::ShowSuggestionPopup(
     const PasswordFormFillData& fill_data,
-    const WebKit::WebInputElement& user_input) {
-  WebKit::WebFrame* frame = user_input.document().frame();
+    const blink::WebInputElement& user_input) {
+  blink::WebFrame* frame = user_input.document().frame();
   if (!frame)
     return false;
 
-  WebKit::WebView* webview = frame->view();
+  blink::WebView* webview = frame->view();
   if (!webview)
     return false;
 
@@ -609,7 +605,7 @@ bool PasswordAutofillAgent::ShowSuggestionPopup(
   FindFormAndFieldForInputElement(
       user_input, &form, &field, REQUIRE_NONE);
 
-  WebKit::WebInputElement selected_element = user_input;
+  blink::WebInputElement selected_element = user_input;
   gfx::Rect bounding_box(selected_element.boundsInViewportSpace());
 
   float scale = web_view_->pageScaleFactor();
@@ -625,9 +621,45 @@ bool PasswordAutofillAgent::ShowSuggestionPopup(
   return !suggestions.empty();
 }
 
+void PasswordAutofillAgent::FillFormOnPasswordRecieved(
+    const PasswordFormFillData& fill_data,
+    blink::WebInputElement username_element,
+    blink::WebInputElement password_element) {
+  // Do not fill if the password field is in an iframe.
+  DCHECK(password_element.document().frame());
+  if (password_element.document().frame()->parent())
+    return;
+
+  if (!ShouldIgnoreAutocompleteOffForPasswordFields() &&
+      !username_element.form().autoComplete())
+    return;
+
+  // If we can't modify the password, don't try to set the username
+  if (!IsElementEditable(password_element) ||
+      (!ShouldIgnoreAutocompleteOffForPasswordFields() &&
+       !password_element.autoComplete()))
+    return;
+
+  // Try to set the username to the preferred name, but only if the field
+  // can be set and isn't prefilled.
+  if (IsElementEditable(username_element) &&
+      (ShouldIgnoreAutocompleteOffForPasswordFields() ||
+       username_element.autoComplete()) &&
+      username_element.value().isEmpty()) {
+    // TODO(tkent): Check maxlength and pattern.
+    username_element.setValue(fill_data.basic_data.fields[0].value);
+  }
+
+  // Fill if we have an exact match for the username. Note that this sets
+  // username to autofilled.
+  FillUserNameAndPassword(&username_element, &password_element, fill_data,
+                          true /* exact_username_match */,
+                          false /* set_selection */);
+}
+
 bool PasswordAutofillAgent::FillUserNameAndPassword(
-    WebKit::WebInputElement* username_element,
-    WebKit::WebInputElement* password_element,
+    blink::WebInputElement* username_element,
+    blink::WebInputElement* password_element,
     const PasswordFormFillData& fill_data,
     bool exact_username_match,
     bool set_selection) {
@@ -676,30 +708,47 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   if (password.empty())
     return false;  // No match was found.
 
-  // Input matches the username, fill in required values.
-  username_element->setValue(username);
+  // TODO(tkent): Check maxlength and pattern for both username and password
+  // fields.
 
-  if (set_selection) {
-    username_element->setSelectionRange(current_username.length(),
-                                        username.length());
+  // Don't fill username if password can't be set.
+  if (!IsElementEditable(*password_element) ||
+      (!ShouldIgnoreAutocompleteOffForPasswordFields() &&
+       !password_element->autoComplete())) {
+    return false;
   }
 
-  SetElementAutofilled(username_element, true);
-  if (IsElementEditable(*password_element))
-    password_element->setValue(password);
+  // Input matches the username, fill in required values.
+  if (IsElementEditable(*username_element) &&
+      (ShouldIgnoreAutocompleteOffForPasswordFields() ||
+       username_element->autoComplete())) {
+    username_element->setValue(username);
+    SetElementAutofilled(username_element, true);
+
+    if (set_selection) {
+      username_element->setSelectionRange(current_username.length(),
+                                          username.length());
+    }
+  } else if (current_username != username) {
+    // If the username can't be filled and it doesn't match a saved password
+    // as is, don't autofill a password.
+    return false;
+  }
+
+  password_element->setValue(password);
   SetElementAutofilled(password_element, true);
   return true;
 }
 
 void PasswordAutofillAgent::PerformInlineAutocomplete(
-    const WebKit::WebInputElement& username_input,
-    const WebKit::WebInputElement& password_input,
+    const blink::WebInputElement& username_input,
+    const blink::WebInputElement& password_input,
     const PasswordFormFillData& fill_data) {
   DCHECK(!fill_data.wait_for_username);
 
   // We need non-const versions of the username and password inputs.
-  WebKit::WebInputElement username = username_input;
-  WebKit::WebInputElement password = password_input;
+  blink::WebInputElement username = username_input;
+  blink::WebInputElement password = password_input;
 
   // Don't inline autocomplete if the caret is not at the end.
   // TODO(jcivelli): is there a better way to test the caret location?
@@ -715,11 +764,13 @@ void PasswordAutofillAgent::PerformInlineAutocomplete(
 #if !defined(OS_ANDROID)
   // Fill the user and password field with the most relevant match. Android
   // only fills in the fields after the user clicks on the suggestion popup.
-  FillUserNameAndPassword(&username, &password, fill_data, false, true);
+  FillUserNameAndPassword(&username, &password, fill_data,
+                          false /* exact_username_match */,
+                          true /* set_selection */);
 #endif
 }
 
-void PasswordAutofillAgent::FrameClosing(const WebKit::WebFrame* frame) {
+void PasswordAutofillAgent::FrameClosing(const blink::WebFrame* frame) {
   for (LoginToPasswordInfoMap::iterator iter = login_to_password_info_.begin();
        iter != login_to_password_info_.end();) {
     if (iter->first.document().frame() == frame)
@@ -727,19 +778,27 @@ void PasswordAutofillAgent::FrameClosing(const WebKit::WebFrame* frame) {
     else
       ++iter;
   }
+  for (FrameToPasswordFormMap::iterator iter =
+           provisionally_saved_forms_.begin();
+       iter != provisionally_saved_forms_.end();) {
+    if (iter->first == frame)
+      provisionally_saved_forms_.erase(iter++);
+    else
+      ++iter;
+  }
 }
 
-bool PasswordAutofillAgent::FindLoginInfo(const WebKit::WebNode& node,
-                                          WebKit::WebInputElement* found_input,
+bool PasswordAutofillAgent::FindLoginInfo(const blink::WebNode& node,
+                                          blink::WebInputElement* found_input,
                                           PasswordInfo* found_password) {
   if (!node.isElementNode())
     return false;
 
-  WebKit::WebElement element = node.toConst<WebKit::WebElement>();
+  blink::WebElement element = node.toConst<blink::WebElement>();
   if (!element.hasTagName("input"))
     return false;
 
-  WebKit::WebInputElement input = element.to<WebKit::WebInputElement>();
+  blink::WebInputElement input = element.to<blink::WebInputElement>();
   LoginToPasswordInfoMap::iterator iter = login_to_password_info_.find(input);
   if (iter == login_to_password_info_.end())
     return false;

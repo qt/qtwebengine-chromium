@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "ui/message_center/notifier_settings.h"
 
 namespace message_center {
@@ -10,44 +11,43 @@ namespace message_center {
 NotifierId::NotifierId(NotifierType type,
                        const std::string& id)
     : type(type),
-      id(id),
-      system_component_type(-1) {
-  DCHECK(type == APPLICATION || type == SYNCED_NOTIFICATION_SERVICE);
+      id(id) {
+  DCHECK(type != WEB_PAGE);
   DCHECK(!id.empty());
 }
 
 NotifierId::NotifierId(const GURL& url)
     : type(WEB_PAGE),
-      url(url),
-      system_component_type(-1) {}
-
-NotifierId::NotifierId(int type)
-    : type(SYSTEM_COMPONENT),
-      system_component_type(type) {
-  DCHECK_LE(0, system_component_type);
-}
+      url(url) {}
 
 NotifierId::NotifierId()
-    : type(SYSTEM_COMPONENT),
-      system_component_type(-1) {
+    : type(SYSTEM_COMPONENT) {
 }
 
 bool NotifierId::operator==(const NotifierId& other) const {
   if (type != other.type)
     return false;
 
-  switch (type) {
-    case WEB_PAGE:
-      return url == other.url;
-    case SYSTEM_COMPONENT:
-      return system_component_type == other.system_component_type;
-    case APPLICATION:
-    case SYNCED_NOTIFICATION_SERVICE:
-      return id == other.id;
-  }
+  if (profile_id != other.profile_id)
+    return false;
 
-  NOTREACHED();
-  return false;
+  if (type == WEB_PAGE)
+    return url == other.url;
+
+  return id == other.id;
+}
+
+bool NotifierId::operator<(const NotifierId& other) const {
+  if (type != other.type)
+    return type < other.type;
+
+  if (profile_id != other.profile_id)
+    return profile_id < other.profile_id;
+
+  if (type == WEB_PAGE)
+    return url < other.url;
+
+  return id < other.id;
 }
 
 Notifier::Notifier(const NotifierId& notifier_id,

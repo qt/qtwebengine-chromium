@@ -5,6 +5,8 @@
 #ifndef CONTENT_CHILD_CHILD_THREAD_H_
 #define CONTENT_CHILD_CHILD_THREAD_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
@@ -29,26 +31,29 @@ class SyncChannel;
 class SyncMessageFilter;
 }  // namespace IPC
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
-}  // namespace WebKit
+}  // namespace blink
 
 namespace content {
 class ChildHistogramMessageFilter;
 class ChildResourceMessageFilter;
 class FileSystemDispatcher;
+class ServiceWorkerDispatcher;
+class ServiceWorkerMessageFilter;
 class QuotaDispatcher;
 class QuotaMessageFilter;
 class ResourceDispatcher;
 class SocketStreamDispatcher;
 class ThreadSafeSender;
+class WebSocketDispatcher;
 
 // The main thread of a child process derives from this class.
 class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
  public:
   // Creates the thread.
   ChildThread();
-  // Used for single-process mode.
+  // Used for single-process mode and for in process gpu mode.
   explicit ChildThread(const std::string& channel_name);
   // ChildProcess::main_thread() is reset after Shutdown(), and before the
   // destructor, so any subsystem that relies on ChildProcess::main_thread()
@@ -91,8 +96,16 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
     return socket_stream_dispatcher_.get();
   }
 
+  WebSocketDispatcher* websocket_dispatcher() const {
+    return websocket_dispatcher_.get();
+  }
+
   FileSystemDispatcher* file_system_dispatcher() const {
     return file_system_dispatcher_.get();
+  }
+
+  ServiceWorkerDispatcher* service_worker_dispatcher() const {
+    return service_worker_dispatcher_.get();
   }
 
   QuotaDispatcher* quota_dispatcher() const {
@@ -112,6 +125,10 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
 
   ChildHistogramMessageFilter* child_histogram_message_filter() const {
     return histogram_message_filter_.get();
+  }
+
+  ServiceWorkerMessageFilter* service_worker_message_filter() const {
+    return service_worker_message_filter_.get();
   }
 
   QuotaMessageFilter* quota_message_filter() const {
@@ -180,6 +197,8 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // Handles SocketStream for this process.
   scoped_ptr<SocketStreamDispatcher> socket_stream_dispatcher_;
 
+  scoped_ptr<WebSocketDispatcher> websocket_dispatcher_;
+
   // The OnChannelError() callback was invoked - the channel is dead, don't
   // attempt to communicate.
   bool on_channel_error_called_;
@@ -188,11 +207,15 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
 
   scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
 
+  scoped_ptr<ServiceWorkerDispatcher> service_worker_dispatcher_;
+
   scoped_ptr<QuotaDispatcher> quota_dispatcher_;
 
   scoped_refptr<ChildHistogramMessageFilter> histogram_message_filter_;
 
   scoped_refptr<ChildResourceMessageFilter> resource_message_filter_;
+
+  scoped_refptr<ServiceWorkerMessageFilter> service_worker_message_filter_;
 
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
 
@@ -203,6 +226,8 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   scoped_ptr<base::debug::TraceMemoryController> trace_memory_controller_;
 
   scoped_ptr<base::PowerMonitor> power_monitor_;
+
+  bool in_browser_process_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildThread);
 };

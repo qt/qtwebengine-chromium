@@ -52,7 +52,7 @@ void ExpectEquality(const ExplodedHttpBodyElement& a,
   EXPECT_EQ(a.file_length, b.file_length);
   if (!(isnan(a.file_modification_time) && isnan(b.file_modification_time)))
     EXPECT_DOUBLE_EQ(a.file_modification_time, b.file_modification_time);
-  EXPECT_EQ(a.deprecated_blob_url, b.deprecated_blob_url);
+  EXPECT_EQ(a.blob_uuid, b.blob_uuid);
 }
 
 template <>
@@ -70,18 +70,13 @@ void ExpectEquality(const ExplodedFrameState& a, const ExplodedFrameState& b) {
   EXPECT_EQ(a.original_url_string, b.original_url_string);
   EXPECT_EQ(a.referrer, b.referrer);
   EXPECT_EQ(a.target, b.target);
-  EXPECT_EQ(a.parent, b.parent);
-  EXPECT_EQ(a.title, b.title);
-  EXPECT_EQ(a.alternate_title, b.alternate_title);
   EXPECT_EQ(a.state_object, b.state_object);
   ExpectEquality(a.document_state, b.document_state);
   EXPECT_EQ(a.scroll_offset, b.scroll_offset);
   EXPECT_EQ(a.item_sequence_number, b.item_sequence_number);
   EXPECT_EQ(a.document_sequence_number, b.document_sequence_number);
-  EXPECT_EQ(a.visit_count, b.visit_count);
-  EXPECT_EQ(a.visited_time, b.visited_time);
+  EXPECT_EQ(a.target_frame_id, b.target_frame_id);
   EXPECT_EQ(a.page_scale_factor, b.page_scale_factor);
-  EXPECT_EQ(a.is_target_item, b.is_target_item);
   ExpectEquality(a.http_body, b.http_body);
   ExpectEquality(a.children, b.children);
 }
@@ -101,9 +96,6 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->original_url_string = frame_state->url_string;
     frame_state->referrer = NS16("https://www.google.com/search?q=dev.chromium.org");
     frame_state->target = NS16("foo");
-    frame_state->parent = NS16("bar");
-    frame_state->title = NS16("The Chromium Projects");
-    frame_state->alternate_title = NS16(NULL);
     frame_state->state_object = NS16(NULL);
     frame_state->document_state.push_back(NS16("1"));
     frame_state->document_state.push_back(NS16("q"));
@@ -112,10 +104,8 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->scroll_offset = gfx::Point(0, 100);
     frame_state->item_sequence_number = 1;
     frame_state->document_sequence_number = 2;
-    frame_state->visit_count = 10;
-    frame_state->visited_time = 12345.0;
+    frame_state->target_frame_id = 3;
     frame_state->page_scale_factor = 2.0;
-    frame_state->is_target_item = true;
   }
 
   void PopulateHttpBody(ExplodedHttpBody* http_body,
@@ -126,12 +116,12 @@ class PageStateSerializationTest : public testing::Test {
     http_body->http_content_type = NS16("text/foo");
 
     ExplodedHttpBodyElement e1;
-    e1.type = WebKit::WebHTTPBody::Element::TypeData;
+    e1.type = blink::WebHTTPBody::Element::TypeData;
     e1.data = "foo";
     http_body->elements.push_back(e1);
 
     ExplodedHttpBodyElement e2;
-    e2.type = WebKit::WebHTTPBody::Element::TypeFile;
+    e2.type = blink::WebHTTPBody::Element::TypeFile;
     e2.file_path = NS16("file.txt");
     e2.file_start = 100;
     e2.file_length = 1024;
@@ -149,16 +139,11 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->referrer = NS16("http://google.com/");
     if (!is_child)
       frame_state->target = NS16("target");
-    frame_state->parent = NS16("parent");
-    frame_state->title = NS16("title");
-    frame_state->alternate_title = NS16("alternateTitle");
     frame_state->scroll_offset = gfx::Point(42, -42);
     frame_state->item_sequence_number = 123;
     frame_state->document_sequence_number = 456;
-    frame_state->visit_count = 42*42;
-    frame_state->visited_time = 13.37;
+    frame_state->target_frame_id = 0;
     frame_state->page_scale_factor = 2.0f;
-    frame_state->is_target_item = true;
 
     frame_state->document_state.push_back(
         NS16("\n\r?% WebKit serialized form state version 8 \n\r=&"));
@@ -176,17 +161,17 @@ class PageStateSerializationTest : public testing::Test {
       frame_state->http_body.is_null = false;
 
       ExplodedHttpBodyElement e1;
-      e1.type = WebKit::WebHTTPBody::Element::TypeData;
+      e1.type = blink::WebHTTPBody::Element::TypeData;
       e1.data = "first data block";
       frame_state->http_body.elements.push_back(e1);
 
       ExplodedHttpBodyElement e2;
-      e2.type = WebKit::WebHTTPBody::Element::TypeFile;
+      e2.type = blink::WebHTTPBody::Element::TypeFile;
       e2.file_path = NS16("file.txt");
       frame_state->http_body.elements.push_back(e2);
 
       ExplodedHttpBodyElement e3;
-      e3.type = WebKit::WebHTTPBody::Element::TypeData;
+      e3.type = blink::WebHTTPBody::Element::TypeData;
       e3.data = "data the second";
       frame_state->http_body.elements.push_back(e3);
 
@@ -223,7 +208,7 @@ class PageStateSerializationTest : public testing::Test {
     }
 
     std::string trimmed_contents;
-    EXPECT_TRUE(RemoveChars(file_contents, "\r\n", &trimmed_contents));
+    EXPECT_TRUE(base::RemoveChars(file_contents, "\r\n", &trimmed_contents));
 
     std::string encoded;
     EXPECT_TRUE(base::Base64Decode(trimmed_contents, &encoded));
@@ -367,7 +352,7 @@ TEST_F(PageStateSerializationTest, BadMessagesTest2) {
   p.WriteInt(0);
   // WebForm
   p.WriteInt(1);
-  p.WriteInt(WebKit::WebHTTPBody::Element::TypeData);
+  p.WriteInt(blink::WebHTTPBody::Element::TypeData);
 
   std::string s(static_cast<const char*>(p.data()), p.size());
 
@@ -388,13 +373,13 @@ TEST_F(PageStateSerializationTest, DumpExpectedPageStateForBackwardsCompat) {
   EXPECT_TRUE(EncodePageState(state, &encoded));
 
   std::string base64;
-  EXPECT_TRUE(base::Base64Encode(encoded, &base64));
+  base::Base64Encode(encoded, &base64);
 
   base::FilePath path;
   PathService::Get(base::DIR_TEMP, &path);
   path = path.AppendASCII("expected.dat");
 
-  FILE* fp = file_util::OpenFile(path, "wb");
+  FILE* fp = base::OpenFile(path, "wb");
   ASSERT_TRUE(fp);
 
   const size_t kRowSize = 76;
@@ -402,7 +387,7 @@ TEST_F(PageStateSerializationTest, DumpExpectedPageStateForBackwardsCompat) {
     size_t length = std::min(base64.size() - offset, kRowSize);
     std::string segment(&base64[offset], length);
     segment.push_back('\n');
-    fwrite(segment.data(), segment.size(), 1, fp);
+    ASSERT_EQ(1U, fwrite(segment.data(), segment.size(), 1, fp));
   }
 
   fclose(fp);
@@ -426,6 +411,14 @@ TEST_F(PageStateSerializationTest, BackwardsCompat_v13) {
 
 TEST_F(PageStateSerializationTest, BackwardsCompat_v14) {
   TestBackwardsCompat(14);
+}
+
+TEST_F(PageStateSerializationTest, BackwardsCompat_v15) {
+  TestBackwardsCompat(15);
+}
+
+TEST_F(PageStateSerializationTest, BackwardsCompat_v16) {
+  TestBackwardsCompat(16);
 }
 
 }  // namespace

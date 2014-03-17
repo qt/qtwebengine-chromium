@@ -29,19 +29,20 @@
 
 namespace WebCore {
 
-ElementResolveContext::ElementResolveContext(Element* element)
-    : m_element(element)
-    , m_elementLinkState(element ? element->document().visitedLinkState()->determineLinkState(element) : NotInsideLink)
+ElementResolveContext::ElementResolveContext(Element& element)
+    : m_element(&element)
+    , m_elementLinkState(element.document().visitedLinkState().determineLinkState(element))
     , m_distributedToInsertionPoint(false)
     , m_resetStyleInheritance(false)
 {
     NodeRenderingTraversal::ParentDetails parentDetails;
-    m_parentNode = NodeRenderingTraversal::parent(element, &parentDetails);
+    m_parentNode = NodeRenderingTraversal::parent(&element, &parentDetails);
     m_distributedToInsertionPoint = parentDetails.insertionPoint();
     m_resetStyleInheritance = parentDetails.resetStyleInheritance();
 
-    Node* documentElement = document().documentElement();
-    RenderStyle* documentStyle = document().renderStyle();
+    const Document& document = element.document();
+    Node* documentElement = document.documentElement();
+    RenderStyle* documentStyle = document.renderStyle();
     m_rootElementStyle = documentElement && element != documentElement ? documentElement->renderStyle() : documentStyle;
     if (!m_rootElementStyle)
         m_rootElementStyle = documentStyle;

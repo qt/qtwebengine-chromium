@@ -11,7 +11,7 @@
 #include "base/stl_util.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/crypto/quic_random.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_socket_utils.h"
 
 namespace net {
@@ -62,32 +62,13 @@ class QuicEpollAlarm : public QuicAlarm {
 
 }  // namespace
 
-QuicEpollConnectionHelper::QuicEpollConnectionHelper(
-  int fd, EpollServer* epoll_server)
-    : writer_(NULL),
-      epoll_server_(epoll_server),
-      fd_(fd),
-      connection_(NULL),
-      clock_(epoll_server),
-      random_generator_(QuicRandom::GetInstance()) {
-}
-
-QuicEpollConnectionHelper::QuicEpollConnectionHelper(QuicPacketWriter* writer,
-                                                     EpollServer* epoll_server)
-    : writer_(writer),
-      epoll_server_(epoll_server),
-      fd_(-1),
-      connection_(NULL),
+QuicEpollConnectionHelper::QuicEpollConnectionHelper(EpollServer* epoll_server)
+    : epoll_server_(epoll_server),
       clock_(epoll_server),
       random_generator_(QuicRandom::GetInstance()) {
 }
 
 QuicEpollConnectionHelper::~QuicEpollConnectionHelper() {
-}
-
-void QuicEpollConnectionHelper::SetConnection(QuicConnection* connection) {
-  DCHECK(!connection_);
-  connection_ = connection;
 }
 
 const QuicClock* QuicEpollConnectionHelper::GetClock() const {
@@ -96,39 +77,6 @@ const QuicClock* QuicEpollConnectionHelper::GetClock() const {
 
 QuicRandom* QuicEpollConnectionHelper::GetRandomGenerator() {
   return random_generator_;
-}
-
-int QuicEpollConnectionHelper::WritePacketToWire(
-    const QuicEncryptedPacket& packet,
-    int* error) {
-  if (connection_->ShouldSimulateLostPacket()) {
-    DLOG(INFO) << "Dropping packet due to fake packet loss.";
-    *error = 0;
-    return packet.length();
-  }
-
-  // If we have a writer, delgate the write to it.
-  if (writer_) {
-    return writer_->WritePacket(packet.data(), packet.length(),
-                                connection_->self_address().address(),
-                                connection_->peer_address(),
-                                connection_,
-                                error);
-  } else {
-    return QuicSocketUtils::WritePacket(
-        fd_, packet.data(), packet.length(),
-        connection_->self_address().address(),
-        connection_->peer_address(),
-        error);
-  }
-}
-
-bool QuicEpollConnectionHelper::IsWriteBlockedDataBuffered() {
-  return false;
-}
-
-bool QuicEpollConnectionHelper::IsWriteBlocked(int error) {
-  return error == EAGAIN || error == EWOULDBLOCK;
 }
 
 QuicAlarm* QuicEpollConnectionHelper::CreateAlarm(

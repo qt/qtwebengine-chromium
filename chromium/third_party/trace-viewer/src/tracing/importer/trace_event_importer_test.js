@@ -48,6 +48,41 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     assertEquals(0, slice.subSlices.length);
   });
 
+  test('basicSingleThreadNonnestedParsingWiththreadDuration', function() {
+    var events = [
+      {name: 'a', args: {}, pid: 52, ts: 520, cat: 'foo', tid: 53, ph: 'B', tts: 221}, // @suppress longLineCheck
+      {name: 'a', args: {}, pid: 52, ts: 560, cat: 'foo', tid: 53, ph: 'E', tts: 259}, // @suppress longLineCheck
+      {name: 'b', args: {}, pid: 52, ts: 629, cat: 'bar', tid: 53, ph: 'B', tts: 329}, // @suppress longLineCheck
+      {name: 'b', args: {}, pid: 52, ts: 631, cat: 'bar', tid: 53, ph: 'E', tts: 331}  // @suppress longLineCheck
+    ];
+
+    var m = new tracing.TraceModel(events);
+    assertEquals(1, m.numProcesses);
+    var p = m.processes[52];
+    assertNotUndefined(p);
+
+    assertEquals(1, p.numThreads);
+    var t = p.threads[53];
+    assertNotUndefined(t);
+    assertEquals(2, t.sliceGroup.length);
+    assertEquals(53, t.tid);
+    var slice = t.sliceGroup.slices[0];
+    assertEquals('a', slice.title);
+    assertEquals('foo', slice.category);
+    assertEquals(0, slice.start);
+    assertAlmostEquals((560 - 520) / 1000, slice.duration);
+    assertAlmostEquals((259 - 221) / 1000, slice.threadDuration);
+    assertEquals(0, slice.subSlices.length);
+
+    slice = t.sliceGroup.slices[1];
+    assertEquals('b', slice.title);
+    assertEquals('bar', slice.category);
+    assertAlmostEquals((629 - 520) / 1000, slice.start);
+    assertAlmostEquals((631 - 629) / 1000, slice.duration);
+    assertAlmostEquals((331 - 329) / 1000, slice.threadDuration);
+    assertEquals(0, slice.subSlices.length);
+  });
+
   test('argumentDupeCreatesNonFailingImportError', function() {
     var events = [
       {name: 'a',
@@ -73,6 +108,17 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     assertEquals(2, sA.args.x);
     assertTrue(m.hasImportWarnings);
     assertEquals(m.importWarnings.length, 1);
+  });
+
+  test('importMissingArgs', function() {
+    var events = [
+      {name: 'a', pid: 52, ts: 520, cat: 'foo', tid: 53, ph: 'B'},
+      {name: 'a', pid: 52, ts: 560, cat: 'foo', tid: 53, ph: 'E'},
+      {name: 'b', pid: 52, ts: 629, cat: 'bar', tid: 53, ph: 'I'}
+    ];
+
+    // This should not throw an exception.
+    new tracing.TraceModel(events);
   });
 
   test('categoryBeginEndMismatchPrefersBegin', function() {
@@ -543,11 +589,11 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     var t = p.threads[1];
 
     assertEquals(3, t.sliceGroup.length);
-    assertEquals(0.002, t.sliceGroup.slices[0].start);
-    assertEquals(0, t.sliceGroup.slices[0].duration);
-    assertEquals(0.004, t.sliceGroup.slices[1].start);
-    assertEquals(0.001, t.sliceGroup.slices[2].start);
-    assertEquals(0.003, t.sliceGroup.slices[2].duration);
+    assertEquals(0.001, t.sliceGroup.slices[0].start);
+    assertEquals(0.003, t.sliceGroup.slices[0].duration);
+    assertEquals(0.002, t.sliceGroup.slices[1].start);
+    assertEquals(0, t.sliceGroup.slices[1].duration);
+    assertEquals(0.004, t.sliceGroup.slices[2].start);
 
     var slice = findSliceNamed(t.sliceGroup, 'a');
     assertEquals('a', slice.title);
@@ -986,6 +1032,7 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     assertEquals('foo', subSlice.category);
     assertAlmostEquals((548 - 524) / 1000, subSlice.start);
     assertAlmostEquals((560 - 548) / 1000, subSlice.duration);
+    assertEquals(1, subSlice.args['x']);
     assertEquals(2, subSlice.args['y']);
     assertEquals(3, subSlice.args['z']);
   });
@@ -1016,6 +1063,64 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     var m = new tracing.TraceModel(events);
     var t = m.processes[52].threads[53];
     assertUndefined(t);
+  });
+
+  test('asyncStepEndEvent', function() {
+    var events = [
+      // Time is intentionally out of order.
+      {name: 'a', args: {z: 3}, pid: 52, ts: 560, cat: 'foo', tid: 53,
+        ph: 'F', id: 72},
+      {name: 'a', args: {step: 's1', y: 2}, pid: 52, ts: 548, cat: 'foo',
+        tid: 53, ph: 'p', id: 72},
+      {name: 'a', args: {x: 1}, pid: 52, ts: 524, cat: 'foo', tid: 53,
+        ph: 'S', id: 72}
+    ];
+
+    var m = new tracing.TraceModel(events);
+    var t = m.processes[52].threads[53];
+    assertNotUndefined(t);
+    assertEquals(1, t.asyncSliceGroup.slices.length);
+    var parentSlice = t.asyncSliceGroup.slices[0];
+    assertEquals('a', parentSlice.title);
+    assertEquals('foo', parentSlice.category);
+    assertEquals(0, parentSlice.start);
+
+    assertNotUndefined(parentSlice.subSlices);
+    assertEquals(2, parentSlice.subSlices.length);
+    var subSlice = parentSlice.subSlices[0];
+    assertEquals('a:s1', subSlice.title);
+    assertEquals('foo', subSlice.category);
+    assertEquals(0, subSlice.start);
+    assertAlmostEquals((548 - 524) / 1000, subSlice.duration);
+    assertEquals(1, subSlice.args['x']);
+    assertEquals(2, subSlice.args['y']);
+
+    var subSlice = parentSlice.subSlices[1];
+    assertEquals('a', subSlice.title);
+    assertEquals('foo', subSlice.category);
+    assertAlmostEquals((548 - 524) / 1000, subSlice.start);
+    assertAlmostEquals((560 - 548) / 1000, subSlice.duration);
+    assertEquals(1, subSlice.args['x']);
+    assertEquals(3, subSlice.args['z']);
+  });
+
+  test('asyncStepMismatch', function() {
+    var events = [
+      // Time is intentionally out of order.
+      {name: 'a', args: {z: 3}, pid: 52, ts: 560, cat: 'foo', tid: 53,
+        ph: 'F', id: 72},
+      {name: 'a', args: {step: 's2'}, pid: 52, ts: 548, cat: 'foo', tid: 53,
+        ph: 'T', id: 72},
+      {name: 'a', args: {step: 's1'}, pid: 52, ts: 548, cat: 'foo', tid: 53,
+        ph: 'p', id: 72},
+      {name: 'a', args: {x: 1}, pid: 52, ts: 524, cat: 'foo', tid: 53,
+        ph: 'S', id: 72}
+    ];
+
+    var m = new tracing.TraceModel(events);
+    var t = m.processes[52].threads[53];
+    assertUndefined(t);
+    assertTrue(m.hasImportWarnings);
   });
 
   test('importSamples', function() {
@@ -1337,8 +1442,9 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
 
   test('importCompleteEvent', function() {
     var events = [
-      { name: 'a', args: {}, pid: 52, ts: 730, dur: 20, cat: 'foo', tid: 53, ph: 'X' },  // @suppress longLineCheck
-      { name: 'b', args: {}, pid: 52, ts: 629, dur: 1, cat: 'baz', tid: 53, ph: 'X' }  // @suppress longLineCheck
+      { name: 'a', args: {}, pid: 52, ts: 629, dur: 1, cat: 'baz', tid: 53, ph: 'X' },  // @suppress longLineCheck
+      { name: 'b', args: {}, pid: 52, ts: 730, dur: 20, cat: 'foo', tid: 53, ph: 'X' },  // @suppress longLineCheck
+      { name: 'c', args: {}, pid: 52, ts: 740, cat: 'baz', tid: 53, ph: 'X' }
     ];
 
     var m = new tracing.TraceModel(events);
@@ -1349,24 +1455,100 @@ base.unittest.testSuite('tracing.importer.trace_event_importer', function() {
     assertEquals(1, p.numThreads);
     var t = p.threads[53];
     assertNotUndefined(t);
-    assertEquals(2, t.sliceGroup.slices.length);
+    assertEquals(3, t.sliceGroup.slices.length);
     assertEquals(53, t.tid);
 
     var slice = t.sliceGroup.slices[0];
     assertEquals('a', slice.title);
-    assertEquals('foo', slice.category);
-    assertAlmostEquals((730 - 629) / 1000, slice.start);
-    assertAlmostEquals(20 / 1000, slice.duration);
-    assertEquals(0, slice.subSlices.length);
-
-    slice = t.sliceGroup.slices[1];
-    assertEquals('b', slice.title);
     assertEquals('baz', slice.category);
     assertAlmostEquals(0, slice.start);
     assertAlmostEquals(1 / 1000, slice.duration);
     assertEquals(0, slice.subSlices.length);
+
+    slice = t.sliceGroup.slices[1];
+    assertEquals('b', slice.title);
+    assertEquals('foo', slice.category);
+    assertAlmostEquals((730 - 629) / 1000, slice.start);
+    assertAlmostEquals(20 / 1000, slice.duration);
+    assertEquals(1, slice.subSlices.length);
+
+    slice = t.sliceGroup.slices[2];
+    assertEquals('c', slice.title);
+    assertTrue(slice.didNotFinish);
+    assertAlmostEquals(10 / 1000, slice.duration);
+  });
+
+  test('importCompleteEventWithThreadDuration', function() {
+    var events = [
+      { name: 'a', args: {}, pid: 52, ts: 629, dur: 1, cat: 'baz', tid: 53, ph: 'X', tts: 12, tdur: 1 },  // @suppress longLineCheck
+      { name: 'b', args: {}, pid: 52, ts: 730, dur: 20, cat: 'foo', tid: 53, ph: 'X', tts: 110, tdur: 16 },  // @suppress longLineCheck
+      { name: 'c', args: {}, pid: 52, ts: 740, cat: 'baz', tid: 53, ph: 'X', tts: 115 }  // @suppress longLineCheck
+    ];
+
+    var m = new tracing.TraceModel(events);
+    assertEquals(1, m.numProcesses);
+    var p = m.processes[52];
+    assertNotUndefined(p);
+
+    assertEquals(1, p.numThreads);
+    var t = p.threads[53];
+    assertNotUndefined(t);
+    assertEquals(3, t.sliceGroup.slices.length);
+    assertEquals(53, t.tid);
+
+    var slice = t.sliceGroup.slices[0];
+    assertEquals('a', slice.title);
+    assertEquals('baz', slice.category);
+    assertAlmostEquals(0, slice.start);
+    assertAlmostEquals(1 / 1000, slice.duration);
+    assertAlmostEquals(12 / 1000, slice.threadStart);
+    assertAlmostEquals(1 / 1000, slice.threadDuration);
+    assertEquals(0, slice.subSlices.length);
+
+    slice = t.sliceGroup.slices[1];
+    assertEquals('b', slice.title);
+    assertEquals('foo', slice.category);
+    assertAlmostEquals((730 - 629) / 1000, slice.start);
+    assertAlmostEquals(20 / 1000, slice.duration);
+    assertAlmostEquals(110 / 1000, slice.threadStart);
+    assertAlmostEquals(16 / 1000, slice.threadDuration);
+    assertEquals(1, slice.subSlices.length);
+
+    slice = t.sliceGroup.slices[2];
+    assertEquals('c', slice.title);
+    assertTrue(slice.didNotFinish);
+    assertAlmostEquals(10 / 1000, slice.duration);
+  });
+
+  test('importNestedCompleteEventWithTightBounds', function() {
+    var events = [
+      { name: 'a', args: {}, pid: 52, ts: 244654227065, dur: 36075, cat: 'baz', tid: 53, ph: 'X' },  // @suppress longLineCheck
+      { name: 'b', args: {}, pid: 52, ts: 244654227095, dur: 36045, cat: 'foo', tid: 53, ph: 'X' }  // @suppress longLineCheck
+    ];
+
+    var m = new tracing.TraceModel(events, false);
+    var t = m.processes[52].threads[53];
+
+    var sA = findSliceNamed(t.sliceGroup, 'a');
+    var sB = findSliceNamed(t.sliceGroup, 'b');
+
+    assertEquals('a', sA.title);
+    assertEquals('baz', sA.category);
+    assertEquals(244654227.065, sA.start);
+    assertEquals(36.075, sA.duration);
+    assertAlmostEquals(0.03, sA.selfTime);
+
+    assertEquals('b', sB.title);
+    assertEquals('foo', sB.category);
+    assertEquals(244654227.095, sB.start);
+    assertEquals(36.045, sB.duration);
+
+    assertTrue(sA.subSlices.length == 1);
+    assertTrue(sA.subSlices[0] == sB);
+    assertTrue(sB.parentSlice == sA);
   });
 
   // TODO(nduca): one slice, two threads
   // TODO(nduca): one slice, two pids
+
 });

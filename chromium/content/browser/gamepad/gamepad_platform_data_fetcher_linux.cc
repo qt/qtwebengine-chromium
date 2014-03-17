@@ -52,7 +52,7 @@ bool IsGamepad(udev_device* dev, int* index, std::string* path) {
   if (!base::StringToInt(str, &tmp_idx))
     return false;
   if (tmp_idx < 0 ||
-      tmp_idx >= static_cast<int>(WebKit::WebGamepads::itemsLengthCap)) {
+      tmp_idx >= static_cast<int>(blink::WebGamepads::itemsLengthCap)) {
     return false;
   }
   *index = tmp_idx;
@@ -64,8 +64,8 @@ bool IsGamepad(udev_device* dev, int* index, std::string* path) {
 
 namespace content {
 
-using WebKit::WebGamepad;
-using WebKit::WebGamepads;
+using blink::WebGamepad;
+using blink::WebGamepads;
 
 GamepadPlatformDataFetcherLinux::GamepadPlatformDataFetcherLinux() {
   for (size_t i = 0; i < arraysize(device_fds_); ++i)
@@ -186,8 +186,8 @@ void GamepadPlatformDataFetcherLinux::RefreshDevice(udev_device* dev) {
         mapper ? "STANDARD GAMEPAD " : "",
         vendor_id,
         product_id);
-    TruncateUTF8ToByteSize(id, WebGamepad::idLengthCap - 1, &id);
-    string16 tmp16 = UTF8ToUTF16(id);
+    base::TruncateUTF8ToByteSize(id, WebGamepad::idLengthCap - 1, &id);
+    base::string16 tmp16 = UTF8ToUTF16(id);
     memset(pad.id, 0, sizeof(pad.id));
     tmp16.copy(pad.id, arraysize(pad.id) - 1);
 

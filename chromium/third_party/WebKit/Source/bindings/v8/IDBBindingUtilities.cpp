@@ -26,21 +26,51 @@
 #include "config.h"
 #include "bindings/v8/IDBBindingUtilities.h"
 
+#include "V8DOMStringList.h"
+#include "V8IDBCursor.h"
+#include "V8IDBCursorWithValue.h"
+#include "V8IDBDatabase.h"
+#include "V8IDBIndex.h"
 #include "V8IDBKeyRange.h"
+#include "V8IDBObjectStore.h"
+#include "V8IDBTransaction.h"
 #include "bindings/v8/DOMRequestState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include "core/platform/SharedBuffer.h"
+#include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
+#include "bindings/v8/custom/V8Uint8ArrayCustom.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyPath.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBTracing.h"
+#include "platform/SharedBuffer.h"
+#include "wtf/ArrayBufferView.h"
 #include "wtf/MathExtras.h"
+#include "wtf/Uint8Array.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-static v8::Handle<v8::Value> idbKeyToV8Value(IDBKey* key, v8::Isolate* isolate)
+v8::Handle<v8::Value> deserializeIDBValueBuffer(SharedBuffer*, v8::Isolate*);
+
+static v8::Handle<v8::Value> toV8(const IDBKeyPath& value, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    switch (value.type()) {
+    case IDBKeyPath::NullType:
+        return v8::Null(isolate);
+    case IDBKeyPath::StringType:
+        return v8String(isolate, value.string());
+    case IDBKeyPath::ArrayType:
+        RefPtr<DOMStringList> keyPaths = DOMStringList::create();
+        for (Vector<String>::const_iterator it = value.array().begin(); it != value.array().end(); ++it)
+            keyPaths->append(*it);
+        return toV8(keyPaths.release(), creationContext, isolate);
+    }
+    ASSERT_NOT_REACHED();
+    return v8::Undefined(isolate);
+}
+
+v8::Handle<v8::Value> toV8(const IDBKey* key, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!key) {
         // This should be undefined, not null.
@@ -56,20 +86,69 @@ static v8::Handle<v8::Value> idbKeyToV8Value(IDBKey* key, v8::Isolate* isolate)
     case IDBKey::NumberType:
         return v8::Number::New(isolate, key->number());
     case IDBKey::StringType:
-        return v8String(key->string(), isolate);
+        return v8String(isolate, key->string());
+    case IDBKey::BinaryType:
+        return toV8(Uint8Array::create(reinterpret_cast<const unsigned char*>(key->binary()->data()), key->binary()->size()), creationContext, isolate);
     case IDBKey::DateType:
-        return v8::Date::New(key->date());
+        return v8::Date::New(isolate, key->date());
     case IDBKey::ArrayType:
         {
-            v8::Local<v8::Array> array = v8::Array::New(key->array().size());
+            v8::Local<v8::Array> array = v8::Array::New(isolate, key->array().size());
             for (size_t i = 0; i < key->array().size(); ++i)
-                array->Set(i, idbKeyToV8Value(key->array()[i].get(), isolate));
+                array->Set(i, toV8(key->array()[i].get(), creationContext, isolate));
             return array;
         }
     }
 
     ASSERT_NOT_REACHED();
     return v8Undefined();
+}
+
+v8::Handle<v8::Value> toV8(const IDBAny* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    if (!impl)
+        return v8::Null(isolate);
+
+    switch (impl->type()) {
+    case IDBAny::UndefinedType:
+        return v8::Undefined(isolate);
+    case IDBAny::NullType:
+        return v8::Null(isolate);
+    case IDBAny::DOMStringListType:
+        return toV8(impl->domStringList(), creationContext, isolate);
+    case IDBAny::IDBCursorType:
+        return toV8(impl->idbCursor(), creationContext, isolate);
+    case IDBAny::IDBCursorWithValueType:
+        return toV8(impl->idbCursorWithValue(), creationContext, isolate);
+    case IDBAny::IDBDatabaseType:
+        return toV8(impl->idbDatabase(), creationContext, isolate);
+    case IDBAny::IDBIndexType:
+        return toV8(impl->idbIndex(), creationContext, isolate);
+    case IDBAny::IDBObjectStoreType:
+        return toV8(impl->idbObjectStore(), creationContext, isolate);
+    case IDBAny::IDBTransactionType:
+        return toV8(impl->idbTransaction(), creationContext, isolate);
+    case IDBAny::BufferType:
+        return deserializeIDBValueBuffer(impl->buffer(), isolate);
+    case IDBAny::StringType:
+        return v8String(isolate, impl->string());
+    case IDBAny::IntegerType:
+        return v8::Number::New(isolate, impl->integer());
+    case IDBAny::KeyType:
+        return toV8(impl->key(), creationContext, isolate);
+    case IDBAny::KeyPathType:
+        return toV8(impl->keyPath(), creationContext, isolate);
+    case IDBAny::BufferKeyAndKeyPathType: {
+        v8::Handle<v8::Value> value = deserializeIDBValueBuffer(impl->buffer(), isolate);
+        v8::Handle<v8::Value> key = toV8(impl->key(), creationContext, isolate);
+        bool injected = injectV8KeyIntoV8Value(key, value, impl->keyPath(), isolate);
+        ASSERT_UNUSED(injected, injected);
+        return value;
+    }
+    }
+
+    ASSERT_NOT_REACHED();
+    return v8::Undefined(isolate);
 }
 
 static const size_t maximumDepth = 2000;
@@ -79,7 +158,7 @@ static PassRefPtr<IDBKey> createIDBKeyFromValue(v8::Handle<v8::Value> value, Vec
     if (value->IsNumber() && !std::isnan(value->NumberValue()))
         return IDBKey::createNumber(value->NumberValue());
     if (value->IsString())
-        return IDBKey::createString(toWebCoreString(value.As<v8::String>()));
+        return IDBKey::createString(toCoreString(value.As<v8::String>()));
     if (value->IsDate() && !std::isnan(value->NumberValue()))
         return IDBKey::createDate(value->NumberValue());
     if (value->IsArray()) {
@@ -141,7 +220,7 @@ static bool get(v8::Handle<v8::Value>& object, const String& keyPathElement, v8:
         result = v8::Number::New(isolate, length);
         return true;
     }
-    return object->IsObject() && getValueFrom(v8String(keyPathElement, isolate), result);
+    return object->IsObject() && getValueFrom(v8String(isolate, keyPathElement), result);
 }
 
 static bool canSet(v8::Handle<v8::Value>& object, const String& keyPathElement)
@@ -151,7 +230,7 @@ static bool canSet(v8::Handle<v8::Value>& object, const String& keyPathElement)
 
 static bool set(v8::Handle<v8::Value>& object, const String& keyPathElement, const v8::Handle<v8::Value>& v8Value, v8::Isolate* isolate)
 {
-    return canSet(object, keyPathElement) && setValue(object, v8String(keyPathElement, isolate), v8Value);
+    return canSet(object, keyPathElement) && setValue(object, v8String(isolate, keyPathElement), v8Value);
 }
 
 static v8::Handle<v8::Value> getNthValueOnKeyPath(v8::Handle<v8::Value>& rootValue, const Vector<String>& keyPathElements, size_t index, v8::Isolate* isolate)
@@ -210,7 +289,7 @@ static PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(const ScriptValu
     IDBKeyPathParseError error;
     IDBParseKeyPath(keyPath, keyPathElements, error);
     ASSERT(error == IDBKeyPathParseErrorNone);
-    ASSERT(v8::Context::InContext());
+    ASSERT(isolate->InContext());
 
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> v8Value(value.v8Value());
@@ -224,10 +303,8 @@ PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(DOMRequestState* state,
 {
     IDB_TRACE("createIDBKeyFromScriptValueAndKeyPath");
     ASSERT(!keyPath.isNull());
-    ASSERT(v8::Context::InContext());
-
-
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
     v8::HandleScope handleScope(isolate);
     if (keyPath.type() == IDBKeyPath::ArrayType) {
         IDBKey::KeyArray result;
@@ -245,37 +322,23 @@ PassRefPtr<IDBKey> createIDBKeyFromScriptValueAndKeyPath(DOMRequestState* state,
     return createIDBKeyFromScriptValueAndKeyPath(value, keyPath.string(), isolate);
 }
 
-ScriptValue deserializeIDBValue(DOMRequestState* state, PassRefPtr<SerializedScriptValue> prpValue)
+v8::Handle<v8::Value> deserializeIDBValueBuffer(SharedBuffer* buffer, v8::Isolate* isolate)
 {
-    ASSERT(v8::Context::InContext());
-    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    RefPtr<SerializedScriptValue> serializedValue = prpValue;
-    if (serializedValue)
-        return ScriptValue(serializedValue->deserialize(), isolate);
-    return ScriptValue(v8::Null(isolate), isolate);
+    ASSERT(isolate->InContext());
+    if (!buffer)
+        return v8::Null(isolate);
+
+    // FIXME: The extra copy here can be eliminated by allowing SerializedScriptValue to take a raw const char* or const uint8_t*.
+    Vector<uint8_t> value;
+    value.append(buffer->data(), buffer->size());
+    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::createFromWireBytes(value);
+    return serializedValue->deserialize(isolate);
 }
 
-ScriptValue deserializeIDBValueBuffer(DOMRequestState* state, PassRefPtr<SharedBuffer> prpBuffer)
+bool injectV8KeyIntoV8Value(v8::Handle<v8::Value> key, v8::Handle<v8::Value> value, const IDBKeyPath& keyPath, v8::Isolate* isolate)
 {
-    ASSERT(v8::Context::InContext());
-    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    RefPtr<SharedBuffer> buffer = prpBuffer;
-    if (buffer) {
-        // FIXME: The extra copy here can be eliminated by allowing SerializedScriptValue to take a raw const char* or const uint8_t*.
-        Vector<uint8_t> value;
-        value.append(buffer->data(), buffer->size());
-        RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::createFromWireBytes(value);
-        return ScriptValue(serializedValue->deserialize(), isolate);
-    }
-    return ScriptValue(v8::Null(isolate), isolate);
-}
-
-bool injectIDBKeyIntoScriptValue(DOMRequestState* state, PassRefPtr<IDBKey> key, ScriptValue& value, const IDBKeyPath& keyPath)
-{
-    IDB_TRACE("injectIDBKeyIntoScriptValue");
-    ASSERT(v8::Context::InContext());
+    IDB_TRACE("injectIDBV8KeyIntoV8Value");
+    ASSERT(isolate->InContext());
 
     ASSERT(keyPath.type() == IDBKeyPath::StringType);
     Vector<String> keyPathElements;
@@ -284,16 +347,14 @@ bool injectIDBKeyIntoScriptValue(DOMRequestState* state, PassRefPtr<IDBKey> key,
     ASSERT(error == IDBKeyPathParseErrorNone);
 
     if (!keyPathElements.size())
-        return 0;
+        return false;
 
-    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> v8Value(value.v8Value());
-    v8::Handle<v8::Value> parent(ensureNthValueOnKeyPath(v8Value, keyPathElements, keyPathElements.size() - 1, isolate));
+    v8::Handle<v8::Value> parent(ensureNthValueOnKeyPath(value, keyPathElements, keyPathElements.size() - 1, isolate));
     if (parent.IsEmpty())
         return false;
 
-    if (!set(parent, keyPathElements.last(), idbKeyToV8Value(key.get(), isolate), isolate))
+    if (!set(parent, keyPathElements.last(), key, isolate))
         return false;
 
     return true;
@@ -315,19 +376,30 @@ bool canInjectIDBKeyIntoScriptValue(DOMRequestState* state, const ScriptValue& s
     return canInjectNthValueOnKeyPath(v8Value, keyPathElements, keyPathElements.size() - 1, state->context()->GetIsolate());
 }
 
+ScriptValue idbAnyToScriptValue(DOMRequestState* state, PassRefPtr<IDBAny> any)
+{
+    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
+    v8::Local<v8::Context> context = state ? state->context() : isolate->GetCurrentContext();
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Value> v8Value(toV8(any.get(), context->Global(), isolate));
+    return ScriptValue(v8Value, isolate);
+}
+
 ScriptValue idbKeyToScriptValue(DOMRequestState* state, PassRefPtr<IDBKey> key)
 {
-    ASSERT(v8::Context::InContext());
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
+    v8::Local<v8::Context> context = state ? state->context() : isolate->GetCurrentContext();
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> v8Value(idbKeyToV8Value(key.get(), state->context()->GetIsolate()));
+    v8::Handle<v8::Value> v8Value(toV8(key.get(), context->Global(), isolate));
     return ScriptValue(v8Value, isolate);
 }
 
 PassRefPtr<IDBKey> scriptValueToIDBKey(DOMRequestState* state, const ScriptValue& scriptValue)
 {
-    ASSERT(v8::Context::InContext());
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> v8Value(scriptValue.v8Value());
     return createIDBKeyFromValue(v8Value, isolate);
@@ -338,9 +410,28 @@ PassRefPtr<IDBKeyRange> scriptValueToIDBKeyRange(DOMRequestState* state, const S
     v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> value(scriptValue.v8Value());
-    if (V8IDBKeyRange::HasInstance(value, isolate, worldType(isolate)))
+    if (V8IDBKeyRange::hasInstance(value, isolate, worldType(isolate)))
         return V8IDBKeyRange::toNative(value.As<v8::Object>());
     return 0;
 }
+
+#ifndef NDEBUG
+void assertPrimaryKeyValidOrInjectable(DOMRequestState* state, PassRefPtr<SharedBuffer> buffer, PassRefPtr<IDBKey> prpKey, const IDBKeyPath& keyPath)
+{
+    RefPtr<IDBKey> key(prpKey);
+
+    DOMRequestState::Scope scope(*state);
+    v8::Isolate* isolate = state ? state->context()->GetIsolate() : v8::Isolate::GetCurrent();
+
+    ScriptValue keyValue = idbKeyToScriptValue(state, key);
+    ScriptValue scriptValue(deserializeIDBValueBuffer(buffer.get(), isolate), isolate);
+
+    RefPtr<IDBKey> expectedKey = createIDBKeyFromScriptValueAndKeyPath(state, scriptValue, keyPath);
+    ASSERT(!expectedKey || expectedKey->isEqual(key.get()));
+
+    bool injected = injectV8KeyIntoV8Value(keyValue.v8Value(), scriptValue.v8Value(), keyPath, isolate);
+    ASSERT_UNUSED(injected, injected);
+}
+#endif
 
 } // namespace WebCore

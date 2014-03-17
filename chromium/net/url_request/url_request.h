@@ -37,10 +37,12 @@ class TestAutomationProvider;
 class URLRequestAutomationJob;
 
 namespace base {
+class Value;
+
 namespace debug {
 class StackTrace;
-}
-}
+}  // namespace debug
+}  // namespace base
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
@@ -297,16 +299,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual ~Delegate() {}
   };
 
-  // TODO(shalev): Get rid of this constructor in favour of the one below it.
-  // Initialize an URL request.
   URLRequest(const GURL& url,
+             RequestPriority priority,
              Delegate* delegate,
              const URLRequestContext* context);
-
-  URLRequest(const GURL& url,
-             Delegate* delegate,
-             const URLRequestContext* context,
-             NetworkDelegate* network_delegate);
 
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
@@ -442,13 +438,31 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // 2. The OnResponseStarted callback is currently running or has run.
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
-  // Returns the current load state for the request. |param| is an optional
-  // parameter describing details related to the load state. Not all load states
-  // have a parameter.
+  // Returns the current load state for the request. The returned value's
+  // |param| field is an optional parameter describing details related to the
+  // load state. Not all load states have a parameter.
   LoadStateWithParam GetLoadState() const;
-  void SetLoadStateParam(const base::string16& param) {
-    load_state_param_ = param;
-  }
+
+  // Returns a partial representation of the request's state as a value, for
+  // debugging.  Caller takes ownership of returned value.
+  base::Value* GetStateAsValue() const;
+
+  // Logs information about the what external object currently blocking the
+  // request.  LogUnblocked must be called before resuming the request.  This
+  // can be called multiple times in a row either with or without calling
+  // LogUnblocked between calls.  |blocked_by| must not be NULL or have length
+  // 0.
+  void LogBlockedBy(const char* blocked_by);
+
+  // Just like LogBlockedBy, but also makes GetLoadState return source as the
+  // |param| in the value returned by GetLoadState.  Calling LogUnblocked or
+  // LogBlockedBy will clear the load param.  |blocked_by| must not be NULL or
+  // have length 0.
+  void LogAndReportBlockedBy(const char* blocked_by);
+
+  // Logs that the request is no longer blocked by the last caller to
+  // LogBlockedBy.
+  void LogUnblocked();
 
   // Returns the current upload progress in bytes. When the upload data is
   // chunked, size is set to zero, but position will not be.
@@ -535,7 +549,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Access the LOAD_* flags modifying this request (see load_flags.h).
   int load_flags() const { return load_flags_; }
-  void set_load_flags(int flags) { load_flags_ = flags; }
+
+  // The new flags may change the IGNORE_LIMITS flag only when called
+  // before Start() is called, it must only set the flag, and if set,
+  // the priority of this request must already be MAXIMUM_PRIORITY.
+  void SetLoadFlags(int flags);
 
   // Returns true if the request is "pending" (i.e., if Start() has been called,
   // and the response has not yet been called).
@@ -636,7 +654,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
 
-  // Sets the priority level for this request and any related jobs.
+  // Sets the priority level for this request and any related
+  // jobs. Must not change the priority to anything other than
+  // MAXIMUM_PRIORITY if the IGNORE_LIMITS load flag is set.
   void SetPriority(RequestPriority priority);
 
   // Returns true iff this request would be internally redirected to HTTPS
@@ -754,10 +774,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                     CookieOptions* options) const;
   bool CanEnablePrivacyMode() const;
 
-  // Called when the delegate blocks or unblocks this request when intercepting
-  // certain requests.
-  void SetBlockedOnDelegate();
-  void SetUnblockedOnDelegate();
+  // Called just before calling a delegate that may block a request.
+  void OnCallToDelegate();
+  // Called when the delegate lets a request continue.  Also called on
+  // cancellation.
+  void OnCallToDelegateComplete();
 
   // Contextual information used for this request. Cannot be NULL. This contains
   // most of the dependencies which are shared between requests (disk cache,
@@ -811,8 +832,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // first transaction in a request involving redirects.
   UploadProgress final_upload_progress_;
 
-  // The priority level for this request.  Objects like ClientSocketPool use
-  // this to determine which URLRequest to allocate sockets to first.
+  // The priority level for this request.  Objects like
+  // ClientSocketPool use this to determine which URLRequest to
+  // allocate sockets to first.
   RequestPriority priority_;
 
   // TODO(battre): The only consumer of the identifier_ is currently the
@@ -824,13 +846,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // A globally unique identifier for this request.
   const uint64 identifier_;
 
-  // True if this request is blocked waiting for the network delegate to resume
-  // it.
-  bool blocked_on_delegate_;
+  // True if this request is currently calling a delegate, or is blocked waiting
+  // for the URL request or network delegate to resume it.
+  bool calling_delegate_;
 
-  // An optional parameter that provides additional information about the load
-  // state. Only used with the LOAD_STATE_WAITING_FOR_DELEGATE state.
-  base::string16 load_state_param_;
+  // An optional parameter that provides additional information about what
+  // |this| is currently being blocked by.
+  std::string blocked_by_;
+  bool use_blocked_by_as_load_param_;
 
   base::debug::LeakTracker<URLRequest> leak_tracker_;
 

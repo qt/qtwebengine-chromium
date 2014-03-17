@@ -17,6 +17,10 @@ usage() {
   echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
        "fonts"
   echo "--no-prompt: silently select standard options/defaults"
+  echo "--quick-check: quickly try to determine if dependencies are installed"
+  echo "               (this avoids interactive prompts and sudo commands,"
+  echo "               so might not be 100% accurate)"
+  echo "--unsupported: attempt installation even on unsupported systems"
   echo "Script will prompt interactively if options not given."
   exit 1
 }
@@ -41,23 +45,24 @@ do
   --no-prompt)              do_default=1
                             do_quietly="-qq --assume-yes"
     ;;
+  --quick-check)            do_quick_check=1;;
   --unsupported)            do_unsupported=1;;
   *) usage;;
   esac
   shift
 done
 
-ubuntu_versions="10\.04|10\.10|11\.04|11\.10|12\.04|12\.10|13\.04"
-ubuntu_codenames="lucid|maverick|natty|oneiric|precise|quantal|raring"
+ubuntu_versions="12\.04|12\.10|13\.04"
+ubuntu_codenames="precise|quantal|raring"
 ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
 # GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
 # doesn't contain a version number so just trust that the user knows what
 # they're doing.
 gcel_issue="^GCEL"
 
-if [ 0 -eq "${do_unsupported-0}" ] ; then
+if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
   if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
-    echo "ERROR: Only Ubuntu 10.04 (lucid) through 13.04 (raring) are"\
+    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.04 (raring) are"\
         "currently supported" >&2
     exit 1
   fi
@@ -68,42 +73,42 @@ if [ 0 -eq "${do_unsupported-0}" ] ; then
   fi
 fi
 
-if [ "x$(id -u)" != x0 ]; then
+if [ "x$(id -u)" != x0 ] && [ 0 -eq "${do_quick_check-0}" ]; then
   echo "Running as non-root user."
   echo "You might have to enter your password one or more times for 'sudo'."
   echo
 fi
 
 # Packages needed for chromeos only
-chromeos_dev_list="libbluetooth-dev libbrlapi-dev"
+chromeos_dev_list="libbluetooth-dev"
 
-# Packages need for development
-dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ gperf
-          language-pack-fr libapache2-mod-php5 libasound2-dev libbrlapi-dev
-          libbz2-dev libcairo2-dev libcups2-dev libcurl4-gnutls-dev libelf-dev
-          libgconf2-dev libgl1-mesa-dev libglib2.0-dev libglu1-mesa-dev
-          libgnome-keyring-dev libgtk2.0-dev libkrb5-dev libnspr4-dev
-          libnss3-dev libpam0g-dev libpci-dev libpulse-dev libsctp-dev
-          libspeechd-dev libsqlite3-dev libssl-dev libudev-dev libwww-perl
-          libxslt1-dev libxss-dev libxt-dev libxtst-dev mesa-common-dev
-          metacity patch perl php5-cgi pkg-config python python-cherrypy3
-          python-dev python-psutil rpm ruby subversion ttf-dejavu-core
-          ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho ttf-thai-tlwg
-          wdiff git-core
-          $chromeos_dev_list"
+# Packages needed for development
+dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ git-core gperf
+          language-pack-da language-pack-fr language-pack-he
+          language-pack-zh-hant libapache2-mod-php5 libasound2-dev libbrlapi-dev
+          libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
+          libdrm-dev libelf-dev libgconf2-dev libgl1-mesa-dev libglib2.0-dev
+          libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev libkrb5-dev
+          libnspr4-dev libnss3-dev libpam0g-dev libpci-dev libpulse-dev
+          libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev libudev-dev
+          libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
+          mesa-common-dev openbox patch perl php5-cgi pkg-config python
+          python-cherrypy3 python-dev python-psutil rpm ruby subversion
+          ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho
+          ttf-thai-tlwg wdiff xfonts-mathml $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries. These are always needed, regardless of whether or not we want
 # the full 32-bit "cross-compile" support (--lib32).
-if [ "$(uname -m)" = "x86_64" ]; then
+if file /sbin/init | grep -q 'ELF 64-bit'; then
   dev_list="${dev_list} libc6-i386 lib32gcc1 lib32stdc++6"
 fi
 
 # Run-time libraries required by chromeos only
-chromeos_lib_list="libpulse0 libbz2-1.0 libcurl4-gnutls-dev"
+chromeos_lib_list="libpulse0 libbz2-1.0"
 
 # Full list of required run-time libraries
-lib_list="libatk1.0-0 libc6 libasound2 libcairo2 libcups2 libexpat1
+lib_list="libatk1.0-0 libc6 libasound2 libcairo2 libcap2 libcups2 libexpat1
           libfontconfig1 libfreetype6 libglib2.0-0 libgnome-keyring0
           libgtk2.0-0 libpam0g libpango1.0-0 libpci3 libpcre3 libpixman-1-0
           libpng12-0 libspeechd2 libstdc++6 libsqlite3-0 libx11-6
@@ -117,16 +122,27 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libpixman-1-0-dbg libsqlite3-0-dbg libx11-6-dbg libxau6-dbg
           libxcb1-dbg libxcomposite1-dbg libxcursor1-dbg libxdamage1-dbg
           libxdmcp6-dbg libxext6-dbg libxfixes3-dbg libxi6-dbg libxinerama1-dbg
-          libxrandr2-dbg libxrender1-dbg libxtst6-dbg zlib1g-dbg"
+          libxrandr2-dbg libxrender1-dbg libxtst6-dbg zlib1g-dbg
+          libstdc++6-4.6-dbg"
 
-# arm cross toolchain packages needed to build chrome on arm
-arm_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
-          libgomp1-armel-cross linux-libc-dev-armel-cross
-          libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
-          binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
-          gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
-          libmudflap0-dbg-armel-cross"
+# arm cross toolchain packages needed to build chrome on armhf
+arm_list="libc6-armhf-cross libc6-dev-armhf-cross libgcc1-armhf-cross
+          libgomp1-armhf-cross linux-libc-dev-armhf-cross
+          libgcc1-dbg-armhf-cross libgomp1-dbg-armhf-cross
+          binutils-arm-linux-gnueabihf cpp-arm-linux-gnueabihf
+          gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          libmudflap0-dbg-armhf-cross"
 
+# Old armel cross toolchain packages
+armel_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
+            libgomp1-armel-cross linux-libc-dev-armel-cross
+            libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
+            binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
+            libmudflap0-dbg-armel-cross"
+
+# TODO(sbc): remove armel once the armhf transition is complete
+arm_list="$arm_list $armel_list"
 
 # Some package names have changed over time
 if package_exists ttf-mscorefonts-installer; then
@@ -158,7 +174,7 @@ else
 fi
 
 
-# Some packages are only needed, if the distribution actually supports
+# Some packages are only needed if the distribution actually supports
 # installing them.
 if package_exists appmenu-gtk; then
   lib_list="$lib_list appmenu-gtk"
@@ -172,6 +188,7 @@ fi
 # Users can abort the function by pressing CTRL-C. This will call "exit 1".
 yes_no() {
   if [ 0 -ne "${do_default-0}" ] ; then
+    [ $1 -eq 0 ] && echo "Y" || echo "N"
     return $1
   fi
   local c
@@ -202,7 +219,7 @@ yes_no() {
   done
 }
 
-if test "$do_inst_syms" = ""
+if test "$do_inst_syms" = "" && test 0 -eq ${do_quick_check-0}
 then
   echo "This script installs all tools and libraries needed to build Chromium."
   echo ""
@@ -215,30 +232,70 @@ then
   fi
 fi
 if test "$do_inst_syms" = "1"; then
-  echo "Installing debugging symbols."
+  echo "Including debugging symbols."
 else
-  echo "Skipping installation of debugging symbols."
+  echo "Skipping debugging symbols."
   dbg_list=
 fi
 
 # When cross building for arm on 64-bit systems the host binaries
 # that are part of v8 need to be compiled with -m32 which means
 # that basic multilib support is needed.
-if [ "$(uname -m)" = "x86_64" ]; then
+if file /sbin/init | grep -q 'ELF 64-bit'; then
   arm_list="$arm_list g++-multilib"
 fi
 
-if test "$do_inst_arm" = "1"; then
+if test "$do_inst_arm" = "1" ; then
   . /etc/lsb-release
-  if test "$DISTRIB_CODENAME" != "precise"; then
+  if ! [ "${DISTRIB_CODENAME}" = "precise" -o \
+      1 -eq "${do_unsupported-0}" ]; then
     echo "ERROR: Installing the ARM cross toolchain is only available on" \
          "Ubuntu precise." >&2
     exit 1
   fi
-  echo "Installing ARM cross toolchain."
+  echo "Including ARM cross toolchain."
 else
-  echo "Skipping installation of ARM cross toolchain."
+  echo "Skipping ARM cross toolchain."
   arm_list=
+fi
+
+packages="$(echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list}" | \
+  tr " " "\n" | sort -u | tr "\n" " ")"
+
+if [ 1 -eq "${do_quick_check-0}" ] ; then
+  failed_check="$(dpkg-query -W -f '${PackageSpec}:${Status}\n' \
+    ${packages} 2>&1 | grep -v "ok installed" || :)"
+  if [ -n "${failed_check}" ]; then
+    echo
+    nomatch="$(echo "${failed_check}" | \
+      sed -e "s/^No packages found matching \(.*\).$/\1/;t;d")"
+    missing="$(echo "${failed_check}" | \
+      sed -e "/^No packages found matching/d;s/^\(.*\):.*$/\1/")"
+    if [ "$nomatch" ]; then
+      # Distinguish between packages that actually aren't available to the
+      # system (i.e. not in any repo) and packages that just aren't known to
+      # dpkg (i.e. managed by apt).
+      unknown=""
+      for p in ${nomatch}; do
+        if apt-cache show ${p} > /dev/null 2>&1; then
+          missing="${p}\n${missing}"
+        else
+          unknown="${p}\n${unknown}"
+        fi
+      done
+      if [ -n "${unknown}" ]; then
+        echo "WARNING: The following packages are unknown to your system"
+        echo "(maybe missing a repo or need to 'sudo apt-get update'):"
+        echo -e "${unknown}" | sed -e "s/^/  /"
+      fi
+    fi
+    if [ -n "${missing}" ]; then
+      echo "WARNING: The following packages are not installed:"
+      echo -e "${missing}" | sed -e "s/^/  /"
+    fi
+    exit 1
+  fi
+  exit 0
 fi
 
 sudo apt-get update
@@ -248,7 +305,6 @@ sudo apt-get update
 # without accidentally promoting any packages from "auto" to "manual".
 # We then re-run "apt-get" with just the list of missing packages.
 echo "Finding missing packages..."
-packages="${dev_list} ${lib_list} ${dbg_list} ${arm_list}"
 # Intentionally leaving $packages unquoted so it's more readable.
 echo "Packages required: " $packages
 echo
@@ -307,7 +363,7 @@ else
 fi
 
 # Install 32bit backwards compatibility support for 64bit systems
-if [ "$(uname -m)" = "x86_64" ]; then
+if file /sbin/init | grep -q 'ELF 64-bit'; then
   if test "$do_inst_lib32" != "1"
   then
     echo "NOTE: If you were expecting the option to install 32bit libs,"
@@ -329,7 +385,9 @@ if [ "$(uname -m)" = "x86_64" ]; then
     # There are other ways to achieve the same goal. But resetting the
     # variable is the best way to document the intended behavior -- and to
     # allow us to gradually deprecate and then remove the obsolete code.
-    do_inst_lib32=
+    if test "${do_default-0}" -ne 1; then
+      do_inst_lib32=
+    fi
   fi
 
   echo "WARNING"
@@ -342,10 +400,12 @@ if [ "$(uname -m)" = "x86_64" ]; then
   echo "The code for installing 32bit libraries on a 64bit system is"
   echo "unmaintained and might not work with modern versions of Ubuntu"
   echo "or Debian."
-  echo
-  echo -n "Are you sure you want to proceed (y/N) "
-  if yes_no 1; then
-    do_inst_lib32=1
+  if test "$do_inst_lib32" != "" ; then
+    echo
+    echo -n "Are you sure you want to proceed (y/N) "
+    if yes_no 1; then
+      do_inst_lib32=1
+    fi
   fi
   if test "$do_inst_lib32" != "1"
   then

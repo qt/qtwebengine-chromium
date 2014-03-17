@@ -20,10 +20,9 @@
  */
 
 #include "config.h"
-
-
-#include "core/dom/EventNames.h"
 #include "core/svg/SVGZoomEvent.h"
+
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -71,7 +70,7 @@ SVGPoint SVGZoomEvent::newTranslate() const
 
 const AtomicString& SVGZoomEvent::interfaceName() const
 {
-    return eventNames().interfaceForSVGZoomEvent;
+    return EventNames::SVGZoomEvent;
 }
 
 } // namespace WebCore

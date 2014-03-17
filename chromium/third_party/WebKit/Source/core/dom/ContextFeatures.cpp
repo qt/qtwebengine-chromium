@@ -27,9 +27,9 @@
 #include "config.h"
 #include "core/dom/ContextFeatures.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/page/Page.h"
-#include "RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -46,8 +46,8 @@ const char* ContextFeatures::supplementName()
 
 ContextFeatures* ContextFeatures::defaultSwitch()
 {
-    DEFINE_STATIC_LOCAL(RefPtr<ContextFeatures>, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
-    return instance.get();
+    DEFINE_STATIC_REF(ContextFeatures, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
+    return instance;
 }
 
 bool ContextFeatures::dialogElementEnabled(Document* document)

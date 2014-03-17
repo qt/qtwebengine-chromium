@@ -12,6 +12,8 @@
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "cc/layers/delegated_frame_provider.h"
+#include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/layer.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/test/pixel_test_utils.h"
@@ -20,6 +22,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/test_compositor_host.h"
 #include "ui/compositor/test/test_layers.h"
 #include "ui/gfx/canvas.h"
@@ -82,7 +85,7 @@ class LayerWithRealCompositorTest : public testing::Test {
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
     bool allow_test_contexts = false;
-    Compositor::InitializeContextFactoryForTests(allow_test_contexts);
+    InitializeContextFactoryForTests(allow_test_contexts);
     Compositor::Initialize();
 
     const gfx::Rect host_bounds(10, 10, 500, 500);
@@ -92,6 +95,7 @@ class LayerWithRealCompositorTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     window_.reset();
+    TerminateContextFactoryForTests();
     Compositor::Terminate();
   }
 
@@ -340,7 +344,7 @@ TEST_F(LayerWithRealCompositorTest, Hierarchy) {
   DrawTree(l1.get());
 }
 
-class LayerWithDelegateTest : public testing::Test, public CompositorDelegate {
+class LayerWithDelegateTest : public testing::Test {
  public:
   LayerWithDelegateTest() {}
   virtual ~LayerWithDelegateTest() {}
@@ -348,14 +352,15 @@ class LayerWithDelegateTest : public testing::Test, public CompositorDelegate {
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
     bool allow_test_contexts = true;
-    Compositor::InitializeContextFactoryForTests(allow_test_contexts);
+    InitializeContextFactoryForTests(allow_test_contexts);
     Compositor::Initialize();
-    compositor_.reset(new Compositor(this, gfx::kNullAcceleratedWidget));
+    compositor_.reset(new Compositor(gfx::kNullAcceleratedWidget));
     compositor_->SetScaleAndSize(1.0f, gfx::Size(1000, 1000));
   }
 
   virtual void TearDown() OVERRIDE {
     compositor_.reset();
+    TerminateContextFactoryForTests();
     Compositor::Terminate();
   }
 
@@ -400,15 +405,6 @@ class LayerWithDelegateTest : public testing::Test, public CompositorDelegate {
 
   void WaitForCommit() {
     DrawWaiterForTest::WaitForCommit(compositor());
-  }
-
-  // CompositorDelegate overrides.
-  virtual void ScheduleDraw() OVERRIDE {
-    DCHECK(!ui::Compositor::WasInitializedWithThread());
-    if (compositor_) {
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE, base::Bind(&Compositor::Draw, compositor_->AsWeakPtr()));
-    }
   }
 
  private:
@@ -603,9 +599,6 @@ class FakeTexture : public Texture {
       : Texture(flipped, size, device_scale_factor) {}
 
   virtual unsigned int PrepareTexture() OVERRIDE { return 0; }
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() OVERRIDE {
-    return NULL;
-  }
 
  protected:
   virtual ~FakeTexture() {}
@@ -905,7 +898,7 @@ TEST_F(LayerWithRealCompositorTest, CompositorObservers) {
   // and also signal an abort.
   observer.Reset();
   l2->SetOpacity(0.1f);
-  GetCompositor()->OnSwapBuffersAborted();
+  GetCompositor()->DidAbortSwapBuffers();
   WaitForDraw();
   EXPECT_TRUE(observer.notified());
   EXPECT_TRUE(observer.aborted());
@@ -1311,8 +1304,14 @@ TEST_F(LayerWithDelegateTest, DelegatedLayer) {
   root->Add(child.get());
   DrawTree(root.get());
 
+  scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection =
+      new cc::DelegatedFrameResourceCollection;
+  scoped_refptr<cc::DelegatedFrameProvider> frame_provider;
+
   // Content matches layer size.
-  child->SetDelegatedFrame(MakeFrameData(gfx::Size(10, 10)), gfx::Size(10, 10));
+  frame_provider = new cc::DelegatedFrameProvider(
+      resource_collection.get(), MakeFrameData(gfx::Size(10, 10)));
+  child->SetShowDelegatedContent(frame_provider, gfx::Size(10, 10));
   EXPECT_EQ(child->cc_layer()->bounds().ToString(),
             gfx::Size(10, 10).ToString());
 
@@ -1323,12 +1322,15 @@ TEST_F(LayerWithDelegateTest, DelegatedLayer) {
 
   // Content smaller than layer.
   child->SetBounds(gfx::Rect(0, 0, 10, 10));
-  child->SetDelegatedFrame(MakeFrameData(gfx::Size(5, 5)), gfx::Size(5, 5));
-  EXPECT_EQ(child->cc_layer()->bounds().ToString(),
-            gfx::Size(5, 5).ToString());
+  frame_provider = new cc::DelegatedFrameProvider(
+      resource_collection.get(), MakeFrameData(gfx::Size(5, 5)));
+  child->SetShowDelegatedContent(frame_provider, gfx::Size(5, 5));
+  EXPECT_EQ(child->cc_layer()->bounds().ToString(), gfx::Size(5, 5).ToString());
 
   // Hi-DPI content on low-DPI layer.
-  child->SetDelegatedFrame(MakeFrameData(gfx::Size(20, 20)), gfx::Size(10, 10));
+  frame_provider = new cc::DelegatedFrameProvider(
+      resource_collection.get(), MakeFrameData(gfx::Size(20, 20)));
+  child->SetShowDelegatedContent(frame_provider, gfx::Size(10, 10));
   EXPECT_EQ(child->cc_layer()->bounds().ToString(),
             gfx::Size(10, 10).ToString());
 
@@ -1338,9 +1340,44 @@ TEST_F(LayerWithDelegateTest, DelegatedLayer) {
             gfx::Size(20, 20).ToString());
 
   // Low-DPI content on hi-DPI layer.
-  child->SetDelegatedFrame(MakeFrameData(gfx::Size(10, 10)), gfx::Size(10, 10));
+  frame_provider = new cc::DelegatedFrameProvider(
+      resource_collection.get(), MakeFrameData(gfx::Size(10, 10)));
+  child->SetShowDelegatedContent(frame_provider, gfx::Size(10, 10));
   EXPECT_EQ(child->cc_layer()->bounds().ToString(),
             gfx::Size(20, 20).ToString());
+}
+
+TEST_F(LayerWithDelegateTest, ExternalContent) {
+  scoped_ptr<Layer> root(CreateNoTextureLayer(gfx::Rect(0, 0, 1000, 1000)));
+  scoped_ptr<Layer> child(CreateLayer(LAYER_TEXTURED));
+
+  child->SetBounds(gfx::Rect(0, 0, 10, 10));
+  child->SetVisible(true);
+  root->Add(child.get());
+
+  // The layer is already showing painted content, so the cc layer won't change.
+  scoped_refptr<cc::Layer> before = child->cc_layer();
+  child->SetShowPaintedContent();
+  EXPECT_TRUE(child->cc_layer());
+  EXPECT_EQ(before, child->cc_layer());
+
+  scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection =
+      new cc::DelegatedFrameResourceCollection;
+  scoped_refptr<cc::DelegatedFrameProvider> frame_provider =
+      new cc::DelegatedFrameProvider(resource_collection.get(),
+                                     MakeFrameData(gfx::Size(10, 10)));
+
+  // Showing delegated content changes the underlying cc layer.
+  before = child->cc_layer();
+  child->SetShowDelegatedContent(frame_provider, gfx::Size(10, 10));
+  EXPECT_TRUE(child->cc_layer());
+  EXPECT_NE(before, child->cc_layer());
+
+  // Changing to painted content should change the underlying cc layer.
+  before = child->cc_layer();
+  child->SetShowPaintedContent();
+  EXPECT_TRUE(child->cc_layer());
+  EXPECT_NE(before, child->cc_layer());
 }
 
 // Tests Layer::AddThreadedAnimation and Layer::RemoveThreadedAnimation.

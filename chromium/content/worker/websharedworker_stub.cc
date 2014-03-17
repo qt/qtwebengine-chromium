@@ -19,7 +19,7 @@
 namespace content {
 
 WebSharedWorkerStub::WebSharedWorkerStub(
-    const string16& name,
+    const base::string16& name,
     int route_id,
     const WorkerAppCacheInitInfo& appcache_init_info)
     : route_id_(route_id),
@@ -33,10 +33,9 @@ WebSharedWorkerStub::WebSharedWorkerStub(
   worker_thread->AddWorkerStub(this);
   // Start processing incoming IPCs for this worker.
   worker_thread->AddRoute(route_id_, this);
-  ChildProcess::current()->AddRefProcess();
 
   // TODO(atwilson): Add support for NaCl when they support MessagePorts.
-  impl_ = WebKit::WebSharedWorker::create(client());
+  impl_ = blink::WebSharedWorker::create(client());
   worker_devtools_agent_.reset(new SharedWorkerDevToolsAgent(route_id, impl_));
   client()->set_devtools_agent(worker_devtools_agent_.get());
 }
@@ -47,7 +46,6 @@ WebSharedWorkerStub::~WebSharedWorkerStub() {
   DCHECK(worker_thread);
   worker_thread->RemoveWorkerStub(this);
   worker_thread->RemoveRoute(route_id_);
-  ChildProcess::current()->ReleaseProcess();
 }
 
 void WebSharedWorkerStub::Shutdown() {
@@ -83,9 +81,10 @@ const GURL& WebSharedWorkerStub::url() {
 }
 
 void WebSharedWorkerStub::OnStartWorkerContext(
-    const GURL& url, const string16& user_agent, const string16& source_code,
-    const string16& content_security_policy,
-    WebKit::WebContentSecurityPolicyType policy_type) {
+    const GURL& url, const base::string16& user_agent,
+    const base::string16& source_code,
+    const base::string16& content_security_policy,
+    blink::WebContentSecurityPolicyType policy_type) {
   // Ignore multiple attempts to start this worker (can happen if two pages
   // try to start it simultaneously).
   if (started_)
@@ -107,11 +106,11 @@ void WebSharedWorkerStub::OnStartWorkerContext(
 
 void WebSharedWorkerStub::OnConnect(int sent_message_port_id, int routing_id) {
   if (started_) {
-    WebKit::WebMessagePortChannel* channel =
+    blink::WebMessagePortChannel* channel =
         new WebMessagePortChannelImpl(routing_id,
                                       sent_message_port_id,
                                       base::MessageLoopProxy::current().get());
-    impl_->connect(channel, NULL);
+    impl_->connect(channel);
   } else {
     // If two documents try to load a SharedWorker at the same time, the
     // WorkerMsg_Connect for one of the documents can come in before the

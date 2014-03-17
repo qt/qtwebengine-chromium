@@ -7,9 +7,27 @@
 #include "SkFloatBits.h"
 #include "SkPathOpsTypes.h"
 
+static bool arguments_denormalized(float a, float b, int epsilon) {
+    float denormalizedCheck = FLT_EPSILON * epsilon / 2;
+    return fabsf(a) <= denormalizedCheck && fabsf(b) <= denormalizedCheck;
+}
+
 // from http://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
 // FIXME: move to SkFloatBits.h
-static bool equal_ulps(float a, float b, int epsilon) {
+static bool equal_ulps(float a, float b, int epsilon, int depsilon) {
+    if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
+        return false;
+    }
+    if (arguments_denormalized(a, b, depsilon)) {
+        return true;
+    }
+    int aBits = SkFloatAs2sCompliment(a);
+    int bBits = SkFloatAs2sCompliment(b);
+    // Find the difference in ULPs.
+    return aBits < bBits + epsilon && bBits < aBits + epsilon;
+}
+
+static bool d_equal_ulps(float a, float b, int epsilon) {
     if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
         return false;
     }
@@ -23,6 +41,19 @@ static bool not_equal_ulps(float a, float b, int epsilon) {
     if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
         return false;
     }
+    if (arguments_denormalized(a, b, epsilon)) {
+        return false;
+    }
+    int aBits = SkFloatAs2sCompliment(a);
+    int bBits = SkFloatAs2sCompliment(b);
+    // Find the difference in ULPs.
+    return aBits >= bBits + epsilon || bBits >= aBits + epsilon;
+}
+
+static bool d_not_equal_ulps(float a, float b, int epsilon) {
+    if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
+        return false;
+    }
     int aBits = SkFloatAs2sCompliment(a);
     int bBits = SkFloatAs2sCompliment(b);
     // Find the difference in ULPs.
@@ -32,6 +63,9 @@ static bool not_equal_ulps(float a, float b, int epsilon) {
 static bool less_ulps(float a, float b, int epsilon) {
     if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
         return false;
+    }
+    if (arguments_denormalized(a, b, epsilon)) {
+        return a <= b - FLT_EPSILON * epsilon;
     }
     int aBits = SkFloatAs2sCompliment(a);
     int bBits = SkFloatAs2sCompliment(b);
@@ -43,6 +77,9 @@ static bool less_or_equal_ulps(float a, float b, int epsilon) {
     if (!SkScalarIsFinite(a) || !SkScalarIsFinite(b)) {
         return false;
     }
+    if (arguments_denormalized(a, b, epsilon)) {
+        return a < b + FLT_EPSILON * epsilon;
+    }
     int aBits = SkFloatAs2sCompliment(a);
     int bBits = SkFloatAs2sCompliment(b);
     // Find the difference in ULPs.
@@ -52,12 +89,22 @@ static bool less_or_equal_ulps(float a, float b, int epsilon) {
 // equality using the same error term as between
 bool AlmostBequalUlps(float a, float b) {
     const int UlpsEpsilon = 2;
-    return equal_ulps(a, b, UlpsEpsilon);
+    return equal_ulps(a, b, UlpsEpsilon, UlpsEpsilon);
+}
+
+bool AlmostPequalUlps(float a, float b) {
+    const int UlpsEpsilon = 8;
+    return equal_ulps(a, b, UlpsEpsilon, UlpsEpsilon);
+}
+
+bool AlmostDequalUlps(float a, float b) {
+    const int UlpsEpsilon = 16;
+    return d_equal_ulps(a, b, UlpsEpsilon);
 }
 
 bool AlmostEqualUlps(float a, float b) {
     const int UlpsEpsilon = 16;
-    return equal_ulps(a, b, UlpsEpsilon);
+    return equal_ulps(a, b, UlpsEpsilon, UlpsEpsilon);
 }
 
 bool NotAlmostEqualUlps(float a, float b) {
@@ -65,9 +112,15 @@ bool NotAlmostEqualUlps(float a, float b) {
     return not_equal_ulps(a, b, UlpsEpsilon);
 }
 
+bool NotAlmostDequalUlps(float a, float b) {
+    const int UlpsEpsilon = 16;
+    return d_not_equal_ulps(a, b, UlpsEpsilon);
+}
+
 bool RoughlyEqualUlps(float a, float b) {
     const int UlpsEpsilon = 256;
-    return equal_ulps(a, b, UlpsEpsilon);
+    const int DUlpsEpsilon = 1024;
+    return equal_ulps(a, b, UlpsEpsilon, DUlpsEpsilon);
 }
 
 bool AlmostBetweenUlps(float a, float b, float c) {

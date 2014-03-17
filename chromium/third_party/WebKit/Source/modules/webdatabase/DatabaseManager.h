@@ -27,12 +27,12 @@
 #define DatabaseManager_h
 
 #include "modules/webdatabase/DatabaseBasicTypes.h"
-#include "modules/webdatabase/DatabaseDetails.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/ThreadingPrimitives.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -43,8 +43,9 @@ class DatabaseCallback;
 class DatabaseContext;
 class DatabaseSync;
 class DatabaseTaskSynchronizer;
+class ExceptionState;
 class SecurityOrigin;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 typedef int ExceptionCode;
 
@@ -53,9 +54,9 @@ class DatabaseManager {
 public:
     static DatabaseManager& manager();
 
-    // This gets a DatabaseContext for the specified ScriptExecutionContext.
+    // This gets a DatabaseContext for the specified ExecutionContext.
     // If one doesn't already exist, it will create a new one.
-    PassRefPtr<DatabaseContext> databaseContextFor(ScriptExecutionContext*);
+    PassRefPtr<DatabaseContext> databaseContextFor(ExecutionContext*);
 
     // These 2 methods are for DatabaseContext (un)registration, and should only
     // be called by the DatabaseContext constructor and destructor.
@@ -70,38 +71,38 @@ public:
     void didDestructDatabaseContext() { }
 #endif
 
-    static ExceptionCode exceptionCodeForDatabaseError(DatabaseError);
+    static void throwExceptionForDatabaseError(DatabaseError, const String& errorMessage, ExceptionState&);
 
-    PassRefPtr<Database> openDatabase(ScriptExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback>, DatabaseError&);
-    PassRefPtr<DatabaseSync> openDatabaseSync(ScriptExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback>, DatabaseError&);
+    PassRefPtr<Database> openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
+    PassRefPtr<DatabaseSync> openDatabaseSync(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
 
-    bool hasOpenDatabases(ScriptExecutionContext*);
-    void stopDatabases(ScriptExecutionContext*, DatabaseTaskSynchronizer*);
+    bool hasOpenDatabases(ExecutionContext*);
+    void stopDatabases(ExecutionContext*, DatabaseTaskSynchronizer*);
 
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
     void closeDatabasesImmediately(const String& originIdentifier, const String& name);
 
-    void interruptAllDatabasesForContext(ScriptExecutionContext*);
+    void interruptAllDatabasesForContext(ExecutionContext*);
 
 private:
     DatabaseManager();
     ~DatabaseManager() { }
 
-    // This gets a DatabaseContext for the specified ScriptExecutionContext if
+    // This gets a DatabaseContext for the specified ExecutionContext if
     // it already exist previously. Otherwise, it returns 0.
-    PassRefPtr<DatabaseContext> existingDatabaseContextFor(ScriptExecutionContext*);
+    PassRefPtr<DatabaseContext> existingDatabaseContextFor(ExecutionContext*);
 
-    PassRefPtr<DatabaseBackendBase> openDatabaseBackend(ScriptExecutionContext*,
+    PassRefPtr<DatabaseBackendBase> openDatabaseBackend(ExecutionContext*,
         DatabaseType, const String& name, const String& expectedVersion, const String& displayName,
         unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
 
-    static void logErrorMessage(ScriptExecutionContext*, const String& message);
+    static void logErrorMessage(ExecutionContext*, const String& message);
 
     AbstractDatabaseServer* m_server;
 
     // Access to the following fields require locking m_contextMapLock:
-    typedef HashMap<ScriptExecutionContext*, DatabaseContext*> ContextMap;
+    typedef HashMap<ExecutionContext*, DatabaseContext*> ContextMap;
     ContextMap m_contextMap;
 #if !ASSERT_DISABLED
     int m_databaseContextRegisteredCount;

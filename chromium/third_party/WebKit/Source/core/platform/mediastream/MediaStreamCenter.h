@@ -32,14 +32,13 @@
 #ifndef MediaStreamCenter_h
 #define MediaStreamCenter_h
 
-#include "modules/mediastream/SourceInfo.h"
 #include "public/platform/WebMediaStreamCenterClient.h"
 #include "public/platform/WebVector.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit {
+namespace blink {
 class WebMediaStream;
 class WebMediaStreamCenter;
 class WebMediaStreamTrack;
@@ -51,26 +50,30 @@ class MediaStreamComponent;
 class MediaStreamDescriptor;
 class MediaStreamTrackSourcesRequest;
 
-class MediaStreamCenter : public WebKit::WebMediaStreamCenterClient {
+class MediaStreamCenter : public blink::WebMediaStreamCenterClient {
 public:
     ~MediaStreamCenter();
 
     static MediaStreamCenter& instance();
 
     bool getMediaStreamTrackSources(PassRefPtr<MediaStreamTrackSourcesRequest>);
+
+    void didCreateMediaStreamTrack(MediaStreamComponent*);
     void didSetMediaStreamTrackEnabled(MediaStreamDescriptor*, MediaStreamComponent*);
+    bool didStopMediaStreamTrack(MediaStreamComponent*);
+
+    void didCreateMediaStream(MediaStreamDescriptor*);
     bool didAddMediaStreamTrack(MediaStreamDescriptor*, MediaStreamComponent*);
     bool didRemoveMediaStreamTrack(MediaStreamDescriptor*, MediaStreamComponent*);
     void didStopLocalMediaStream(MediaStreamDescriptor*);
-    void didCreateMediaStream(MediaStreamDescriptor*);
 
-    // WebKit::WebMediaStreamCenterClient
-    virtual void stopLocalMediaStream(const WebKit::WebMediaStream&) OVERRIDE;
+    // blink::WebMediaStreamCenterClient
+    virtual void stopLocalMediaStream(const blink::WebMediaStream&) OVERRIDE;
 
 private:
     MediaStreamCenter();
 
-    OwnPtr<WebKit::WebMediaStreamCenter> m_private;
+    OwnPtr<blink::WebMediaStreamCenter> m_private;
 };
 
 } // namespace WebCore

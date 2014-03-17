@@ -27,8 +27,9 @@
 
 #include "core/rendering/svg/RenderSVGImage.h"
 
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/ImageQualityController.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
 #include "core/rendering/RenderImageResource.h"
@@ -37,6 +38,7 @@
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGImageElement.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace WebCore {
 
@@ -91,6 +93,7 @@ void RenderSVGImage::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this) && selfNeedsLayout());
     updateImageViewport();
 
@@ -187,7 +190,7 @@ bool RenderSVGImage::nodeAtFloatPoint(const HitTestRequest& request, HitTestResu
         if (!SVGRenderSupport::pointInClippingArea(this, localPoint))
             return false;
 
-        if (hitRules.canHitFill) {
+        if (hitRules.canHitFill || hitRules.canHitBoundingBox) {
             if (m_objectBoundingBox.contains(localPoint)) {
                 updateHitTestResult(result, roundedLayoutPoint(localPoint));
                 return true;

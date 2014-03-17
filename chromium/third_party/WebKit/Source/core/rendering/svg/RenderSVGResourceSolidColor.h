@@ -20,9 +20,9 @@
 #ifndef RenderSVGResourceSolidColor_h
 #define RenderSVGResourceSolidColor_h
 
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/svg/RenderSVGResource.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/graphics/Color.h"
 
 namespace WebCore {
 
@@ -36,10 +36,9 @@ public:
 
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode);
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*);
-    virtual FloatRect resourceBoundingBox(RenderObject*) { return FloatRect(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
     const Color& color() const { return m_color; }
     void setColor(const Color& color) { m_color = color; }

@@ -28,15 +28,15 @@
 
 #include "core/dom/Document.h"
 #include "core/fileapi/FileError.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/EntryCallback.h"
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
-#include "modules/filesystem/FileSystemType.h"
 #include "modules/filesystem/LocalFileSystem.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/FileSystemType.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -48,7 +48,7 @@ DOMWindowFileSystem::~DOMWindowFileSystem()
 {
 }
 
-void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, long long size, PassRefPtr<FileSystemCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
     if (!window->isCurrentlyDisplayedInFrame())
         return;
@@ -71,7 +71,7 @@ void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, l
     LocalFileSystem::from(document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
 }
 
-void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, const String& url, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
     if (!window->isCurrentlyDisplayedInFrame())
         return;
@@ -87,14 +87,12 @@ void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, con
         return;
     }
 
-    FileSystemType type;
-    String filePath;
-    if (!completedURL.isValid() || !DOMFileSystemBase::crackFileSystemURL(completedURL, type, filePath)) {
+    if (!completedURL.isValid()) {
         DOMFileSystem::scheduleCallback(document, errorCallback, FileError::create(FileError::ENCODING_ERR));
         return;
     }
 
-    LocalFileSystem::from(document)->readFileSystem(document, type, ResolveURICallbacks::create(successCallback, errorCallback, document, type, filePath));
+    LocalFileSystem::from(document)->resolveURL(document, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, document));
 }
 
 COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), enum_mismatch);

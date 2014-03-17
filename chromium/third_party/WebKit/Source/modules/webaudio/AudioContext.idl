@@ -24,10 +24,13 @@
  */
 
 [
-    NoInterfaceObject,
-    Conditional=WEB_AUDIO,
     ActiveDOMObject,
-    CustomConstructor
+    Conditional=WEB_AUDIO,
+    Constructor,
+    Constructor(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate),
+    ConstructorCallWith=Document,
+    NoInterfaceObject,
+    RaisesException=Constructor,
 ] interface AudioContext : EventTarget {
     // All rendered audio ultimately connects to destination, which represents the audio hardware.
     readonly attribute AudioDestinationNode destination;
@@ -67,7 +70,7 @@
     ConvolverNode createConvolver();
     DynamicsCompressorNode createDynamicsCompressor();
     AnalyserNode createAnalyser();
-    [RaisesException] ScriptProcessorNode createScriptProcessor(unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
+    [RaisesException] ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
     OscillatorNode createOscillator();
     [RaisesException] PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag);
 

@@ -13,6 +13,7 @@
 #include "ppapi/shared_impl/array_var.h"
 #include "ppapi/shared_impl/dictionary_var.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/resource_var.h"
 #include "ppapi/shared_impl/scoped_pp_var.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
@@ -241,10 +242,7 @@ RawVarData* RawVarData::Create(PP_VarType type) {
     case PP_VARTYPE_DICTIONARY:
       return new DictionaryRawVarData();
     case PP_VARTYPE_RESOURCE:
-      // TODO(mgiuca): Add ResourceRawVarData. (http://crbug.com/177017)
-      // This path will be reached if a NaCl module attempts to pass a
-      // PP_VARTYPE_RESOURCE in a message.
-      break;
+      return new ResourceRawVarData();
   }
   NOTREACHED();
   return NULL;
@@ -662,6 +660,89 @@ bool DictionaryRawVarData::Read(PP_VarType type,
     if (!m->ReadUInt32(iter, &value))
       return false;
     children_.push_back(make_pair(key, value));
+  }
+  return true;
+}
+
+// ResourceRawVarData ----------------------------------------------------------
+ResourceRawVarData::ResourceRawVarData()
+    : pp_resource_(0),
+      pending_renderer_host_id_(0),
+      pending_browser_host_id_(0) {}
+
+ResourceRawVarData::~ResourceRawVarData() {
+}
+
+PP_VarType ResourceRawVarData::Type() {
+  return PP_VARTYPE_RESOURCE;
+}
+
+bool ResourceRawVarData::Init(const PP_Var& var, PP_Instance /*instance*/) {
+  DCHECK(var.type == PP_VARTYPE_RESOURCE);
+  ResourceVar* resource_var = ResourceVar::FromPPVar(var);
+  if (!resource_var)
+    return false;
+  pp_resource_ = resource_var->GetPPResource();
+  const IPC::Message* message = resource_var->GetCreationMessage();
+  if (message)
+    creation_message_.reset(new IPC::Message(*message));
+  else
+    creation_message_.reset();
+  pending_renderer_host_id_ = resource_var->GetPendingRendererHostId();
+  pending_browser_host_id_ = resource_var->GetPendingBrowserHostId();
+  initialized_ = true;
+  return true;
+}
+
+PP_Var ResourceRawVarData::CreatePPVar(PP_Instance instance) {
+  // If this is not a pending resource host, just create the var.
+  if (pp_resource_ || !creation_message_) {
+    return PpapiGlobals::Get()->GetVarTracker()->MakeResourcePPVar(
+        pp_resource_);
+  }
+
+  // This is a pending resource host, so create the resource and var.
+  return PpapiGlobals::Get()->GetVarTracker()->MakeResourcePPVarFromMessage(
+      instance,
+      *creation_message_,
+      pending_renderer_host_id_,
+      pending_browser_host_id_);
+}
+
+void ResourceRawVarData::PopulatePPVar(const PP_Var& var,
+                                       const std::vector<PP_Var>& graph) {
+}
+
+void ResourceRawVarData::Write(IPC::Message* m,
+                               const HandleWriter& handle_writer) {
+  m->WriteInt(static_cast<int>(pp_resource_));
+  m->WriteInt(pending_renderer_host_id_);
+  m->WriteInt(pending_browser_host_id_);
+  m->WriteBool(creation_message_);
+  if (creation_message_)
+    IPC::ParamTraits<IPC::Message>::Write(m, *creation_message_);
+}
+
+bool ResourceRawVarData::Read(PP_VarType type,
+                              const IPC::Message* m,
+                              PickleIterator* iter) {
+  int value;
+  if (!m->ReadInt(iter, &value))
+    return false;
+  pp_resource_ = static_cast<PP_Resource>(value);
+  if (!m->ReadInt(iter, &pending_renderer_host_id_))
+    return false;
+  if (!m->ReadInt(iter, &pending_browser_host_id_))
+    return false;
+  bool has_creation_message;
+  if (!m->ReadBool(iter, &has_creation_message))
+    return false;
+  if (has_creation_message) {
+    creation_message_.reset(new IPC::Message());
+    if (!IPC::ParamTraits<IPC::Message>::Read(m, iter, creation_message_.get()))
+      return false;
+  } else {
+    creation_message_.reset();
   }
   return true;
 }

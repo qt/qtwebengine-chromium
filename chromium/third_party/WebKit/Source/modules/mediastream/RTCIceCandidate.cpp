@@ -35,16 +35,15 @@
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "public/platform/WebRTCICECandidate.h"
 
 namespace WebCore {
 
-PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary, ExceptionState& es)
+PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary, ExceptionState& exceptionState)
 {
     String candidate;
     bool ok = dictionary.get("candidate", candidate);
     if (!ok || !candidate.length()) {
-        es.throwDOMException(TypeMismatchError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
 
@@ -54,22 +53,18 @@ PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary
     unsigned short sdpMLineIndex = 0;
     dictionary.get("sdpMLineIndex", sdpMLineIndex);
 
-    return adoptRef(new RTCIceCandidate(WebKit::WebRTCICECandidate(candidate, sdpMid, sdpMLineIndex)));
+    return adoptRef(new RTCIceCandidate(blink::WebRTCICECandidate(candidate, sdpMid, sdpMLineIndex)));
 }
 
-PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(WebKit::WebRTCICECandidate webCandidate)
+PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(blink::WebRTCICECandidate webCandidate)
 {
     return adoptRef(new RTCIceCandidate(webCandidate));
 }
 
-RTCIceCandidate::RTCIceCandidate(WebKit::WebRTCICECandidate webCandidate)
+RTCIceCandidate::RTCIceCandidate(blink::WebRTCICECandidate webCandidate)
     : m_webCandidate(webCandidate)
 {
     ScriptWrappable::init(this);
-}
-
-RTCIceCandidate::~RTCIceCandidate()
-{
 }
 
 String RTCIceCandidate::candidate() const
@@ -87,7 +82,7 @@ unsigned short RTCIceCandidate::sdpMLineIndex() const
     return m_webCandidate.sdpMLineIndex();
 }
 
-WebKit::WebRTCICECandidate RTCIceCandidate::webCandidate()
+blink::WebRTCICECandidate RTCIceCandidate::webCandidate()
 {
     return m_webCandidate;
 }

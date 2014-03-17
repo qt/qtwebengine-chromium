@@ -32,35 +32,21 @@
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSFontSelector.h"
-#include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
-#include "core/css/MediaQueryEvaluator.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SelectorFilter.h"
-#include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/css/resolver/StyleResolver.h"
 #include "core/html/track/TextTrackCue.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 // -----------------------------------------------------------------
-
-static inline bool isDocumentScope(const ContainerNode* scope)
-{
-    return !scope || scope->isDocumentNode();
-}
-
-static inline bool isScopingNodeInShadowTree(const ContainerNode* scopingNode)
-{
-    return scopingNode && scopingNode->isInShadowTree();
-}
 
 static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector* selector)
 {
@@ -224,18 +210,27 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
 static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
 {
     bool foundSiblingSelector = false;
+    unsigned maxDirectAdjacentSelectors = 0;
     for (const CSSSelector* selector = ruleData.selector(); selector; selector = selector->tagHistory()) {
         features.collectFeaturesFromSelector(selector);
 
         if (const CSSSelectorList* selectorList = selector->selectorList()) {
             for (const CSSSelector* subSelector = selectorList->first(); subSelector; subSelector = CSSSelectorList::next(subSelector)) {
+                // FIXME: Shouldn't this be checking subSelector->isSiblingSelector()?
                 if (!foundSiblingSelector && selector->isSiblingSelector())
                     foundSiblingSelector = true;
+                if (subSelector->isDirectAdjacentSelector())
+                    maxDirectAdjacentSelectors++;
                 features.collectFeaturesFromSelector(subSelector);
             }
-        } else if (!foundSiblingSelector && selector->isSiblingSelector())
-            foundSiblingSelector = true;
+        } else {
+            if (!foundSiblingSelector && selector->isSiblingSelector())
+                foundSiblingSelector = true;
+            if (selector->isDirectAdjacentSelector())
+                maxDirectAdjacentSelectors++;
+        }
     }
+    features.setMaxDirectAdjacentSelectors(maxDirectAdjacentSelectors);
     if (foundSiblingSelector)
         features.siblingRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
     if (ruleData.containsUncommonAttributeSelector())
@@ -263,8 +258,7 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& rule
         return true;
     }
     if (component->isCustomPseudoElement()) {
-        StringImpl* pseudoValue = component->pseudoType() == CSSSelector::PseudoPart ? component->argument().impl() : component->value().impl();
-        addToRuleSet(pseudoValue, ensurePendingRules()->shadowPseudoElementRules, ruleData);
+        addToRuleSet(component->value().impl(), ensurePendingRules()->shadowPseudoElementRules, ruleData);
         return true;
     }
     if (component->pseudoType() == CSSSelector::PseudoCue) {
@@ -325,6 +319,18 @@ void RuleSet::addViewportRule(StyleRuleViewport* rule)
     m_viewportRules.append(rule);
 }
 
+void RuleSet::addFontFaceRule(StyleRuleFontFace* rule)
+{
+    ensurePendingRules(); // So that m_fontFaceRules.shrinkToFit() gets called.
+    m_fontFaceRules.append(rule);
+}
+
+void RuleSet::addKeyframesRule(StyleRuleKeyframes* rule)
+{
+    ensurePendingRules(); // So that m_keyframesRules.shrinkToFit() gets called.
+    m_keyframesRules.append(rule);
+}
+
 void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin)
 {
     ensurePendingRules(); // So that m_regionSelectorsAndRuleSets.shrinkToFit() gets called.
@@ -338,11 +344,11 @@ void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurit
     // FIXME: Should this add other types of rules? (i.e. use addChildRules() directly?)
     const Vector<RefPtr<StyleRuleBase> >& childRules = regionRule->childRules();
     AddRuleFlags addRuleFlags = hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : RuleHasNoSpecialState;
-    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector | RuleIsInRegionRule);
+    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleIsInRegionRule | RuleCanUseFastCheckSelector);
     for (unsigned i = 0; i < childRules.size(); ++i) {
         StyleRuleBase* regionStylingRule = childRules[i].get();
         if (regionStylingRule->isStyleRule())
-            regionRuleSet->addStyleRule(static_cast<StyleRule*>(regionStylingRule), addRuleFlags);
+            regionRuleSet->addStyleRule(toStyleRule(regionStylingRule), addRuleFlags);
     }
     // Update the "global" rule count so that proper order is maintained
     m_ruleCount = regionRuleSet->m_ruleCount;
@@ -350,75 +356,57 @@ void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurit
     m_regionSelectorsAndRuleSets.append(RuleSetSelectorPair(regionRule->selectorList().first(), regionRuleSet.release()));
 }
 
-void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, StyleResolver* resolver, const ContainerNode* scope, bool hasDocumentSecurityOrigin, AddRuleFlags addRuleFlags)
+void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
 
         if (rule->isStyleRule()) {
-            StyleRule* styleRule = static_cast<StyleRule*>(rule);
+            StyleRule* styleRule = toStyleRule(rule);
 
             const CSSSelectorList& selectorList = styleRule->selectorList();
             for (size_t selectorIndex = 0; selectorIndex != kNotFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                if (selectorList.hasShadowDistributedAt(selectorIndex)) {
-                    if (isDocumentScope(scope))
-                        continue;
-                    resolver->ruleSets().shadowDistributedRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
-                } else
+                if (selectorList.hasCombinatorCrossingTreeBoundaryAt(selectorIndex)) {
+                    m_treeBoundaryCrossingRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
+                } else if (selectorList.hasShadowDistributedAt(selectorIndex)) {
+                    m_shadowDistributedRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
+                } else {
                     addRule(styleRule, selectorIndex, addRuleFlags);
+                }
             }
-        } else if (rule->isPageRule())
-            addPageRule(static_cast<StyleRulePage*>(rule));
-        else if (rule->isMediaRule()) {
-            StyleRuleMedia* mediaRule = static_cast<StyleRuleMedia*>(rule);
-            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), resolver)))
-                addChildRules(mediaRule->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
-        } else if (rule->isFontFaceRule() && resolver) {
-            // Add this font face to our set.
-            // FIXME(BUG 72461): We don't add @font-face rules of scoped style sheets for the moment.
-            if (!isDocumentScope(scope))
-                continue;
-            const StyleRuleFontFace* fontFaceRule = static_cast<StyleRuleFontFace*>(rule);
-            resolver->fontSelector()->addFontFaceRule(fontFaceRule);
-            resolver->invalidateMatchedPropertiesCache();
-        } else if (rule->isKeyframesRule() && resolver) {
-            resolver->ensureScopedStyleResolver(scope)->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(rule));
-        } else if (rule->isRegionRule() && resolver) {
-            // FIXME (BUG 72472): We don't add @-webkit-region rules of scoped style sheets for the moment.
-            addRegionRule(static_cast<StyleRuleRegion*>(rule), hasDocumentSecurityOrigin);
-        } else if (rule->isHostRule() && resolver) {
-            if (!isScopingNodeInShadowTree(scope))
-                continue;
-            bool enabled = resolver->buildScopedStyleTreeInDocumentOrder();
-            resolver->setBuildScopedStyleTreeInDocumentOrder(false);
-            resolver->ensureScopedStyleResolver(scope->shadowHost())->addHostRule(static_cast<StyleRuleHost*>(rule), hasDocumentSecurityOrigin, scope);
-            resolver->setBuildScopedStyleTreeInDocumentOrder(enabled);
+        } else if (rule->isPageRule()) {
+            addPageRule(toStyleRulePage(rule));
+        } else if (rule->isMediaRule()) {
+            StyleRuleMedia* mediaRule = toStyleRuleMedia(rule);
+            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
+                addChildRules(mediaRule->childRules(), medium, addRuleFlags);
+        } else if (rule->isFontFaceRule()) {
+            addFontFaceRule(toStyleRuleFontFace(rule));
+        } else if (rule->isKeyframesRule()) {
+            addKeyframesRule(toStyleRuleKeyframes(rule));
+        } else if (rule->isRegionRule()) {
+            addRegionRule(toStyleRuleRegion(rule), addRuleFlags & RuleHasDocumentSecurityOrigin);
         } else if (rule->isViewportRule()) {
-            // @viewport should not be scoped.
-            if (!isDocumentScope(scope))
-                continue;
-            addViewportRule(static_cast<StyleRuleViewport*>(rule));
+            addViewportRule(toStyleRuleViewport(rule));
+        } else if (rule->isSupportsRule() && toStyleRuleSupports(rule)->conditionIsSupported()) {
+            addChildRules(toStyleRuleSupports(rule)->childRules(), medium, addRuleFlags);
         }
-        else if (rule->isSupportsRule() && static_cast<StyleRuleSupports*>(rule)->conditionIsSupported())
-            addChildRules(static_cast<StyleRuleSupports*>(rule)->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
     }
 }
 
-void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, StyleResolver* resolver, const ContainerNode* scope)
+void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
     ASSERT(sheet);
 
+    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector);
     const Vector<RefPtr<StyleRuleImport> >& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
-        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), resolver)))
-            addRulesFromSheet(importRule->styleSheet(), medium, resolver, scope);
+        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
+            addRulesFromSheet(importRule->styleSheet(), medium, addRuleFlags);
     }
 
-    bool hasDocumentSecurityOrigin = resolver && resolver->document().securityOrigin()->canRequest(sheet->baseURL());
-    AddRuleFlags addRuleFlags = static_cast<AddRuleFlags>((hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : 0) | (!scope ? RuleCanUseFastCheckSelector : 0));
-
-    addChildRules(sheet->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
+    addChildRules(sheet->childRules(), medium, addRuleFlags);
 }
 
 void RuleSet::addStyleRule(StyleRule* rule, AddRuleFlags addRuleFlags)
@@ -459,6 +447,10 @@ void RuleSet::compactRules()
     m_universalRules.shrinkToFit();
     m_pageRules.shrinkToFit();
     m_viewportRules.shrinkToFit();
+    m_fontFaceRules.shrinkToFit();
+    m_keyframesRules.shrinkToFit();
+    m_treeBoundaryCrossingRules.shrinkToFit();
+    m_shadowDistributedRules.shrinkToFit();
 }
 
 } // namespace WebCore

@@ -33,10 +33,8 @@
 
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
-#include "core/dom/Node.h"
 #include "core/dom/StaticNodeList.h"
 #include "wtf/HashMap.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -62,14 +60,14 @@ ChildListMutationAccumulator::~ChildListMutationAccumulator()
     accumulatorMap().remove(m_target.get());
 }
 
-PassRefPtr<ChildListMutationAccumulator> ChildListMutationAccumulator::getOrCreate(Node* target)
+PassRefPtr<ChildListMutationAccumulator> ChildListMutationAccumulator::getOrCreate(Node& target)
 {
-    AccumulatorMap::AddResult result = accumulatorMap().add(target, 0);
+    AccumulatorMap::AddResult result = accumulatorMap().add(&target, 0);
     RefPtr<ChildListMutationAccumulator> accumulator;
     if (!result.isNewEntry)
         accumulator = result.iterator->value;
     else {
-        accumulator = adoptRef(new ChildListMutationAccumulator(target, MutationObserverInterestGroup::createForChildListMutation(target)));
+        accumulator = adoptRef(new ChildListMutationAccumulator(PassRefPtr<Node>(target), MutationObserverInterestGroup::createForChildListMutation(target)));
         result.iterator->value = accumulator.get();
     }
     return accumulator.release();

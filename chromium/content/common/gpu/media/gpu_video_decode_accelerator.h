@@ -5,16 +5,20 @@
 #ifndef CONTENT_COMMON_GPU_MEDIA_GPU_VIDEO_DECODE_ACCELERATOR_H_
 #define CONTENT_COMMON_GPU_MEDIA_GPU_VIDEO_DECODE_ACCELERATOR_H_
 
+#include <map>
 #include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
+#include "base/synchronization/waitable_event.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/media/video_decode_accelerator_impl.h"
+#include "gpu/command_buffer/service/texture_manager.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "media/video/video_decode_accelerator.h"
+#include "ui/gfx/size.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -35,7 +39,6 @@ class GpuVideoDecodeAccelerator
       int32 host_route_id,
       GpuCommandBufferStub* stub,
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
-  virtual ~GpuVideoDecodeAccelerator();
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -68,20 +71,23 @@ class GpuVideoDecodeAccelerator
  private:
   class MessageFilter;
 
+  // We only allow self-delete, from OnWillDestroyStub(), after cleanup there.
+  virtual ~GpuVideoDecodeAccelerator();
+
   // Handlers for IPC messages.
   void OnDecode(base::SharedMemoryHandle handle, int32 id, uint32 size);
-  void OnAssignPictureBuffers(
-      const std::vector<int32>& buffer_ids,
-      const std::vector<uint32>& texture_ids,
-      const std::vector<gfx::Size>& sizes);
-  void OnReusePictureBuffer(
-      int32 picture_buffer_id);
+  void OnAssignPictureBuffers(const std::vector<int32>& buffer_ids,
+                              const std::vector<uint32>& texture_ids);
+  void OnReusePictureBuffer(int32 picture_buffer_id);
   void OnFlush();
   void OnReset();
   void OnDestroy();
 
   // Called on IO thread when |filter_| has been removed.
   void OnFilterRemoved();
+
+  // Sets the texture to cleared.
+  void SetTextureCleared(const media::Picture& picture);
 
   // Message to Send() when initialization is done.  Is only non-NULL during
   // initialization and is owned by the IPC channel underlying the
@@ -101,11 +107,18 @@ class GpuVideoDecodeAccelerator
   // Returns false if failed.
   base::Callback<bool(void)> make_context_current_;
 
+  // The texture dimensions as requested by ProvidePictureBuffers().
+  gfx::Size texture_dimensions_;
+
   // The texture target as requested by ProvidePictureBuffers().
   uint32 texture_target_;
 
   // The message filter to run VDA::Decode on IO thread if VDA supports it.
   scoped_refptr<MessageFilter> filter_;
+
+  // Used to wait on for |filter_| to be removed, before we can safely
+  // destroy the VDA.
+  base::WaitableEvent filter_removed_;
 
   // GPU child message loop.
   scoped_refptr<base::MessageLoopProxy> child_message_loop_;
@@ -115,6 +128,14 @@ class GpuVideoDecodeAccelerator
 
   // Weak pointers will be invalidated on IO thread.
   base::WeakPtrFactory<Client> weak_factory_for_io_;
+
+  // Protects |uncleared_textures_| when DCHECK is on. This is for debugging
+  // only. We don't want to hold a lock on IO thread. When DCHECK is off,
+  // |uncleared_textures_| is only accessed from the child thread.
+  base::Lock debug_uncleared_textures_lock_;
+
+  // A map from picture buffer ID to TextureRef that have not been cleared.
+  std::map<int32, scoped_refptr<gpu::gles2::TextureRef> > uncleared_textures_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GpuVideoDecodeAccelerator);
 };

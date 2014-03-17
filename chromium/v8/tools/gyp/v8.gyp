@@ -28,6 +28,7 @@
 {
   'variables': {
     'v8_code': 1,
+    'v8_random_seed%': 314159265,
   },
   'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
   'targets': [
@@ -112,10 +113,15 @@
           'dependencies': [
             'mksnapshot.<(v8_target_arch)#host',
             'js2c#host',
+            'generate_trig_table#host',
           ],
         }, {
           'toolsets': ['target'],
-          'dependencies': ['mksnapshot.<(v8_target_arch)', 'js2c'],
+          'dependencies': [
+            'mksnapshot.<(v8_target_arch)',
+            'js2c',
+            'generate_trig_table',
+          ],
         }],
         ['component=="shared_library"', {
           'defines': [
@@ -139,6 +145,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
       ],
       'actions': [
@@ -154,6 +161,11 @@
             'mksnapshot_flags': [
               '--log-snapshot-positions',
               '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
+            ],
+            'conditions': [
+              ['v8_random_seed!=0', {
+                'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
+              }],
             ],
           },
           'action': [
@@ -176,15 +188,16 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
         '../../src/snapshot-empty.cc',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
-          'dependencies': ['js2c#host'],
+          'dependencies': ['js2c#host', 'generate_trig_table#host'],
         }, {
           'toolsets': ['target'],
-          'dependencies': ['js2c'],
+          'dependencies': ['js2c', 'generate_trig_table'],
         }],
         ['component=="shared_library"', {
           'defines': [
@@ -192,6 +205,32 @@
             'V8_SHARED',
           ],
         }],
+      ]
+    },
+    { 'target_name': 'generate_trig_table',
+      'type': 'none',
+      'conditions': [
+        ['want_separate_host_toolset==1', {
+          'toolsets': ['host'],
+        }, {
+          'toolsets': ['target'],
+        }],
+      ],
+      'actions': [
+        {
+          'action_name': 'generate',
+          'inputs': [
+            '../../tools/generate-trig-table.py',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
+          ],
+          'action': [
+            'python',
+            '../../tools/generate-trig-table.py',
+            '<@(_outputs)',
+          ],
+        },
       ]
     },
     {
@@ -208,6 +247,10 @@
         '../../src/accessors.h',
         '../../src/allocation.cc',
         '../../src/allocation.h',
+        '../../src/allocation-site-scopes.cc',
+        '../../src/allocation-site-scopes.h',
+        '../../src/allocation-tracker.cc',
+        '../../src/allocation-tracker.h',
         '../../src/api.cc',
         '../../src/api.h',
         '../../src/apiutils.h',
@@ -270,6 +313,8 @@
         '../../src/debug-agent.h',
         '../../src/debug.cc',
         '../../src/debug.h',
+        '../../src/default-platform.cc',
+        '../../src/default-platform.h',
         '../../src/deoptimizer.cc',
         '../../src/deoptimizer.h',
         '../../src/disasm.h',
@@ -289,6 +334,8 @@
         '../../src/execution.h',
         '../../src/extensions/externalize-string-extension.cc',
         '../../src/extensions/externalize-string-extension.h',
+        '../../src/extensions/free-buffer-extension.cc',
+        '../../src/extensions/free-buffer-extension.h',
         '../../src/extensions/gc-extension.cc',
         '../../src/extensions/gc-extension.h',
         '../../src/extensions/statistics-extension.cc',
@@ -333,16 +380,17 @@
         '../../src/hydrogen-bch.h',
         '../../src/hydrogen-canonicalize.cc',
         '../../src/hydrogen-canonicalize.h',
+        '../../src/hydrogen-check-elimination.cc',
+        '../../src/hydrogen-check-elimination.h',
         '../../src/hydrogen-dce.cc',
         '../../src/hydrogen-dce.h',
         '../../src/hydrogen-dehoist.cc',
         '../../src/hydrogen-dehoist.h',
-        '../../src/hydrogen-deoptimizing-mark.cc',
-        '../../src/hydrogen-deoptimizing-mark.h',
         '../../src/hydrogen-environment-liveness.cc',
         '../../src/hydrogen-environment-liveness.h',
         '../../src/hydrogen-escape-analysis.cc',
         '../../src/hydrogen-escape-analysis.h',
+        '../../src/hydrogen-flow-engine.h',
         '../../src/hydrogen-instructions.cc',
         '../../src/hydrogen-instructions.h',
         '../../src/hydrogen.cc',
@@ -353,8 +401,12 @@
         '../../src/hydrogen-infer-representation.h',
         '../../src/hydrogen-infer-types.cc',
         '../../src/hydrogen-infer-types.h',
+        '../../src/hydrogen-load-elimination.cc',
+        '../../src/hydrogen-load-elimination.h',
         '../../src/hydrogen-mark-deoptimize.cc',
         '../../src/hydrogen-mark-deoptimize.h',
+        '../../src/hydrogen-mark-unreachable.cc',
+        '../../src/hydrogen-mark-unreachable.h',
         '../../src/hydrogen-minus-zero.cc',
         '../../src/hydrogen-minus-zero.h',
         '../../src/hydrogen-osr.cc',
@@ -397,6 +449,8 @@
         '../../src/lithium-allocator-inl.h',
         '../../src/lithium-allocator.cc',
         '../../src/lithium-allocator.h',
+        '../../src/lithium-codegen.cc',
+        '../../src/lithium-codegen.h',
         '../../src/lithium.cc',
         '../../src/lithium.h',
         '../../src/liveedit.cc',
@@ -409,8 +463,6 @@
         '../../src/macro-assembler.h',
         '../../src/mark-compact.cc',
         '../../src/mark-compact.h',
-        '../../src/marking-thread.h',
-        '../../src/marking-thread.cc',
         '../../src/messages.cc',
         '../../src/messages.h',
         '../../src/natives.h',
@@ -430,7 +482,6 @@
         '../../src/platform/elapsed-timer.h',
         '../../src/platform/time.cc',
         '../../src/platform/time.h',
-        '../../src/platform-posix.h',
         '../../src/platform.h',
         '../../src/platform/condition-variable.cc',
         '../../src/platform/condition-variable.h',
@@ -804,6 +855,9 @@
           ]},
         ],
         ['OS=="win"', {
+          'defines': [
+            '_CRT_RAND_S'  # for rand_s()
+          ],
           'variables': {
             'gyp_generators': '<!(echo $GYP_GENERATORS)',
           },
@@ -855,8 +909,8 @@
         }],
         ['v8_enable_i18n_support==1', {
           'dependencies': [
-            '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
-            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+            '<(icu_gyp_path):icui18n',
+            '<(icu_gyp_path):icuuc',
           ]
         }, {  # v8_enable_i18n_support==0
           'sources!': [
@@ -866,7 +920,13 @@
         }],
         ['OS=="win" and v8_enable_i18n_support==1', {
           'dependencies': [
-            '<(DEPTH)/third_party/icu/icu.gyp:icudata',
+            '<(icu_gyp_path):icudata',
+          ],
+        }],
+        ['v8_use_default_platform==0', {
+          'sources!': [
+            '../../src/default-platform.cc',
+            '../../src/default-platform.h',
           ],
         }],
       ],
@@ -918,10 +978,12 @@
           '../../src/proxy.js',
           '../../src/collection.js',
           '../../src/object-observe.js',
+          '../../src/promise.js',
           '../../src/generator.js',
           '../../src/array-iterator.js',
           '../../src/harmony-string.js',
           '../../src/harmony-array.js',
+          '../../src/harmony-math.js'
         ],
       },
       'actions': [

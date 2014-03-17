@@ -12,6 +12,7 @@
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
+#include "ui/message_center/views/message_center_controller.h"
 #include "ui/message_center/views/message_center_view.h"
 #include "ui/message_center/views/notification_view.h"
 
@@ -31,68 +32,57 @@ class MockNotificationView : public NotificationView {
  public:
   class Test {
    public:
-    virtual void RegisterCall(int receiver_id, CallType type) = 0;
+    virtual void RegisterCall(CallType type) = 0;
   };
 
-  explicit MockNotificationView(const Notification& notification,
-                                MessageCenter* message_center,
-                                Test* test,
-                                int view_id);
+  explicit MockNotificationView(MessageCenterController* controller,
+                                const Notification& notification,
+                                Test* test);
   virtual ~MockNotificationView();
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual int GetHeightForWidth(int w) OVERRIDE;
   virtual void Layout() OVERRIDE;
 
-  int get_id() { return id_; };
-
  private:
-  void RegisterCall(CallType type);
-
   Test* test_;
-  int id_;
 
   DISALLOW_COPY_AND_ASSIGN(MockNotificationView);
 };
 
-MockNotificationView::MockNotificationView(const Notification& notification,
-                                           MessageCenter* message_center,
-                                           Test* test,
-                                           int view_id)
-    : NotificationView(notification, message_center, NULL, true),
-      test_(test),
-      id_(view_id) {
+MockNotificationView::MockNotificationView(MessageCenterController* controller,
+                                           const Notification& notification,
+                                           Test* test)
+    : NotificationView(controller, notification, true),
+      test_(test) {
 }
 
 MockNotificationView::~MockNotificationView() {
 }
 
 gfx::Size MockNotificationView::GetPreferredSize() {
-  RegisterCall(GET_PREFERRED_SIZE);
-  return child_count() ? NotificationView::GetPreferredSize() :
-                         gfx::Size(id_, id_);
+  test_->RegisterCall(GET_PREFERRED_SIZE);
+  DCHECK(child_count() > 0);
+  return NotificationView::GetPreferredSize();
 }
 
 int MockNotificationView::GetHeightForWidth(int width) {
-  RegisterCall(GET_HEIGHT_FOR_WIDTH);
-  return child_count() ? NotificationView::GetHeightForWidth(width) : (id_);
+  test_->RegisterCall(GET_HEIGHT_FOR_WIDTH);
+  DCHECK(child_count() > 0);
+  return NotificationView::GetHeightForWidth(width);
 }
 
 void MockNotificationView::Layout() {
-  RegisterCall(LAYOUT);
-  if (child_count())
-    NotificationView::Layout();
-}
-
-void MockNotificationView::RegisterCall(CallType type) {
-  if (test_)
-    test_->RegisterCall(id_, type);
+  test_->RegisterCall(LAYOUT);
+  DCHECK(child_count() > 0);
+  NotificationView::Layout();
 }
 
 /* Test fixture ***************************************************************/
 
 class MessageCenterViewTest : public testing::Test,
-                              public MockNotificationView::Test {
+                              public MockNotificationView::Test,
+                              public MessageCenterController {
  public:
   MessageCenterViewTest();
   virtual ~MessageCenterViewTest();
@@ -104,7 +94,24 @@ class MessageCenterViewTest : public testing::Test,
   int GetNotificationCount();
   int GetCallCount(CallType type);
 
-  virtual void RegisterCall(int receiver_id, CallType type) OVERRIDE;
+ // Overridden from MessageCenterController:
+  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
+  virtual void RemoveNotification(const std::string& notification_id,
+                                  bool by_user) OVERRIDE;
+  virtual void DisableNotificationsFromThisSource(
+      const NotifierId& notifier_id) OVERRIDE;
+  virtual void ShowNotifierSettingsBubble() OVERRIDE;
+  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
+  virtual void ClickOnNotificationButton(const std::string& notification_id,
+                                         int button_index) OVERRIDE;
+  virtual void ExpandNotification(const std::string& notification_id) OVERRIDE;
+  virtual void GroupBodyClicked(const std::string& last_notification_id)
+      OVERRIDE;
+  virtual void ExpandGroup(const NotifierId& notifier_id) OVERRIDE;
+  virtual void RemoveGroup(const NotifierId& notifier_id) OVERRIDE;
+
+  // Overridden from MockNotificationView::Test
+  virtual void RegisterCall(CallType type) OVERRIDE;
 
   void LogBounds(int depth, views::View* view);
 
@@ -150,8 +157,8 @@ void MessageCenterViewTest::SetUp() {
   // MessageListView and replace it with an instrumented MockNotificationView
   // that will become owned by the MessageListView.
   MockNotificationView* mock;
-  mock = new MockNotificationView(notification, &message_center_, this, 42);
-  message_center_view_->message_views_.push_back(mock);
+  mock = new MockNotificationView(this, notification, this);
+  message_center_view_->notification_views_[notification.id()] = mock;
   message_center_view_->SetNotificationViewForTest(mock);
 }
 
@@ -171,7 +178,65 @@ int MessageCenterViewTest::GetCallCount(CallType type) {
   return callCounts_[type];
 }
 
-void MessageCenterViewTest::RegisterCall(int receiver_id, CallType type) {
+void MessageCenterViewTest::ClickOnNotification(
+    const std::string& notification_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::RemoveNotification(
+    const std::string& notification_id,
+    bool by_user) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::DisableNotificationsFromThisSource(
+    const NotifierId& notifier_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::ShowNotifierSettingsBubble() {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+bool MessageCenterViewTest::HasClickedListener(
+    const std::string& notification_id) {
+  return true;
+}
+
+void MessageCenterViewTest::ClickOnNotificationButton(
+    const std::string& notification_id,
+    int button_index) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::ExpandNotification(
+    const std::string& notification_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::GroupBodyClicked(
+    const std::string& last_notification_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::ExpandGroup(const NotifierId& notifier_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::RemoveGroup(const NotifierId& notifier_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::RegisterCall(CallType type) {
   callCounts_[type] += 1;
 }
 

@@ -44,24 +44,25 @@ class DOMError;
 class MIDIAccess;
 class MIDIErrorCallback;
 class MIDISuccessCallback;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 struct MIDIOptions;
 
 class MIDIAccessPromise : public RefCounted<MIDIAccessPromise>, public ScriptWrappable, public ActiveDOMObject {
 public:
-    static PassRefPtr<MIDIAccessPromise> create(ScriptExecutionContext*, const Dictionary&);
+    static PassRefPtr<MIDIAccessPromise> create(ExecutionContext*, const Dictionary&);
     virtual ~MIDIAccessPromise();
 
-    void then(PassRefPtr<MIDISuccessCallback>, PassRefPtr<MIDIErrorCallback>);
-
     // ActiveDOMObject
-    virtual bool canSuspend() const OVERRIDE { return true; }
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() OVERRIDE;
 
     MIDIOptions* options() { return m_options.get(); }
 
     void fulfill();
     void reject(PassRefPtr<DOMError>);
+
+    void then(PassOwnPtr<MIDISuccessCallback>, PassOwnPtr<MIDIErrorCallback>);
 
 private:
     enum State {
@@ -71,11 +72,13 @@ private:
         Invoked,
     };
 
-    MIDIAccessPromise(ScriptExecutionContext*, const Dictionary&);
+    MIDIAccessPromise(ExecutionContext*, const Dictionary&);
+
+    void clear();
 
     State m_state;
-    RefPtr<MIDISuccessCallback> m_successCallback;
-    RefPtr<MIDIErrorCallback> m_errorCallback;
+    OwnPtr<MIDISuccessCallback> m_successCallback;
+    OwnPtr<MIDIErrorCallback> m_errorCallback;
     OwnPtr<MIDIOptions> m_options;
     RefPtr<DOMError> m_error;
     RefPtr<MIDIAccess> m_access;

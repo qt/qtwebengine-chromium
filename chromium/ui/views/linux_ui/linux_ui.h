@@ -6,6 +6,7 @@
 #define UI_VIEWS_LINUX_UI_LINUX_UI_H_
 
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/ime/linux/linux_input_method_context_factory.h"
 #include "ui/shell_dialogs/linux_shell_dialog.h"
 #include "ui/views/linux_ui/status_icon_linux.h"
 #include "ui/views/views_export.h"
@@ -31,7 +32,8 @@ class WindowButtonOrderObserver;
 // minimum) GTK2 and GTK3. LinuxUI::instance() should actually be a very
 // complex method that pokes around with dlopen against a libuigtk2.so, a
 // liuigtk3.so, etc.
-class VIEWS_EXPORT LinuxUI : public ui::LinuxShellDialog {
+class VIEWS_EXPORT LinuxUI : public ui::LinuxInputMethodContextFactory,
+                             public ui::LinuxShellDialog {
  public:
   virtual ~LinuxUI() {}
 
@@ -45,15 +47,29 @@ class VIEWS_EXPORT LinuxUI : public ui::LinuxShellDialog {
   // running with the "--ash" flag.)
   static LinuxUI* instance();
 
-  // Returns an themed image per theme_provider.h
-  virtual bool UseNativeTheme() const = 0;
+  virtual void Initialize() = 0;
+
+  // Returns a themed image per theme_provider.h
   virtual gfx::Image GetThemeImageNamed(int id) const = 0;
   virtual bool GetColor(int id, SkColor* color) const = 0;
   virtual bool HasCustomImage(int id) const = 0;
 
+  // Returns the preferences that we pass to WebKit.
+  virtual SkColor GetFocusRingColor() const = 0;
+  virtual SkColor GetThumbActiveColor() const = 0;
+  virtual SkColor GetThumbInactiveColor() const = 0;
+  virtual SkColor GetTrackColor() const = 0;
+  virtual SkColor GetActiveSelectionBgColor() const = 0;
+  virtual SkColor GetActiveSelectionFgColor() const = 0;
+  virtual SkColor GetInactiveSelectionBgColor() const = 0;
+  virtual SkColor GetInactiveSelectionFgColor() const = 0;
+  virtual double GetCursorBlinkInterval() const = 0;
+
   // Returns a NativeTheme that will provide system colors and draw system
   // style widgets.
   virtual ui::NativeTheme* GetNativeTheme() const = 0;
+
+  virtual void SetUseSystemTheme(bool use_system_theme) = 0;
 
   // Returns whether we should be using the native theme provided by this
   // object by default.
@@ -72,6 +88,12 @@ class VIEWS_EXPORT LinuxUI : public ui::LinuxShellDialog {
       const gfx::ImageSkia& image,
       const string16& tool_tip) const = 0;
 
+  // Returns the icon for a given content type from the icon theme.
+  // TODO(davidben): Add an observer for the theme changing, so we can drop the
+  // caches.
+  virtual gfx::Image GetIconForContentType(
+      const std::string& content_type, int size) const = 0;
+
   // Notifies the observer about changes about how window buttons should be
   // laid out. If the order is anything other than the default min,max,close on
   // the right, will immediately send a button change event to the observer.
@@ -81,6 +103,9 @@ class VIEWS_EXPORT LinuxUI : public ui::LinuxShellDialog {
   // Removes the observer from the LinuxUI's list.
   virtual void RemoveWindowButtonOrderObserver(
       WindowButtonOrderObserver* observer) = 0;
+
+  // Determines whether the user's window manager is Unity.
+  virtual bool UnityIsRunning() = 0;
 };
 
 }  // namespace views

@@ -41,7 +41,7 @@
         ],
     },
     'includes': [
-        '../../Source/core/features.gypi',
+        '../../Source/build/features.gypi',
         '../../Source/testing/runner/runner.gypi',
         '../../Source/testing/plugin/plugin.gypi',
     ],
@@ -54,6 +54,7 @@
             ],
             'dependencies': [
                 'TestRunner_resources',
+                '../config.gyp:unittest_config',
                 '../../public/blink.gyp:blink',
                 '<(source_dir)/web/web.gyp:webkit_test_support',
             ],
@@ -112,49 +113,19 @@
                         ['exclude', 'Win\\.cpp$'],
                     ],
                 }],
+                ['OS=="mac"', {
+                  'link_settings': {
+                    'libraries': [
+                      '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
+                      '$(SDKROOT)/System/Library/Frameworks/ApplicationServices.framework',
+                      '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
+                      '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+                    ],
+                  },
+                }],
             ],
             # Disable c4267 warnings until we fix size_t to int truncations.
             'msvs_disabled_warnings': [ 4267, ],
-        },
-        {
-            # FIXME: This is only used by webkit_unit_tests now, move it to WebKitUnitTests.gyp.
-            'target_name': 'DumpRenderTree_resources',
-            'type': 'none',
-            'dependencies': [
-                '<(DEPTH)/net/net.gyp:net_resources',
-                '<(DEPTH)/ui/ui.gyp:ui_resources',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
-            ],
-            'actions': [{
-                'action_name': 'repack_local',
-                'variables': {
-                    'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-                    'pak_inputs': [
-                        '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
-                ]},
-                'inputs': [
-                    '<(repack_path)',
-                    '<@(pak_inputs)',
-                ],
-                'outputs': [
-                    '<(PRODUCT_DIR)/DumpRenderTree.pak',
-                ],
-                'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
-            }],
-            'conditions': [
-                ['OS=="mac"', {
-                    'all_dependent_settings': {
-                        'mac_bundle_resources': [
-                            '<(PRODUCT_DIR)/DumpRenderTree.pak',
-                        ],
-                    },
-                }],
-            ]
         },
         {
             'target_name': 'TestRunner_resources',
@@ -231,6 +202,7 @@
             'type': 'loadable_module',
             'sources': [ '<@(test_plugin_files)' ],
             'dependencies': [
+                '../config.gyp:unittest_config',
                 '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
             ],
             'include_dirs': [
@@ -333,10 +305,6 @@
         ['clang==1', {
             'target_defaults': {
                 # FIXME: Add -Wglobal-constructors after fixing existing bugs.
-                'cflags': ['-Wunused-parameter'],
-                'xcode_settings': {
-                    'WARNING_CFLAGS': ['-Wunused-parameter'],
-                },
             },
         }],
     ], # conditions

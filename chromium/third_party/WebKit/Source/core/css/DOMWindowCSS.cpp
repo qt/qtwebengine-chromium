@@ -31,8 +31,8 @@
 #include "core/css/DOMWindowCSS.h"
 
 #include "core/css/CSSParser.h"
+#include "core/css/RuntimeCSSEnabled.h"
 #include "core/css/StylePropertySet.h"
-#include "core/page/RuntimeCSSEnabled.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -75,12 +75,12 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
         return false;
 
     RefPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
-    return CSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, CSSStrictMode, 0);
+    return CSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
 }
 
 bool DOMWindowCSS::supports(const String& conditionText) const
 {
-    CSSParserContext context(CSSStrictMode);
+    CSSParserContext context(HTMLStandardMode);
     CSSParser parser(context);
     return parser.parseSupportsCondition(conditionText);
 }

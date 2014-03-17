@@ -27,60 +27,86 @@
 #include "core/dom/DecodedDataDocumentParser.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/DocumentEncodingData.h"
 #include "core/fetch/TextResourceDecoder.h"
 
 namespace WebCore {
 
 DecodedDataDocumentParser::DecodedDataDocumentParser(Document* document)
     : DocumentParser(document)
+    , m_hasAppendedData(false)
 {
 }
 
-size_t DecodedDataDocumentParser::appendBytes(const char* data, size_t length)
+DecodedDataDocumentParser::~DecodedDataDocumentParser()
+{
+}
+
+void DecodedDataDocumentParser::setDecoder(PassOwnPtr<TextResourceDecoder> decoder)
+{
+    m_decoder = decoder;
+}
+
+TextResourceDecoder* DecodedDataDocumentParser::decoder()
+{
+    return m_decoder.get();
+}
+
+void DecodedDataDocumentParser::setHasAppendedData()
+{
+    m_hasAppendedData = true;
+}
+
+void DecodedDataDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!length)
-        return 0;
+        return;
 
     // This should be checking isStopped(), but XMLDocumentParser prematurely
     // stops parsing when handling an XSLT processing instruction and still
     // needs to receive decoded bytes.
     if (isDetached())
-        return 0;
+        return;
 
-    String decoded = document()->decoder()->decode(data, length);
-    document()->setEncoding(document()->decoder()->encoding());
-
-    if (decoded.isEmpty())
-        return 0;
-
-    size_t consumedChars = decoded.length();
-    append(decoded.releaseImpl());
-
-    return consumedChars;
+    String decoded = m_decoder->decode(data, length);
+    updateDocument(decoded);
 }
 
-size_t DecodedDataDocumentParser::flush()
+void DecodedDataDocumentParser::flush()
 {
     // This should be checking isStopped(), but XMLDocumentParser prematurely
     // stops parsing when handling an XSLT processing instruction and still
     // needs to receive decoded bytes.
     if (isDetached())
-        return 0;
+        return;
 
     // null decoder indicates there is no data received.
     // We have nothing to do in that case.
-    TextResourceDecoder* decoder = document()->decoder();
-    if (!decoder)
-        return 0;
-    String remainingData = decoder->flush();
-    document()->setEncoding(document()->decoder()->encoding());
-    if (remainingData.isEmpty())
-        return 0;
+    if (!m_decoder)
+        return;
 
-    size_t consumedChars = remainingData.length();
-    append(remainingData.releaseImpl());
+    String remainingData = m_decoder->flush();
+    updateDocument(remainingData);
+}
 
-    return consumedChars;
+void DecodedDataDocumentParser::updateDocument(String& decodedData)
+{
+    DocumentEncodingData encodingData;
+    encodingData.encoding = m_decoder->encoding();
+    encodingData.wasDetectedHeuristically = m_decoder->encodingWasDetectedHeuristically();
+    encodingData.sawDecodingError = m_decoder->sawError();
+    document()->setEncodingData(encodingData);
+
+    if (decodedData.isEmpty())
+        return;
+
+    append(decodedData.releaseImpl());
+    // FIXME: Should be removed as part of https://code.google.com/p/chromium/issues/detail?id=319643
+    if (!m_hasAppendedData) {
+        m_hasAppendedData = true;
+        if (m_decoder->encoding().usesVisualOrdering())
+            document()->setVisuallyOrdered();
+    }
 }
 
 };

@@ -232,8 +232,8 @@ void NativeWidgetWin::GetWindowPlacement(
   *bounds = gfx::win::ScreenToDIPRect(*bounds);
 }
 
-void NativeWidgetWin::SetWindowTitle(const string16& title) {
-  message_handler_->SetTitle(title);
+bool NativeWidgetWin::SetWindowTitle(const string16& title) {
+  return message_handler_->SetTitle(title);
 }
 
 void NativeWidgetWin::SetWindowIcons(const gfx::ImageSkia& window_icon,
@@ -332,6 +332,10 @@ bool NativeWidgetWin::IsActive() const {
 
 void NativeWidgetWin::SetAlwaysOnTop(bool on_top) {
   message_handler_->SetAlwaysOnTop(on_top);
+}
+
+bool NativeWidgetWin::IsAlwaysOnTop() const {
+  return message_handler_->IsAlwaysOnTop();
 }
 
 void NativeWidgetWin::Maximize() {
@@ -435,13 +439,13 @@ gfx::Rect NativeWidgetWin::GetWorkAreaBoundsInScreen() const {
       GetNativeView()).work_area());
 }
 
-void NativeWidgetWin::SetInactiveRenderingDisabled(bool value) {
-}
-
 Widget::MoveLoopResult NativeWidgetWin::RunMoveLoop(
     const gfx::Vector2d& drag_offset,
-    Widget::MoveLoopSource source) {
-  return message_handler_->RunMoveLoop(drag_offset) ?
+    Widget::MoveLoopSource source,
+    Widget::MoveLoopEscapeBehavior escape_behavior) {
+  const bool hide_on_escape =
+      escape_behavior == Widget::MOVE_LOOP_ESCAPE_BEHAVIOR_HIDE;
+  return message_handler_->RunMoveLoop(drag_offset, hide_on_escape) ?
       Widget::MOVE_LOOP_SUCCESSFUL : Widget::MOVE_LOOP_CANCELED;
 }
 
@@ -736,7 +740,7 @@ void NativeWidgetWin::HandleClientSizeChanged(const gfx::Size& new_size) {
 
 void NativeWidgetWin::HandleFrameChanged() {
   // Replace the frame and layout the contents.
-  GetWidget()->non_client_view()->UpdateFrame(true);
+  GetWidget()->non_client_view()->UpdateFrame();
 }
 
 void NativeWidgetWin::HandleNativeFocus(HWND last_focused_window) {
@@ -765,7 +769,6 @@ bool NativeWidgetWin::HandleMouseEvent(const ui::MouseEvent& event) {
     delegate_->OnMouseEvent(&dpi_event);
     return dpi_event.handled();
   } else if (event.IsMouseEvent()) {
-    CHECK(!event.IsScrollEvent()); // Scroll events don't happen in Windows.
     ui::MouseEvent dpi_event(event);
     if (!(dpi_event.flags() & ui::EF_IS_NON_CLIENT))
       dpi_event.UpdateForRootTransform(scale_transform);
@@ -858,6 +861,11 @@ bool NativeWidgetWin::PreHandleMSG(UINT message,
 void NativeWidgetWin::PostHandleMSG(UINT message,
                                     WPARAM w_param,
                                     LPARAM l_param) {
+}
+
+bool NativeWidgetWin::HandleScrollEvent(const ui::ScrollEvent& event) {
+  delegate_->OnScrollEvent(const_cast<ui::ScrollEvent*>(&event));
+  return event.handled();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

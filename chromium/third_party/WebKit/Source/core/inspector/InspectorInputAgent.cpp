@@ -34,20 +34,18 @@
 #include "core/inspector/InspectorClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/PlatformEvent.h"
-#include "core/platform/PlatformKeyboardEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformTouchEvent.h"
-#include "core/platform/PlatformTouchPoint.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/JSONValues.h"
+#include "platform/PlatformKeyboardEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformTouchEvent.h"
+#include "platform/PlatformTouchPoint.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/text/WTFString.h"
 
 namespace {
 
@@ -270,8 +268,7 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
         event.append(point);
     }
 
-    EventHandler* handler = m_page->mainFrame()->eventHandler();
-    handler->handleTouchEvent(event);
+    m_page->mainFrame()->eventHandler().handleTouchEvent(event);
 }
 
 void InspectorInputAgent::dispatchGestureEvent(ErrorString*, const String& type, int x, int y, const double* timestamp, const int* deltaX, const int* deltaY, const double* scale)

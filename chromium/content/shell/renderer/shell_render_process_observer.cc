@@ -19,8 +19,8 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebFrame;
-using WebKit::WebRuntimeFeatures;
+using blink::WebFrame;
+using blink::WebRuntimeFeatures;
 using WebTestRunner::WebTestDelegate;
 using WebTestRunner::WebTestInterfaces;
 
@@ -77,6 +77,10 @@ void ShellRenderProcessObserver::WebKitInitialized() {
 
   test_interfaces_.reset(new WebTestInterfaces);
   test_interfaces_->resetAll();
+}
+
+void ShellRenderProcessObserver::OnRenderProcessShutdown() {
+  test_interfaces_.reset();
 }
 
 bool ShellRenderProcessObserver::OnControlMessageReceived(

@@ -32,15 +32,16 @@
 #include "ContextFeaturesClientImpl.h"
 
 #include "WebDocument.h"
+#include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
 #include "core/dom/Document.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
-class ContextFeaturesCache : public Supplement<ScriptExecutionContext> {
+class ContextFeaturesCache : public DocumentSupplement {
 public:
     class Entry {
     public:
@@ -101,10 +102,10 @@ const char* ContextFeaturesCache::supplementName()
 
 ContextFeaturesCache* ContextFeaturesCache::from(Document* document)
 {
-    ContextFeaturesCache* cache = static_cast<ContextFeaturesCache*>(Supplement<ScriptExecutionContext>::from(document, supplementName()));
+    ContextFeaturesCache* cache = static_cast<ContextFeaturesCache*>(DocumentSupplement::from(document, supplementName()));
     if (!cache) {
         cache = new ContextFeaturesCache();
-        Supplement<ScriptExecutionContext>::provideTo(document, supplementName(), adoptPtr(cache));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(cache));
     }
 
     return cache;
@@ -138,16 +139,44 @@ bool ContextFeaturesClientImpl::askIfIsEnabled(Document* document, ContextFeatur
     if (!m_client)
         return defaultValue;
 
+#if defined(WEBPERMISSIONCLIENT_USES_FRAME_FOR_ALL_METHODS)
+    WebFrameImpl* frame = WebFrameImpl::fromFrame(document->frame());
+    if (!frame)
+        return defaultValue;
+
+    if (frame->permissionClient()) {
+        switch (type) {
+        case ContextFeatures::StyleScoped:
+            return frame->permissionClient()->allowWebComponents(frame, defaultValue);
+        case ContextFeatures::MutationEvents:
+            return frame->permissionClient()->allowMutationEvents(frame, defaultValue);
+        case ContextFeatures::PushState:
+            return frame->permissionClient()->allowPushState(frame);
+        default:
+            return defaultValue;
+        }
+    }
+#endif
+
     switch (type) {
+#if defined(WEBPERMISSIONCLIENT_USES_FRAME_FOR_ALL_METHODS)
+    case ContextFeatures::StyleScoped:
+        return m_client->allowWebComponents(frame, defaultValue);
+    case ContextFeatures::MutationEvents:
+        return m_client->allowMutationEvents(frame, defaultValue);
+    case ContextFeatures::PushState:
+        return m_client->allowPushState(frame);
+#else
     case ContextFeatures::StyleScoped:
         return m_client->allowWebComponents(WebDocument(document), defaultValue);
     case ContextFeatures::MutationEvents:
         return m_client->allowMutationEvents(WebDocument(document), defaultValue);
     case ContextFeatures::PushState:
         return m_client->allowPushState(WebDocument(document));
+#endif
     default:
         return defaultValue;
     }
 }
 
-} // namespace WebKit
+} // namespace blink

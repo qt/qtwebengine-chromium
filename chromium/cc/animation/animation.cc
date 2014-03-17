@@ -14,9 +14,7 @@ namespace {
 
 // This should match the RunState enum.
 static const char* const s_runStateNames[] = {
-  "WaitingForNextTick",
   "WaitingForTargetAvailability",
-  "WaitingForStartTime",
   "WaitingForDeletion",
   "Starting",
   "Running",
@@ -32,7 +30,10 @@ COMPILE_ASSERT(static_cast<int>(cc::Animation::RunStateEnumSize) ==
 // This should match the TargetProperty enum.
 static const char* const s_targetPropertyNames[] = {
   "Transform",
-  "Opacity"
+  "Opacity",
+  "Filter",
+  "BackgroundColor",
+  "ScrollOffset"
 };
 
 COMPILE_ASSERT(static_cast<int>(cc::Animation::TargetPropertyEnumSize) ==
@@ -91,9 +92,7 @@ void Animation::SetRunState(RunState run_state, double monotonic_time) {
                  group_,
                  is_controlling_instance_ ? "(impl)" : "");
 
-  bool is_waiting_to_start = run_state_ == WaitingForNextTick ||
-                             run_state_ == WaitingForTargetAvailability ||
-                             run_state_ == WaitingForStartTime ||
+  bool is_waiting_to_start = run_state_ == WaitingForTargetAvailability ||
                              run_state_ == Starting;
 
   if (is_waiting_to_start && run_state == Running) {
@@ -153,7 +152,8 @@ bool Animation::IsFinishedAt(double monotonic_time) const {
          iterations_ >= 0 &&
          iterations_ * curve_->Duration() <= (monotonic_time -
                                               start_time() -
-                                              total_paused_time_);
+                                              total_paused_time_ +
+                                              time_offset_);
 }
 
 double Animation::TrimTimeToCurrentIteration(double monotonic_time) const {
@@ -210,12 +210,11 @@ double Animation::TrimTimeToCurrentIteration(double monotonic_time) const {
   return trimmed;
 }
 
-scoped_ptr<Animation> Animation::Clone(InstanceType instance_type) const {
-  return CloneAndInitialize(instance_type, run_state_, start_time_);
+scoped_ptr<Animation> Animation::Clone() const {
+  return CloneAndInitialize(run_state_, start_time_);
 }
 
-scoped_ptr<Animation> Animation::CloneAndInitialize(InstanceType instance_type,
-                                                    RunState initial_run_state,
+scoped_ptr<Animation> Animation::CloneAndInitialize(RunState initial_run_state,
                                                     double start_time) const {
   scoped_ptr<Animation> to_return(
       new Animation(curve_->Clone(), id_, group_, target_property_));
@@ -226,7 +225,8 @@ scoped_ptr<Animation> Animation::CloneAndInitialize(InstanceType instance_type,
   to_return->total_paused_time_ = total_paused_time_;
   to_return->time_offset_ = time_offset_;
   to_return->alternates_direction_ = alternates_direction_;
-  to_return->is_controlling_instance_ = instance_type == ControllingInstance;
+  DCHECK(!to_return->is_controlling_instance_);
+  to_return->is_controlling_instance_ = true;
   return to_return.Pass();
 }
 

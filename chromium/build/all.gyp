@@ -12,9 +12,11 @@
         'some.gyp:*',
         '../base/base.gyp:*',
         '../chrome/chrome.gyp:*',
+        '../components/components.gyp:*',
+        '../components/components_tests.gyp:*',
         '../content/content.gyp:*',
+        '../content/content_shell_and_tests.gyp:*',
         '../crypto/crypto.gyp:*',
-        '../mojo/mojo.gyp:*',
         '../net/net.gyp:*',
         '../sdch/sdch.gyp:*',
         '../sql/sql.gyp:*',
@@ -25,6 +27,7 @@
         '../third_party/libxml/libxml.gyp:*',
         '../third_party/sqlite/sqlite.gyp:*',
         '../third_party/zlib/zlib.gyp:*',
+        '../ui/accessibility/accessibility.gyp:*',
         '../ui/snapshot/snapshot.gyp:*',
         '../ui/ui.gyp:*',
         '../url/url.gyp:*',
@@ -33,15 +36,17 @@
         ['OS!="ios"', {
           'dependencies': [
             '../cc/cc_tests.gyp:*',
-            '../components/components.gyp:*',
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
             '../device/usb/usb.gyp:*',
+            '../gin/gin.gyp:*',
             '../gpu/gpu.gyp:*',
             '../gpu/tools/tools.gyp:*',
             '../ipc/ipc.gyp:*',
             '../jingle/jingle.gyp:*',
+            '../media/cast/cast.gyp:*',
             '../media/media.gyp:*',
+            '../mojo/mojo.gyp:*',
             '../ppapi/ppapi.gyp:*',
             '../ppapi/ppapi_internal.gyp:*',
             '../printing/printing.gyp:*',
@@ -62,15 +67,22 @@
             '../third_party/qcms/qcms.gyp:*',
             '../third_party/re2/re2.gyp:re2',
             '../third_party/WebKit/public/all.gyp:*',
+            '../tools/gn/gn.gyp:*',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
+            '../webkit/glue/webkit_glue.gyp:*',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:*',
-            '../webkit/support/webkit_support.gyp:*',
             '<(libjpeg_gyp_path):*',
           ],
         }, { #  'OS=="ios"'
           'dependencies': [
             '../ios/ios.gyp:*',
+            '../ui/ui_unittests.gyp:ui_unittests',
+          ],
+        }],
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            '../chrome/tools/profile_reset/jtl_compiler.gyp:*',
           ],
         }],
         ['os_posix==1 and OS!="android" and OS!="ios"', {
@@ -112,6 +124,11 @@
                 '../third_party/mtpd/mtpd.gyp:*',
               ],
             }],
+            ['enable_ipc_fuzzer==1', {
+              'dependencies': [
+                '../tools/ipc_fuzzer/ipc_fuzzer.gyp:*',
+              ],
+            }],
           ],
         }],
         ['use_x11==1', {
@@ -136,17 +153,16 @@
               'dependencies': [
                 # TODO(jschuh) Enable Win64 Memory Watcher. crbug.com/176877
                 '../tools/memory_watcher/memory_watcher.gyp:*',
-                # TODO(jschuh) Enable Win64 Chrome Frame. crbug.com/176875
-                '../chrome_frame/chrome_frame.gyp:*',
               ],
             }],
           ],
           'dependencies': [
+            '../chrome_elf/chrome_elf.gyp:*',
             '../cloud_print/cloud_print.gyp:*',
             '../courgette/courgette.gyp:*',
             '../rlz/rlz.gyp:*',
             '../sandbox/sandbox.gyp:*',
-            '../third_party/angle_dx11/src/build_angle.gyp:*',
+            '<(angle_path)/src/build_angle.gyp:*',
             '../third_party/bspatch/bspatch.gyp:*',
           ],
         }, {
@@ -186,6 +202,11 @@
             '../ui/app_list/app_list.gyp:*',
           ],
         }],
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            '../google_apis/gcm/gcm.gyp:*',
+          ],
+        }],
       ],
     }, # target_name: All
     {
@@ -193,11 +214,10 @@
       'type': 'none',
       'conditions': [
         ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
-            'dependencies': [
-              '../chrome/installer/mini_installer_syzygy.gyp:*',
-            ],
-          },
-        ],
+          'dependencies': [
+            '../chrome/installer/mini_installer_syzygy.gyp:*',
+          ],
+        }],
       ],
     }, # target_name: All_syzygy
     {
@@ -205,11 +225,12 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_unittests',
-        '../chrome/chrome.gyp:unit_tests',
+        '../components/components_tests.gyp:components_unittests',
         '../crypto/crypto.gyp:crypto_unittests',
         '../net/net.gyp:net_unittests',
         '../sql/sql.gyp:sql_unittests',
-        '../ui/ui.gyp:ui_unittests',
+        '../sync/sync.gyp:sync_unit_tests',
+        '../ui/ui_unittests.gyp:ui_unittests',
         '../url/url.gyp:url_unittests',
       ],
       'conditions': [
@@ -217,28 +238,31 @@
           'dependencies': [
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
-            '../chrome/chrome.gyp:chromedriver2_tests',
+            '../chrome/chrome.gyp:chromedriver_tests',
+            '../chrome/chrome.gyp:chromedriver_unittests',
+            # TODO(kkania): Remove these after infra no longer depends on them.
             '../chrome/chrome.gyp:chromedriver2_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
+            '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_shell',
-            '../content/content.gyp:content_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_shell',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
+            '../gin/gin.gyp:gin_unittests',
             '../google_apis/google_apis.gyp:google_apis_unittests',
             '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
+            '../mojo/mojo.gyp:mojo',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
-            '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
-            '../sync/sync.gyp:sync_unit_tests',
             '../third_party/WebKit/public/all.gyp:all_blink',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -251,7 +275,7 @@
             # mini_installer_tests depends on mini_installer. This should be
             # defined in installer.gyp.
             '../chrome/installer/mini_installer.gyp:mini_installer',
-            '../chrome_frame/chrome_frame.gyp:npchrome_frame',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf_unittests',
             '../courgette/courgette.gyp:courgette_unittests',
             '../sandbox/sandbox.gyp:sbox_integration_tests',
             '../sandbox/sandbox.gyp:sbox_unittests',
@@ -261,22 +285,6 @@
             '../ui/views/views.gyp:views_unittests',
           ],
           'conditions': [
-            ['target_arch!="x64"', {
-              'dependencies': [
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_perftests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_reliability_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_unittests',
-              ]
-            }, { # target_arch!="x64"
-              'dependencies!': [
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-              'defines': [
-                'OMIT_CHROME_FRAME',
-              ],
-            }], # target_arch=="x64"
             # remoting_host_installation uses lots of non-trivial GYP that tend
             # to break because of differences between ninja and msbuild. Make
             # sure this target is built by the builders on the main waterfall.
@@ -285,6 +293,29 @@
               'dependencies': [
                 '../remoting/remoting.gyp:remoting_host_installation',
               ],
+            }],
+            ['asan==1', {
+              'variables': {
+                # Disable incremental linking for all modules.
+                # 0: inherit, 1: disabled, 2: enabled.
+                'msvs_debug_link_incremental': '1',
+                'msvs_large_module_debug_link_mode': '1',
+                # Disable RTC. Syzygy explicitly doesn't support RTC
+                # instrumented binaries for now.
+                'win_debug_RuntimeChecks': '0',
+              },
+              'defines': [
+                # Disable iterator debugging (huge speed boost).
+                '_HAS_ITERATOR_DEBUGGING=0',
+              ],
+              'msvs_settings': {
+                'VCLinkerTool': {
+                  # Enable profile information (necessary for asan
+                  # instrumentation). This is incompatible with incremental
+                  # linking.
+                  'Profile': 'true',
+                },
+              }
             }],
           ],
         }],
@@ -305,6 +336,33 @@
             'chromium_swarm_tests',
           ],
         }],
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
+          ],
+        }],
+        ['enable_printing!=0', {
+          'dependencies': [
+            '../printing/printing.gyp:printing_unittests',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
+            '../ui/aura/aura.gyp:aura_unittests',
+            '../ui/compositor/compositor.gyp:compositor_unittests',
+            '../ui/keyboard/keyboard.gyp:keyboard_unittests',
+          ],
+        }],
+        ['use_aura==1 or toolkit_views==1', {
+          'dependencies': [
+            '../ui/events/events.gyp:events_unittests',
+          ],
+        }],
+        ['use_ash==1', {
+          'dependencies': [
+            '../ash/ash.gyp:ash_unittests',
+          ],
+        }],
       ],
     }, # target_name: chromium_builder_tests
     {
@@ -319,11 +377,41 @@
     ['OS!="ios"', {
       'targets': [
         {
-          'target_name': 'all_webkit',
+          'target_name': 'blink_tests',
           'type': 'none',
           'dependencies': [
             '../third_party/WebKit/public/all.gyp:all_blink',
-            '../content/content.gyp:content_shell',
+            '../content/content_shell_and_tests.gyp:content_shell',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '../content/content_shell_and_tests.gyp:content_shell_crash_service',
+              ],
+            }, {  # OS!="win"
+              'dependencies': [
+                '../breakpad/breakpad.gyp:minidump_stackwalk',
+              ],
+            }],
+            ['OS=="mac"', {
+              'dependencies': [
+                '../breakpad/breakpad.gyp:dump_syms#host',
+              ],
+            }],
+            ['OS=="linux"', {
+              'dependencies': [
+                '../breakpad/breakpad.gyp:dump_syms',
+              ],
+            }],
+          ],
+        }, # target_name: blink_tests
+        {
+          # TODO(jochen): Eventually remove this target after everybody and
+          # the bots started to use blink_tests only.
+          'target_name': 'all_webkit',
+          'type': 'none',
+          'dependencies': [
+            'blink_tests',
           ],
         }, # target_name: all_webkit
         {
@@ -338,11 +426,12 @@
           'target_name': 'chromium_builder_perf',
           'type': 'none',
           'dependencies': [
-            'chromium_builder_qa', # needed for pyauto
             '../cc/cc_tests.gyp:cc_perftests',
+            '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
+            '../media/media.gyp:media_perftests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
           ],
           'conditions': [
@@ -356,42 +445,86 @@
                 '../chrome/chrome.gyp:linux_symbols'
               ],
             }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         }, # target_name: chromium_builder_perf
         {
           'target_name': 'chromium_gpu_builder',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:gpu_tests',
+            '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_gl_tests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_gl_tests',
+            '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
             '../gpu/gpu.gyp:gl_tests',
+            '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
-            ['internal_gles2_conform_tests', {
+            ['OS!="ios" and OS!="win"', {
               'dependencies': [
-                '../gpu/gles2_conform_test/gles2_conform_test.gyp:gles2_conform_test',
+                '../breakpad/breakpad.gyp:minidump_stackwalk',
               ],
-            }], # internal_gles2_conform
+            }],
+            ['OS=="linux"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:linux_symbols'
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         }, # target_name: chromium_gpu_builder
         {
           'target_name': 'chromium_gpu_debug_builder',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:gpu_tests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_gl_tests',
+            '../chrome/chrome.gyp:chrome',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_gl_tests',
+            '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
             '../gpu/gpu.gyp:gl_tests',
+            '../gpu/gpu.gyp:angle_unittests',
           ],
           'conditions': [
-            ['internal_gles2_conform_tests', {
+            ['OS!="ios" and OS!="win"', {
               'dependencies': [
-                '../gpu/gles2_conform_test/gles2_conform_test.gyp:gles2_conform_test',
+                '../breakpad/breakpad.gyp:minidump_stackwalk',
               ],
-            }], # internal_gles2_conform
+            }],
+            ['OS=="linux"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:linux_symbols'
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         }, # target_name: chromium_gpu_debug_builder
         {
@@ -401,15 +534,9 @@
             '../chrome/chrome.gyp:chrome',
             # Dependencies of pyauto_functional tests.
             '../remoting/remoting.gyp:remoting_webapp',
+            '../chrome/chrome.gyp:pyautolib',
           ],
           'conditions': [
-            # If you change this condition, make sure you also change it
-            # in chrome_tests.gypi
-            ['enable_automation==1 and (OS=="mac" or ((OS=="win" or os_posix==1) and target_arch==python_arch))', {
-              'dependencies': [
-                '../chrome/chrome.gyp:pyautolib',
-              ],
-            }],
             ['OS=="mac"', {
               'dependencies': [
                 '../remoting/remoting.gyp:remoting_me2me_host_archive',
@@ -436,7 +563,7 @@
           'target_name': 'chromium_builder_perf_av',
           'type': 'none',
           'dependencies': [
-            'all_webkit', # to run layout tests
+            'blink_tests', # to run layout tests
             'chromium_builder_qa',  # needed for perf pyauto tests
           ],
         },  # target_name: chromium_builder_perf_av
@@ -449,8 +576,8 @@
           'dependencies': [
             'chromium_builder_qa',  # needed for perf pyauto tests
             '../chrome/chrome.gyp:browser_tests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../third_party/libjingle/libjingle.gyp:peerconnection_server',
             '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
             '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
@@ -467,9 +594,9 @@
           'target_name': 'chromium_builder_chromedriver',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:chromedriver2_server',
-            '../chrome/chrome.gyp:chromedriver2_tests',
-            '../chrome/chrome.gyp:chromedriver2_unittests',
+            '../chrome/chrome.gyp:chromedriver',
+            '../chrome/chrome.gyp:chromedriver_tests',
+            '../chrome/chrome.gyp:chromedriver_unittests',
           ],
         },  # target_name: chromium_builder_chromedriver
         {
@@ -478,14 +605,42 @@
           'dependencies': [
             '../chrome/chrome.gyp:chrome',
 
-            # We refer to content_shell directly rather than all_webkit
+            # We refer to content_shell directly rather than blink_tests
             # because we don't want the _unittests binaries.
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_shell',
-
-            '../net/net.gyp:dns_fuzz_stub',
-         ],
-       },
+            '../content/content_shell_and_tests.gyp:content_shell',
+          ],
+          'conditions': [
+            ['OS!="win"', {
+              'dependencies': [
+                '../net/net.gyp:dns_fuzz_stub',
+                '../skia/skia.gyp:filter_fuzz_stub',
+              ],
+            }],
+            ['OS=="linux" and enable_ipc_fuzzer==1', {
+              'dependencies': [
+                '../tools/ipc_fuzzer/ipc_fuzzer.gyp:*',
+              ],
+            }],
+            ['internal_filter_fuzzer==1', {
+              'dependencies': [
+                '../skia/tools/clusterfuzz-data/fuzzers/filter_fuzzer/filter_fuzzer.gyp:filter_fuzzer',
+              ],
+            }], # internal_filter_fuzzer
+            ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome_syzygy.gyp:chrome_dll_syzygy',
+                '../content/content_shell_and_tests.gyp:content_shell_syzyasan',
+              ],
+              'conditions': [
+                ['chrome_multiple_dll==1', {
+                  'dependencies': [
+                    '../chrome/chrome_syzygy.gyp:chrome_child_dll_syzygy',
+                  ],
+                }],
+              ],
+            }],
+          ],
+        },
       ],  # targets
     }],
     ['OS=="mac"', {
@@ -512,10 +667,11 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -527,9 +683,10 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -545,10 +702,11 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -559,9 +717,10 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -580,6 +739,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -599,21 +759,23 @@
             '../base/base.gyp:base_unittests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
             '../net/net.gyp:net_unittests',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
           ],
         },
@@ -638,15 +800,15 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             # mini_installer_tests depends on mini_installer. This should be
             # defined in installer.gyp.
             '../chrome/installer/mini_installer.gyp:mini_installer',
-            '../chrome_frame/chrome_frame.gyp:npchrome_frame',
             '../courgette/courgette.gyp:courgette_unittests',
             '../device/device_tests.gyp:device_unittests',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -657,48 +819,20 @@
             '../sql/sql.gyp:sql_unittests',
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/events/events.gyp:events_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
             '../third_party/WebKit/public/blink_test_plugin.gyp:blink_test_plugin',
           ],
-          'conditions': [
-             ['target_arch!="x64"', {
-               'dependencies': [
-                 '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-                 '../chrome_frame/chrome_frame.gyp:chrome_frame_perftests',
-                 '../chrome_frame/chrome_frame.gyp:chrome_frame_reliability_tests',
-                 '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-                 '../chrome_frame/chrome_frame.gyp:chrome_frame_unittests',
-               ]
-             }, { # target_arch!="x64"
-               'dependencies!': [
-                 '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-               ],
-               'defines': [
-                 'OMIT_CHROME_FRAME',
-               ],
-             }], # target_arch=="x64"
-          ],
         },
         {
           'target_name': 'chromium_builder_win_cf',
           'type': 'none',
-          'conditions': [
-            ['target_arch!="x64"', {
-              'dependencies': [
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_perftests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_reliability_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_unittests',
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-            }], # target_arch!="x64"
-          ],
         },
         {
           'target_name': 'chromium_builder_dbg_tsan_win',
@@ -706,8 +840,8 @@
           'dependencies': [
             '../base/base.gyp:base_unittests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
@@ -717,6 +851,7 @@
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -729,18 +864,20 @@
             '../chrome/chrome.gyp:unit_tests',
             '../chrome/chrome.gyp:browser_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
             '../net/net.gyp:net_unittests',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -749,7 +886,7 @@
           'target_name': 'webkit_builder_win',
           'type': 'none',
           'dependencies': [
-            'all_webkit',
+            'blink_tests',
           ],
         },
       ],  # targets
@@ -762,22 +899,16 @@
               'dependencies': [
                 '../chrome/chrome.gyp:crash_service',
                 '../chrome/chrome.gyp:gcapi_dll',
-                '../chrome/chrome.gyp:policy_templates',
+                '../chrome/chrome.gyp:pack_policy_templates',
                 '../courgette/courgette.gyp:courgette64',
                 '../chrome/installer/mini_installer.gyp:mini_installer',
                 '../courgette/courgette.gyp:courgette',
                 '../cloud_print/cloud_print.gyp:cloud_print',
                 '../remoting/remoting.gyp:remoting_webapp',
                 '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
+                '../chrome/chrome.gyp:pyautolib',
               ],
               'conditions': [
-                # If you change this condition, make sure you also change it
-                # in chrome_tests.gypi
-                ['enable_automation==1 and (OS=="mac" or (os_posix==1 and target_arch==python_arch))', {
-                  'dependencies': [
-                    '../chrome/chrome.gyp:pyautolib',
-                  ],
-                }],
                 ['internal_pdf', {
                   'dependencies': [
                     '../pdf/pdf.gyp:pdf',
@@ -786,7 +917,6 @@
                 ['target_arch=="ia32"', {
                   'dependencies': [
                     '../chrome/chrome.gyp:crash_service_win64',
-                    '../chrome_frame/chrome_frame.gyp:npchrome_frame',
                     # Omitting tests from Win64 to speed up cycle times.
                     '../chrome/chrome.gyp:interactive_ui_tests',
                   ],
@@ -797,11 +927,6 @@
                     '../remoting/remoting.gyp:remoting_host_installation',
                   ],
                 }], # component != "shared_library"
-                ['target_arch=="x64"', {
-                  'defines': [
-                    'OMIT_CHROME_FRAME',
-                  ],
-                }], # target_arch=="x64"
               ]
             },
           ], # targets
@@ -819,47 +944,30 @@
             '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:unit_tests',
-            '../components/components.gyp:components_unittests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_unittests',
+            '../components/components_tests.gyp:components_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../ui/app_list/app_list.gyp:*',
             '../ui/aura/aura.gyp:*',
             '../ui/compositor/compositor.gyp:*',
+            '../ui/events/events.gyp:*',
             '../ui/message_center/message_center.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/snapshot/snapshot.gyp:snapshot_unittests',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_examples_with_content_exe',
             '../ui/views/views.gyp:views_unittests',
             '../ui/keyboard/keyboard.gyp:*',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
-            'all_webkit',
+            'blink_tests',
           ],
           'conditions': [
             ['OS=="win"', {
               'dependencies': [
                 '../chrome/chrome.gyp:crash_service',
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-            }],
-            ['OS=="win" and target_arch!="x64"', {
-              'dependencies': [
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_perftests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_reliability_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_unittests',
-              ],
-            }],
-            ['OS=="win" and target_arch=="x64"', {
-              'dependencies!': [
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-              'defines': [
-                'OMIT_CHROME_FRAME',
               ],
             }],
             ['OS=="win" and target_arch=="ia32"', {
@@ -880,15 +988,6 @@
                 '../ipc/ipc.gyp:ipc_tests',
                 '../sql/sql.gyp:sql_unittests',
                 '../sync/sync.gyp:sync_unit_tests',
-              ],
-            }],
-            ['OS=="mac"', {
-              # Exclude dependencies that are not currently implemented.
-              'dependencies!': [
-                '../chrome/chrome.gyp:chrome',
-                '../chrome/chrome.gyp:unit_tests',
-                '../device/device_tests.gyp:device_unittests',
-                '../ui/views/views.gyp:views_unittests',
               ],
             }],
             ['chromeos==1', {

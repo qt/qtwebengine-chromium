@@ -436,6 +436,13 @@ BreakIterator::getLocaleID(ULocDataLocaleType type, UErrorCode& status) const {
     return locBased.getLocaleID(type, status);
 }
 
+// This implementation of getRuleStatus is a do-nothing stub, here to
+// provide a default implementation for any derived BreakIterator classes that
+// do not implement it themselves.
+int32_t BreakIterator::getRuleStatus() const {
+    return 0;
+}
+
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_BREAK_ITERATION */

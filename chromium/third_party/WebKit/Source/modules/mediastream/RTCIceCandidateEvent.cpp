@@ -26,7 +26,7 @@
 
 #include "modules/mediastream/RTCIceCandidateEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/RTCIceCandidate.h"
 
 namespace WebCore {
@@ -47,7 +47,7 @@ RTCIceCandidateEvent::RTCIceCandidateEvent()
 }
 
 RTCIceCandidateEvent::RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate> candidate)
-    : Event(eventNames().icecandidateEvent, canBubble, cancelable)
+    : Event(EventTypeNames::icecandidate, canBubble, cancelable)
     , m_candidate(candidate)
 {
     ScriptWrappable::init(this);
@@ -64,7 +64,7 @@ RTCIceCandidate* RTCIceCandidateEvent::candidate() const
 
 const AtomicString& RTCIceCandidateEvent::interfaceName() const
 {
-    return eventNames().interfaceForRTCIceCandidateEvent;
+    return EventNames::RTCIceCandidateEvent;
 }
 
 } // namespace WebCore

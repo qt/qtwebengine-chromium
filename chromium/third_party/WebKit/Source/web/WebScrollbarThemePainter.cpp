@@ -27,14 +27,14 @@
 
 #include "public/platform/WebScrollbarThemePainter.h"
 
-#include "core/platform/Scrollbar.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/scroll/Scrollbar.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/WebRect.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebScrollbarThemePainter::assign(const WebScrollbarThemePainter& painter)
 {
@@ -122,4 +122,4 @@ WebScrollbarThemePainter::WebScrollbarThemePainter(WebCore::ScrollbarTheme* them
 {
 }
 
-} // namespace WebKit
+} // namespace blink

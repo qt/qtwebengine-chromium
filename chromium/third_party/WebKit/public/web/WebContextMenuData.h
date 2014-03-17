@@ -42,7 +42,7 @@
 
 #define WEBCONTEXT_MEDIATYPEFILE_DEFINED
 
-namespace WebKit {
+namespace blink {
 
 // This struct is passed to WebViewClient::ShowContextMenu.
 struct WebContextMenuData {
@@ -137,7 +137,6 @@ struct WebContextMenuData {
 
     // Writing direction menu items - values are unions of
     // CheckableMenuItemFlags.
-    // Currently only used on OS X.
     int writingDirectionDefault;
     int writingDirectionLeftToRight;
     int writingDirectionRightToLeft;
@@ -182,6 +181,6 @@ struct WebContextMenuData {
         , editFlags(0) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

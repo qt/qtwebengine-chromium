@@ -29,6 +29,7 @@ class ResourceType {
     PREFETCH,        // an explicitly requested prefetch
     FAVICON,         // a favicon
     XHR,             // a XMLHttpRequest
+    PING,            // a ping request for <a ping>
     LAST_TYPE        // Place holder so we don't need to change ValidType
                      // everytime.
   };
@@ -42,7 +43,7 @@ class ResourceType {
   }
 
   WEBKIT_COMMON_EXPORT static Type FromTargetType(
-      WebKit::WebURLRequest::TargetType type);
+      blink::WebURLRequest::TargetType type);
 
   static bool IsFrame(ResourceType::Type type) {
     return type == MAIN_FRAME || type == SUB_FRAME;

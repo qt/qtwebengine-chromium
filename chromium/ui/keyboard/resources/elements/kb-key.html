@@ -5,22 +5,81 @@
   -->
 
 <polymer-element name="kb-key" extends="kb-key-base"
-    attributes="keyCode shiftModifier weight">
+    attributes="image imageSize keyCode keyName shiftModifier weight">
   <template>
     <style>
-      @host {
-        * {
-          -webkit-box-flex: {{weight}};
-        }
+      :host {
+        /* TODO(kevers): A regression in the Polymer library broke
+         * handling of {{}} in CSS rules. Switch back to
+         * "-webkit-box-flex: {{weight}}" once the regression is fixed
+         * (https://github.com/Polymer/polymer/issues/270). */
+        -webkit-box-flex: 100;
+        background-color: #3b3b3e;
+        /* TODO(rsadam): remove when {{}} regression is fixed */
+        background-image: none;
+        background-position: center center;
+        background-repeat: no-repeat;
+        /* TODO(rsadam): remove when {{}} regression is fixed */
+        background-size: 50%;
+        border-top: 2px solid #4b4b4e;
+        border-radius: 2px;
+        color: #ffffff;
+        display: -webkit-box;
+        font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
+        font-weight: 300;
+        margin-left: 0.25em;
+        position: relative;
+      }
+
+      ::part(key) {
+        bottom: 0;
+        height: 1.2em;
+        left: 0;
+        margin: auto;
+        padding-left: 0.7em;
+        padding-right: 0.7em;
+        position: absolute;
+        right: 0;
+        top: 0;
+      }
+
+      ::part(hint) {
+        color: #7c7c7c;
+        font-size: 70%;
+        position: absolute;
+        right: 7%;
+        top: 5%;
+      }
+
+      :host[invert] ::part(key) {
+        color: #7c7c7c;
+      }
+
+      :host[invert] ::part(hint) {
+        color: #ffffff;
       }
     </style>
-    <div id="key" pseudo="x-key" inverted?={{invert}}>
+    <div id="key" part="key">
       <content></content>
     </div>
-    <div pseudo="x-hinttext" inverted?={{invert}}>{{hintText}}</div>
+    <div part="hint">{{hintText}}</div>
   </template>
   <script>
     Polymer('kb-key', {
+      /**
+       * The background image to display on this key. Does not display an
+       * image if this is the empty string.
+       * @type {string}
+       */
+      image: "",
+
+      /**
+       * The background image size to use if an image is specified. The size
+       * is provided as a string, for example, "50%".
+       * @type {string}
+       */
+      imageSize: "",
+
       /**
        * Key codes have been deprecated in DOM3 key events, but are required
        * for legacy web content. The key codes depend on the position of the
@@ -29,6 +88,15 @@
        * @type {number|undefined}
        */
       keyCode: undefined,
+
+      /**
+       * Name of the key as defined in the DOM3 specification for key events.
+       * Like the keyCode, the keyName is independent of the state of the
+       * modifier keys.
+       * @type {string|undefined}
+       */
+      keyName: undefined,
+
       /**
        * Whether the shift key is pressed when producing the key value.
        * @type {boolean}
@@ -39,44 +107,116 @@
        * Keys with a high weighting are wider than normal keys.
        * @type {number}
        */
-      weight: 1,
+      weight: 100,
+
+      /**
+       * Called when the image attribute changes. This is used to set the
+       * background image of the key.
+       * TODO(rsadam): Remove when polymer {{}} syntax regression is fixed.
+       */
+      imageChanged: function() {
+        if (!this.image)
+          this.style.backgroundImage = "none";
+        else
+          this.style.backgroundImage = "url(images/" + this.image + ".svg)";
+      },
+
+      /**
+       * Called when the image attribute changes. This is used to set the
+       * background image of the key.
+       * TODO(rsadam): Remove when polymer {{}} syntax regression is fixed.
+       */
+      imageSizeChanged: function() {
+        this.style.backgroundSize = this.imageSize;
+      },
 
       /**
        * Returns a subset of the key attributes.
+       * @param {string} caller The id of the function that called
+       *     populateDetails.
        * @return {Object} Mapping of attributes for the key element.
        */
-      populateDetails: function() {
-        var details = this.super();
+      populateDetails: function(caller) {
+        var details = this.super([caller]);
         details.keyCode = this.keyCode;
+        details.keyName = this.keyName;
         details.shiftModifier = this.shiftModifier;
         return details;
+      },
+
+      /**
+       * Adjusts the CSS rules for rendering the key to reflect the new
+       * weight. The preferred way is to use {{weight}} directly in the CSS
+       * rules; however, this is currently broken in the Polymer library.
+       * TODO(kevers): Cleanup once handling of {{}} in CSS rules is fixed.
+       */
+      weightChanged: function() {
+        if (this.weight > 0)
+          this.style['webkitBoxFlex'] = this.weight;
       },
     });
   </script>
 </polymer-element>
 
 <!-- Special keys -->
-
-<!--
-  -- TODO(kevers): Rip this out if and when we are done implementing the proper
-  -- layout switcher.
-  -->
-<polymer-element name="kb-layout-selector" class="layout-selector dark" char="Invalid"
-    extends="kb-key">
+<polymer-element name="kb-abc-key" class="symbol dark" char="Invalid"
+    extends="kb-key" weight="125">
   <script>
-    Polymer('kb-layout-selector', {
-      toLayout: 'qwerty'
+    Polymer('kb-abc-key', {
+      populateDetails: function(caller) {
+        var detail = this.super([caller]);
+        switch (caller) {
+          case ('down'):
+            detail.relegateToShift = true;
+            break;
+          default:
+            break;
+        }
+        return detail;
+      }
     });
   </script>
 </polymer-element>
 
-<polymer-element name="kb-hide-keyboard-key" class="hide-keyboard dark" char="Invalid"
-    extends="kb-key">
+<polymer-element name="kb-hide-keyboard-key" class="hide-keyboard dark"
+    char="Invalid" extends="kb-key">
   <script>
     Polymer('kb-hide-keyboard-key', {
-      down: function(event) {},
+      /**
+       * Timer for a long press event which triggers the display of a keyboard
+       * options menu.
+       * @type {?Function}
+       */
+      longPressTimer: undefined,
+
+      down: function(event) {
+         var self = this;
+         this.longPressTimer = this.asyncMethod(function() {
+           if (self.longPressTimer) {
+             clearTimeout(self.longPressTimer);
+             self.longPressTimer = undefined;
+             var details = {
+               left: this.offsetLeft,
+               top: this.offsetTop,
+               width: this.clientWidth,
+             };
+             this.fire('show-options', details);
+           }
+         }, null, LONGPRESS_DELAY_MSEC);
+      },
+
+      /** @override */
+      ready: function() {
+        this.super();
+        this.image = "keyboard";
+      },
+
       up: function(event) {
-        hideKeyboard();
+        if (this.longPressTimer) {
+          clearTimeout(this.longPressTimer);
+          hideKeyboard();
+          this.longPressTimer = undefined;
+        }
       }
     });
   </script>

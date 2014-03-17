@@ -33,23 +33,22 @@
 #include "HTMLNames.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/shadow/MediaControlElements.h"
-#include "core/platform/LayoutTestSupport.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/FontSelector.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/chromium/FontUtilsChromiumWin.h"
-#include "core/platform/graphics/chromium/TransparencyWin.h"
-#include "core/platform/win/SystemInfo.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderProgress.h"
 #include "core/rendering/RenderSlider.h"
+#include "platform/LayoutTestSupport.h"
+#include "platform/fonts/FontSelector.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/win/TransparencyWin.h"
+#include "platform/scroll/ScrollbarTheme.h"
+#include "platform/win/SystemInfo.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebColor.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/win/WebThemeEngine.h"
 #include "wtf/CurrentTime.h"
-
+#include "wtf/StdLibExtras.h"
 
 // FIXME: This dependency should eventually be removed.
 #include <skia/ext/skia_utils_win.h>
@@ -165,7 +164,7 @@ PassRefPtr<RenderTheme> RenderThemeChromiumWin::create()
 
 RenderTheme& RenderTheme::theme()
 {
-    static RenderTheme* renderTheme = RenderThemeChromiumWin::create().leakRef();
+    DEFINE_STATIC_REF(RenderTheme, renderTheme, (RenderThemeChromiumWin::create()));
     return *renderTheme;
 }
 
@@ -303,8 +302,8 @@ bool RenderThemeChromiumWin::paintButton(RenderObject* o, const PaintInfo& i, co
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->canvas();
-    WebKit::Platform::current()->themeEngine()->paintButton(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
+    blink::WebCanvas* canvas = painter.context()->canvas();
+    blink::Platform::current()->themeEngine()->paintButton(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, blink::WebRect(painter.drawRect()));
     return false;
 }
 
@@ -318,8 +317,8 @@ bool RenderThemeChromiumWin::paintSliderTrack(RenderObject* o, const PaintInfo& 
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->canvas();
-    WebKit::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
+    blink::WebCanvas* canvas = painter.context()->canvas();
+    blink::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, blink::WebRect(painter.drawRect()));
 
     paintSliderTicks(o, i, r);
 
@@ -331,8 +330,8 @@ bool RenderThemeChromiumWin::paintSliderThumb(RenderObject* o, const PaintInfo& 
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->canvas();
-    WebKit::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
+    blink::WebCanvas* canvas = painter.context()->canvas();
+    blink::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, blink::WebRect(painter.drawRect()));
 
     return false;
 }
@@ -340,7 +339,7 @@ bool RenderThemeChromiumWin::paintSliderThumb(RenderObject* o, const PaintInfo& 
 static int menuListButtonWidth()
 {
     static int width = isRunningLayoutTest() ? kStandardMenuListButtonWidth :
-        IntSize(WebKit::Platform::current()->themeEngine()->getSize(SBP_ARROWBTN)).width();
+        IntSize(blink::Platform::current()->themeEngine()->getSize(SBP_ARROWBTN)).width();
     return width;
 }
 
@@ -396,8 +395,8 @@ bool RenderThemeChromiumWin::paintMenuListButton(RenderObject* o, const PaintInf
 
     // Get the correct theme data for a textfield and paint the menu.
     ThemePainter painter(i.context, rect);
-    WebKit::WebCanvas* canvas = painter.context()->canvas();
-    WebKit::Platform::current()->themeEngine()->paintMenuList(canvas, CP_DROPDOWNBUTTON, determineState(o), determineClassicState(o), WebKit::WebRect(painter.drawRect()));
+    blink::WebCanvas* canvas = painter.context()->canvas();
+    blink::Platform::current()->themeEngine()->paintMenuList(canvas, CP_DROPDOWNBUTTON, determineState(o), determineClassicState(o), blink::WebRect(painter.drawRect()));
     return false;
 }
 
@@ -573,8 +572,8 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     {
         const ThemeData& themeData = getThemeData(o);
         ThemePainter painter(i.context, r);
-        WebKit::WebCanvas* canvas = painter.context()->canvas();
-        WebKit::Platform::current()->themeEngine()->paintTextField(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()), backgroundColor.rgb(), fillContentArea, drawEdges);
+        blink::WebCanvas* canvas = painter.context()->canvas();
+        blink::Platform::current()->themeEngine()->paintTextField(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, blink::WebRect(painter.drawRect()), backgroundColor.rgb(), fillContentArea, drawEdges);
         // End of block commits the painter before restoring context.
     }
     if (o->style()->hasBorderRadius())
@@ -598,16 +597,16 @@ bool RenderThemeChromiumWin::paintInnerSpinButton(RenderObject* object, const Pa
         half.setHeight(rect.height() / 2);
         const ThemeData& upThemeData = getThemeData(object, SpinButtonUp);
         ThemePainter upPainter(info.context, half);
-        WebKit::WebCanvas* canvas = upPainter.context()->canvas();
-        WebKit::Platform::current()->themeEngine()->paintSpinButton(canvas, upThemeData.m_part, upThemeData.m_state, upThemeData.m_classicState, WebKit::WebRect(upPainter.drawRect()));
+        blink::WebCanvas* canvas = upPainter.context()->canvas();
+        blink::Platform::current()->themeEngine()->paintSpinButton(canvas, upThemeData.m_part, upThemeData.m_state, upThemeData.m_classicState, blink::WebRect(upPainter.drawRect()));
     }
 
     {
         half.setY(rect.y() + rect.height() / 2);
         const ThemeData& downThemeData = getThemeData(object, SpinButtonDown);
         ThemePainter downPainter(info.context, half);
-        WebKit::WebCanvas* canvas = downPainter.context()->canvas();
-        WebKit::Platform::current()->themeEngine()->paintSpinButton(canvas, downThemeData.m_part, downThemeData.m_state, downThemeData.m_classicState, WebKit::WebRect(downPainter.drawRect()));
+        blink::WebCanvas* canvas = downPainter.context()->canvas();
+        blink::Platform::current()->themeEngine()->paintSpinButton(canvas, downThemeData.m_part, downThemeData.m_state, downThemeData.m_classicState, blink::WebRect(downPainter.drawRect()));
     }
     return false;
 }
@@ -628,10 +627,6 @@ double RenderThemeChromiumWin::animationDurationForProgressBar(RenderProgress* r
     return progressAnimationFrameRate;
 }
 
-void RenderThemeChromiumWin::adjustProgressBarStyle(RenderStyle*, Element*) const
-{
-}
-
 bool RenderThemeChromiumWin::paintProgressBar(RenderObject* o, const PaintInfo& i, const IntRect& r)
 {
     if (!o->isProgress())
@@ -644,8 +639,8 @@ bool RenderThemeChromiumWin::paintProgressBar(RenderObject* o, const PaintInfo& 
     double animatedSeconds = renderProgress->animationStartTime() ?  WTF::currentTime() - renderProgress->animationStartTime() : 0;
     ThemePainter painter(i.context, r);
     DirectionFlippingScope scope(o, i, r);
-    WebKit::WebCanvas* canvas = painter.context()->canvas();
-    WebKit::Platform::current()->themeEngine()->paintProgressBar(canvas, WebKit::WebRect(r), WebKit::WebRect(valueRect), renderProgress->isDeterminate(), animatedSeconds);
+    blink::WebCanvas* canvas = painter.context()->canvas();
+    blink::Platform::current()->themeEngine()->paintProgressBar(canvas, blink::WebRect(r), blink::WebRect(valueRect), renderProgress->isDeterminate(), animatedSeconds);
     return false;
 }
 

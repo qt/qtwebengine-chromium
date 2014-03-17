@@ -67,7 +67,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   navigation.unique_id_ = sync_data.unique_id();
   navigation.referrer_ =
       content::Referrer(GURL(sync_data.referrer()),
-                        WebKit::WebReferrerPolicyDefault);
+                        blink::WebReferrerPolicyDefault);
   navigation.virtual_url_ = GURL(sync_data.virtual_url());
   navigation.title_ = UTF8ToUTF16(sync_data.title());
   navigation.page_state_ =
@@ -176,19 +176,19 @@ void WriteStringToPickle(Pickle* pickle,
   }
 }
 
-// string16 version of WriteStringToPickle.
+// base::string16 version of WriteStringToPickle.
 //
 // TODO(akalin): Unify this, too.
 void WriteString16ToPickle(Pickle* pickle,
                            int* bytes_written,
                            int max_bytes,
-                           const string16& str) {
+                           const base::string16& str) {
   int num_bytes = str.size() * sizeof(char16);
   if (*bytes_written + num_bytes < max_bytes) {
     *bytes_written += num_bytes;
     pickle->WriteString16(str);
   } else {
-    pickle->WriteString16(string16());
+    pickle->WriteString16(base::string16());
   }
 }
 
@@ -293,11 +293,11 @@ bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
     // The "referrer policy" property was added even later, so we fall back to
     // the default policy if the property is not present.
     int policy_int;
-    WebKit::WebReferrerPolicy policy;
+    blink::WebReferrerPolicy policy;
     if (iterator->ReadInt(&policy_int))
-      policy = static_cast<WebKit::WebReferrerPolicy>(policy_int);
+      policy = static_cast<blink::WebReferrerPolicy>(policy_int);
     else
-      policy = WebKit::WebReferrerPolicyDefault;
+      policy = blink::WebReferrerPolicyDefault;
     referrer_ = content::Referrer(GURL(referrer_spec), policy);
 
     // If the original URL can't be found, leave it empty.

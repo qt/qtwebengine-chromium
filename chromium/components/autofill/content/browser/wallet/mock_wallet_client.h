@@ -11,6 +11,7 @@
 #include "components/autofill/content/browser/wallet/instrument.h"
 #include "components/autofill/content/browser/wallet/wallet_address.h"
 #include "components/autofill/content/browser/wallet/wallet_client.h"
+#include "components/autofill/content/browser/wallet/wallet_items.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace autofill {
@@ -21,15 +22,15 @@ namespace wallet {
 class MockWalletClient : public WalletClient {
  public:
   MockWalletClient(net::URLRequestContextGetter* context,
-                   WalletClientDelegate* delegate);
+                   WalletClientDelegate* delegate,
+                   const GURL& source_url);
   virtual ~MockWalletClient();
 
-  MOCK_METHOD1(GetWalletItems, void(const GURL& source_url));
+  MOCK_METHOD0(GetWalletItems, void());
 
-  MOCK_METHOD3(AcceptLegalDocuments,
+  MOCK_METHOD2(AcceptLegalDocuments,
       void(const std::vector<WalletItems::LegalDocument*>& documents,
-           const std::string& google_transaction_id,
-           const GURL& source_url));
+           const std::string& google_transaction_id));
 
   MOCK_METHOD2(AuthenticateInstrument,
       void(const std::string& instrument_id,
@@ -40,16 +41,17 @@ class MockWalletClient : public WalletClient {
 
   // Methods with scoped_ptrs can't be mocked but by using the implementation
   // below the same effect can be achieved.
-  virtual void SaveToWallet(scoped_ptr<wallet::Instrument> instrument,
-                            scoped_ptr<wallet::Address> address,
-                            const GURL& source_url) OVERRIDE {
-      SaveToWalletMock(instrument.get(), address.get(), source_url);
-  }
+  virtual void SaveToWallet(
+      scoped_ptr<Instrument> instrument,
+      scoped_ptr<Address> address,
+      const WalletItems::MaskedInstrument* reference_instrument,
+      const Address* reference_address) OVERRIDE;
 
-  MOCK_METHOD3(SaveToWalletMock,
+  MOCK_METHOD4(SaveToWalletMock,
       void(Instrument* instrument,
            Address* address,
-           const GURL& source_url));
+           const WalletItems::MaskedInstrument* reference_instrument,
+           const Address* reference_address));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockWalletClient);

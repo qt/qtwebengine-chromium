@@ -40,11 +40,16 @@ SkBicubicImageFilter* SkBicubicImageFilter::CreateMitchell(const SkSize& scale,
     return SkNEW_ARGS(SkBicubicImageFilter, (scale, gMitchellCoefficients, input));
 }
 
-SkBicubicImageFilter::SkBicubicImageFilter(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {
-    SkDEBUGCODE(uint32_t readSize =) buffer.readScalarArray(fCoefficients);
-    SkASSERT(readSize == 16);
+SkBicubicImageFilter::SkBicubicImageFilter(SkFlattenableReadBuffer& buffer)
+  : INHERITED(1, buffer) {
+    SkDEBUGCODE(bool success =) buffer.readScalarArray(fCoefficients, 16);
+    SkASSERT(success);
     fScale.fWidth = buffer.readScalar();
     fScale.fHeight = buffer.readScalar();
+    buffer.validate(SkScalarIsFinite(fScale.fWidth) &&
+                    SkScalarIsFinite(fScale.fHeight) &&
+                    (fScale.fWidth >= 0) &&
+                    (fScale.fHeight >= 0));
 }
 
 void SkBicubicImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
@@ -111,7 +116,7 @@ bool SkBicubicImageFilter::onFilterImage(Proxy* proxy,
     src.getBounds(&srcRect);
     SkMatrix inverse;
     inverse.setRectToRect(dstRect, srcRect, SkMatrix::kFill_ScaleToFit);
-    inverse.postTranslate(SkFloatToScalar(-0.5f), SkFloatToScalar(-0.5f));
+    inverse.postTranslate(-0.5f, -0.5f);
 
     for (int y = dstIRect.fTop; y < dstIRect.fBottom; ++y) {
         SkPMColor* dptr = result->getAddr32(dstIRect.fLeft, y);

@@ -51,7 +51,7 @@ class LocalFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
 base::FilePath LocalFileEnumerator::Next() {
   base::FilePath next = file_enum_.Next();
   // Don't return symlinks.
-  while (!next.empty() && file_util::IsLink(next))
+  while (!next.empty() && base::IsLink(next))
     next = file_enum_.Next();
   if (next.empty())
     return next;
@@ -88,7 +88,7 @@ PlatformFileError LocalFileUtil::CreateOrOpen(
   if (error != base::PLATFORM_FILE_OK)
     return error;
   // Disallow opening files in symlinked paths.
-  if (file_util::IsLink(file_path))
+  if (base::IsLink(file_path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   return NativeFileUtil::CreateOrOpen(
       file_path, file_flags, file_handle, created);
@@ -132,7 +132,7 @@ PlatformFileError LocalFileUtil::GetFileInfo(
   if (error != base::PLATFORM_FILE_OK)
     return error;
   // We should not follow symbolic links in sandboxed file system.
-  if (file_util::IsLink(file_path))
+  if (base::IsLink(file_path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   error = NativeFileUtil::GetFileInfo(file_path, file_info);
   if (error == base::PLATFORM_FILE_OK)
@@ -197,6 +197,7 @@ PlatformFileError LocalFileUtil::CopyOrMoveFile(
     FileSystemOperationContext* context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     bool copy) {
   base::FilePath src_file_path;
   PlatformFileError error = GetLocalFilePath(context, src_url, &src_file_path);
@@ -208,7 +209,9 @@ PlatformFileError LocalFileUtil::CopyOrMoveFile(
   if (error != base::PLATFORM_FILE_OK)
     return error;
 
-  return NativeFileUtil::CopyOrMoveFile(src_file_path, dest_file_path, copy);
+  return NativeFileUtil::CopyOrMoveFile(
+      src_file_path, dest_file_path, option,
+      fileapi::NativeFileUtil::CopyOrMoveModeForDestination(dest_url, copy));
 }
 
 PlatformFileError LocalFileUtil::CopyInForeignFile(
@@ -223,7 +226,10 @@ PlatformFileError LocalFileUtil::CopyInForeignFile(
       GetLocalFilePath(context, dest_url, &dest_file_path);
   if (error != base::PLATFORM_FILE_OK)
     return error;
-  return NativeFileUtil::CopyOrMoveFile(src_file_path, dest_file_path, true);
+  return NativeFileUtil::CopyOrMoveFile(
+      src_file_path, dest_file_path, FileSystemOperation::OPTION_NONE,
+      fileapi::NativeFileUtil::CopyOrMoveModeForDestination(dest_url,
+                                                            true /* copy */));
 }
 
 PlatformFileError LocalFileUtil::DeleteFile(

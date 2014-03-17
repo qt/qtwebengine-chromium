@@ -20,8 +20,8 @@
 
 // Introduced in DOM Level 2:
 [
-    CustomToV8,
-    DependentLifetime
+    Custom=Wrap,
+    DependentLifetime,
 ] interface CSSRule {
 
     // RuleType
@@ -37,14 +37,13 @@
     const unsigned short KEYFRAME_RULE = 8;
     const unsigned short WEBKIT_KEYFRAME_RULE = 8;
     const unsigned short SUPPORTS_RULE = 12;
-    [EnabledAtRuntime=CSSViewport] const unsigned short VIEWPORT_RULE = 15;
-    [EnabledAtRuntime=CSSRegions] const unsigned short WEBKIT_REGION_RULE = 16;
+    [RuntimeEnabled=CSSViewport] const unsigned short VIEWPORT_RULE = 15;
+    [RuntimeEnabled=CSSRegions] const unsigned short WEBKIT_REGION_RULE = 16;
     const unsigned short WEBKIT_FILTER_RULE = 17;
-    const unsigned short HOST_RULE = 1001;
 
     readonly attribute unsigned short   type;
 
-             [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString        cssText;
+             attribute DOMString        cssText;
 
     readonly attribute CSSStyleSheet    parentStyleSheet;
     readonly attribute CSSRule          parentRule;

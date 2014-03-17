@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "talk/base/buffer.h"
+#include "talk/base/fakesslidentity.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/sslfingerprint.h"
 #include "talk/base/messagequeue.h"
@@ -203,7 +204,8 @@ class FakeTransportChannel : public TransportChannelImpl,
     PacketMessageData* data = static_cast<PacketMessageData*>(
         msg->pdata);
     dest_->SignalReadPacket(dest_, data->packet.data(),
-                            data->packet.length(), 0);
+                            data->packet.length(),
+                            talk_base::CreatePacketTime(0), 0);
     delete data;
   }
 
@@ -212,11 +214,16 @@ class FakeTransportChannel : public TransportChannelImpl,
     return true;
   }
 
-  bool IsDtlsActive() const {
+
+  void SetRemoteCertificate(talk_base::FakeSSLCertificate* cert) {
+    remote_cert_ = cert;
+  }
+
+  virtual bool IsDtlsActive() const {
     return do_dtls_;
   }
 
-  bool SetSrtpCiphers(const std::vector<std::string>& ciphers) {
+  virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) {
     srtp_ciphers_ = ciphers;
     return true;
   }
@@ -227,6 +234,22 @@ class FakeTransportChannel : public TransportChannelImpl,
       return true;
     }
     return false;
+  }
+
+  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const {
+    if (!identity_)
+      return false;
+
+    *identity = identity_->GetReference();
+    return true;
+  }
+
+  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const {
+    if (!remote_cert_)
+      return false;
+
+    *cert = remote_cert_->GetReference();
+    return true;
   }
 
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -272,6 +295,7 @@ class FakeTransportChannel : public TransportChannelImpl,
   State state_;
   bool async_;
   talk_base::SSLIdentity* identity_;
+  talk_base::FakeSSLCertificate* remote_cert_;
   bool do_dtls_;
   std::vector<std::string> srtp_ciphers_;
   std::string chosen_srtp_cipher_;
@@ -349,6 +373,16 @@ class FakeTransport : public Transport {
     channels_.erase(channel->component());
     delete channel;
   }
+  virtual void SetIdentity_w(talk_base::SSLIdentity* identity) {
+    identity_ = identity;
+  }
+  virtual bool GetIdentity_w(talk_base::SSLIdentity** identity) {
+    if (!identity_)
+      return false;
+
+    *identity = identity_->GetReference();
+    return true;
+  }
 
  private:
   FakeTransportChannel* GetFakeChannel(int component) {
@@ -388,6 +422,12 @@ class FakeSession : public BaseSession {
   explicit FakeSession(bool initiator)
       : BaseSession(talk_base::Thread::Current(),
                     talk_base::Thread::Current(),
+                    NULL, "", "", initiator),
+      fail_create_channel_(false) {
+  }
+  FakeSession(talk_base::Thread* worker_thread, bool initiator)
+      : BaseSession(talk_base::Thread::Current(),
+                    worker_thread,
                     NULL, "", "", initiator),
       fail_create_channel_(false) {
   }

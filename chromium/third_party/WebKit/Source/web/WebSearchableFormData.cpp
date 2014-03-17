@@ -42,7 +42,7 @@
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/platform/network/FormDataBuilder.h"
+#include "platform/network/FormDataBuilder.h"
 #include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
@@ -81,8 +81,8 @@ bool IsHTTPFormSubmit(const HTMLFormElement* form)
 HTMLFormControlElement* GetButtonToActivate(HTMLFormElement* form)
 {
     HTMLFormControlElement* firstSubmitButton = 0;
-    // FIXME: Consider refactoring this code so that we don't call form->associatedElements() twice.
-    for (Vector<FormAssociatedElement*>::const_iterator i(form->associatedElements().begin()); i != form->associatedElements().end(); ++i) {
+    const Vector<FormAssociatedElement*>& element = form->associatedElements();
+    for (Vector<FormAssociatedElement*>::const_iterator i(element.begin()); i != element.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
         HTMLFormControlElement* control = toHTMLFormControlElement(*i);
@@ -155,8 +155,8 @@ bool IsInDefaultState(HTMLFormControlElement* formElement)
 HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
 {
     HTMLInputElement* textElement = 0;
-    // FIXME: Consider refactoring this code so that we don't call form->associatedElements() twice.
-    for (Vector<FormAssociatedElement*>::const_iterator i(form->associatedElements().begin()); i != form->associatedElements().end(); ++i) {
+    const Vector<FormAssociatedElement*>& element = form->associatedElements();
+    for (Vector<FormAssociatedElement*>::const_iterator i(element.begin()); i != element.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
 
@@ -198,8 +198,8 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
 {
     bool isElementFound = false;
 
-    // FIXME: Consider refactoring this code so that we don't call form->associatedElements() twice.
-    for (Vector<FormAssociatedElement*>::const_iterator i(form->associatedElements().begin()); i != form->associatedElements().end(); ++i) {
+    Vector<FormAssociatedElement*> elements = form->associatedElements();
+    for (Vector<FormAssociatedElement*>::const_iterator i(elements.begin()); i != elements.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
 
@@ -235,7 +235,7 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
 }
 } // namespace
 
-namespace WebKit {
+namespace blink {
 
 WebSearchableFormData::WebSearchableFormData(const WebFormElement& form, const WebInputElement& selectedInputElement)
 {
@@ -294,4 +294,4 @@ WebSearchableFormData::WebSearchableFormData(const WebFormElement& form, const W
     m_encoding = String(encoding.name());
 }
 
-} // namespace WebKit
+} // namespace blink

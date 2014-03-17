@@ -16,6 +16,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/views_switches.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
@@ -120,8 +121,16 @@ void RootView::DispatchKeyEvent(ui::KeyEvent* event) {
   // keyboard.
   if (v && v->enabled() && ((event->key_code() == ui::VKEY_APPS) ||
      (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
-    v->ShowContextMenu(v->GetKeyboardContextMenuLocation(),
-                       ui::MENU_SOURCE_KEYBOARD);
+    // Showing the context menu outside the visible bounds may result in a
+    // context menu appearing over a completely different window. Constrain
+    // location to visible bounds so this doesn't happen.
+    gfx::Rect visible_bounds(v->ConvertRectToWidget(v->GetVisibleBounds()));
+    visible_bounds.Offset(
+        widget_->GetClientAreaBoundsInScreen().OffsetFromOrigin());
+    gfx::Rect keyboard_loc(v->GetKeyboardContextMenuLocation(),
+                           gfx::Size(1, 1));
+    keyboard_loc.AdjustToFit(visible_bounds);
+    v->ShowContextMenu(keyboard_loc.origin(), ui::MENU_SOURCE_KEYBOARD);
     event->StopPropagation();
     return;
   }
@@ -278,10 +287,23 @@ void RootView::DispatchGestureEvent(ui::GestureEvent* event) {
       break;
   }
 
+  View* gesture_handler = NULL;
+  if (views::switches::IsRectBasedTargetingEnabled() &&
+      !event->details().bounding_box().IsEmpty()) {
+    // TODO(tdanderson): Pass in the bounding box to GetEventHandlerForRect()
+    // once crbug.com/313392 is resolved.
+    gfx::Rect touch_rect(event->details().bounding_box());
+    touch_rect.set_origin(event->location());
+    touch_rect.Offset(-touch_rect.width() / 2, -touch_rect.height() / 2);
+    gesture_handler = GetEventHandlerForRect(touch_rect);
+  } else {
+    gesture_handler = GetEventHandlerForPoint(event->location());
+  }
+
   // Walk up the tree until we find a view that wants the gesture event.
-  for (gesture_handler_ = GetEventHandlerForPoint(event->location());
-      gesture_handler_ && (gesture_handler_ != this);
-      gesture_handler_ = gesture_handler_->parent()) {
+  for (gesture_handler_ = gesture_handler;
+       gesture_handler_ && (gesture_handler_ != this);
+       gesture_handler_ = gesture_handler_->parent()) {
     if (!gesture_handler_->enabled()) {
       // Disabled views eat events but are treated as not handled.
       return;
@@ -631,6 +653,7 @@ void RootView::VisibilityChanged(View* /*starting_from*/, bool is_visible) {
     // When the root view is being hidden (e.g. when widget is minimized)
     // handlers are reset, so that after it is reshown, events are not captured
     // by old handlers.
+    explicit_mouse_handler_ = false;
     mouse_pressed_handler_ = NULL;
     mouse_move_handler_ = NULL;
     touch_pressed_handler_ = NULL;
@@ -681,7 +704,8 @@ void RootView::SetMouseLocationAndFlags(const ui::MouseEvent& event) {
 void RootView::DispatchEventToTarget(View* target, ui::Event* event) {
   View* old_target = event_dispatch_target_;
   event_dispatch_target_ = target;
-  if (DispatchEvent(target, event))
+  ui::EventDispatchDetails details = DispatchEvent(target, event);
+  if (!details.dispatcher_destroyed)
     event_dispatch_target_ = old_target;
 }
 

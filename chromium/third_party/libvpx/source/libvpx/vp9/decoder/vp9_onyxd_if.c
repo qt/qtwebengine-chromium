@@ -65,13 +65,12 @@ static void recon_write_yuv_frame(const char *name,
 #endif
 #if WRITE_RECON_BUFFER == 2
 void write_dx_frame_to_file(YV12_BUFFER_CONFIG *frame, int this_frame) {
-
   // write the frame
   FILE *yframe;
   int i;
   char filename[255];
 
-  sprintf(filename, "dx\\y%04d.raw", this_frame);
+  snprintf(filename, sizeof(filename)-1, "dx\\y%04d.raw", this_frame);
   yframe = fopen(filename, "wb");
 
   for (i = 0; i < frame->y_height; i++)
@@ -79,7 +78,7 @@ void write_dx_frame_to_file(YV12_BUFFER_CONFIG *frame, int this_frame) {
            frame->y_width, 1, yframe);
 
   fclose(yframe);
-  sprintf(filename, "dx\\u%04d.raw", this_frame);
+  snprintf(filename, sizeof(filename)-1, "dx\\u%04d.raw", this_frame);
   yframe = fopen(filename, "wb");
 
   for (i = 0; i < frame->uv_height; i++)
@@ -87,7 +86,7 @@ void write_dx_frame_to_file(YV12_BUFFER_CONFIG *frame, int this_frame) {
            frame->uv_width, 1, yframe);
 
   fclose(yframe);
-  sprintf(filename, "dx\\v%04d.raw", this_frame);
+  snprintf(filename, sizeof(filename)-1, "dx\\v%04d.raw", this_frame);
   yframe = fopen(filename, "wb");
 
   for (i = 0; i < frame->uv_height; i++)
@@ -142,20 +141,13 @@ VP9D_PTR vp9_create_decompressor(VP9D_CONFIG *oxcf) {
   cm->error.setjmp = 0;
   pbi->decoded_key_frame = 0;
 
-  if (pbi->oxcf.max_threads > 1) {
-    vp9_worker_init(&pbi->lf_worker);
-    pbi->lf_worker.data1 = vpx_malloc(sizeof(LFWorkerData));
-    pbi->lf_worker.hook = (VP9WorkerHook)vp9_loop_filter_worker;
-    if (pbi->lf_worker.data1 == NULL || !vp9_worker_reset(&pbi->lf_worker)) {
-      vp9_remove_decompressor(pbi);
-      return NULL;
-    }
-  }
+  vp9_worker_init(&pbi->lf_worker);
 
   return pbi;
 }
 
 void vp9_remove_decompressor(VP9D_PTR ptr) {
+  int i;
   VP9D_COMP *const pbi = (VP9D_COMP *)ptr;
 
   if (!pbi)
@@ -164,6 +156,16 @@ void vp9_remove_decompressor(VP9D_PTR ptr) {
   vp9_remove_common(&pbi->common);
   vp9_worker_end(&pbi->lf_worker);
   vpx_free(pbi->lf_worker.data1);
+  for (i = 0; i < pbi->num_tile_workers; ++i) {
+    VP9Worker *const worker = &pbi->tile_workers[i];
+    vp9_worker_end(worker);
+    vpx_free(worker->data1);
+    vpx_free(worker->data2);
+  }
+  vpx_free(pbi->tile_workers);
+  vpx_free(pbi->mi_streams);
+  vpx_free(pbi->above_context[0]);
+  vpx_free(pbi->above_seg_context);
   vpx_free(pbi);
 }
 
@@ -177,7 +179,6 @@ vpx_codec_err_t vp9_copy_reference_dec(VP9D_PTR ptr,
                                        YV12_BUFFER_CONFIG *sd) {
   VP9D_COMP *pbi = (VP9D_COMP *) ptr;
   VP9_COMMON *cm = &pbi->common;
-  int ref_fb_idx;
 
   /* TODO(jkoleszar): The decoder doesn't have any real knowledge of what the
    * encoder is using the frame buffers for. This is just a stub to keep the
@@ -185,18 +186,15 @@ vpx_codec_err_t vp9_copy_reference_dec(VP9D_PTR ptr,
    * later commit that adds VP9-specific controls for this functionality.
    */
   if (ref_frame_flag == VP9_LAST_FLAG) {
-    ref_fb_idx = cm->ref_frame_map[0];
+    YV12_BUFFER_CONFIG *cfg = &cm->yv12_fb[cm->ref_frame_map[0]];
+    if (!equal_dimensions(cfg, sd))
+      vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
+                         "Incorrect buffer dimensions");
+    else
+      vp8_yv12_copy_frame(cfg, sd);
   } else {
     vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
                        "Invalid reference frame");
-    return cm->error.error_code;
-  }
-
-  if (!equal_dimensions(&cm->yv12_fb[ref_fb_idx], sd)) {
-    vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
-                       "Incorrect buffer dimensions");
-  } else {
-    vp8_yv12_copy_frame(&cm->yv12_fb[ref_fb_idx], sd);
   }
 
   return cm->error.error_code;
@@ -214,13 +212,13 @@ vpx_codec_err_t vp9_set_reference_dec(VP9D_PTR ptr, VP9_REFFRAME ref_frame_flag,
    * vpxenc --test-decode functionality working, and will be replaced in a
    * later commit that adds VP9-specific controls for this functionality.
    */
-  if (ref_frame_flag == VP9_LAST_FLAG)
+  if (ref_frame_flag == VP9_LAST_FLAG) {
     ref_fb_ptr = &pbi->common.active_ref_idx[0];
-  else if (ref_frame_flag == VP9_GOLD_FLAG)
+  } else if (ref_frame_flag == VP9_GOLD_FLAG) {
     ref_fb_ptr = &pbi->common.active_ref_idx[1];
-  else if (ref_frame_flag == VP9_ALT_FLAG)
+  } else if (ref_frame_flag == VP9_ALT_FLAG) {
     ref_fb_ptr = &pbi->common.active_ref_idx[2];
-  else {
+  } else {
     vpx_internal_error(&pbi->common.error, VPX_CODEC_ERROR,
                        "Invalid reference frame");
     return pbi->common.error.error_code;
@@ -268,7 +266,7 @@ static void swap_frame_buffers(VP9D_COMP *pbi) {
     ++ref_index;
   }
 
-  cm->frame_to_show = &cm->yv12_fb[cm->new_fb_idx];
+  cm->frame_to_show = get_frame_new_buffer(cm);
   cm->fb_idx_ref_cnt[cm->new_fb_idx]--;
 
   // Invalidate these references until the next frame starts.
@@ -277,7 +275,7 @@ static void swap_frame_buffers(VP9D_COMP *pbi) {
 }
 
 int vp9_receive_compressed_data(VP9D_PTR ptr,
-                                uint64_t size, const uint8_t **psource,
+                                size_t size, const uint8_t **psource,
                                 int64_t time_stamp) {
   VP9D_COMP *pbi = (VP9D_COMP *) ptr;
   VP9_COMMON *cm = &pbi->common;
@@ -306,7 +304,7 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
      * thing to do here.
      */
     if (cm->active_ref_idx[0] != INT_MAX)
-      cm->yv12_fb[cm->active_ref_idx[0]].corrupted = 1;
+      get_frame_ref_buffer(cm, 0)->corrupted = 1;
   }
 
   cm->new_fb_idx = get_free_fb(cm);
@@ -323,7 +321,7 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
      * thing to do here.
      */
     if (cm->active_ref_idx[0] != INT_MAX)
-      cm->yv12_fb[cm->active_ref_idx[0]].corrupted = 1;
+      get_frame_ref_buffer(cm, 0)->corrupted = 1;
 
     if (cm->fb_idx_ref_cnt[cm->new_fb_idx] > 0)
       cm->fb_idx_ref_cnt[cm->new_fb_idx]--;
@@ -343,36 +341,33 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
     return retcode;
   }
 
-  {
-    swap_frame_buffers(pbi);
+  swap_frame_buffers(pbi);
 
 #if WRITE_RECON_BUFFER == 2
-    if (cm->show_frame)
-      write_dx_frame_to_file(cm->frame_to_show,
-                             cm->current_video_frame);
-    else
-      write_dx_frame_to_file(cm->frame_to_show,
-                             cm->current_video_frame + 1000);
+  if (cm->show_frame)
+    write_dx_frame_to_file(cm->frame_to_show,
+                           cm->current_video_frame);
+  else
+    write_dx_frame_to_file(cm->frame_to_show,
+                           cm->current_video_frame + 1000);
 #endif
 
-    if (!pbi->do_loopfilter_inline) {
-      /* Apply the loop filter if appropriate. */
-      vp9_loop_filter_frame(cm, &pbi->mb, pbi->common.lf.filter_level, 0, 0);
-    }
-
-#if WRITE_RECON_BUFFER == 2
-    if (cm->show_frame)
-      write_dx_frame_to_file(cm->frame_to_show,
-                             cm->current_video_frame + 2000);
-    else
-      write_dx_frame_to_file(cm->frame_to_show,
-                             cm->current_video_frame + 3000);
-#endif
-
-    vp9_extend_frame_inner_borders(cm->frame_to_show,
-                                   cm->subsampling_x,
-                                   cm->subsampling_y);
+  if (!pbi->do_loopfilter_inline) {
+    vp9_loop_filter_frame(cm, &pbi->mb, pbi->common.lf.filter_level, 0, 0);
   }
+
+#if WRITE_RECON_BUFFER == 2
+  if (cm->show_frame)
+    write_dx_frame_to_file(cm->frame_to_show,
+                           cm->current_video_frame + 2000);
+  else
+    write_dx_frame_to_file(cm->frame_to_show,
+                           cm->current_video_frame + 3000);
+#endif
+
+  vp9_extend_frame_inner_borders(cm->frame_to_show,
+                                 cm->subsampling_x,
+                                 cm->subsampling_y);
 
 #if WRITE_RECON_BUFFER == 1
   if (cm->show_frame)
@@ -397,6 +392,9 @@ int vp9_receive_compressed_data(VP9D_PTR ptr,
     cm->prev_mi = cm->prev_mip + cm->mode_info_stride + 1;
     cm->mi_grid_visible = cm->mi_grid_base + cm->mode_info_stride + 1;
     cm->prev_mi_grid_visible = cm->prev_mi_grid_base + cm->mode_info_stride + 1;
+
+    pbi->mb.mi_8x8 = cm->mi_grid_visible;
+    pbi->mb.mi_8x8[0] = cm->mi;
 
     cm->current_video_frame++;
   }

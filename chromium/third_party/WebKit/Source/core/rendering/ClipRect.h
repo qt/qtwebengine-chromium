@@ -26,7 +26,7 @@
 #ifndef ClipRect_h
 #define ClipRect_h
 
-#include "core/platform/graphics/LayoutRect.h"
+#include "platform/geometry/LayoutRect.h"
 
 #include "wtf/Vector.h"
 
@@ -138,7 +138,7 @@ public:
         return m_overflowClipRect == other.overflowClipRect()
             && m_fixedClipRect == other.fixedClipRect()
             && m_posClipRect == other.posClipRect()
-            && m_fixed == other.fixed();
+            && fixed() == other.fixed();
     }
 
     ClipRects& operator=(const ClipRects& other)

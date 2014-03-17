@@ -187,8 +187,13 @@ typedef byte* Address;
 # define V8_INTPTR_C(x)   (x ## LL)
 # define V8_PTR_PREFIX    "I64"
 #elif V8_HOST_ARCH_64_BIT
-# define V8_UINT64_C(x)   (x ## UL)
-# define V8_INT64_C(x)    (x ## L)
+# if V8_OS_MACOSX
+#  define V8_UINT64_C(x)   (x ## ULL)
+#  define V8_INT64_C(x)    (x ## LL)
+# else
+#  define V8_UINT64_C(x)   (x ## UL)
+#  define V8_INT64_C(x)    (x ## L)
+# endif
 # define V8_INTPTR_C(x)   (x ## L)
 # define V8_PTR_PREFIX    "l"
 #else
@@ -208,13 +213,12 @@ typedef byte* Address;
 #define V8PRIuPTR V8_PTR_PREFIX "u"
 
 // Fix for Mac OS X defining uintptr_t as "unsigned long":
-#if defined(__APPLE__) && defined(__MACH__)
+#if V8_OS_MACOSX
 #undef V8PRIxPTR
 #define V8PRIxPTR "lx"
 #endif
 
-#if (defined(__APPLE__) && defined(__MACH__)) || \
-    defined(__FreeBSD__) || defined(__OpenBSD__)
+#if V8_OS_MACOSX || defined(__FreeBSD__) || defined(__OpenBSD__)
 #define USING_BSD_ABI
 #endif
 
@@ -226,12 +230,22 @@ const int MB = KB * KB;
 const int GB = KB * KB * KB;
 const int kMaxInt = 0x7FFFFFFF;
 const int kMinInt = -kMaxInt - 1;
+const int kMaxInt8 = (1 << 7) - 1;
+const int kMinInt8 = -(1 << 7);
+const int kMaxUInt8 = (1 << 8) - 1;
+const int kMinUInt8 = 0;
+const int kMaxInt16 = (1 << 15) - 1;
+const int kMinInt16 = -(1 << 15);
+const int kMaxUInt16 = (1 << 16) - 1;
+const int kMinUInt16 = 0;
 
 const uint32_t kMaxUInt32 = 0xFFFFFFFFu;
 
 const int kCharSize      = sizeof(char);      // NOLINT
 const int kShortSize     = sizeof(short);     // NOLINT
 const int kIntSize       = sizeof(int);       // NOLINT
+const int kInt32Size     = sizeof(int32_t);   // NOLINT
+const int kInt64Size     = sizeof(int64_t);   // NOLINT
 const int kDoubleSize    = sizeof(double);    // NOLINT
 const int kIntptrSize    = sizeof(intptr_t);  // NOLINT
 const int kPointerSize   = sizeof(void*);     // NOLINT
@@ -241,17 +255,16 @@ const int kFPOnStackSize = kRegisterSize;
 
 const int kDoubleSizeLog2 = 3;
 
-// Size of the state of a the random number generator.
-const int kRandomStateSize = 2 * kIntSize;
-
 #if V8_HOST_ARCH_64_BIT
 const int kPointerSizeLog2 = 3;
 const intptr_t kIntptrSignBit = V8_INT64_C(0x8000000000000000);
 const uintptr_t kUintptrAllBitsSet = V8_UINT64_C(0xFFFFFFFFFFFFFFFF);
+const bool kIs64BitArch = true;
 #else
 const int kPointerSizeLog2 = 2;
 const intptr_t kIntptrSignBit = 0x80000000;
 const uintptr_t kUintptrAllBitsSet = 0xFFFFFFFFu;
+const bool kIs64BitArch = false;
 #endif
 
 const int kBitsPerByte = 8;
@@ -354,7 +367,7 @@ F FUNCTION_CAST(Address addr) {
 // Define DISABLE_ASAN macros.
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
-#define DISABLE_ASAN __attribute__((no_address_safety_analysis))
+#define DISABLE_ASAN __attribute__((no_sanitize_address))
 #endif
 #endif
 

@@ -28,8 +28,10 @@
 
 #include "modules/webaudio/AudioScheduledSourceNode.h"
 
-#include "core/dom/Event.h"
-#include "core/platform/audio/AudioUtilities.h"
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/events/Event.h"
+#include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include <algorithm>
 #include "wtf/MathExtras.h"
@@ -46,6 +48,7 @@ AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext* context, float 
     , m_startTime(0)
     , m_endTime(UnknownTime)
     , m_hasEndedListener(false)
+    , m_stopCalled(false)
 {
 }
 
@@ -134,40 +137,48 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize,
     return;
 }
 
-void AudioScheduledSourceNode::start(double when)
+
+void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    if (m_playbackState != UNSCHEDULED_STATE)
+
+    if (m_playbackState != UNSCHEDULED_STATE) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "cannot call start more than once.");
         return;
+    }
 
     m_startTime = when;
     m_playbackState = SCHEDULED_STATE;
 }
 
-void AudioScheduledSourceNode::stop(double when)
+void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    if (!(m_playbackState == SCHEDULED_STATE || m_playbackState == PLAYING_STATE))
-        return;
 
-    when = max(0.0, when);
-    m_endTime = when;
-}
-
-void AudioScheduledSourceNode::noteOn(double when)
-{
-    start(when);
-}
-
-void AudioScheduledSourceNode::noteOff(double when)
-{
-    stop(when);
+    if (m_stopCalled) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "cannot call stop more than once.");
+    } else if (m_playbackState == UNSCHEDULED_STATE) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "cannot call stop without calling start first.");
+    } else {
+        // This can only happen from the SCHEDULED_STATE or PLAYING_STATE. The UNSCHEDULED_STATE is
+        // handled above, and the FINISHED_STATE is only reachable after stop() has been called, and
+        // hence m_stopCalled is true. But that case is handled above.
+        when = max(0.0, when);
+        m_endTime = when;
+        m_stopCalled = true;
+    }
 }
 
 void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld)
 {
     m_hasEndedListener = listener;
-    setAttributeEventListener(eventNames().endedEvent, listener, isolatedWorld);
+    setAttributeEventListener(EventTypeNames::ended, listener, isolatedWorld);
 }
 
 void AudioScheduledSourceNode::finish()
@@ -200,7 +211,7 @@ AudioScheduledSourceNode::NotifyEndedTask::NotifyEndedTask(PassRefPtr<AudioSched
 
 void AudioScheduledSourceNode::NotifyEndedTask::notifyEnded()
 {
-    RefPtr<Event> event = Event::create(eventNames().endedEvent);
+    RefPtr<Event> event = Event::create(EventTypeNames::ended);
     event->setTarget(m_scheduledNode);
     m_scheduledNode->dispatchEvent(event.get());
 }

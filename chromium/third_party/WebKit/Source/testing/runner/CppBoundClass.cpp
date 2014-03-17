@@ -45,9 +45,8 @@
 #include "public/platform/WebString.h"
 #include "public/web/WebBindings.h"
 #include "public/web/WebFrame.h"
-#include <memory>
 
-using namespace WebKit;
+using namespace blink;
 using namespace std;
 
 namespace WebTestRunner {
@@ -76,7 +75,7 @@ private:
 
 class GetterPropertyCallback : public CppBoundClass::PropertyCallback {
 public:
-    GetterPropertyCallback(auto_ptr<CppBoundClass::GetterCallback> callback)
+    GetterPropertyCallback(WebScopedPtr<CppBoundClass::GetterCallback> callback)
         : m_callback(callback)
     {
     }
@@ -90,7 +89,7 @@ public:
     virtual bool setValue(const CppVariant& value) { return false; }
 
 private:
-    auto_ptr<CppBoundClass::GetterCallback> m_callback;
+    WebScopedPtr<CppBoundClass::GetterCallback> m_callback;
 };
 
 }
@@ -297,7 +296,7 @@ void CppBoundClass::bindCallback(const string& name, Callback* callback)
     m_methods[ident] = callback;
 }
 
-void CppBoundClass::bindGetterCallback(const string& name, auto_ptr<GetterCallback> callback)
+void CppBoundClass::bindGetterCallback(const string& name, WebScopedPtr<GetterCallback> callback)
 {
     PropertyCallback* propertyCallback = callback.get() ? new GetterPropertyCallback(callback) : 0;
     bindProperty(name, propertyCallback);
@@ -343,7 +342,7 @@ CppVariant* CppBoundClass::getAsCppVariant()
         m_selfVariant.set(npObj);
         WebBindings::releaseObject(npObj); // CppVariant takes the reference.
     }
-    WEBKIT_ASSERT(m_selfVariant.isObject());
+    BLINK_ASSERT(m_selfVariant.isObject());
     return &m_selfVariant;
 }
 

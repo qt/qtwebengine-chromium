@@ -10,22 +10,27 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
-#include "net/quic/crypto/crypto_server_config.h"
+#include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_framer.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_dispatcher.h"
 
 namespace net {
 
 namespace tools {
 
+namespace test {
+class QuicServerPeer;
+}  // namespace test
+
 class QuicDispatcher;
 
 class QuicServer : public EpollCallbackInterface {
  public:
   QuicServer();
-  explicit QuicServer(const QuicConfig& config);
+  QuicServer(const QuicConfig& config,
+             const QuicVersionVector& supported_versions);
 
   virtual ~QuicServer();
 
@@ -76,6 +81,8 @@ class QuicServer : public EpollCallbackInterface {
   int port() { return port_; }
 
  private:
+  friend class net::tools::test::QuicServerPeer;
+
   // Initialize the internal state of the server.
   void Initialize();
 
@@ -107,6 +114,12 @@ class QuicServer : public EpollCallbackInterface {
   QuicConfig config_;
   // crypto_config_ contains crypto parameters for the handshake.
   QuicCryptoServerConfig crypto_config_;
+
+  // This vector contains QUIC versions which we currently support.
+  // This should be ordered such that the highest supported version is the first
+  // element, with subsequent elements in descending order (versions can be
+  // skipped as necessary).
+  QuicVersionVector supported_versions_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicServer);
 };

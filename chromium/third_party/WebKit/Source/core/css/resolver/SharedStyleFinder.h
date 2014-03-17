@@ -22,10 +22,12 @@
 #ifndef SharedStyleFinder_h
 #define SharedStyleFinder_h
 
+#include "core/css/resolver/ElementResolveContext.h"
+#include "core/dom/Element.h"
+
 namespace WebCore {
 
 class Element;
-class ElementResolveContext;
 class Node;
 class RenderStyle;
 class RuleFeatureSet;
@@ -35,38 +37,43 @@ class StyleResolver;
 
 class SharedStyleFinder {
 public:
-    // FIXME: StyleResolver* only used for calling styleSharingCandidateMatchesRuleSet.
     // RuleSets are passed non-const as the act of matching against them can cause them
     // to be compacted. :(
-    SharedStyleFinder(const RuleFeatureSet& features, RuleSet* siblingRuleSet,
-        RuleSet* uncommonAttributeRuleSet, StyleResolver* styleResolver)
+    SharedStyleFinder(const ElementResolveContext& context,
+        const RuleFeatureSet& features, RuleSet* siblingRuleSet,
+        RuleSet* uncommonAttributeRuleSet, StyleResolver& styleResolver)
         : m_elementAffectedByClassRules(false)
         , m_features(features)
         , m_siblingRuleSet(siblingRuleSet)
         , m_uncommonAttributeRuleSet(uncommonAttributeRuleSet)
         , m_styleResolver(styleResolver)
+        , m_context(context)
     { }
 
-    // FIXME: It is not necessarily safe to call this method more than once.
-    RenderStyle* locateSharedStyle(const ElementResolveContext&, RenderStyle* newStyle);
+    RenderStyle* findSharedStyle();
 
 private:
-    Element* findElementForStyleSharing(const ElementResolveContext&) const;
+    Element* findElementForStyleSharing() const;
 
-    // Only used when we're collecting stats on styles
-    Element* searchDocumentForSharedStyle(const ElementResolveContext&) const;
+    // Only used when we're collecting stats on styles.
+    bool documentContainsValidCandidate() const;
 
     bool classNamesAffectedByRules(const SpaceSplitString&) const;
 
-    bool canShareStyleWithElement(const ElementResolveContext&, Element*) const;
-    bool canShareStyleWithControl(const ElementResolveContext&, Element*) const;
-    bool sharingCandidateHasIdenticalStyleAffectingAttributes(const ElementResolveContext&, Element*) const;
+    bool canShareStyleWithElement(Element& candidate) const;
+    bool canShareStyleWithControl(Element& candidate) const;
+    bool sharingCandidateHasIdenticalStyleAffectingAttributes(Element& candidate) const;
+    bool matchesRuleSet(RuleSet*);
+
+    Element& element() const { return *m_context.element(); }
+    Document& document() const { return element().document(); }
 
     bool m_elementAffectedByClassRules;
     const RuleFeatureSet& m_features;
     RuleSet* m_siblingRuleSet;
     RuleSet* m_uncommonAttributeRuleSet;
-    StyleResolver* m_styleResolver;
+    StyleResolver& m_styleResolver;
+    const ElementResolveContext& m_context;
 };
 
 } // namespace WebCore

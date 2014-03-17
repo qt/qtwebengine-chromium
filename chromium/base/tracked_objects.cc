@@ -7,6 +7,9 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#include "base/atomicops.h"
+#include "base/base_switches.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/leak_annotations.h"
 #include "base/logging.h"
@@ -50,6 +53,32 @@ const ThreadData::Status kInitialStartupState =
 // can be flipped to efficiently disable this path (if there is a performance
 // problem with its presence).
 static const bool kAllowAlternateTimeSourceHandling = true;
+
+inline bool IsProfilerTimingEnabled() {
+  enum {
+    UNDEFINED_TIMING,
+    ENABLED_TIMING,
+    DISABLED_TIMING,
+  };
+  static base::subtle::Atomic32 timing_enabled = UNDEFINED_TIMING;
+  // Reading |timing_enabled| is done without barrier because multiple
+  // initialization is not an issue while the barrier can be relatively costly
+  // given that this method is sometimes called in a tight loop.
+  base::subtle::Atomic32 current_timing_enabled =
+      base::subtle::NoBarrier_Load(&timing_enabled);
+  if (current_timing_enabled == UNDEFINED_TIMING) {
+    if (!CommandLine::InitializedForCurrentProcess())
+      return true;
+    current_timing_enabled =
+        (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+             switches::kProfilerTiming) ==
+         switches::kProfilerTimingDisabledValue)
+            ? DISABLED_TIMING
+            : ENABLED_TIMING;
+    base::subtle::NoBarrier_Store(&timing_enabled, current_timing_enabled);
+  }
+  return current_timing_enabled == ENABLED_TIMING;
+}
 
 }  // namespace
 
@@ -754,7 +783,7 @@ void ThreadData::SetAlternateTimeSource(NowFunction* now_function) {
 TrackedTime ThreadData::Now() {
   if (kAllowAlternateTimeSourceHandling && now_function_)
     return TrackedTime::FromMilliseconds((*now_function_)());
-  if (kTrackAllTaskObjects && TrackingStatus())
+  if (kTrackAllTaskObjects && IsProfilerTimingEnabled() && TrackingStatus())
     return TrackedTime::Now();
   return TrackedTime();  // Super fast when disabled, or not compiled.
 }

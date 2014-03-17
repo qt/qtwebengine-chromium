@@ -34,7 +34,7 @@
 #include "WebCommon.h"
 #include <stdint.h>
 
-namespace WebKit {
+namespace blink {
 
 // This is a clone of CompositingReasons in RenderLayer.h.
 const uint64_t CompositingReasonUnknown                                = 0;
@@ -49,7 +49,6 @@ const uint64_t CompositingReasonFilters                                = static_
 const uint64_t CompositingReasonPositionFixed                          = static_cast<uint64_t>(1) << 8;
 const uint64_t CompositingReasonPositionSticky                         = static_cast<uint64_t>(1) << 9;
 const uint64_t CompositingReasonOverflowScrollingTouch                 = static_cast<uint64_t>(1) << 10;
-const uint64_t CompositingReasonBlending                               = static_cast<uint64_t>(1) << 11;
 const uint64_t CompositingReasonAssumedOverlap                         = static_cast<uint64_t>(1) << 12;
 const uint64_t CompositingReasonOverlap                                = static_cast<uint64_t>(1) << 13;
 const uint64_t CompositingReasonNegativeZIndexChildren                 = static_cast<uint64_t>(1) << 14;
@@ -72,9 +71,10 @@ const uint64_t CompositingReasonLayerForBackground                     = static_
 const uint64_t CompositingReasonLayerForMask                           = static_cast<uint64_t>(1) << 31;
 const uint64_t CompositingReasonOverflowScrollingParent                = static_cast<uint64_t>(1) << 32;
 const uint64_t CompositingReasonOutOfFlowClipping                      = static_cast<uint64_t>(1) << 33;
+const uint64_t CompositingReasonIsolateCompositedDescendants           = static_cast<uint64_t>(1) << 35;
 
 typedef uint64_t WebCompositingReasons;
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebCompositingReasons_h

@@ -31,23 +31,21 @@
 #include "config.h"
 #include "modules/imagebitmap/ImageBitmapFactories.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8ImageBitmap.h"
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptScope.h"
-#include "bindings/v8/ScriptState.h"
+#include "core/fileapi/Blob.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/ImageBitmap.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/graphics/BitmapImage.h"
-#include "core/platform/graphics/ImageSource.h"
-#include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/ImageBitmap.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/SharedBuffer.h"
+#include "platform/graphics/BitmapImage.h"
+#include "platform/graphics/ImageSource.h"
+#include "platform/graphics/skia/NativeImageSkia.h"
 
 namespace WebCore {
 
@@ -65,206 +63,201 @@ static IntSize sizeFor(HTMLVideoElement* video)
     return IntSize();
 }
 
-static ScriptPromise fulfillImageBitmap(ScriptExecutionContext* context, PassRefPtr<ImageBitmap> imageBitmap)
+static ScriptPromise fulfillImageBitmap(ExecutionContext* context, PassRefPtr<ImageBitmap> imageBitmap)
 {
-    // Promises must be enabled.
-    ASSERT(RuntimeEnabledFeatures::promiseEnabled());
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(context);
-    resolver->fulfill(imageBitmap);
-    return resolver->promise();
+    ScriptPromise promise = ScriptPromise::createPending(context);
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(promise, context);
+    resolver->resolve(imageBitmap);
+    return promise;
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLImageElement* image, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLImageElement* image, ExceptionState& exceptionState)
 {
     LayoutSize s = sizeFor(image);
-    return createImageBitmap(eventTarget, image, 0, 0, s.width(), s.height(), es);
+    return createImageBitmap(eventTarget, image, 0, 0, s.width(), s.height(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLImageElement* image, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLImageElement* image, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
     // This variant does not work in worker threads.
     ASSERT(eventTarget->toDOMWindow());
 
     if (!image) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return ScriptPromise();
     }
     if (!image->cachedImage()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (image->cachedImage()->image()->isSVGImage()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
     if (!image->cachedImage()->image()->currentFrameHasSingleSecurityOrigin()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("createImageBitmap", "ImageBitmapFactories", "the source image contains cross-origin image data."));
+        exceptionState.throwSecurityError("the source image contains cross-origin image data.");
         return ScriptPromise();
     }
     if (!image->cachedImage()->passesAccessControlCheck(eventTarget->toDOMWindow()->document()->securityOrigin())
     && eventTarget->toDOMWindow()->document()->securityOrigin()->taintsCanvas(image->src())) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("createImageBitmap", "ImageBitmapFactories", "cross-origin access to the source image is denied."));
+        exceptionState.throwSecurityError("cross-origin access to the source image is denied.");
         return ScriptPromise();
     }
     // FIXME: make ImageBitmap creation asynchronous crbug.com/258082
-    return fulfillImageBitmap(eventTarget->scriptExecutionContext(), ImageBitmap::create(image, IntRect(sx, sy, sw, sh)));
+    return fulfillImageBitmap(eventTarget->executionContext(), ImageBitmap::create(image, IntRect(sx, sy, sw, sh)));
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLVideoElement* video, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLVideoElement* video, ExceptionState& exceptionState)
 {
     IntSize s = sizeFor(video);
-    return createImageBitmap(eventTarget, video, 0, 0, s.width(), s.height(), es);
+    return createImageBitmap(eventTarget, video, 0, 0, s.width(), s.height(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLVideoElement* video, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLVideoElement* video, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
     // This variant does not work in worker threads.
     ASSERT(eventTarget->toDOMWindow());
 
     if (!video) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return ScriptPromise();
     }
     if (!video->player()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (video->networkState() == HTMLMediaElement::NETWORK_EMPTY) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (video->player()->readyState() <= MediaPlayer::HaveMetadata) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
     if (!video->hasSingleSecurityOrigin()) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("createImageBitmap", "ImageBitmapFactories", "the source video contains cross-origin image data."));
+        exceptionState.throwSecurityError("the source video contains cross-origin image data.");
         return ScriptPromise();
     }
     if (!video->player()->didPassCORSAccessCheck() && eventTarget->toDOMWindow()->document()->securityOrigin()->taintsCanvas(video->currentSrc())) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("createImageBitmap", "ImageBitmapFactories", "cross-origin access to the source video is denied."));
+        exceptionState.throwSecurityError("cross-origin access to the source video is denied.");
         return ScriptPromise();
     }
     // FIXME: make ImageBitmap creation asynchronous crbug.com/258082
-    return fulfillImageBitmap(eventTarget->scriptExecutionContext(), ImageBitmap::create(video, IntRect(sx, sy, sw, sh)));
+    return fulfillImageBitmap(eventTarget->executionContext(), ImageBitmap::create(video, IntRect(sx, sy, sw, sh)));
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, CanvasRenderingContext2D* context, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, CanvasRenderingContext2D* context, ExceptionState& exceptionState)
 {
-    return createImageBitmap(eventTarget, context->canvas(), es);
+    return createImageBitmap(eventTarget, context->canvas(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, CanvasRenderingContext2D* context, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, CanvasRenderingContext2D* context, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
-    return createImageBitmap(eventTarget, context->canvas(), sx, sy, sw, sh, es);
+    return createImageBitmap(eventTarget, context->canvas(), sx, sy, sw, sh, exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLCanvasElement* canvas, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLCanvasElement* canvas, ExceptionState& exceptionState)
 {
-    return createImageBitmap(eventTarget, canvas, 0, 0, canvas->width(), canvas->height(), es);
+    return createImageBitmap(eventTarget, canvas, 0, 0, canvas->width(), canvas->height(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLCanvasElement* canvas, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, HTMLCanvasElement* canvas, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
     // This variant does not work in worker threads.
     ASSERT(eventTarget->toDOMWindow());
 
     if (!canvas) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return ScriptPromise();
     }
     if (!canvas->originClean()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
     // FIXME: make ImageBitmap creation asynchronous crbug.com/258082
-    return fulfillImageBitmap(eventTarget->scriptExecutionContext(), ImageBitmap::create(canvas, IntRect(sx, sy, sw, sh)));
+    return fulfillImageBitmap(eventTarget->executionContext(), ImageBitmap::create(canvas, IntRect(sx, sy, sw, sh)));
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, Blob* blob, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, Blob* blob, ExceptionState& exceptionState)
 {
-    // Promises must be enabled.
-    ASSERT(RuntimeEnabledFeatures::promiseEnabled());
-
     if (!blob) {
-        es.throwDOMException(TypeError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeError);
         return ScriptPromise();
     }
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(eventTarget->scriptExecutionContext());
+    ScriptPromise promise = ScriptPromise::createPending(eventTarget->executionContext());
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(promise, eventTarget->executionContext());
     RefPtr<ImageBitmapLoader> loader = ImageBitmapFactories::ImageBitmapLoader::create(from(eventTarget), resolver, IntRect());
     from(eventTarget)->addLoader(loader);
-    loader->loadBlobAsync(eventTarget->scriptExecutionContext(), blob);
-    return resolver->promise();
+    loader->loadBlobAsync(eventTarget->executionContext(), blob);
+    return promise;
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, Blob* blob, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, Blob* blob, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
-    // Promises must be enabled.
-    ASSERT(RuntimeEnabledFeatures::promiseEnabled());
-
     if (!blob) {
-        es.throwDOMException(TypeError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeError);
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(eventTarget->scriptExecutionContext());
+    ScriptPromise promise = ScriptPromise::createPending(eventTarget->executionContext());
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(promise, eventTarget->executionContext());
     RefPtr<ImageBitmapLoader> loader = ImageBitmapFactories::ImageBitmapLoader::create(from(eventTarget), resolver, IntRect(sx, sy, sw, sh));
     from(eventTarget)->addLoader(loader);
-    loader->loadBlobAsync(eventTarget->scriptExecutionContext(), blob);
-    return resolver->promise();
+    loader->loadBlobAsync(eventTarget->executionContext(), blob);
+    return promise;
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageData* data, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageData* data, ExceptionState& exceptionState)
 {
-    return createImageBitmap(eventTarget, data, 0, 0, data->width(), data->height(), es);
+    return createImageBitmap(eventTarget, data, 0, 0, data->width(), data->height(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageData* data, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageData* data, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
     if (!data) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
     // FIXME: make ImageBitmap creation asynchronous crbug.com/258082
-    return fulfillImageBitmap(eventTarget->scriptExecutionContext(), ImageBitmap::create(data, IntRect(sx, sy, sw, sh)));
+    return fulfillImageBitmap(eventTarget->executionContext(), ImageBitmap::create(data, IntRect(sx, sy, sw, sh)));
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageBitmap* bitmap, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageBitmap* bitmap, ExceptionState& exceptionState)
 {
-    return createImageBitmap(eventTarget, bitmap, 0, 0, bitmap->width(), bitmap->height(), es);
+    return createImageBitmap(eventTarget, bitmap, 0, 0, bitmap->width(), bitmap->height(), exceptionState);
 }
 
-ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageBitmap* bitmap, int sx, int sy, int sw, int sh, ExceptionState& es)
+ScriptPromise ImageBitmapFactories::createImageBitmap(EventTarget* eventTarget, ImageBitmap* bitmap, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
 {
     if (!bitmap) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return ScriptPromise();
     }
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
         return ScriptPromise();
     }
     // FIXME: make ImageBitmap creation asynchronous crbug.com/258082
-    return fulfillImageBitmap(eventTarget->scriptExecutionContext(), ImageBitmap::create(bitmap, IntRect(sx, sy, sw, sh)));
+    return fulfillImageBitmap(eventTarget->executionContext(), ImageBitmap::create(bitmap, IntRect(sx, sy, sw, sh)));
 }
 
 const char* ImageBitmapFactories::supplementName()
@@ -277,8 +270,8 @@ ImageBitmapFactories* ImageBitmapFactories::from(EventTarget* eventTarget)
     if (DOMWindow* window = eventTarget->toDOMWindow())
         return fromInternal(window);
 
-    ASSERT(eventTarget->scriptExecutionContext()->isWorkerGlobalScope());
-    return fromInternal(eventTarget->scriptExecutionContext());
+    ASSERT(eventTarget->executionContext()->isWorkerGlobalScope());
+    return fromInternal(toWorkerGlobalScope(eventTarget->executionContext()));
 }
 
 template <class T>
@@ -304,17 +297,17 @@ void ImageBitmapFactories::didFinishLoading(ImageBitmapLoader* loader)
 }
 
 ImageBitmapFactories::ImageBitmapLoader::ImageBitmapLoader(ImageBitmapFactories* factory, PassRefPtr<ScriptPromiseResolver> resolver, const IntRect& cropRect)
-    : m_loader(FileReaderLoader::ReadAsArrayBuffer, this)
-    , m_scriptState(ScriptState::current())
+    : m_scriptState(ScriptState::current())
+    , m_loader(FileReaderLoader::ReadAsArrayBuffer, this)
     , m_factory(factory)
     , m_resolver(resolver)
     , m_cropRect(cropRect)
 {
 }
 
-void ImageBitmapFactories::ImageBitmapLoader::loadBlobAsync(ScriptExecutionContext* context, Blob* blob)
+void ImageBitmapFactories::ImageBitmapLoader::loadBlobAsync(ExecutionContext* context, Blob* blob)
 {
-    m_loader.start(context, *blob);
+    m_loader.start(context, blob->blobDataHandle());
 }
 
 void ImageBitmapFactories::ImageBitmapLoader::rejectPromise()
@@ -353,7 +346,7 @@ void ImageBitmapFactories::ImageBitmapLoader::didFinishLoading()
 
     RefPtr<ImageBitmap> imageBitmap = ImageBitmap::create(image.get(), m_cropRect);
     ScriptScope scope(m_scriptState);
-    m_resolver->fulfill(imageBitmap.release());
+    m_resolver->resolve(imageBitmap.release());
     m_factory->didFinishLoading(this);
 }
 

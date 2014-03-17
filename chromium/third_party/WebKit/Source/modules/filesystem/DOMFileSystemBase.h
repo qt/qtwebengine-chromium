@@ -32,13 +32,13 @@
 #define DOMFileSystemBase_h
 
 #include "modules/filesystem/FileSystemFlags.h"
-#include "modules/filesystem/FileSystemType.h"
-#include "weborigin/KURL.h"
+#include "platform/FileSystemType.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit {
+namespace blink {
 class WebFileSystem;
 }
 
@@ -50,8 +50,9 @@ class EntriesCallback;
 class EntryBase;
 class EntryCallback;
 class ErrorCallback;
+class FileError;
 class MetadataCallback;
-class ScriptExecutionContext;
+class ExecutionContext;
 class SecurityOrigin;
 class VoidCallback;
 
@@ -70,10 +71,6 @@ public:
     static const char isolatedPathPrefix[];
     static const char externalPathPrefix[];
 
-    static PassRefPtr<DOMFileSystemBase> create(ScriptExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
-    {
-        return adoptRef(new DOMFileSystemBase(context, name, type, rootURL));
-    }
     virtual ~DOMFileSystemBase();
 
     // These are called when a new callback is created and resolved in
@@ -82,10 +79,13 @@ public:
     virtual void addPendingCallbacks() { }
     virtual void removePendingCallbacks() { }
 
+    // Overridden by subclasses to handle sync vs async error-handling.
+    virtual void reportError(PassOwnPtr<ErrorCallback>, PassRefPtr<FileError>) = 0;
+
     const String& name() const { return m_name; }
     FileSystemType type() const { return m_type; }
     KURL rootURL() const { return m_filesystemRootURL; }
-    WebKit::WebFileSystem* fileSystem() const;
+    blink::WebFileSystem* fileSystem() const;
     SecurityOrigin* securityOrigin() const;
 
     // The clonable flag is used in the structured clone algorithm to test
@@ -104,22 +104,21 @@ public:
     static bool pathPrefixToFileSystemType(const String& pathPrefix, FileSystemType&);
 
     // Actual FileSystem API implementations. All the validity checks on virtual paths are done at this level.
-    // They return false for immediate errors that don't involve lower WebFileSystem layer (e.g. for name validation errors). Otherwise they return true (but later may call back with an runtime error).
-    bool getMetadata(const EntryBase*, PassRefPtr<MetadataCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool move(const EntryBase* source, EntryBase* parent, const String& name, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool copy(const EntryBase* source, EntryBase* parent, const String& name, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool remove(const EntryBase*, PassRefPtr<VoidCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool removeRecursively(const EntryBase*, PassRefPtr<VoidCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool getParent(const EntryBase*, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
-    bool getFile(const EntryBase*, const String& path, const FileSystemFlags&, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool getDirectory(const EntryBase*, const String& path, const FileSystemFlags&, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    bool readDirectory(PassRefPtr<DirectoryReaderBase>, const String& path, PassRefPtr<EntriesCallback>, PassRefPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void getMetadata(const EntryBase*, PassOwnPtr<MetadataCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void move(const EntryBase* source, EntryBase* parent, const String& name, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void copy(const EntryBase* source, EntryBase* parent, const String& name, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void remove(const EntryBase*, PassOwnPtr<VoidCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void removeRecursively(const EntryBase*, PassOwnPtr<VoidCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void getParent(const EntryBase*, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>);
+    void getFile(const EntryBase*, const String& path, const FileSystemFlags&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void getDirectory(const EntryBase*, const String& path, const FileSystemFlags&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    bool readDirectory(PassRefPtr<DirectoryReaderBase>, const String& path, PassOwnPtr<EntriesCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
 
 protected:
-    DOMFileSystemBase(ScriptExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
+    DOMFileSystemBase(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
     friend class DOMFileSystemSync;
 
-    ScriptExecutionContext* m_context;
+    ExecutionContext* m_context;
     String m_name;
     FileSystemType m_type;
     KURL m_filesystemRootURL;

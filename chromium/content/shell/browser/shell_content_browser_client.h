@@ -12,8 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/shell/browser/shell_speech_recognition_manager_delegate.h"
 
 namespace content {
@@ -22,8 +20,7 @@ class ShellBrowserContext;
 class ShellBrowserMainParts;
 class ShellResourceDispatcherHostDelegate;
 
-class ShellContentBrowserClient : public ContentBrowserClient,
-                                  public NotificationObserver {
+class ShellContentBrowserClient : public ContentBrowserClient {
  public:
   // Gets the current instance.
   static ShellContentBrowserClient* Get();
@@ -66,17 +63,12 @@ class ShellContentBrowserClient : public ContentBrowserClient,
                                               const GURL& current_url,
                                               const GURL& new_url) OVERRIDE;
 
-#if defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
       const CommandLine& command_line,
       int child_process_id,
       std::vector<content::FileDescriptorInfo>* mappings) OVERRIDE;
 #endif
-
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
 
   ShellBrowserContext* browser_context();
   ShellBrowserContext* off_the_record_browser_context();
@@ -97,8 +89,6 @@ class ShellContentBrowserClient : public ContentBrowserClient,
   base::FilePath webkit_source_dir_;
 
   ShellBrowserMainParts* shell_browser_main_parts_;
-
-  NotificationRegistrar registrar_;
 };
 
 }  // namespace content

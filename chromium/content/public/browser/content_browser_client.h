@@ -35,16 +35,13 @@ class CommandLine;
 class GURL;
 struct WebPreferences;
 
-namespace WebKit {
+namespace blink {
 struct WebWindowFeatures;
 }
 
 namespace base {
 class DictionaryValue;
 class FilePath;
-}
-namespace crypto {
-class CryptoModuleBlockingPasswordDelegate;
 }
 
 namespace gfx {
@@ -95,6 +92,7 @@ class RenderViewHostDelegateView;
 class ResourceContext;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
+class VibrationProvider;
 class WebContents;
 class WebContentsViewDelegate;
 class WebContentsViewPort;
@@ -151,6 +149,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // the delegate in the content embedder that will service the guest in the
   // content layer. The content layer takes ownership of the |guest_delegate|.
   virtual void GuestWebContentsCreated(
+      SiteInstance* guest_site_instance,
       WebContents* guest_web_contents,
       WebContents* opener_web_contents,
       BrowserPluginGuestDelegate** guest_delegate,
@@ -239,11 +238,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void SiteInstanceDeleting(SiteInstance* site_instance) {}
 
   // Returns true if for the navigation from |current_url| to |new_url|
-  // in |site_instance|, the process should be swapped (even if we are in a
-  // process model that doesn't usually swap).
-  virtual bool ShouldSwapProcessesForNavigation(SiteInstance* site_instance,
-                                                const GURL& current_url,
-                                                const GURL& new_url);
+  // in |site_instance|, a new SiteInstance and BrowsingInstance should be
+  // created (even if we are in a process model that doesn't usually swap.)
+  // This forces a process swap and severs script connections with existing
+  // tabs.
+  virtual bool ShouldSwapBrowsingInstancesForNavigation(
+      SiteInstance* site_instance,
+      const GURL& current_url,
+      const GURL& new_url);
 
   // Returns true if the given navigation redirect should cause a renderer
   // process swap.
@@ -310,8 +312,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual bool AllowWorkerDatabase(
       const GURL& url,
-      const string16& name,
-      const string16& display_name,
+      const base::string16& name,
+      const base::string16& display_name,
       unsigned long estimated_size,
       ResourceContext* context,
       const std::vector<std::pair<int, int> >& render_views);
@@ -329,7 +331,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual bool AllowWorkerIndexedDB(
       const GURL& url,
-      const string16& name,
+      const base::string16& name,
       ResourceContext* context,
       const std::vector<std::pair<int, int> >& render_views);
 
@@ -430,7 +432,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
-  virtual WebKit::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPresenter::Permission
       CheckDesktopNotificationPermission(
           const GURL& source_url,
           ResourceContext* context,
@@ -461,7 +463,7 @@ class CONTENT_EXPORT ContentBrowserClient {
                                const GURL& target_url,
                                const content::Referrer& referrer,
                                WindowOpenDisposition disposition,
-                               const WebKit::WebWindowFeatures& features,
+                               const blink::WebWindowFeatures& features,
                                bool user_gesture,
                                bool opener_suppressed,
                                content::ResourceContext* context,
@@ -569,7 +571,17 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.
+  // FYI: Used by an external project; please don't remove.
+  // Contact Viatcheslav Ostapenko at sl.ostapenko@samsung.com for more
+  // information.
   virtual LocationProvider* OverrideSystemLocationProvider();
+
+  // Allows an embedder to return its own VibrationProvider implementation.
+  // Return NULL to use the default one for the platform to be created.
+  // FYI: Used by an external project; please don't remove.
+  // Contact Viatcheslav Ostapenko at sl.ostapenko@samsung.com for more
+  // information.
+  virtual VibrationProvider* OverrideVibrationProvider();
 
   // Allow an embedder to provide a share group reimplementation to connect renderer
   // GL contexts with the root compositor.
@@ -595,13 +607,14 @@ class CONTENT_EXPORT ContentBrowserClient {
                                 bool* success) {}
 #endif
 
-#if defined(USE_NSS)
-  // Return a delegate to authenticate and unlock |module|.
-  // This is called on a worker thread.
-  virtual
-      crypto::CryptoModuleBlockingPasswordDelegate* GetCryptoPasswordDelegate(
-          const GURL& url);
-#endif
+  // Returns true if plugin referred to by the url can use
+  // pp::FileIO::RequestOSFileHandle.
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      content::BrowserContext* browser_context,
+      const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs();
 };
 
 }  // namespace content

@@ -43,7 +43,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 inline MeterShadowElement::MeterShadowElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
 {
 }
 
@@ -66,7 +66,7 @@ inline MeterInnerElement::MeterInnerElement(Document& document)
 PassRefPtr<MeterInnerElement> MeterInnerElement::create(Document& document)
 {
     RefPtr<MeterInnerElement> element = adoptRef(new MeterInnerElement(document));
-    element->setPart(AtomicString("-webkit-meter-inner-element", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-meter-inner-element", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 
@@ -92,7 +92,7 @@ inline MeterBarElement::MeterBarElement(Document& document)
 PassRefPtr<MeterBarElement> MeterBarElement::create(Document& document)
 {
     RefPtr<MeterBarElement> element = adoptRef(new MeterBarElement(document));
-    element->setPart(AtomicString("-webkit-meter-bar", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-meter-bar", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 

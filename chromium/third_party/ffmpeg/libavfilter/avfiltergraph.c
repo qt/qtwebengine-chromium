@@ -182,11 +182,15 @@ AVFilterContext *avfilter_graph_alloc_filter(AVFilterGraph *graph,
 {
     AVFilterContext **filters, *s;
 
-    if (graph->thread_type && !graph->internal->thread) {
-        int ret = ff_graph_thread_init(graph);
-        if (ret < 0) {
-            av_log(graph, AV_LOG_ERROR, "Error initializing threading.\n");
-            return NULL;
+    if (graph->thread_type && !graph->internal->thread_execute) {
+        if (graph->execute) {
+            graph->internal->thread_execute = graph->execute;
+        } else {
+            int ret = ff_graph_thread_init(graph);
+            if (ret < 0) {
+                av_log(graph, AV_LOG_ERROR, "Error initializing threading.\n");
+                return NULL;
+            }
         }
     }
 
@@ -220,7 +224,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
  * A graph is considered valid if all its input and output pads are
  * connected.
  *
- * @return 0 in case of success, a negative value otherwise
+ * @return >= 0 in case of success, a negative value otherwise
  */
 static int graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
 {
@@ -258,7 +262,7 @@ static int graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
 /**
  * Configure all the links of graphctx.
  *
- * @return 0 in case of success, a negative value otherwise
+ * @return >= 0 in case of success, a negative value otherwise
  */
 static int graph_config_links(AVFilterGraph *graph, AVClass *log_ctx)
 {
@@ -388,6 +392,19 @@ static int can_merge_formats(AVFilterFormats *a_arg,
         return 1;
     a = clone_filter_formats(a_arg);
     b = clone_filter_formats(b_arg);
+
+    if (!a || !b) {
+        if (a)
+            av_freep(&a->formats);
+        if (b)
+            av_freep(&b->formats);
+
+        av_freep(&a);
+        av_freep(&b);
+
+        return 0;
+    }
+
     if (is_sample_rate) {
         ret = ff_merge_samplerates(a, b);
     } else {
@@ -637,6 +654,10 @@ static int pick_format(AVFilterLink *link, AVFilterLink *ref)
             av_log(link->src, AV_LOG_ERROR, "Cannot select channel layout for"
                    " the link between filters %s and %s.\n", link->src->name,
                    link->dst->name);
+            if (!link->in_channel_layouts->all_counts)
+                av_log(link->src, AV_LOG_ERROR, "Unknown channel layouts not "
+                       "supported, try specifying a channel layout using "
+                       "'aformat=channel_layouts=something'.\n");
             return AVERROR(EINVAL);
         }
         link->in_channel_layouts->nb_channel_layouts = 1;
@@ -720,7 +741,8 @@ static int reduce_formats_on_filter(AVFilterContext *filter)
             if (inlink->type != outlink->type || fmts->nb_channel_layouts == 1)
                 continue;
 
-            if (fmts->all_layouts) {
+            if (fmts->all_layouts &&
+                (!FF_LAYOUT2COUNT(fmt) || fmts->all_counts)) {
                 /* Turn the infinite list into a singleton */
                 fmts->all_layouts = fmts->all_counts  = 0;
                 ff_add_channel_layout(&outlink->in_channel_layouts, fmt);

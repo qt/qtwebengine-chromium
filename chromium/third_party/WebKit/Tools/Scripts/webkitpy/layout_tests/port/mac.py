@@ -31,24 +31,29 @@
 import logging
 import signal
 
-from webkitpy.layout_tests.port import chromium
+from webkitpy.layout_tests.port import base
 
 
 _log = logging.getLogger(__name__)
 
 
-class MacPort(chromium.ChromiumPort):
-    SUPPORTED_VERSIONS = ('snowleopard', 'lion', 'retina', 'mountainlion')
+class MacPort(base.Port):
+    SUPPORTED_VERSIONS = ('snowleopard', 'lion', 'retina', 'mountainlion', 'mavericks')
     port_name = 'mac'
 
-    FALLBACK_PATHS = { 'mountainlion': [ 'mac' ]}
+    # FIXME: We treat Retina (High-DPI) devices as if they are running
+    # a different operating system version. This is lame and should be fixed.
+    # Note that the retina versions fallback to the non-retina versions and so no
+    # baselines are shared between retina versions; this keeps the fallback graph as a tree
+    # and maximizes the number of baselines we can share that way.
+    # We also currently only support Retina on 10.8; we need to either upgrade to 10.9 or support both.
+
+    FALLBACK_PATHS = {}
+    FALLBACK_PATHS['mavericks'] = ['mac']
+    FALLBACK_PATHS['mountainlion'] = ['mac-mountainlion'] + FALLBACK_PATHS['mavericks']
+    FALLBACK_PATHS['retina'] = ['mac-retina'] + FALLBACK_PATHS['mountainlion']
     FALLBACK_PATHS['lion'] = ['mac-lion'] + FALLBACK_PATHS['mountainlion']
     FALLBACK_PATHS['snowleopard'] = ['mac-snowleopard'] + FALLBACK_PATHS['lion']
-
-    # FIXME: We treat Retina (High-DPI) devices as if they are running
-    # a different operating system version. This isn't accurate, but will work until
-    # we need to test and support baselines across multiple O/S versions.
-    FALLBACK_PATHS['retina'] = ['mac-retina'] + FALLBACK_PATHS['mountainlion']
 
     DEFAULT_BUILD_DIRECTORIES = ('xcodebuild', 'out')
 
@@ -57,13 +62,17 @@ class MacPort(chromium.ChromiumPort):
     @classmethod
     def determine_full_port_name(cls, host, options, port_name):
         if port_name.endswith('mac'):
+            if host.platform.os_version in ('future',):
+                version = 'mavericks'
+            else:
+                version = host.platform.os_version
             if host.platform.is_highdpi():
-                return "mac-retina"
-            return port_name + '-' + host.platform.os_version
+                version = 'retina'
+            return port_name + '-' + version
         return port_name
 
     def __init__(self, host, port_name, **kwargs):
-        chromium.ChromiumPort.__init__(self, host, port_name, **kwargs)
+        super(MacPort, self).__init__(host, port_name, **kwargs)
         self._version = port_name[port_name.index('mac-') + len('mac-'):]
         assert self._version in self.SUPPORTED_VERSIONS
 
@@ -71,8 +80,8 @@ class MacPort(chromium.ChromiumPort):
         return [self._build_path('ffmpegsumo.so')]
 
     def check_build(self, needs_http, printer):
-        result = chromium.ChromiumPort.check_build(self, needs_http, printer)
-        if not result:
+        result = super(MacPort, self).check_build(needs_http, printer)
+        if result:
             _log.error('For complete Mac build requirements, please see:')
             _log.error('')
             _log.error('    http://code.google.com/p/chromium/wiki/MacBuildInstructions')

@@ -33,8 +33,8 @@
 
 #include "V8SQLError.h"
 #include "V8SQLTransaction.h"
-#include "bindings/v8/V8Callback.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "bindings/v8/ScriptController.h"
+#include "core/dom/ExecutionContext.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
@@ -47,7 +47,7 @@ bool V8SQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
 
-    v8::Handle<v8::Context> v8Context = toV8Context(scriptExecutionContext(), m_world.get());
+    v8::Handle<v8::Context> v8Context = toV8Context(executionContext(), m_world.get());
     if (v8Context.IsEmpty())
         return true;
 
@@ -66,12 +66,18 @@ bool V8SQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
         errorHandle
     };
 
-    bool callbackReturnValue = false;
+    v8::TryCatch exceptionCatcher;
+    exceptionCatcher.SetVerbose(true);
+
+    v8::Handle<v8::Value> result = ScriptController::callFunction(executionContext(), m_callback.newLocal(isolate), isolate->GetCurrentContext()->Global(), 2, argv, isolate);
+
+    // FIXME: This comment doesn't make much sense given what the code is actually doing.
+    //
     // Step 6: If the error callback returns false, then move on to the next
     // statement, if any, or onto the next overall step otherwise. Otherwise,
     // the error callback did not return false, or there was no error callback.
     // Jump to the last step in the overall steps.
-    return invokeCallback(m_callback.newLocal(isolate), 2, argv, callbackReturnValue, scriptExecutionContext(), isolate) || callbackReturnValue;
+    return exceptionCatcher.HasCaught() || (!result.IsEmpty() && result->BooleanValue());
 }
 
 } // namespace WebCore

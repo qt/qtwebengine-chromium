@@ -31,6 +31,8 @@
 #include "config.h"
 #include "V8MutationObserver.h"
 
+#include "bindings/v8/ExceptionMessages.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8MutationCallback.h"
@@ -39,27 +41,30 @@
 
 namespace WebCore {
 
-void V8MutationObserver::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8MutationObserver::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (args.Length() < 1) {
-        throwNotEnoughArgumentsError(args.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "MutationObserver", info.Holder(), info.GetIsolate());
+    if (info.Length() < 1) {
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(1, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    v8::Local<v8::Value> arg = args[0];
+    v8::Local<v8::Value> arg = info[0];
     if (!arg->IsFunction()) {
-        throwTypeError("Callback argument must be a function", args.GetIsolate());
+        exceptionState.throwTypeError("Callback argument must be a function");
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    ScriptExecutionContext* context = getScriptExecutionContext();
-    v8::Handle<v8::Object> wrapper = args.Holder();
+    ExecutionContext* context = getExecutionContext();
+    v8::Handle<v8::Object> wrapper = info.Holder();
 
-    RefPtr<MutationCallback> callback = V8MutationCallback::create(v8::Handle<v8::Function>::Cast(arg), context, wrapper, args.GetIsolate());
+    OwnPtr<MutationCallback> callback = V8MutationCallback::create(v8::Handle<v8::Function>::Cast(arg), context, wrapper, info.GetIsolate());
     RefPtr<MutationObserver> observer = MutationObserver::create(callback.release());
 
-    V8DOMWrapper::associateObjectWithWrapper<V8MutationObserver>(observer.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
-    args.GetReturnValue().Set(wrapper);
+    V8DOMWrapper::associateObjectWithWrapper<V8MutationObserver>(observer.release(), &wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Dependent);
+    info.GetReturnValue().Set(wrapper);
 }
 
 } // namespace WebCore

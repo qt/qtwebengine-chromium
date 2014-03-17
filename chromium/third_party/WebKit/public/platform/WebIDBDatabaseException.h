@@ -31,7 +31,7 @@
 #ifndef WebIDBDatabaseException_h
 #define WebIDBDatabaseException_h
 
-namespace WebKit {
+namespace blink {
 
 enum WebIDBDatabaseException {
     WebIDBDatabaseExceptionUnknownError = 23,
@@ -40,8 +40,9 @@ enum WebIDBDatabaseException {
     WebIDBDatabaseExceptionVersionError = 28,
     WebIDBDatabaseExceptionAbortError = 17,
     WebIDBDatabaseExceptionQuotaError = 19,
+    WebIDBDatabaseExceptionTimeoutError = 20,
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebIDBDatabaseException_h

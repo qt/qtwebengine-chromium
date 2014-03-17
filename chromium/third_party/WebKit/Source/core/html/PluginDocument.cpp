@@ -34,8 +34,8 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
@@ -58,7 +58,7 @@ private:
     {
     }
 
-    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) OVERRIDE;
 
     virtual void finish() OVERRIDE;
 
@@ -81,13 +81,13 @@ void PluginDocumentParser::createDocumentStructure()
         return;
 
     // FIXME: Why does this check settings?
-    if (!frame->settings() || !frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+    if (!frame->settings() || !frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return;
 
     RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
     rootElement->insertedByParser();
     document()->appendChild(rootElement);
-    frame->loader()->dispatchDocumentElementAvailable();
+    frame->loader().dispatchDocumentElementAvailable();
 
     RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
     body->setAttribute(marginwidthAttr, "0");
@@ -99,7 +99,7 @@ void PluginDocumentParser::createDocumentStructure()
     m_embedElement->setAttribute(widthAttr, "100%");
     m_embedElement->setAttribute(heightAttr, "100%");
     m_embedElement->setAttribute(nameAttr, "plugin");
-    m_embedElement->setAttribute(srcAttr, document()->url().string());
+    m_embedElement->setAttribute(srcAttr, AtomicString(document()->url().string()));
     m_embedElement->setAttribute(typeAttr, document()->loader()->mimeType());
     body->appendChild(m_embedElement);
 
@@ -115,17 +115,15 @@ void PluginDocumentParser::createDocumentStructure()
         view->didReceiveResponse(document()->loader()->response());
 }
 
-size_t PluginDocumentParser::appendBytes(const char* data, size_t length)
+void PluginDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!m_embedElement)
         createDocumentStructure();
 
     if (!length)
-        return 0;
+        return;
     if (PluginView* view = pluginView())
         view->didReceiveData(data, length);
-
-    return 0;
 }
 
 void PluginDocumentParser::finish()
@@ -191,7 +189,7 @@ void PluginDocument::cancelManualPluginLoad()
     if (!shouldLoadPluginManually())
         return;
 
-    DocumentLoader* documentLoader = frame()->loader()->activeDocumentLoader();
+    DocumentLoader* documentLoader = frame()->loader().activeDocumentLoader();
     documentLoader->cancelMainResourceLoad(ResourceError::cancelledError(documentLoader->request().url()));
     setShouldLoadPluginManually(false);
 }

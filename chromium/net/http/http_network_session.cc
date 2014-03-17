@@ -42,6 +42,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.cert_verifier,
       params.server_bound_cert_service,
       params.transport_security_state,
+      params.cert_transparency_verifier,
       params.ssl_session_cache_shard,
       params.proxy_service,
       params.ssl_config_service,
@@ -58,6 +59,7 @@ HttpNetworkSession::Params::Params()
       cert_verifier(NULL),
       server_bound_cert_service(NULL),
       transport_security_state(NULL),
+      cert_transparency_verifier(NULL),
       proxy_service(NULL),
       ssl_config_service(NULL),
       http_auth_handler_factory(NULL),
@@ -71,7 +73,6 @@ HttpNetworkSession::Params::Params()
       testing_fixed_https_port(0),
       force_spdy_single_domain(false),
       enable_spdy_ip_pooling(true),
-      enable_spdy_credential_frames(false),
       enable_spdy_compression(true),
       enable_spdy_ping_based_connection_checking(true),
       spdy_default_protocol(kProtoUnknown),
@@ -83,6 +84,7 @@ HttpNetworkSession::Params::Params()
       enable_quic_https(false),
       quic_clock(NULL),
       quic_random(NULL),
+      quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
 }
@@ -112,13 +114,13 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),
                            params.quic_clock ? params. quic_clock :
-                               new QuicClock()),
+                               new QuicClock(),
+                           params.quic_max_packet_length),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
                          params.force_spdy_single_domain,
                          params.enable_spdy_ip_pooling,
-                         params.enable_spdy_credential_frames,
                          params.enable_spdy_compression,
                          params.enable_spdy_ping_based_connection_checking,
                          params.spdy_default_protocol,
@@ -128,7 +130,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                          params.time_func,
                          params.trusted_spdy_proxy),
       http_stream_factory_(new HttpStreamFactoryImpl(this, false)),
-      websocket_stream_factory_(new HttpStreamFactoryImpl(this, true)),
+      http_stream_factory_for_websocket_(
+          new HttpStreamFactoryImpl(this, true)),
       params_(params) {
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());

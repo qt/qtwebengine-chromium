@@ -12,7 +12,6 @@
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_event_handler.h"
-#include "ui/aura/test/test_activation_client.h"
 #include "ui/aura/test/test_windows.h"
 
 #if !defined(OS_WIN) && !defined(USE_X11)
@@ -33,7 +32,7 @@ TEST_F(InputMethodEventFilterTest, TestInputMethodProperty) {
   root_window()->SetEventFilter(root_filter);
 
   InputMethodEventFilter input_method_event_filter(
-      root_window()->GetAcceleratedWidget());
+      dispatcher()->host()->GetAcceleratedWidget());
   root_filter->AddHandler(&input_method_event_filter);
 
   // Tests if InputMethodEventFilter adds a window property on its
@@ -52,7 +51,7 @@ TEST_F(InputMethodEventFilterTest, TestInputMethodKeyEventPropagation) {
 
   // Add the InputMethodEventFilter before the TestEventFilter.
   InputMethodEventFilter input_method_event_filter(
-      root_window()->GetAcceleratedWidget());
+      dispatcher()->host()->GetAcceleratedWidget());
   root_filter->AddHandler(&input_method_event_filter);
 
   // Add TestEventFilter to the RootWindow.

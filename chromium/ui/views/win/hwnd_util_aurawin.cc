@@ -5,6 +5,7 @@
 #include "ui/views/win/hwnd_util.h"
 
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
@@ -19,21 +20,21 @@ HWND HWNDForWidget(const Widget* widget) {
 
 HWND HWNDForNativeView(const gfx::NativeView view) {
   return view && view->GetRootWindow() ?
-      view->GetRootWindow()->GetAcceleratedWidget() : NULL;
+      view->GetDispatcher()->host()->GetAcceleratedWidget() : NULL;
 }
 
 HWND HWNDForNativeWindow(const gfx::NativeWindow window) {
   return window && window->GetRootWindow() ?
-      window->GetRootWindow()->GetAcceleratedWidget() : NULL;
+      window->GetDispatcher()->host()->GetAcceleratedWidget() : NULL;
 }
 
 gfx::Rect GetWindowBoundsForClientBounds(View* view,
                                          const gfx::Rect& client_bounds) {
   DCHECK(view);
-  aura::RootWindow* window =
-      view->GetWidget()->GetNativeWindow()->GetRootWindow();
-  if (window) {
-    HWND hwnd = window->GetAcceleratedWidget();
+  aura::WindowEventDispatcher* dispatcher =
+      view->GetWidget()->GetNativeWindow()->GetDispatcher();
+  if (dispatcher) {
+    HWND hwnd = dispatcher->host()->GetAcceleratedWidget();
     RECT rect = client_bounds.ToRECT();
     DWORD style = ::GetWindowLong(hwnd, GWL_STYLE);
     DWORD ex_style = ::GetWindowLong(hwnd, GWL_EXSTYLE);

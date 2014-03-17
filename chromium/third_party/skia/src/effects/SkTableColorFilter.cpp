@@ -189,7 +189,7 @@ SkTable_ColorFilter::SkTable_ColorFilter(SkFlattenableReadBuffer& buffer) : INHE
 
     size_t size = buffer.getArrayCount();
     SkASSERT(size <= sizeof(storage));
-    buffer.readByteArray(storage);
+    buffer.readByteArray(storage, size);
 
     SkDEBUGCODE(size_t raw = ) SkPackBits::Unpack8(storage, size, fStorage);
 
@@ -272,6 +272,7 @@ public:
                           EffectKey,
                           const char* outputColor,
                           const char* inputColor,
+                          const TransformedCoordsArray&,
                           const TextureSamplerArray&) SK_OVERRIDE;
 
     virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
@@ -292,6 +293,7 @@ void GLColorTableEffect::emitCode(GrGLShaderBuilder* builder,
                                   EffectKey,
                                   const char* outputColor,
                                   const char* inputColor,
+                                  const TransformedCoordsArray&,
                                   const TextureSamplerArray& samplers) {
 
     static const float kColorScaleFactor = 255.0f / 256.0f;

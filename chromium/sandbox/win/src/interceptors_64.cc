@@ -249,20 +249,23 @@ SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtOpenKeyEx64(
 
 // -----------------------------------------------------------------------
 
-SANDBOX_INTERCEPT HANDLE WINAPI TargetCreateEventW64(
-    LPSECURITY_ATTRIBUTES security_attributes, BOOL manual_reset,
-    BOOL initial_state, LPCWSTR name) {
-  CreateEventWFunction orig_fn = reinterpret_cast<
-      CreateEventWFunction>(g_originals[CREATE_EVENT_ID]);
-  return TargetCreateEventW(orig_fn, security_attributes, manual_reset,
-                            initial_state, name);
+SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtCreateEvent64(
+    PHANDLE event_handle, ACCESS_MASK desired_access,
+    POBJECT_ATTRIBUTES object_attributes, EVENT_TYPE event_type,
+    BOOLEAN initial_state) {
+  NtCreateEventFunction orig_fn = reinterpret_cast<
+      NtCreateEventFunction>(g_originals[CREATE_EVENT_ID]);
+  return TargetNtCreateEvent(orig_fn, event_handle, desired_access,
+                             object_attributes, event_type, initial_state);
 }
 
-SANDBOX_INTERCEPT HANDLE WINAPI TargetOpenEventW64(
-    ACCESS_MASK desired_access, BOOL inherit_handle, LPCWSTR name) {
-  OpenEventWFunction orig_fn = reinterpret_cast<
-      OpenEventWFunction>(g_originals[OPEN_EVENT_ID]);
-  return TargetOpenEventW(orig_fn, desired_access, inherit_handle, name);
+SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtOpenEvent64(
+    PHANDLE event_handle, ACCESS_MASK desired_access,
+    POBJECT_ATTRIBUTES object_attributes) {
+  NtOpenEventFunction orig_fn = reinterpret_cast<
+      NtOpenEventFunction>(g_originals[OPEN_EVENT_ID]);
+  return TargetNtOpenEvent(orig_fn, event_handle, desired_access,
+                           object_attributes);
 }
 
 }  // namespace sandbox

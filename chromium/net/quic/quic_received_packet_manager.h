@@ -8,12 +8,14 @@
 #ifndef NET_QUIC_QUIC_RECEIVED_PACKET_MANAGER_H_
 #define NET_QUIC_QUIC_RECEIVED_PACKET_MANAGER_H_
 
+#include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
 
 namespace test {
+class QuicConnectionPeer;
 class QuicReceivedPacketManagerPeer;
 }  // namespace test
 
@@ -23,12 +25,22 @@ class QuicReceivedPacketManagerPeer;
 class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
     public QuicReceivedEntropyHashCalculatorInterface {
  public:
-  QuicReceivedPacketManager();
+  explicit QuicReceivedPacketManager(CongestionFeedbackType congestion_type);
   virtual ~QuicReceivedPacketManager();
 
-  // Updates the internal state concerning which packets have been acked.
-  void RecordPacketReceived(const QuicPacketHeader& header,
-                            QuicTime receipt_time);
+  // Updates the internal state concerning which packets have been received.
+  // bytes: the packet size in bytes including Quic Headers.
+  // header: the packet header.
+  // timestamp: the arrival time of the packet.
+  // revived: true if the packet was lost and then recovered with help of a
+  // FEC packet.
+  void RecordPacketReceived(QuicByteCount bytes,
+                            const QuicPacketHeader& header,
+                            QuicTime receipt_time,
+                            bool revived);
+
+  // Checks whether |sequence_number| is missing and less than largest observed.
+  bool IsMissing(QuicPacketSequenceNumber sequence_number);
 
   // Checks if we're still waiting for the packet with |sequence_number|.
   bool IsAwaitingPacket(QuicPacketSequenceNumber sequence_number);
@@ -36,6 +48,13 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // Update the |received_info| for an outgoing ack.
   void UpdateReceivedPacketInfo(ReceivedPacketInfo* received_info,
                                 QuicTime approximate_now);
+
+  // Should be called before sending an ACK packet, to decide if we need
+  // to attach a QuicCongestionFeedbackFrame block.
+  // Returns false if no QuicCongestionFeedbackFrame block is needed.
+  // Otherwise fills in feedback and returns true.
+  virtual bool GenerateCongestionFeedback(
+      QuicCongestionFeedbackFrame* feedback);
 
   // QuicReceivedEntropyHashCalculatorInterface
   // Called by QuicFramer, when the outgoing ack gets truncated, to recalculate
@@ -50,6 +69,13 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // Updates internal state based on |incoming_ack.sent_info|.
   void UpdatePacketInformationSentByPeer(const QuicAckFrame& incoming_ack);
 
+  // Returns whether the peer is missing packets.
+  bool HasMissingPackets();
+
+  // Returns true when there are new missing packets to be reported within 3
+  // packets of the largest observed.
+  bool HasNewMissingPackets();
+
   QuicPacketSequenceNumber peer_largest_observed_packet() {
     return peer_largest_observed_packet_;
   }
@@ -63,6 +89,7 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   }
 
  private:
+  friend class test::QuicConnectionPeer;
   friend class test::QuicReceivedPacketManagerPeer;
 
   typedef std::map<QuicPacketSequenceNumber,
@@ -117,6 +144,8 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // no sequence numbers have been received since UpdateReceivedPacketInfo.
   // Needed for calculating delta_time_largest_observed.
   QuicTime time_largest_observed_;
+
+  scoped_ptr<ReceiveAlgorithmInterface> receive_algorithm_;
 };
 
 }  // namespace net

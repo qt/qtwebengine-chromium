@@ -9,6 +9,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/drop_data.h"
+#include "content/renderer/clipboard_utils.h"
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/scoped_clipboard_writer_glue.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -22,16 +23,14 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "url/gurl.h"
-#include "webkit/glue/webkit_glue.h"
-#include "webkit/renderer/clipboard_utils.h"
 
-using WebKit::WebClipboard;
-using WebKit::WebData;
-using WebKit::WebDragData;
-using WebKit::WebImage;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebVector;
+using blink::WebClipboard;
+using blink::WebData;
+using blink::WebDragData;
+using blink::WebImage;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebVector;
 
 namespace content {
 
@@ -42,40 +41,36 @@ WebClipboardImpl::WebClipboardImpl(ClipboardClient* client)
 WebClipboardImpl::~WebClipboardImpl() {
 }
 
-uint64 WebClipboardImpl::getSequenceNumber() {
-  return sequenceNumber(BufferStandard);
-}
-
 uint64 WebClipboardImpl::sequenceNumber(Buffer buffer) {
-  ui::Clipboard::Buffer buffer_type;
-  if (!ConvertBufferType(buffer, &buffer_type))
+  ui::ClipboardType clipboard_type;
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return 0;
 
-  return client_->GetSequenceNumber(buffer_type);
+  return client_->GetSequenceNumber(clipboard_type);
 }
 
 bool WebClipboardImpl::isFormatAvailable(Format format, Buffer buffer) {
-  ui::Clipboard::Buffer buffer_type = ui::Clipboard::BUFFER_STANDARD;
+  ui::ClipboardType clipboard_type = ui::CLIPBOARD_TYPE_COPY_PASTE;
 
-  if (!ConvertBufferType(buffer, &buffer_type))
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return false;
 
   switch (format) {
     case FormatPlainText:
       return client_->IsFormatAvailable(ui::Clipboard::GetPlainTextFormatType(),
-                                        buffer_type) ||
+                                        clipboard_type) ||
           client_->IsFormatAvailable(ui::Clipboard::GetPlainTextWFormatType(),
-                                     buffer_type);
+                                     clipboard_type);
     case FormatHTML:
       return client_->IsFormatAvailable(ui::Clipboard::GetHtmlFormatType(),
-                                        buffer_type);
+                                        clipboard_type);
     case FormatSmartPaste:
       return client_->IsFormatAvailable(
-          ui::Clipboard::GetWebKitSmartPasteFormatType(), buffer_type);
+          ui::Clipboard::GetWebKitSmartPasteFormatType(), clipboard_type);
     case FormatBookmark:
 #if defined(OS_WIN) || defined(OS_MACOSX)
       return client_->IsFormatAvailable(ui::Clipboard::GetUrlWFormatType(),
-                                        buffer_type);
+                                        clipboard_type);
 #endif
     default:
       NOTREACHED();
@@ -86,31 +81,31 @@ bool WebClipboardImpl::isFormatAvailable(Format format, Buffer buffer) {
 
 WebVector<WebString> WebClipboardImpl::readAvailableTypes(
     Buffer buffer, bool* contains_filenames) {
-  ui::Clipboard::Buffer buffer_type;
+  ui::ClipboardType clipboard_type;
   std::vector<base::string16> types;
-  if (ConvertBufferType(buffer, &buffer_type)) {
-    client_->ReadAvailableTypes(buffer_type, &types, contains_filenames);
+  if (ConvertBufferType(buffer, &clipboard_type)) {
+    client_->ReadAvailableTypes(clipboard_type, &types, contains_filenames);
   }
   return types;
 }
 
 WebString WebClipboardImpl::readPlainText(Buffer buffer) {
-  ui::Clipboard::Buffer buffer_type;
-  if (!ConvertBufferType(buffer, &buffer_type))
+  ui::ClipboardType clipboard_type;
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return WebString();
 
   if (client_->IsFormatAvailable(ui::Clipboard::GetPlainTextWFormatType(),
-                                 buffer_type)) {
+                                 clipboard_type)) {
     base::string16 text;
-    client_->ReadText(buffer_type, &text);
+    client_->ReadText(clipboard_type, &text);
     if (!text.empty())
       return text;
   }
 
   if (client_->IsFormatAvailable(ui::Clipboard::GetPlainTextFormatType(),
-                                 buffer_type)) {
+                                 clipboard_type)) {
     std::string text;
-    client_->ReadAsciiText(buffer_type, &text);
+    client_->ReadAsciiText(clipboard_type, &text);
     if (!text.empty())
       return ASCIIToUTF16(text);
   }
@@ -121,13 +116,13 @@ WebString WebClipboardImpl::readPlainText(Buffer buffer) {
 WebString WebClipboardImpl::readHTML(Buffer buffer, WebURL* source_url,
                                      unsigned* fragment_start,
                                      unsigned* fragment_end) {
-  ui::Clipboard::Buffer buffer_type;
-  if (!ConvertBufferType(buffer, &buffer_type))
+  ui::ClipboardType clipboard_type;
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return WebString();
 
   base::string16 html_stdstr;
   GURL gurl;
-  client_->ReadHTML(buffer_type, &html_stdstr, &gurl,
+  client_->ReadHTML(clipboard_type, &html_stdstr, &gurl,
                     static_cast<uint32*>(fragment_start),
                     static_cast<uint32*>(fragment_end));
   *source_url = gurl;
@@ -135,24 +130,29 @@ WebString WebClipboardImpl::readHTML(Buffer buffer, WebURL* source_url,
 }
 
 WebData WebClipboardImpl::readImage(Buffer buffer) {
-  ui::Clipboard::Buffer buffer_type;
-  if (!ConvertBufferType(buffer, &buffer_type))
+  ui::ClipboardType clipboard_type;
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return WebData();
 
   std::string png_data;
-  client_->ReadImage(buffer_type, &png_data);
+  client_->ReadImage(clipboard_type, &png_data);
   return WebData(png_data);
 }
 
 WebString WebClipboardImpl::readCustomData(Buffer buffer,
                                            const WebString& type) {
-  ui::Clipboard::Buffer buffer_type;
-  if (!ConvertBufferType(buffer, &buffer_type))
+  ui::ClipboardType clipboard_type;
+  if (!ConvertBufferType(buffer, &clipboard_type))
     return WebString();
 
   base::string16 data;
-  client_->ReadCustomData(buffer_type, type, &data);
+  client_->ReadCustomData(clipboard_type, type, &data);
   return data;
+}
+
+void WebClipboardImpl::writePlainText(const WebString& plain_text) {
+  ScopedClipboardWriterGlue scw(client_);
+  scw.WriteText(plain_text);
 }
 
 void WebClipboardImpl::writeHTML(
@@ -166,22 +166,9 @@ void WebClipboardImpl::writeHTML(
     scw.WriteWebSmartPaste();
 }
 
-void WebClipboardImpl::writePlainText(const WebString& plain_text) {
-  ScopedClipboardWriterGlue scw(client_);
-  scw.WriteText(plain_text);
-}
-
-void WebClipboardImpl::writeURL(const WebURL& url, const WebString& title) {
-  ScopedClipboardWriterGlue scw(client_);
-
-  scw.WriteBookmark(title, url.spec());
-  scw.WriteHTML(UTF8ToUTF16(webkit_clipboard::URLToMarkup(url, title)),
-                std::string());
-  scw.WriteText(UTF8ToUTF16(std::string(url.spec())));
-}
-
-void WebClipboardImpl::writeImage(
-    const WebImage& image, const WebURL& url, const WebString& title) {
+void WebClipboardImpl::writeImage(const WebImage& image,
+                                  const WebURL& url,
+                                  const WebString& title) {
   ScopedClipboardWriterGlue scw(client_);
 
   if (!image.isNull()) {
@@ -200,8 +187,7 @@ void WebClipboardImpl::writeImage(
     // We also don't want to write HTML on a Mac, since Mail.app prefers to use
     // the image markup over attaching the actual image. See
     // http://crbug.com/33016 for details.
-    scw.WriteHTML(UTF8ToUTF16(webkit_clipboard::URLToImageMarkup(url, title)),
-                  std::string());
+    scw.WriteHTML(UTF8ToUTF16(URLToImageMarkup(url, title)), std::string());
 #endif
   }
 }
@@ -228,8 +214,8 @@ void WebClipboardImpl::writeDataObject(const WebDragData& data) {
 }
 
 bool WebClipboardImpl::ConvertBufferType(Buffer buffer,
-                                         ui::Clipboard::Buffer* result) {
-  *result = ui::Clipboard::BUFFER_STANDARD;
+                                         ui::ClipboardType* result) {
+  *result = ui::CLIPBOARD_TYPE_COPY_PASTE;
   switch (buffer) {
     case BufferStandard:
       break;
@@ -240,7 +226,7 @@ bool WebClipboardImpl::ConvertBufferType(Buffer buffer,
       //  but not the X selection clipboad.
       return false;
 #else
-      *result = ui::Clipboard::BUFFER_SELECTION;
+      *result = ui::CLIPBOARD_TYPE_SELECTION;
       break;
 #endif
 #endif
@@ -252,4 +238,3 @@ bool WebClipboardImpl::ConvertBufferType(Buffer buffer,
 }
 
 }  // namespace content
-

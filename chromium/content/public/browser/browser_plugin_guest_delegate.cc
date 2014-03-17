@@ -15,11 +15,20 @@ bool BrowserPluginGuestDelegate::IsDragAndDropEnabled() {
   return false;
 }
 
+bool BrowserPluginGuestDelegate::IsOverridingUserAgent() const {
+  return false;
+}
+
 bool BrowserPluginGuestDelegate::RequestPermission(
     BrowserPluginPermissionType permission_type,
     const base::DictionaryValue& request_info,
-    const PermissionResponseCallback& callback) {
+    const PermissionResponseCallback& callback,
+    bool allowed_by_default) {
   return false;
+}
+
+GURL BrowserPluginGuestDelegate::ResolveURL(const std::string& src) {
+  return GURL(src);
 }
 
 }  // namespace content

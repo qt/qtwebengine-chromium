@@ -5,8 +5,9 @@
 // IPC messages for the P2P Transport API.
 // Multiply-included message file, hence no include guard.
 
+#include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "content/common/p2p_sockets.h"
+#include "content/public/common/p2p_socket_type.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_util.h"
@@ -16,6 +17,7 @@
 #define IPC_MESSAGE_START P2PMsgStart
 
 IPC_ENUM_TRAITS(content::P2PSocketType)
+IPC_ENUM_TRAITS(net::DiffServCodePoint)
 
 IPC_STRUCT_TRAITS_BEGIN(net::NetworkInterface)
   IPC_STRUCT_TRAITS_MEMBER(name)
@@ -45,10 +47,11 @@ IPC_MESSAGE_CONTROL2(P2PMsg_OnIncomingTcpConnection,
                      int /* socket_id */,
                      net::IPEndPoint /* socket_address */)
 
-IPC_MESSAGE_CONTROL3(P2PMsg_OnDataReceived,
+IPC_MESSAGE_CONTROL4(P2PMsg_OnDataReceived,
                      int /* socket_id */,
                      net::IPEndPoint /* socket_address */,
-                     std::vector<char> /* data */)
+                     std::vector<char> /* data */,
+                     base::TimeTicks /* timestamp */ )
 
 // P2P Socket messages sent from the renderer to the browser.
 
@@ -73,10 +76,12 @@ IPC_MESSAGE_CONTROL3(P2PHostMsg_AcceptIncomingTcpConnection,
                     int /* connected_socket_id */)
 
 // TODO(sergeyu): Use shared memory to pass the data.
-IPC_MESSAGE_CONTROL3(P2PHostMsg_Send,
+IPC_MESSAGE_CONTROL5(P2PHostMsg_Send,
                      int /* socket_id */,
                      net::IPEndPoint /* socket_address */,
-                     std::vector<char> /* data */)
+                     std::vector<char> /* data */,
+                     net::DiffServCodePoint /* dscp */,
+                     uint64 /* packet_id */)
 
 IPC_MESSAGE_CONTROL1(P2PHostMsg_DestroySocket,
                      int /* socket_id */)

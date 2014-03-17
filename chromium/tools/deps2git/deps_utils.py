@@ -114,7 +114,7 @@ def WriteDeps(deps_file_name, deps_vars, deps, deps_os, include_rules,
   new_deps = ('# DO NOT EDIT EXCEPT FOR LOCAL TESTING.\n'
               '# THIS IS A GENERATED FILE.\n',
               '# ALL MANUAL CHANGES WILL BE OVERWRITTEN.\n',
-              '# SEE http://code.google.com/p/chromium/wiki/UsingNewGit\n',
+              '# SEE http://code.google.com/p/chromium/wiki/UsingGit\n',
               '# FOR HOW TO ROLL DEPS\n'
               'vars = %s\n\n' % PrettyObj(deps_vars),
               'deps = %s\n\n' % Varify(PrettyDeps(deps)),
@@ -124,7 +124,7 @@ def WriteDeps(deps_file_name, deps_vars, deps, deps_os, include_rules,
               'hooks = %s\n' % PrettyObj(hooks))
   new_deps = ''.join(new_deps)
   if deps_file_name:
-    deps_file = open(deps_file_name, 'w')
+    deps_file = open(deps_file_name, 'wb')
   else:
     deps_file = sys.stdout
 

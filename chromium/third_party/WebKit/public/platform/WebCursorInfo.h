@@ -34,7 +34,7 @@
 #include "WebImage.h"
 #include "WebPoint.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 namespace WebCore { class Cursor; }
 #endif
 
@@ -43,7 +43,7 @@ typedef struct HICON__* HICON;
 typedef HICON HCURSOR;
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebCursorInfo {
     enum Type {
@@ -115,11 +115,11 @@ struct WebCursorInfo {
 #endif
     }
 
-#if WEBKIT_IMPLEMENTATION
-    explicit WebCursorInfo(const WebCore::Cursor&);
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT explicit WebCursorInfo(const WebCore::Cursor&);
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

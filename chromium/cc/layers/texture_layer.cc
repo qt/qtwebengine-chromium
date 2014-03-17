@@ -14,7 +14,7 @@
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 
 namespace cc {
 
@@ -51,7 +51,7 @@ TextureLayer::~TextureLayer() {
 
 void TextureLayer::ClearClient() {
   if (rate_limit_context_ && client_ && layer_tree_host())
-    layer_tree_host()->StopRateLimiter(client_->Context3d());
+    layer_tree_host()->StopRateLimiter();
   client_ = NULL;
   if (uses_mailbox_)
     SetTextureMailbox(TextureMailbox(), scoped_ptr<SingleReleaseCallback>());
@@ -115,7 +115,7 @@ void TextureLayer::SetBlendBackgroundColor(bool blend) {
 
 void TextureLayer::SetRateLimitContext(bool rate_limit) {
   if (!rate_limit && rate_limit_context_ && client_ && layer_tree_host())
-    layer_tree_host()->StopRateLimiter(client_->Context3d());
+    layer_tree_host()->StopRateLimiter();
 
   rate_limit_context_ = rate_limit;
 }
@@ -133,9 +133,10 @@ void TextureLayer::SetTextureId(unsigned id) {
   SetNextCommitWaitsForActivation();
 }
 
-void TextureLayer::SetTextureMailbox(
+void TextureLayer::SetTextureMailboxInternal(
     const TextureMailbox& mailbox,
-    scoped_ptr<SingleReleaseCallback> release_callback) {
+    scoped_ptr<SingleReleaseCallback> release_callback,
+    bool requires_commit) {
   DCHECK(uses_mailbox_);
   DCHECK(!mailbox.IsValid() || !holder_ref_ ||
          !mailbox.Equals(holder_ref_->holder()->mailbox()));
@@ -147,10 +148,24 @@ void TextureLayer::SetTextureMailbox(
   else
     holder_ref_.reset();
   needs_set_mailbox_ = true;
-  SetNeedsCommit();
+  // If we are within a commit, no need to do it again immediately after.
+  if (requires_commit)
+    SetNeedsCommit();
+  else
+    SetNeedsPushProperties();
+
   // The active frame needs to be replaced and the mailbox returned before the
   // commit is called complete.
   SetNextCommitWaitsForActivation();
+}
+
+void TextureLayer::SetTextureMailbox(
+    const TextureMailbox& mailbox,
+    scoped_ptr<SingleReleaseCallback> release_callback) {
+  SetTextureMailboxInternal(
+      mailbox,
+      release_callback.Pass(),
+      true /* requires_commit */);
 }
 
 void TextureLayer::WillModifyTexture() {
@@ -165,7 +180,7 @@ void TextureLayer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
   Layer::SetNeedsDisplayRect(dirty_rect);
 
   if (rate_limit_context_ && client_ && layer_tree_host() && DrawsContent())
-    layer_tree_host()->StartRateLimiter(client_->Context3d());
+    layer_tree_host()->StartRateLimiter();
 }
 
 void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -182,7 +197,7 @@ void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
       SetNextCommitWaitsForActivation();
     }
     if (rate_limit_context_ && client_)
-      layer_tree_host()->StopRateLimiter(client_->Context3d());
+      layer_tree_host()->StopRateLimiter();
   }
   // If we're removed from the tree, the TextureLayerImpl will be destroyed, and
   // we will need to set the mailbox again on a new TextureLayerImpl the next
@@ -211,15 +226,15 @@ bool TextureLayer::Update(ResourceUpdateQueue* queue,
               &mailbox,
               &release_callback,
               layer_tree_host()->UsingSharedMemoryResources())) {
-        SetTextureMailbox(mailbox, release_callback.Pass());
+        // Already within a commit, no need to do another one immediately.
+        SetTextureMailboxInternal(
+            mailbox,
+            release_callback.Pass(),
+            false /* requires_commit */);
         updated = true;
       }
     } else {
       texture_id_ = client_->PrepareTexture();
-      DCHECK_EQ(!!texture_id_, !!client_->Context3d());
-      if (client_->Context3d() &&
-          client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR)
-        texture_id_ = 0;
       updated = true;
       SetNeedsPushProperties();
       // The texture id needs to be removed from the active tree before the
@@ -268,10 +283,6 @@ Region TextureLayer::VisibleContentOpaqueRegion() const {
     return visible_content_rect();
 
   return Region();
-}
-
-bool TextureLayer::CanClipSelf() const {
-  return true;
 }
 
 TextureLayer::MailboxHolder::MainThreadReference::MainThreadReference(

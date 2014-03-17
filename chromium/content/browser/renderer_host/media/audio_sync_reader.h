@@ -33,9 +33,8 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
 
   // media::AudioOutputController::SyncReader implementations.
   virtual void UpdatePendingBytes(uint32 bytes) OVERRIDE;
-  virtual int Read(bool block,
-                   const media::AudioBus* source,
-                   media::AudioBus* dest) OVERRIDE;
+  virtual void Read(const media::AudioBus* source,
+                    media::AudioBus* dest) OVERRIDE;
   virtual void Close() OVERRIDE;
 
   bool Init();
@@ -47,20 +46,18 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
 #endif
 
  private:
-  // Indicates whether the renderer has data available for reading.
-  bool DataReady();
+  // Blocks until data is ready for reading or a timeout expires.  Returns false
+  // if an error or timeout occurs.
+  bool WaitUntilDataIsReady();
 
-  // Blocks until DataReady() is true or a timeout expires.
-  void WaitTillDataReady();
-
-  base::SharedMemory* shared_memory_;
+  const base::SharedMemory* const shared_memory_;
 
   // Number of input channels for synchronized I/O.
-  int input_channels_;
+  const int input_channels_;
 
   // Mutes all incoming samples. This is used to prevent audible sound
   // during automated testing.
-  bool mute_audio_;
+  const bool mute_audio_;
 
   // Socket for transmitting audio data.
   scoped_ptr<base::CancelableSyncSocket> socket_;
@@ -76,12 +73,20 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
   scoped_ptr<media::AudioBus> input_bus_;
 
   // Maximum amount of audio data which can be transferred in one Read() call.
-  int packet_size_;
+  const int packet_size_;
 
   // Track the number of times the renderer missed its real-time deadline and
   // report a UMA stat during destruction.
   size_t renderer_callback_count_;
   size_t renderer_missed_callback_count_;
+
+  // The maximum amount of time to wait for data from the renderer.  Calculated
+  // from the parameters given at construction.
+  const base::TimeDelta maximum_wait_time_;
+
+  // The index of the audio buffer we're expecting to be sent from the renderer;
+  // used to block with timeout for audio data.
+  uint32 buffer_index_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioSyncReader);
 };

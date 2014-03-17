@@ -34,16 +34,16 @@ namespace gfx {
 
 // U+2026 in utf8
 const char kEllipsis[] = "\xE2\x80\xA6";
-const char16 kEllipsisUTF16[] = { 0x2026, 0 };
-const char16 kForwardSlash = '/';
+const base::char16 kEllipsisUTF16[] = { 0x2026, 0 };
+const base::char16 kForwardSlash = '/';
 
 namespace {
 
 // Helper class to split + elide text, while respecting UTF16 surrogate pairs.
 class StringSlicer {
  public:
-  StringSlicer(const string16& text,
-               const string16& ellipsis,
+  StringSlicer(const base::string16& text,
+               const base::string16& ellipsis,
                bool elide_in_middle)
       : text_(text),
         ellipsis_(ellipsis),
@@ -55,8 +55,9 @@ class StringSlicer {
   // beginning and end of the string; otherwise, the end of the string is
   // removed and only the beginning remains. If |insert_ellipsis| is true,
   // then an ellipsis character will be inserted at the cut point.
-  string16 CutString(size_t length, bool insert_ellipsis) {
-    const string16 ellipsis_text = insert_ellipsis ? ellipsis_ : string16();
+  base::string16 CutString(size_t length, bool insert_ellipsis) {
+    const base::string16 ellipsis_text = insert_ellipsis ? ellipsis_
+                                                         : base::string16();
 
     if (!elide_in_middle_)
       return text_.substr(0, FindValidBoundaryBefore(length)) + ellipsis_text;
@@ -90,10 +91,10 @@ class StringSlicer {
   }
 
   // The text to be sliced.
-  const string16& text_;
+  const base::string16& text_;
 
   // Ellipsis string to use.
-  const string16& ellipsis_;
+  const base::string16& ellipsis_;
 
   // If true, the middle of the string will be elided.
   bool elide_in_middle_;
@@ -103,12 +104,13 @@ class StringSlicer {
 
 // Build a path from the first |num_components| elements in |path_elements|.
 // Prepends |path_prefix|, appends |filename|, inserts ellipsis if appropriate.
-string16 BuildPathFromComponents(const string16& path_prefix,
-                                 const std::vector<string16>& path_elements,
-                                 const string16& filename,
-                                 size_t num_components) {
+base::string16 BuildPathFromComponents(
+    const base::string16& path_prefix,
+    const std::vector<base::string16>& path_elements,
+    const base::string16& filename,
+    size_t num_components) {
   // Add the initial elements of the path.
-  string16 path = path_prefix;
+  base::string16 path = path_prefix;
 
   // Build path from first |num_components| elements.
   for (size_t j = 0; j < num_components; ++j)
@@ -116,7 +118,7 @@ string16 BuildPathFromComponents(const string16& path_prefix,
 
   // Add |filename|, ellipsis if necessary.
   if (num_components != (path_elements.size() - 1))
-    path += string16(kEllipsisUTF16) + kForwardSlash;
+    path += base::string16(kEllipsisUTF16) + kForwardSlash;
   path += filename;
 
   return path;
@@ -125,32 +127,33 @@ string16 BuildPathFromComponents(const string16& path_prefix,
 // Takes a prefix (Domain, or Domain+subdomain) and a collection of path
 // components and elides if possible. Returns a string containing the longest
 // possible elided path, or an empty string if elision is not possible.
-string16 ElideComponentizedPath(const string16& url_path_prefix,
-                                const std::vector<string16>& url_path_elements,
-                                const string16& url_filename,
-                                const string16& url_query,
-                                const gfx::FontList& font_list,
-                                int available_pixel_width) {
+base::string16 ElideComponentizedPath(
+    const base::string16& url_path_prefix,
+    const std::vector<base::string16>& url_path_elements,
+    const base::string16& url_filename,
+    const base::string16& url_query,
+    const FontList& font_list,
+    float available_pixel_width) {
   const size_t url_path_number_of_elements = url_path_elements.size();
 
   CHECK(url_path_number_of_elements);
   for (size_t i = url_path_number_of_elements - 1; i > 0; --i) {
-    string16 elided_path = BuildPathFromComponents(url_path_prefix,
+    base::string16 elided_path = BuildPathFromComponents(url_path_prefix,
         url_path_elements, url_filename, i);
-    if (available_pixel_width >= gfx::GetStringWidth(elided_path, font_list))
+    if (available_pixel_width >= GetStringWidthF(elided_path, font_list))
       return ElideText(elided_path + url_query, font_list,
                        available_pixel_width, ELIDE_AT_END);
   }
 
-  return string16();
+  return base::string16();
 }
 
 }  // namespace
 
-string16 ElideEmail(const string16& email,
-                    const gfx::FontList& font_list,
-                    int available_pixel_width) {
-  if (gfx::GetStringWidth(email, font_list) <= available_pixel_width)
+base::string16 ElideEmail(const base::string16& email,
+                          const FontList& font_list,
+                          float available_pixel_width) {
+  if (GetStringWidthF(email, font_list) <= available_pixel_width)
     return email;
 
   // Split the email into its local-part (username) and domain-part. The email
@@ -159,32 +162,32 @@ string16 ElideEmail(const string16& email,
   // symbol in the domain part of the email however so splitting at the last @
   // symbol is safe.
   const size_t split_index = email.find_last_of('@');
-  DCHECK_NE(split_index, string16::npos);
-  string16 username = email.substr(0, split_index);
-  string16 domain = email.substr(split_index + 1);
+  DCHECK_NE(split_index, base::string16::npos);
+  base::string16 username = email.substr(0, split_index);
+  base::string16 domain = email.substr(split_index + 1);
   DCHECK(!username.empty());
   DCHECK(!domain.empty());
 
   // Subtract the @ symbol from the available width as it is mandatory.
-  const string16 kAtSignUTF16 = ASCIIToUTF16("@");
-  available_pixel_width -= gfx::GetStringWidth(kAtSignUTF16, font_list);
+  const base::string16 kAtSignUTF16 = ASCIIToUTF16("@");
+  available_pixel_width -= GetStringWidthF(kAtSignUTF16, font_list);
 
   // Check whether eliding the domain is necessary: if eliding the username
   // is sufficient, the domain will not be elided.
-  const int full_username_width = gfx::GetStringWidth(username, font_list);
-  const int available_domain_width =
+  const float full_username_width = GetStringWidthF(username, font_list);
+  const float available_domain_width =
       available_pixel_width -
       std::min(full_username_width,
-               gfx::GetStringWidth(username.substr(0, 1) + kEllipsisUTF16,
-                                   font_list));
-  if (gfx::GetStringWidth(domain, font_list) > available_domain_width) {
+               GetStringWidthF(username.substr(0, 1) + kEllipsisUTF16,
+                               font_list));
+  if (GetStringWidthF(domain, font_list) > available_domain_width) {
     // Elide the domain so that it only takes half of the available width.
     // Should the username not need all the width available in its half, the
     // domain will occupy the leftover width.
     // If |desired_domain_width| is greater than |available_domain_width|: the
     // minimal username elision allowed by the specifications will not fit; thus
     // |desired_domain_width| must be <= |available_domain_width| at all cost.
-    const int desired_domain_width =
+    const float desired_domain_width =
         std::min(available_domain_width,
                  std::max(available_pixel_width - full_username_width,
                           available_pixel_width / 2));
@@ -193,36 +196,30 @@ string16 ElideEmail(const string16& email,
     // Failing to elide the domain such that at least one character remains
     // (other than the ellipsis itself) remains: return a single ellipsis.
     if (domain.length() <= 1U)
-      return string16(kEllipsisUTF16);
+      return base::string16(kEllipsisUTF16);
   }
 
   // Fit the username in the remaining width (at this point the elided username
   // is guaranteed to fit with at least one character remaining given all the
   // precautions taken earlier).
-  available_pixel_width -= gfx::GetStringWidth(domain, font_list);
+  available_pixel_width -= GetStringWidthF(domain, font_list);
   username = ElideText(username, font_list, available_pixel_width,
                        ELIDE_AT_END);
 
   return username + kAtSignUTF16 + domain;
 }
 
-string16 ElideEmail(const string16& email,
-                    const gfx::Font& font,
-                    int available_pixel_width) {
-  return ElideEmail(email, gfx::FontList(font), available_pixel_width);
-}
-
 // TODO(pkasting): http://crbug.com/77883 This whole function gets
 // kerning/ligatures/etc. issues potentially wrong by assuming that the width of
 // a rendered string is always the sum of the widths of its substrings.  Also I
 // suspect it could be made simpler.
-string16 ElideUrl(const GURL& url,
-                  const gfx::FontList& font_list,
-                  int available_pixel_width,
-                  const std::string& languages) {
+base::string16 ElideUrl(const GURL& url,
+                        const FontList& font_list,
+                        float available_pixel_width,
+                        const std::string& languages) {
   // Get a formatted string and corresponding parsing of the url.
   url_parse::Parsed parsed;
-  const string16 url_string =
+  const base::string16 url_string =
       net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
                      net::UnescapeRule::SPACES, &parsed, NULL, NULL);
   if (available_pixel_width <= 0)
@@ -235,28 +232,28 @@ string16 ElideUrl(const GURL& url,
 
   // Now start eliding url_string to fit within available pixel width.
   // Fist pass - check to see whether entire url_string fits.
-  const int pixel_width_url_string = gfx::GetStringWidth(url_string, font_list);
+  const float pixel_width_url_string = GetStringWidthF(url_string, font_list);
   if (available_pixel_width >= pixel_width_url_string)
     return url_string;
 
   // Get the path substring, including query and reference.
   const size_t path_start_index = parsed.path.begin;
   const size_t path_len = parsed.path.len;
-  string16 url_path_query_etc = url_string.substr(path_start_index);
-  string16 url_path = url_string.substr(path_start_index, path_len);
+  base::string16 url_path_query_etc = url_string.substr(path_start_index);
+  base::string16 url_path = url_string.substr(path_start_index, path_len);
 
   // Return general elided text if url minus the query fits.
-  const string16 url_minus_query =
+  const base::string16 url_minus_query =
       url_string.substr(0, path_start_index + path_len);
-  if (available_pixel_width >= gfx::GetStringWidth(url_minus_query, font_list))
+  if (available_pixel_width >= GetStringWidthF(url_minus_query, font_list))
     return ElideText(url_string, font_list, available_pixel_width,
                      ELIDE_AT_END);
 
   // Get Host.
-  string16 url_host = UTF8ToUTF16(url.host());
+  base::string16 url_host = UTF8ToUTF16(url.host());
 
   // Get domain and registry information from the URL.
-  string16 url_domain = UTF8ToUTF16(
+  base::string16 url_domain = UTF8ToUTF16(
       net::registry_controlled_domains::GetDomainAndRegistry(
           url, net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES));
   if (url_domain.empty())
@@ -269,11 +266,11 @@ string16 ElideUrl(const GURL& url,
   }
 
   // Get sub domain.
-  string16 url_subdomain;
+  base::string16 url_subdomain;
   const size_t domain_start_index = url_host.find(url_domain);
-  if (domain_start_index != string16::npos)
+  if (domain_start_index != base::string16::npos)
     url_subdomain = url_host.substr(0, domain_start_index);
-  const string16 kWwwPrefix = UTF8ToUTF16("www.");
+  const base::string16 kWwwPrefix = UTF8ToUTF16("www.");
   if ((url_subdomain == kWwwPrefix || url_subdomain.empty() ||
       url.SchemeIsFile())) {
     url_subdomain.clear();
@@ -284,59 +281,59 @@ string16 ElideUrl(const GURL& url,
   // domain is now C: - this is a nice hack for eliding to work pleasantly.
   if (url.SchemeIsFile()) {
     // Split the path string using ":"
-    std::vector<string16> file_path_split;
+    std::vector<base::string16> file_path_split;
     base::SplitString(url_path, ':', &file_path_split);
     if (file_path_split.size() > 1) {  // File is of type "file:///C:/.."
       url_host.clear();
       url_domain.clear();
       url_subdomain.clear();
 
-      const string16 kColon = UTF8ToUTF16(":");
+      const base::string16 kColon = UTF8ToUTF16(":");
       url_host = url_domain = file_path_split.at(0).substr(1) + kColon;
       url_path_query_etc = url_path = file_path_split.at(1);
     }
   }
 
   // Second Pass - remove scheme - the rest fits.
-  const int pixel_width_url_host = gfx::GetStringWidth(url_host, font_list);
-  const int pixel_width_url_path = gfx::GetStringWidth(url_path_query_etc,
-                                                       font_list);
+  const float pixel_width_url_host = GetStringWidthF(url_host, font_list);
+  const float pixel_width_url_path = GetStringWidthF(url_path_query_etc,
+                                                     font_list);
   if (available_pixel_width >=
       pixel_width_url_host + pixel_width_url_path)
     return url_host + url_path_query_etc;
 
   // Third Pass: Subdomain, domain and entire path fits.
-  const int pixel_width_url_domain = gfx::GetStringWidth(url_domain, font_list);
-  const int pixel_width_url_subdomain = gfx::GetStringWidth(url_subdomain,
-                                                            font_list);
+  const float pixel_width_url_domain = GetStringWidthF(url_domain, font_list);
+  const float pixel_width_url_subdomain =
+      GetStringWidthF(url_subdomain, font_list);
   if (available_pixel_width >=
       pixel_width_url_subdomain + pixel_width_url_domain +
       pixel_width_url_path)
     return url_subdomain + url_domain + url_path_query_etc;
 
   // Query element.
-  string16 url_query;
-  const int kPixelWidthDotsTrailer = gfx::GetStringWidth(
-      string16(kEllipsisUTF16), font_list);
+  base::string16 url_query;
+  const float kPixelWidthDotsTrailer = GetStringWidthF(
+      base::string16(kEllipsisUTF16), font_list);
   if (parsed.query.is_nonempty()) {
     url_query = UTF8ToUTF16("?") + url_string.substr(parsed.query.begin);
     if (available_pixel_width >=
         (pixel_width_url_subdomain + pixel_width_url_domain +
-         pixel_width_url_path - gfx::GetStringWidth(url_query, font_list))) {
+         pixel_width_url_path - GetStringWidthF(url_query, font_list))) {
       return ElideText(url_subdomain + url_domain + url_path_query_etc,
                        font_list, available_pixel_width, ELIDE_AT_END);
     }
   }
 
   // Parse url_path using '/'.
-  std::vector<string16> url_path_elements;
+  std::vector<base::string16> url_path_elements;
   base::SplitString(url_path, kForwardSlash, &url_path_elements);
 
   // Get filename - note that for a path ending with /
   // such as www.google.com/intl/ads/, the file name is ads/.
   size_t url_path_number_of_elements = url_path_elements.size();
   DCHECK(url_path_number_of_elements != 0);
-  string16 url_filename;
+  base::string16 url_filename;
   if ((url_path_elements.at(url_path_number_of_elements - 1)).length() > 0) {
     url_filename = *(url_path_elements.end() - 1);
   } else if (url_path_number_of_elements > 1) {  // Path ends with a '/'.
@@ -356,12 +353,13 @@ string16 ElideUrl(const GURL& url,
   }
 
   // Start eliding the path and replacing elements by ".../".
-  const string16 kEllipsisAndSlash = string16(kEllipsisUTF16) + kForwardSlash;
-  const int pixel_width_ellipsis_slash = gfx::GetStringWidth(kEllipsisAndSlash,
-                                                             font_list);
+  const base::string16 kEllipsisAndSlash =
+      base::string16(kEllipsisUTF16) + kForwardSlash;
+  const float pixel_width_ellipsis_slash =
+      GetStringWidthF(kEllipsisAndSlash, font_list);
 
   // Check with both subdomain and domain.
-  string16 elided_path =
+  base::string16 elided_path =
       ElideComponentizedPath(url_subdomain + url_domain, url_path_elements,
                              url_filename, url_query, font_list,
                              available_pixel_width);
@@ -373,7 +371,7 @@ string16 ElideUrl(const GURL& url,
   // This is added only if the subdomain pixel width is larger than
   // the pixel width of kEllipsis. Otherwise, subdomain remains,
   // which means that this case has been resolved earlier.
-  string16 url_elided_domain = url_subdomain + url_domain;
+  base::string16 url_elided_domain = url_subdomain + url_domain;
   if (pixel_width_url_subdomain > kPixelWidthDotsTrailer) {
     if (!url_subdomain.empty())
       url_elided_domain = kEllipsisAndSlash[0] + url_domain;
@@ -389,15 +387,15 @@ string16 ElideUrl(const GURL& url,
   }
 
   // Return elided domain/.../filename anyway.
-  string16 final_elided_url_string(url_elided_domain);
-  const int url_elided_domain_width = gfx::GetStringWidth(url_elided_domain,
-                                                          font_list);
+  base::string16 final_elided_url_string(url_elided_domain);
+  const float url_elided_domain_width = GetStringWidthF(url_elided_domain,
+                                                        font_list);
 
   // A hack to prevent trailing ".../...".
   if ((available_pixel_width - url_elided_domain_width) >
       pixel_width_ellipsis_slash + kPixelWidthDotsTrailer +
-      gfx::GetStringWidth(ASCIIToUTF16("UV"), font_list)) {
-    final_elided_url_string += BuildPathFromComponents(string16(),
+      GetStringWidthF(ASCIIToUTF16("UV"), font_list)) {
+    final_elided_url_string += BuildPathFromComponents(base::string16(),
         url_path_elements, url_filename, 1);
   } else {
     final_elided_url_string += url_path;
@@ -407,80 +405,67 @@ string16 ElideUrl(const GURL& url,
                    ELIDE_AT_END);
 }
 
-string16 ElideUrl(const GURL& url,
-                  const gfx::Font& font,
-                  int available_pixel_width,
-                  const std::string& languages) {
-  return ElideUrl(url, gfx::FontList(font), available_pixel_width, languages);
-}
-
-string16 ElideFilename(const base::FilePath& filename,
-                       const gfx::FontList& font_list,
-                       int available_pixel_width) {
+base::string16 ElideFilename(const base::FilePath& filename,
+                             const FontList& font_list,
+                             float available_pixel_width) {
 #if defined(OS_WIN)
-  string16 filename_utf16 = filename.value();
-  string16 extension = filename.Extension();
-  string16 rootname = filename.BaseName().RemoveExtension().value();
+  base::string16 filename_utf16 = filename.value();
+  base::string16 extension = filename.Extension();
+  base::string16 rootname = filename.BaseName().RemoveExtension().value();
 #elif defined(OS_POSIX)
-  string16 filename_utf16 = WideToUTF16(base::SysNativeMBToWide(
+  base::string16 filename_utf16 = WideToUTF16(base::SysNativeMBToWide(
       filename.value()));
-  string16 extension = WideToUTF16(base::SysNativeMBToWide(
+  base::string16 extension = WideToUTF16(base::SysNativeMBToWide(
       filename.Extension()));
-  string16 rootname = WideToUTF16(base::SysNativeMBToWide(
+  base::string16 rootname = WideToUTF16(base::SysNativeMBToWide(
       filename.BaseName().RemoveExtension().value()));
 #endif
 
-  const int full_width = gfx::GetStringWidth(filename_utf16, font_list);
+  const float full_width = GetStringWidthF(filename_utf16, font_list);
   if (full_width <= available_pixel_width)
     return base::i18n::GetDisplayStringInLTRDirectionality(filename_utf16);
 
   if (rootname.empty() || extension.empty()) {
-    const string16 elided_name = ElideText(filename_utf16, font_list,
+    const base::string16 elided_name = ElideText(filename_utf16, font_list,
                                            available_pixel_width, ELIDE_AT_END);
     return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
   }
 
-  const int ext_width = gfx::GetStringWidth(extension, font_list);
-  const int root_width = gfx::GetStringWidth(rootname, font_list);
+  const float ext_width = GetStringWidthF(extension, font_list);
+  const float root_width = GetStringWidthF(rootname, font_list);
 
   // We may have trimmed the path.
   if (root_width + ext_width <= available_pixel_width) {
-    const string16 elided_name = rootname + extension;
+    const base::string16 elided_name = rootname + extension;
     return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
   }
 
   if (ext_width >= available_pixel_width) {
-    const string16 elided_name = ElideText(rootname + extension, font_list,
-                                           available_pixel_width,
-                                           ELIDE_IN_MIDDLE);
+    const base::string16 elided_name = ElideText(
+        rootname + extension, font_list, available_pixel_width,
+        ELIDE_IN_MIDDLE);
     return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
   }
 
-  int available_root_width = available_pixel_width - ext_width;
-  string16 elided_name =
+  float available_root_width = available_pixel_width - ext_width;
+  base::string16 elided_name =
       ElideText(rootname, font_list, available_root_width, ELIDE_AT_END);
   elided_name += extension;
   return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
 }
 
-string16 ElideFilename(const base::FilePath& filename,
-                       const gfx::Font& font,
-                       int available_pixel_width) {
-  return ElideFilename(filename, gfx::FontList(font), available_pixel_width);
-}
-
-string16 ElideText(const string16& text,
-                   const gfx::FontList& font_list,
-                   int available_pixel_width,
-                   ElideBehavior elide_behavior) {
+base::string16 ElideText(const base::string16& text,
+                         const FontList& font_list,
+                         float available_pixel_width,
+                         ElideBehavior elide_behavior) {
   if (text.empty())
     return text;
 
-  const int current_text_pixel_width = gfx::GetStringWidth(text, font_list);
+  const float current_text_pixel_width = GetStringWidthF(text, font_list);
   const bool elide_in_middle = (elide_behavior == ELIDE_IN_MIDDLE);
   const bool insert_ellipsis = (elide_behavior != TRUNCATE_AT_END);
 
-  const string16 ellipsis = string16(kEllipsisUTF16);
+  const base::string16 ellipsis = base::string16(kEllipsisUTF16);
   StringSlicer slicer(text, ellipsis, elide_in_middle);
 
   // Pango will return 0 width for absurdly long strings. Cut the string in
@@ -492,7 +477,7 @@ string16 ElideText(const string16& text,
   // (eliding way too much from a ridiculous string is probably still
   // ridiculous), but we should check other widths for bogus values as well.
   if (current_text_pixel_width <= 0 && !text.empty()) {
-    const string16 cut = slicer.CutString(text.length() / 2, false);
+    const base::string16 cut = slicer.CutString(text.length() / 2, false);
     return ElideText(cut, font_list, available_pixel_width, elide_behavior);
   }
 
@@ -500,8 +485,8 @@ string16 ElideText(const string16& text,
     return text;
 
   if (insert_ellipsis &&
-      gfx::GetStringWidth(ellipsis, font_list) > available_pixel_width)
-    return string16();
+      GetStringWidthF(ellipsis, font_list) > available_pixel_width)
+    return base::string16();
 
   // Use binary search to compute the elided text.
   size_t lo = 0;
@@ -510,8 +495,8 @@ string16 ElideText(const string16& text,
   for (guess = (lo + hi) / 2; lo <= hi; guess = (lo + hi) / 2) {
     // We check the length of the whole desired string at once to ensure we
     // handle kerning/ligatures/etc. correctly.
-    const string16 cut = slicer.CutString(guess, insert_ellipsis);
-    const int guess_length = gfx::GetStringWidth(cut, font_list);
+    const base::string16 cut = slicer.CutString(guess, insert_ellipsis);
+    const float guess_length = GetStringWidthF(cut, font_list);
     // Check again that we didn't hit a Pango width overflow. If so, cut the
     // current string in half and start over.
     if (guess_length <= 0) {
@@ -527,18 +512,17 @@ string16 ElideText(const string16& text,
   return slicer.CutString(guess, insert_ellipsis);
 }
 
-string16 ElideText(const string16& text,
-                   const gfx::Font& font,
-                   int available_pixel_width,
-                   ElideBehavior elide_behavior) {
-  return ElideText(text, gfx::FontList(font), available_pixel_width,
-                   elide_behavior);
+base::string16 ElideText(const base::string16& text,
+                         const Font& font,
+                         float available_pixel_width,
+                         ElideBehavior elide_behavior) {
+  return ElideText(text, FontList(font), available_pixel_width, elide_behavior);
 }
 
 SortedDisplayURL::SortedDisplayURL(const GURL& url,
                                    const std::string& languages) {
   net::AppendFormattedHost(url, languages, &sort_host_);
-  string16 host_minus_www = net::StripWWW(sort_host_);
+  base::string16 host_minus_www = net::StripWWW(sort_host_);
   url_parse::Parsed parsed;
   display_url_ =
       net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
@@ -570,8 +554,8 @@ int SortedDisplayURL::Compare(const SortedDisplayURL& other,
     return host_compare_result;
 
   // Hosts match, compare on the portion of the url after the host.
-  string16 path = this->AfterHost();
-  string16 o_path = other.AfterHost();
+  base::string16 path = this->AfterHost();
+  base::string16 o_path = other.AfterHost();
   compare_status = U_ZERO_ERROR;
   UCollationResult path_compare_result = collator->compare(
       static_cast<const UChar*>(path.c_str()),
@@ -596,16 +580,17 @@ int SortedDisplayURL::Compare(const SortedDisplayURL& other,
   return display_url_compare_result;
 }
 
-string16 SortedDisplayURL::AfterHost() const {
+base::string16 SortedDisplayURL::AfterHost() const {
   const size_t slash_index = display_url_.find(sort_host_, prefix_end_);
-  if (slash_index == string16::npos) {
+  if (slash_index == base::string16::npos) {
     NOTREACHED();
-    return string16();
+    return base::string16();
   }
   return display_url_.substr(slash_index + sort_host_.length());
 }
 
-bool ElideString(const string16& input, int max_len, string16* output) {
+bool ElideString(const base::string16& input, int max_len,
+                 base::string16* output) {
   DCHECK_GE(max_len, 0);
   if (static_cast<int>(input.length()) <= max_len) {
     output->assign(input);
@@ -650,7 +635,7 @@ namespace {
 class RectangleString {
  public:
   RectangleString(size_t max_rows, size_t max_cols,
-                  bool strict, string16 *output)
+                  bool strict, base::string16 *output)
       : max_rows_(max_rows),
         max_cols_(max_cols),
         current_row_(0),
@@ -667,7 +652,7 @@ class RectangleString {
   // AddString() may be called multiple times to concatenate together
   // multiple strings into the region (the current caller doesn't do
   // this, however).
-  void AddString(const string16& input);
+  void AddString(const base::string16& input);
 
   // Perform any deferred output processing.  Must be called after the
   // last AddString() call has occurred.
@@ -676,15 +661,15 @@ class RectangleString {
  private:
   // Add a line to the rectangular region at the current position,
   // either by itself or by breaking it into words.
-  void AddLine(const string16& line);
+  void AddLine(const base::string16& line);
 
   // Add a word to the rectangular region at the current position,
   // either by itself or by breaking it into characters.
-  void AddWord(const string16& word);
+  void AddWord(const base::string16& word);
 
   // Add text to the output string if the rectangular boundaries
   // have not been exceeded, advancing the current position.
-  void Append(const string16& string);
+  void Append(const base::string16& string);
 
   // Set the current position to the beginning of the next line.  If
   // |output| is true, add a newline to the output string if the rectangular
@@ -716,12 +701,12 @@ class RectangleString {
   bool suppressed_;
 
   // String onto which the output is accumulated.
-  string16* output_;
+  base::string16* output_;
 
   DISALLOW_COPY_AND_ASSIGN(RectangleString);
 };
 
-void RectangleString::AddString(const string16& input) {
+void RectangleString::AddString(const base::string16& input) {
   base::i18n::BreakIterator lines(input,
                                   base::i18n::BreakIterator::BREAK_NEWLINE);
   if (lines.Init()) {
@@ -740,7 +725,7 @@ bool RectangleString::Finalize() {
   return false;
 }
 
-void RectangleString::AddLine(const string16& line) {
+void RectangleString::AddLine(const base::string16& line) {
   if (line.length() < max_cols_) {
     Append(line);
   } else {
@@ -758,7 +743,7 @@ void RectangleString::AddLine(const string16& line) {
   current_col_ = 0;
 }
 
-void RectangleString::AddWord(const string16& word) {
+void RectangleString::AddWord(const base::string16& word) {
   if (word.length() < max_cols_) {
     // Word can be made to fit, no need to fragment it.
     if (current_col_ + word.length() >= max_cols_)
@@ -785,7 +770,7 @@ void RectangleString::AddWord(const string16& word) {
   }
 }
 
-void RectangleString::Append(const string16& string) {
+void RectangleString::Append(const base::string16& string) {
   if (current_row_ < max_rows_)
     output_->append(string);
   else
@@ -809,11 +794,11 @@ void RectangleString::NewLine(bool output) {
 // can be broken into smaller methods sharing this state.
 class RectangleText {
  public:
-  RectangleText(const gfx::FontList& font_list,
-                int available_pixel_width,
+  RectangleText(const FontList& font_list,
+                float available_pixel_width,
                 int available_pixel_height,
                 WordWrapBehavior wrap_behavior,
-                std::vector<string16>* lines)
+                std::vector<base::string16>* lines)
       : font_list_(font_list),
         line_height_(font_list.GetHeight()),
         available_pixel_width_(available_pixel_width),
@@ -834,7 +819,7 @@ class RectangleText {
   // AddString() may be called multiple times to concatenate together
   // multiple strings into the region (the current caller doesn't do
   // this, however).
-  void AddString(const string16& input);
+  void AddString(const base::string16& input);
 
   // Perform any deferred output processing.  Must be called after the last
   // AddString() call has occured. Returns a combination of
@@ -845,36 +830,36 @@ class RectangleText {
  private:
   // Add a line to the rectangular region at the current position,
   // either by itself or by breaking it into words.
-  void AddLine(const string16& line);
+  void AddLine(const base::string16& line);
 
   // Wrap the specified word across multiple lines.
-  int WrapWord(const string16& word);
+  int WrapWord(const base::string16& word);
 
   // Add a long word - wrapping, eliding or truncating per the wrap behavior.
-  int AddWordOverflow(const string16& word);
+  int AddWordOverflow(const base::string16& word);
 
   // Add a word to the rectangluar region at the current position.
-  int AddWord(const string16& word);
+  int AddWord(const base::string16& word);
 
   // Append the specified |text| to the current output line, incrementing the
   // running width by the specified amount. This is an optimization over
   // |AddToCurrentLine()| when |text_width| is already known.
-  void AddToCurrentLineWithWidth(const string16& text, int text_width);
+  void AddToCurrentLineWithWidth(const base::string16& text, float text_width);
 
   // Append the specified |text| to the current output line.
-  void AddToCurrentLine(const string16& text);
+  void AddToCurrentLine(const base::string16& text);
 
   // Set the current position to the beginning of the next line.
   bool NewLine();
 
   // The font list used for measuring text width.
-  const gfx::FontList& font_list_;
+  const FontList& font_list_;
 
   // The height of each line of text.
   const int line_height_;
 
   // The number of pixels of available width in the rectangle.
-  const int available_pixel_width_;
+  const float available_pixel_width_;
 
   // The number of pixels of available height in the rectangle.
   const int available_pixel_height_;
@@ -883,19 +868,19 @@ class RectangleText {
   const WordWrapBehavior wrap_behavior_;
 
   // The current running width.
-  int current_width_;
+  float current_width_;
 
   // The current running height.
   int current_height_;
 
   // The current line of text.
-  string16 current_line_;
+  base::string16 current_line_;
 
   // Indicates whether the last line ended with \n.
   bool last_line_ended_in_lf_;
 
   // The output vector of lines.
-  std::vector<string16>* lines_;
+  std::vector<base::string16>* lines_;
 
   // Indicates whether a word was so long that it had to be truncated or elided
   // to fit the available width.
@@ -907,12 +892,12 @@ class RectangleText {
   DISALLOW_COPY_AND_ASSIGN(RectangleText);
 };
 
-void RectangleText::AddString(const string16& input) {
+void RectangleText::AddString(const base::string16& input) {
   base::i18n::BreakIterator lines(input,
                                   base::i18n::BreakIterator::BREAK_NEWLINE);
   if (lines.Init()) {
     while (!insufficient_height_ && lines.Advance()) {
-      string16 line = lines.GetString();
+      base::string16 line = lines.GetString();
       // The BREAK_NEWLINE iterator will keep the trailing newline character,
       // except in the case of the last line, which may not have one.  Remove
       // the newline character, if it exists.
@@ -935,13 +920,13 @@ int RectangleText::Finalize() {
       lines_->pop_back();
   }
   if (last_line_ended_in_lf_)
-    lines_->push_back(string16());
+    lines_->push_back(base::string16());
   return (insufficient_width_ ? INSUFFICIENT_SPACE_HORIZONTAL : 0) |
          (insufficient_height_ ? INSUFFICIENT_SPACE_VERTICAL : 0);
 }
 
-void RectangleText::AddLine(const string16& line) {
-  const int line_width = gfx::GetStringWidth(line, font_list_);
+void RectangleText::AddLine(const base::string16& line) {
+  const float line_width = GetStringWidthF(line, font_list_);
   if (line_width <= available_pixel_width_) {
     AddToCurrentLineWithWidth(line, line_width);
   } else {
@@ -952,7 +937,7 @@ void RectangleText::AddLine(const string16& line) {
     if (words.Init()) {
       while (words.Advance()) {
         const bool truncate = !current_line_.empty();
-        const string16& word = words.GetString();
+        const base::string16& word = words.GetString();
         const int lines_added = AddWord(word);
         if (lines_added) {
           if (truncate) {
@@ -975,13 +960,13 @@ void RectangleText::AddLine(const string16& line) {
   NewLine();
 }
 
-int RectangleText::WrapWord(const string16& word) {
+int RectangleText::WrapWord(const base::string16& word) {
   // Word is so wide that it must be fragmented.
-  string16 text = word;
+  base::string16 text = word;
   int lines_added = 0;
   bool first_fragment = true;
   while (!insufficient_height_ && !text.empty()) {
-    string16 fragment =
+    base::string16 fragment =
         ElideText(text, font_list_, available_pixel_width_,
                   TRUNCATE_AT_END);
     // At least one character has to be added at every line, even if the
@@ -997,7 +982,7 @@ int RectangleText::WrapWord(const string16& word) {
   return lines_added;
 }
 
-int RectangleText::AddWordOverflow(const string16& word) {
+int RectangleText::AddWordOverflow(const base::string16& word) {
   int lines_added = 0;
 
   // Unless this is the very first word, put it on a new line.
@@ -1015,7 +1000,7 @@ int RectangleText::AddWordOverflow(const string16& word) {
   } else {
     const ElideBehavior elide_behavior =
         (wrap_behavior_ == ELIDE_LONG_WORDS ? ELIDE_AT_END : TRUNCATE_AT_END);
-    const string16 elided_word =
+    const base::string16 elided_word =
         ElideText(word, font_list_, available_pixel_width_, elide_behavior);
     AddToCurrentLine(elided_word);
     insufficient_width_ = true;
@@ -1024,11 +1009,11 @@ int RectangleText::AddWordOverflow(const string16& word) {
   return lines_added;
 }
 
-int RectangleText::AddWord(const string16& word) {
+int RectangleText::AddWord(const base::string16& word) {
   int lines_added = 0;
-  string16 trimmed;
+  base::string16 trimmed;
   TrimWhitespace(word, TRIM_TRAILING, &trimmed);
-  const int trimmed_width = gfx::GetStringWidth(trimmed, font_list_);
+  const float trimmed_width = GetStringWidthF(trimmed, font_list_);
   if (trimmed_width <= available_pixel_width_) {
     // Word can be made to fit, no need to fragment it.
     if ((current_width_ + trimmed_width > available_pixel_width_) && NewLine())
@@ -1042,12 +1027,12 @@ int RectangleText::AddWord(const string16& word) {
   return lines_added;
 }
 
-void RectangleText::AddToCurrentLine(const string16& text) {
-  AddToCurrentLineWithWidth(text, gfx::GetStringWidth(text, font_list_));
+void RectangleText::AddToCurrentLine(const base::string16& text) {
+  AddToCurrentLineWithWidth(text, GetStringWidthF(text, font_list_));
 }
 
-void RectangleText::AddToCurrentLineWithWidth(const string16& text,
-                                              int text_width) {
+void RectangleText::AddToCurrentLineWithWidth(const base::string16& text,
+                                              float text_width) {
   if (current_height_ >= available_pixel_height_) {
     insufficient_height_ = true;
     return;
@@ -1072,20 +1057,21 @@ bool RectangleText::NewLine() {
 
 }  // namespace
 
-bool ElideRectangleString(const string16& input, size_t max_rows,
-                          size_t max_cols, bool strict, string16* output) {
+bool ElideRectangleString(const base::string16& input, size_t max_rows,
+                          size_t max_cols, bool strict,
+                          base::string16* output) {
   RectangleString rect(max_rows, max_cols, strict, output);
   rect.Init();
   rect.AddString(input);
   return rect.Finalize();
 }
 
-int ElideRectangleText(const string16& input,
-                       const gfx::FontList& font_list,
-                       int available_pixel_width,
+int ElideRectangleText(const base::string16& input,
+                       const FontList& font_list,
+                       float available_pixel_width,
                        int available_pixel_height,
                        WordWrapBehavior wrap_behavior,
-                       std::vector<string16>* lines) {
+                       std::vector<base::string16>* lines) {
   RectangleText rect(font_list,
                      available_pixel_width,
                      available_pixel_height,
@@ -1096,30 +1082,19 @@ int ElideRectangleText(const string16& input,
   return rect.Finalize();
 }
 
-int ElideRectangleText(const string16& input,
-                       const gfx::Font& font,
-                       int available_pixel_width,
-                       int available_pixel_height,
-                       WordWrapBehavior wrap_behavior,
-                       std::vector<string16>* lines) {
-  return ElideRectangleText(input, gfx::FontList(font),
-                            available_pixel_width, available_pixel_height,
-                            wrap_behavior, lines);
-}
-
-string16 TruncateString(const string16& string, size_t length) {
+base::string16 TruncateString(const base::string16& string, size_t length) {
   if (string.size() <= length)
     // String fits, return it.
     return string;
 
   if (length == 0)
     // No room for the elide string, return an empty string.
-    return string16();
+    return base::string16();
 
   size_t max = length - 1;
 
   // Added to the end of strings that are too big.
-  static const char16 kElideString[] = { 0x2026, 0 };
+  static const base::char16 kElideString[] = { 0x2026, 0 };
 
   if (max == 0)
     // Just enough room for the elide string.

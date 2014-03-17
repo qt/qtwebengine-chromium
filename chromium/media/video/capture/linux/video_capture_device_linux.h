@@ -18,23 +18,20 @@
 
 namespace media {
 
-class VideoCaptureDeviceLinux : public VideoCaptureDevice1 {
+class VideoCaptureDeviceLinux : public VideoCaptureDevice {
  public:
   explicit VideoCaptureDeviceLinux(const Name& device_name);
   virtual ~VideoCaptureDeviceLinux();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(const VideoCaptureCapability& capture_format,
-                         EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const VideoCaptureParams& params,
+                                scoped_ptr<Client> client) OVERRIDE;
+
+  virtual void StopAndDeAllocate() OVERRIDE;
 
  private:
   enum InternalState {
     kIdle,  // The device driver is opened but camera is not in use.
-    kAllocated,  // The camera has been allocated and can be started.
     kCapturing,  // Video is being captured.
     kError  // Error accessing HW functions.
             // User needs to recover by destroying the object.
@@ -48,13 +45,11 @@ class VideoCaptureDeviceLinux : public VideoCaptureDevice1 {
   };
 
   // Called on the v4l2_thread_.
-  void OnAllocate(int width,
-                  int height,
-                  int frame_rate,
-                  EventHandler* observer);
-  void OnStart();
-  void OnStop();
-  void OnDeAllocate();
+  void OnAllocateAndStart(int width,
+                          int height,
+                          int frame_rate,
+                          scoped_ptr<Client> client);
+  void OnStopAndDeAllocate();
   void OnCaptureTask();
 
   bool AllocateVideoBuffers();
@@ -62,13 +57,14 @@ class VideoCaptureDeviceLinux : public VideoCaptureDevice1 {
   void SetErrorState(const std::string& reason);
 
   InternalState state_;
-  VideoCaptureDevice::EventHandler* observer_;
+  scoped_ptr<VideoCaptureDevice::Client> client_;
   Name device_name_;
   int device_fd_;  // File descriptor for the opened camera device.
   base::Thread v4l2_thread_;  // Thread used for reading data from the device.
   Buffer* buffer_pool_;
   int buffer_pool_size_;  // Number of allocated buffers.
   int timeout_count_;
+  VideoCaptureFormat capture_format_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureDeviceLinux);
 };

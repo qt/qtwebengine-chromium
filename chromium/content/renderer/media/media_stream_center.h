@@ -17,7 +17,7 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrackSourcesRequest.h"
 
-namespace WebKit {
+namespace blink {
 class WebMediaStreamCenterClient;
 }
 
@@ -25,39 +25,43 @@ namespace content {
 class MediaStreamDependencyFactory;
 
 class CONTENT_EXPORT MediaStreamCenter
-    : NON_EXPORTED_BASE(public WebKit::WebMediaStreamCenter),
+    : NON_EXPORTED_BASE(public blink::WebMediaStreamCenter),
       public RenderProcessObserver {
  public:
-  MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client,
+  MediaStreamCenter(blink::WebMediaStreamCenterClient* client,
                     MediaStreamDependencyFactory* factory);
   virtual ~MediaStreamCenter();
 
+ private:
   virtual bool getMediaStreamTrackSources(
-      const WebKit::WebMediaStreamTrackSourcesRequest& request);
+      const blink::WebMediaStreamTrackSourcesRequest& request) OVERRIDE;
+
+  virtual void didCreateMediaStreamTrack(
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
   virtual void didEnableMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& component);
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
   virtual void didDisableMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& component);
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
   virtual void didStopLocalMediaStream(
-      const WebKit::WebMediaStream& stream);
+      const blink::WebMediaStream& stream) OVERRIDE;
+
+  virtual bool didStopMediaStreamTrack(
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
   virtual void didCreateMediaStream(
-      WebKit::WebMediaStream& stream);
+      blink::WebMediaStream& stream) OVERRIDE;
 
   virtual bool didAddMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& track);
+      const blink::WebMediaStream& stream,
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
   virtual bool didRemoveMediaStreamTrack(
-      const WebKit::WebMediaStream& stream,
-      const WebKit::WebMediaStreamTrack& track);
+      const blink::WebMediaStream& stream,
+      const blink::WebMediaStreamTrack& track) OVERRIDE;
 
- private:
   // RenderProcessObserver implementation.
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -72,7 +76,7 @@ class CONTENT_EXPORT MediaStreamCenter
   // requests.
   int next_request_id_;
 
-  typedef std::map<int, WebKit::WebMediaStreamTrackSourcesRequest> RequestMap;
+  typedef std::map<int, blink::WebMediaStreamTrackSourcesRequest> RequestMap;
   // Maps request ids to request objects.
   RequestMap requests_;
 

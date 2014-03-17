@@ -5,40 +5,37 @@
 #ifndef CONTENT_RENDERER_MEDIA_WEBINBANDTEXTTRACK_IMPL_H_
 #define CONTENT_RENDERER_MEDIA_WEBINBANDTEXTTRACK_IMPL_H_
 
+#include "third_party/WebKit/public/platform/WebInbandTextTrack.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebInbandTextTrack.h"
 
 namespace content {
 
-class WebInbandTextTrackImpl : public WebKit::WebInbandTextTrack {
+class WebInbandTextTrackImpl : public blink::WebInbandTextTrack {
  public:
   WebInbandTextTrackImpl(Kind kind,
-                         const WebKit::WebString& label,
-                         const WebKit::WebString& language,
+                         const blink::WebString& label,
+                         const blink::WebString& language,
+                         const blink::WebString& id,
                          int index);
   virtual ~WebInbandTextTrackImpl();
 
-  virtual void setClient(WebKit::WebInbandTextTrackClient* client);
-  virtual WebKit::WebInbandTextTrackClient* client();
-
-  virtual void setMode(Mode mode);
-  virtual Mode mode() const;
+  virtual void setClient(blink::WebInbandTextTrackClient* client);
+  virtual blink::WebInbandTextTrackClient* client();
 
   virtual Kind kind() const;
-  virtual bool isClosedCaptions() const;
 
-  virtual WebKit::WebString label() const;
-  virtual WebKit::WebString language() const;
-  virtual bool isDefault() const;
+  virtual blink::WebString label() const;
+  virtual blink::WebString language() const;
+  virtual blink::WebString id() const;
 
   virtual int textTrackIndex() const;
 
  private:
-  WebKit::WebInbandTextTrackClient* client_;
-  Mode mode_;
+  blink::WebInbandTextTrackClient* client_;
   Kind kind_;
-  WebKit::WebString label_;
-  WebKit::WebString language_;
+  blink::WebString label_;
+  blink::WebString language_;
+  blink::WebString id_;
   int index_;
   DISALLOW_COPY_AND_ASSIGN(WebInbandTextTrackImpl);
 };

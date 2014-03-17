@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/time/time.h"
 
 namespace media {
@@ -17,9 +18,9 @@ namespace cast {
 
 const int64 kDontShowTimeoutMs = 33;
 const float kDefaultCongestionControlBackOff = 0.875f;
-const uint8 kStartFrameId = 255;
 const uint32 kVideoFrequency = 90000;
 const int64 kSkippedFramesCheckPeriodkMs = 10000;
+const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
 
 // Number of skipped frames threshold in fps (as configured) per period above.
 const int kSkippedFramesThreshold = 3;
@@ -29,6 +30,8 @@ const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
 
 enum DefaultSettings {
+  kDefaultAudioEncoderBitrate = 0,  // This means "auto," and may mean VBR.
+  kDefaultAudioSamplingRate = 48000,
   kDefaultMaxQp = 56,
   kDefaultMinQp = 4,
   kDefaultMaxFrameRate = 30,
@@ -40,6 +43,14 @@ enum DefaultSettings {
 
 const uint16 kRtcpCastAllPacketsLost = 0xffff;
 
+const size_t kMinLengthOfRtcp = 8;
+
+// Basic RTP header + cast header.
+const size_t kMinLengthOfRtp = 12 + 6;
+
+const size_t kAesBlockSize = 16;
+const size_t kAesKeySize = 16;
+
 // Each uint16 represents one packet id within a cast frame.
 typedef std::set<uint16> PacketIdSet;
 // Each uint8 represents one cast frame.
@@ -48,22 +59,26 @@ typedef std::map<uint8, PacketIdSet> MissingFramesAndPacketsMap;
 // TODO(pwestin): Re-factor the functions bellow into a class with static
 // methods.
 
+// January 1970, in NTP seconds.
+// Network Time Protocol (NTP), which is in seconds relative to 0h UTC on
+// 1 January 1900.
+static const int64 kUnixEpochInNtpSeconds = GG_INT64_C(2208988800);
+
 // Magic fractional unit. Used to convert time (in microseconds) to/from
 // fractional NTP seconds.
 static const double kMagicFractionalUnit = 4.294967296E3;
 
-// Network Time Protocol (NTP), which is in seconds relative to 0h UTC on
-// 1 January 1900.
-static const int64 kNtpEpochDeltaSeconds = GG_INT64_C(9435484800);
-static const int64 kNtpEpochDeltaMicroseconds =
-    kNtpEpochDeltaSeconds * base::Time::kMicrosecondsPerSecond;
-
-inline bool IsNewerFrameId(uint8 frame_id, uint8 prev_frame_id) {
+inline bool IsNewerFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id != prev_frame_id) &&
-      static_cast<uint8>(frame_id - prev_frame_id) < 0x80;
+      static_cast<uint32>(frame_id - prev_frame_id) < 0x80000000;
 }
 
-inline bool IsOlderFrameId(uint8 frame_id, uint8 prev_frame_id) {
+inline bool IsNewerRtpTimestamp(uint32 timestamp, uint32 prev_timestamp) {
+  return (timestamp != prev_timestamp) &&
+      static_cast<uint32>(timestamp - prev_timestamp) < 0x80000000;
+}
+
+inline bool IsOlderFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id == prev_frame_id) || IsNewerFrameId(prev_frame_id, frame_id);
 }
 
@@ -95,25 +110,57 @@ inline base::TimeDelta ConvertFromNtpDiff(uint32 ntp_delay) {
 inline void ConvertTimeToFractions(int64 time_us,
                                    uint32* seconds,
                                    uint32* fractions) {
+  DCHECK_GE(time_us, 0) << "Time must NOT be negative";
   *seconds = static_cast<uint32>(time_us / base::Time::kMicrosecondsPerSecond);
   *fractions = static_cast<uint32>(
       (time_us % base::Time::kMicrosecondsPerSecond) * kMagicFractionalUnit);
 }
 
-inline void ConvertTimeToNtp(const base::TimeTicks& time,
-                             uint32* ntp_seconds,
-                             uint32* ntp_fractions) {
-  int64 time_us = time.ToInternalValue() - kNtpEpochDeltaMicroseconds;
-  ConvertTimeToFractions(time_us, ntp_seconds, ntp_fractions);
+inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
+                                  uint32* ntp_seconds,
+                                  uint32* ntp_fractions) {
+  base::TimeDelta elapsed_since_unix_epoch =
+      time - base::TimeTicks::UnixEpoch();
+
+  int64 ntp_time_us = elapsed_since_unix_epoch.InMicroseconds() +
+      (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond);
+
+  ConvertTimeToFractions(ntp_time_us, ntp_seconds, ntp_fractions);
 }
 
-inline base::TimeTicks ConvertNtpToTime(uint32 ntp_seconds,
-                                        uint32 ntp_fractions) {
+inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
+                                             uint32 ntp_fractions) {
   int64 ntp_time_us = static_cast<int64>(ntp_seconds) *
-       base::Time::kMicrosecondsPerSecond;
-  ntp_time_us += static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
-  return base::TimeTicks::FromInternalValue(ntp_time_us +
-      kNtpEpochDeltaMicroseconds);
+      base::Time::kMicrosecondsPerSecond +
+          static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
+
+  base::TimeDelta elapsed_since_unix_epoch =
+      base::TimeDelta::FromMicroseconds(ntp_time_us -
+          (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond));
+  return base::TimeTicks::UnixEpoch() + elapsed_since_unix_epoch;
+}
+
+inline std::string GetAesNonce(uint32 frame_id, const std::string& iv_mask) {
+  std::string aes_nonce(kAesBlockSize, 0);
+
+  // Serializing frame_id in big-endian order (aes_nonce[8] is the most
+  // significant byte of frame_id).
+  aes_nonce[11] = frame_id & 0xff;
+  aes_nonce[10] = (frame_id >> 8) & 0xff;
+  aes_nonce[9] = (frame_id >> 16) & 0xff;
+  aes_nonce[8] = (frame_id >> 24) & 0xff;
+
+  for (size_t i = 0; i < kAesBlockSize; ++i) {
+    aes_nonce[i] ^= iv_mask[i];
+  }
+  return aes_nonce;
+}
+
+inline uint32 GetVideoRtpTimestamp(const base::TimeTicks& time_ticks) {
+  base::TimeTicks zero_time;
+  base::TimeDelta recorded_delta = time_ticks - zero_time;
+  // Timestamp is in 90 KHz for video.
+  return static_cast<uint32>(recorded_delta.InMilliseconds() * 90);
 }
 
 }  // namespace cast

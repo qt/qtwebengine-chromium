@@ -68,6 +68,9 @@ void AddDefaultFieldValue(ModelType datatype,
     case APPS:
       specifics->mutable_app();
       break;
+    case APP_LIST:
+      specifics->mutable_app_list();
+      break;
     case APP_SETTINGS:
       specifics->mutable_app_setting();
       break;
@@ -106,6 +109,9 @@ void AddDefaultFieldValue(ModelType datatype,
       break;
     case MANAGED_USERS:
       specifics->mutable_managed_user();
+      break;
+    case ARTICLES:
+      specifics->mutable_article();
       break;
     default:
       NOTREACHED() << "No known extension for model type.";
@@ -164,6 +170,9 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
     case APPS:
       return sync_pb::EntitySpecifics::kAppFieldNumber;
       break;
+    case APP_LIST:
+      return sync_pb::EntitySpecifics::kAppListFieldNumber;
+      break;
     case APP_SETTINGS:
       return sync_pb::EntitySpecifics::kAppSettingFieldNumber;
       break;
@@ -197,6 +206,8 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       return sync_pb::EntitySpecifics::kManagedUserSettingFieldNumber;
     case MANAGED_USERS:
       return sync_pb::EntitySpecifics::kManagedUserFieldNumber;
+    case ARTICLES:
+      return sync_pb::EntitySpecifics::kArticleFieldNumber;
     default:
       NOTREACHED() << "No known extension for model type.";
       return 0;
@@ -217,9 +228,6 @@ FullModelTypeSet ToFullModelTypeSet(ModelTypeSet in) {
 // Note: keep this consistent with GetModelType in entry.cc!
 ModelType GetModelType(const sync_pb::SyncEntity& sync_entity) {
   DCHECK(!IsRoot(sync_entity));  // Root shouldn't ever go over the wire.
-
-  if (sync_entity.deleted())
-    return UNSPECIFIED;
 
   // Backwards compatibility with old (pre-specifics) protocol.
   if (sync_entity.has_bookmarkdata())
@@ -274,6 +282,9 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
   if (specifics.has_app())
     return APPS;
 
+  if (specifics.has_app_list())
+    return APP_LIST;
+
   if (specifics.has_search_engine())
     return SEARCH_ENGINES;
 
@@ -318,6 +329,9 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
 
   if (specifics.has_managed_user())
     return MANAGED_USERS;
+
+  if (specifics.has_article())
+    return ARTICLES;
 
   return UNSPECIFIED;
 }
@@ -456,6 +470,8 @@ const char* ModelTypeToString(ModelType model_type) {
       return "Sessions";
     case APPS:
       return "Apps";
+    case APP_LIST:
+      return "App List";
     case AUTOFILL_PROFILE:
       return "Autofill Profiles";
     case APP_SETTINGS:
@@ -484,6 +500,8 @@ const char* ModelTypeToString(ModelType model_type) {
       return "Managed User Settings";
     case MANAGED_USERS:
       return "Managed Users";
+    case ARTICLES:
+      return "Articles";
     case PROXY_TABS:
       return "Tabs";
     default:
@@ -555,6 +573,10 @@ int ModelTypeToHistogramInt(ModelType model_type) {
       return 26;
     case MANAGED_USERS:
       return 27;
+    case ARTICLES:
+      return 28;
+    case APP_LIST:
+      return 29;
     // Silence a compiler warning.
     case MODEL_TYPE_COUNT:
       return 0;
@@ -614,6 +636,8 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
     return SESSIONS;
   else if (model_type_string == "Apps")
     return APPS;
+  else if (model_type_string == "App List")
+    return APP_LIST;
   else if (model_type_string == "App settings")
     return APP_SETTINGS;
   else if (model_type_string == "Extension settings")
@@ -640,6 +664,8 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
     return MANAGED_USER_SETTINGS;
   else if (model_type_string == "Managed Users")
     return MANAGED_USERS;
+  else if (model_type_string == "Articles")
+    return ARTICLES;
   else if (model_type_string == "Tabs")
     return PROXY_TABS;
   else
@@ -704,6 +730,8 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_sessions";
     case APPS:
       return "google_chrome_apps";
+    case APP_LIST:
+      return "google_chrome_app_list";
     case AUTOFILL_PROFILE:
       return "google_chrome_autofill_profiles";
     case APP_SETTINGS:
@@ -732,6 +760,8 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_managed_user_settings";
     case MANAGED_USERS:
       return "google_chrome_managed_users";
+    case ARTICLES:
+      return "google_chrome_articles";
     case PROXY_TABS:
       return std::string();
     default:
@@ -756,6 +786,7 @@ const char kExtensionSettingNotificationType[] = "EXTENSION_SETTING";
 const char kNigoriNotificationType[] = "NIGORI";
 const char kAppSettingNotificationType[] = "APP_SETTING";
 const char kAppNotificationType[] = "APP";
+const char kAppListNotificationType[] = "APP_LIST";
 const char kSearchEngineNotificationType[] = "SEARCH_ENGINE";
 const char kSessionNotificationType[] = "SESSION";
 const char kAutofillProfileNotificationType[] = "AUTOFILL_PROFILE";
@@ -771,6 +802,7 @@ const char kFaviconImageNotificationType[] = "FAVICON_IMAGE";
 const char kFaviconTrackingNotificationType[] = "FAVICON_TRACKING";
 const char kManagedUserSettingNotificationType[] = "MANAGED_USER_SETTING";
 const char kManagedUserNotificationType[] = "MANAGED_USER";
+const char kArticleNotificationType[] = "ARTICLE";
 }  // namespace
 
 bool RealModelTypeToNotificationType(ModelType model_type,
@@ -805,6 +837,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
       return true;
     case APPS:
       *notification_type = kAppNotificationType;
+      return true;
+    case APP_LIST:
+      *notification_type = kAppListNotificationType;
       return true;
     case SEARCH_ENGINES:
       *notification_type = kSearchEngineNotificationType;
@@ -851,6 +886,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
     case MANAGED_USERS:
       *notification_type = kManagedUserNotificationType;
       return true;
+    case ARTICLES:
+      *notification_type = kArticleNotificationType;
+      return true;
     default:
       break;
   }
@@ -886,6 +924,9 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
     return true;
   } else if (notification_type == kAppNotificationType) {
     *model_type = APPS;
+    return true;
+  } else if (notification_type == kAppListNotificationType) {
+    *model_type = APP_LIST;
     return true;
   } else if (notification_type == kSearchEngineNotificationType) {
     *model_type = SEARCH_ENGINES;
@@ -934,6 +975,9 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
     return true;
   } else if (notification_type == kManagedUserNotificationType) {
     *model_type = MANAGED_USERS;
+    return true;
+  } else if (notification_type == kArticleNotificationType) {
+    *model_type = ARTICLES;
     return true;
   }
   *model_type = UNSPECIFIED;

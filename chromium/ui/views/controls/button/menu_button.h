@@ -66,6 +66,9 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
  protected:
+  // Paint the menu marker image.
+  void PaintMenuMarker(gfx::Canvas* canvas);
+
   // True if the menu is currently visible.
   bool menu_visible_;
 
@@ -85,7 +88,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // menu. There is no clean way to get the second click event because the
   // menu is displayed using a modal loop and, unlike regular menus in Windows,
   // the button is not part of the displayed menu.
-  base::Time menu_closed_time_;
+  base::TimeTicks menu_closed_time_;
 
   // Our listener. Not owned.
   MenuButtonListener* listener_;

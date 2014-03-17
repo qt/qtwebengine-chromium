@@ -32,24 +32,30 @@ class StyleSheetContents;
 class CSSDefaultStyleSheets {
 public:
     static RuleSet* defaultStyle;
+    static RuleSet* defaultViewportStyle;
     static RuleSet* defaultQuirksStyle;
     static RuleSet* defaultPrintStyle;
     static RuleSet* defaultViewSourceStyle;
     static RuleSet* defaultXHTMLMobileProfileStyle;
 
-    static StyleSheetContents* simpleDefaultStyleSheet;
     static StyleSheetContents* defaultStyleSheet;
+    static StyleSheetContents* viewportStyleSheet;
     static StyleSheetContents* quirksStyleSheet;
     static StyleSheetContents* svgStyleSheet;
     static StyleSheetContents* mediaControlsStyleSheet;
     static StyleSheetContents* fullscreenStyleSheet;
 
     static void ensureDefaultStyleSheetsForElement(Element*, bool& changedDefaultStyle);
-    static void loadFullDefaultStyle();
-    static void loadSimpleDefaultStyle();
-    static void initDefaultStyle(Element*);
+    // FIXME: defaultStyleSheet should have an accessor which incorporates this branch:
+    static void loadDefaultStylesheetIfNecessary();
+
     static RuleSet* viewSourceStyle();
+
+    // FIXME: Remove WAP support.
     static RuleSet* xhtmlMobileProfileStyle();
+
+private:
+    static void loadDefaultStyle();
 };
 
 } // namespace WebCore

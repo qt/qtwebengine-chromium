@@ -13,30 +13,36 @@
 #include "content/common/media/media_stream_options.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "media/audio/audio_manager_base.h"
-#if defined(OS_ANDROID)
+#include "media/audio/fake_audio_log_factory.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(USE_ALSA)
+#include "media/audio/alsa/audio_manager_alsa.h"
+#elif defined(OS_ANDROID)
 #include "media/audio/android/audio_manager_android.h"
-#elif defined(OS_LINUX) || defined(OS_OPENBSD)
-#include "media/audio/linux/audio_manager_linux.h"
 #elif defined(OS_MACOSX)
 #include "media/audio/mac/audio_manager_mac.h"
 #elif defined(OS_WIN)
 #include "media/audio/win/audio_manager_win.h"
+#else
+#include "media/audio/fake_audio_manager.h"
 #endif
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
 
 namespace content {
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
-typedef media::AudioManagerLinux AudioManagerPlatform;
+#if defined(USE_ALSA)
+typedef media::AudioManagerAlsa AudioManagerPlatform;
 #elif defined(OS_MACOSX)
 typedef media::AudioManagerMac AudioManagerPlatform;
 #elif defined(OS_WIN)
 typedef media::AudioManagerWin AudioManagerPlatform;
 #elif defined(OS_ANDROID)
 typedef media::AudioManagerAndroid AudioManagerPlatform;
+#else
+typedef media::FakeAudioManager AudioManagerPlatform;
 #endif
 
 
@@ -45,7 +51,7 @@ typedef media::AudioManagerAndroid AudioManagerPlatform;
 // the buildbots. media::AudioManagerBase
 class MockAudioManager : public AudioManagerPlatform {
  public:
-  MockAudioManager() {}
+  MockAudioManager() : AudioManagerPlatform(&fake_audio_log_factory_) {}
   virtual ~MockAudioManager() {}
 
   virtual void GetAudioInputDeviceNames(
@@ -60,6 +66,7 @@ class MockAudioManager : public AudioManagerPlatform {
   }
 
  private:
+  media::FakeAudioLogFactory fake_audio_log_factory_;
   DISALLOW_COPY_AND_ASSIGN(MockAudioManager);
 };
 
@@ -77,7 +84,6 @@ class MediaStreamManagerTest : public ::testing::Test {
   }
 
   virtual ~MediaStreamManagerTest() {
-    media_stream_manager_->WillDestroyCurrentMessageLoop();
   }
 
   MOCK_METHOD1(Response, void(int index));
@@ -93,16 +99,15 @@ class MediaStreamManagerTest : public ::testing::Test {
     const int render_process_id = 1;
     const int render_view_id = 1;
     const int page_request_id = 1;
-    StreamOptions components(MEDIA_DEVICE_AUDIO_CAPTURE,
-                             MEDIA_DEVICE_VIDEO_CAPTURE);
     const GURL security_origin;
     MediaStreamManager::MediaRequestResponseCallback callback =
         base::Bind(&MediaStreamManagerTest::ResponseCallback,
                    base::Unretained(this), index);
+    StreamOptions options(true, true);
     return media_stream_manager_->MakeMediaAccessRequest(render_process_id,
                                                          render_view_id,
                                                          page_request_id,
-                                                         components,
+                                                         options,
                                                          security_origin,
                                                          callback);
   }
@@ -129,6 +134,8 @@ TEST_F(MediaStreamManagerTest, MakeAndCancelMediaAccessRequest) {
   std::string label = MakeMediaAccessRequest(0);
   // No callback is expected.
   media_stream_manager_->CancelRequest(label);
+  run_loop_.RunUntilIdle();
+  media_stream_manager_->WillDestroyCurrentMessageLoop();
 }
 
 TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
@@ -139,9 +146,8 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
   int render_process_id = 2;
   int render_view_id = 2;
   int page_request_id = 2;
-  StreamOptions components(MEDIA_DEVICE_AUDIO_CAPTURE,
-                           MEDIA_DEVICE_VIDEO_CAPTURE);
   GURL security_origin;
+  StreamOptions options(true, true);
   MediaStreamManager::MediaRequestResponseCallback callback =
       base::Bind(&MediaStreamManagerTest::ResponseCallback,
                  base::Unretained(this), 1);
@@ -149,7 +155,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
       render_process_id,
       render_view_id,
       page_request_id,
-      components,
+      options,
       security_origin,
       callback);
 

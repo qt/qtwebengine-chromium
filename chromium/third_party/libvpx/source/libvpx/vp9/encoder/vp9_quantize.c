@@ -12,6 +12,7 @@
 #include "vpx_mem/vpx_mem.h"
 
 #include "vp9/encoder/vp9_onyx_int.h"
+#include "vp9/encoder/vp9_rdopt.h"
 #include "vp9/encoder/vp9_quantize.h"
 #include "vp9/common/vp9_quant_common.h"
 
@@ -21,12 +22,14 @@
 extern int enc_debug;
 #endif
 
-void vp9_quantize_b_c(int16_t *coeff_ptr, intptr_t n_coeffs, int skip_block,
-                      int16_t *zbin_ptr, int16_t *round_ptr, int16_t *quant_ptr,
-                      int16_t *quant_shift_ptr, int16_t *qcoeff_ptr,
-                      int16_t *dqcoeff_ptr, int16_t *dequant_ptr,
-                      int zbin_oq_value, uint16_t *eob_ptr, const int16_t *scan,
-                      const int16_t *iscan) {
+void vp9_quantize_b_c(const int16_t *coeff_ptr, intptr_t n_coeffs,
+                      int skip_block,
+                      const int16_t *zbin_ptr, const int16_t *round_ptr,
+                      const int16_t *quant_ptr, const int16_t *quant_shift_ptr,
+                      int16_t *qcoeff_ptr, int16_t *dqcoeff_ptr,
+                      const int16_t *dequant_ptr,
+                      int zbin_oq_value, uint16_t *eob_ptr,
+                      const int16_t *scan, const int16_t *iscan) {
   int i, rc, eob;
   int zbins[2], nzbins[2], zbin;
   int x, y, z, sz;
@@ -85,14 +88,15 @@ void vp9_quantize_b_c(int16_t *coeff_ptr, intptr_t n_coeffs, int skip_block,
   *eob_ptr = eob + 1;
 }
 
-void vp9_quantize_b_32x32_c(int16_t *coeff_ptr, intptr_t n_coeffs,
+void vp9_quantize_b_32x32_c(const int16_t *coeff_ptr, intptr_t n_coeffs,
                             int skip_block,
-                            int16_t *zbin_ptr, int16_t *round_ptr,
-                            int16_t *quant_ptr, int16_t *quant_shift_ptr,
+                            const int16_t *zbin_ptr, const int16_t *round_ptr,
+                            const int16_t *quant_ptr,
+                            const int16_t *quant_shift_ptr,
                             int16_t *qcoeff_ptr, int16_t *dqcoeff_ptr,
-                            int16_t *dequant_ptr, int zbin_oq_value,
-                            uint16_t *eob_ptr, const int16_t *scan,
-                            const int16_t *iscan) {
+                            const int16_t *dequant_ptr,
+                            int zbin_oq_value, uint16_t *eob_ptr,
+                            const int16_t *scan, const int16_t *iscan) {
   int i, rc, eob;
   int zbins[2], nzbins[2];
   int x, y, z, sz;
@@ -173,25 +177,19 @@ static INLINE struct plane_block_idx plane_block_idx(int y_blocks,
   return res;
 }
 
-void vp9_regular_quantize_b_4x4(MACROBLOCK *mb, int b_idx, TX_TYPE tx_type,
-                                int y_blocks) {
-  MACROBLOCKD *const xd = &mb->e_mbd;
+void vp9_regular_quantize_b_4x4(MACROBLOCK *x, int y_blocks, int b_idx,
+                                const int16_t *scan, const int16_t *iscan) {
+  MACROBLOCKD *const xd = &x->e_mbd;
   const struct plane_block_idx pb_idx = plane_block_idx(y_blocks, b_idx);
-  const int16_t *scan = get_scan_4x4(tx_type);
-  const int16_t *iscan = get_iscan_4x4(tx_type);
+  struct macroblock_plane* p = &x->plane[pb_idx.plane];
+  struct macroblockd_plane* pd = &xd->plane[pb_idx.plane];
 
-  vp9_quantize_b(BLOCK_OFFSET(mb->plane[pb_idx.plane].coeff, pb_idx.block),
-           16, mb->skip_block,
-           mb->plane[pb_idx.plane].zbin,
-           mb->plane[pb_idx.plane].round,
-           mb->plane[pb_idx.plane].quant,
-           mb->plane[pb_idx.plane].quant_shift,
-           BLOCK_OFFSET(xd->plane[pb_idx.plane].qcoeff, pb_idx.block),
-           BLOCK_OFFSET(xd->plane[pb_idx.plane].dqcoeff, pb_idx.block),
-           xd->plane[pb_idx.plane].dequant,
-           mb->plane[pb_idx.plane].zbin_extra,
-           &xd->plane[pb_idx.plane].eobs[pb_idx.block],
-           scan, iscan);
+  vp9_quantize_b(BLOCK_OFFSET(p->coeff, pb_idx.block),
+           16, x->skip_block,
+           p->zbin, p->round, p->quant, p->quant_shift,
+           BLOCK_OFFSET(pd->qcoeff, pb_idx.block),
+           BLOCK_OFFSET(pd->dqcoeff, pb_idx.block),
+           pd->dequant, p->zbin_extra, &pd->eobs[pb_idx.block], scan, iscan);
 }
 
 static void invert_quant(int16_t *quant, int16_t *shift, int d) {
@@ -271,11 +269,14 @@ void vp9_init_quantizer(VP9_COMP *cpi) {
 
 void vp9_mb_init_quantizer(VP9_COMP *cpi, MACROBLOCK *x) {
   int i;
+  VP9_COMMON *const cm = &cpi->common;
   MACROBLOCKD *xd = &x->e_mbd;
   int zbin_extra;
-  int segment_id = xd->this_mi->mbmi.segment_id;
+  int segment_id = xd->mi_8x8[0]->mbmi.segment_id;
   const int qindex = vp9_get_qindex(&cpi->common.seg, segment_id,
                                     cpi->common.base_qindex);
+
+  int rdmult = vp9_compute_rd_mult(cpi, qindex + cm->y_dc_delta_q);
 
   // Y
   zbin_extra = (cpi->common.y_dequant[qindex][1] *
@@ -315,6 +316,12 @@ void vp9_mb_init_quantizer(VP9_COMP *cpi, MACROBLOCK *x) {
 
   /* save this macroblock QIndex for vp9_update_zbin_extra() */
   x->e_mbd.q_index = qindex;
+
+  /* R/D setup */
+  cpi->mb.errorperbit = rdmult >> 6;
+  cpi->mb.errorperbit += (cpi->mb.errorperbit == 0);
+
+  vp9_initialize_me_consts(cpi, xd->q_index);
 }
 
 void vp9_update_zbin_extra(VP9_COMP *cpi, MACROBLOCK *x) {
@@ -337,10 +344,10 @@ void vp9_frame_init_quantizer(VP9_COMP *cpi) {
   vp9_mb_init_quantizer(cpi, &cpi->mb);
 }
 
-void vp9_set_quantizer(struct VP9_COMP *cpi, int Q) {
+void vp9_set_quantizer(struct VP9_COMP *cpi, int q) {
   VP9_COMMON *cm = &cpi->common;
 
-  cm->base_qindex = Q;
+  cm->base_qindex = q;
 
   // if any of the delta_q values are changing update flag will
   // have to be set.

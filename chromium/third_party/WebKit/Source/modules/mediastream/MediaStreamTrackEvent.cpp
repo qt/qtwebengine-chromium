@@ -25,7 +25,7 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamTrackEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
 namespace WebCore {
@@ -64,7 +64,7 @@ MediaStreamTrack* MediaStreamTrackEvent::track() const
 
 const AtomicString& MediaStreamTrackEvent::interfaceName() const
 {
-    return eventNames().interfaceForMediaStreamTrackEvent;
+    return EventNames::MediaStreamTrackEvent;
 }
 
 } // namespace WebCore

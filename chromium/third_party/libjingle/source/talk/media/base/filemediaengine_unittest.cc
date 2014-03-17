@@ -63,7 +63,7 @@ class FileNetworkInterface : public MediaChannel::NetworkInterface {
     if (!packet) return false;
 
     if (media_channel_) {
-      media_channel_->OnPacketReceived(packet);
+      media_channel_->OnPacketReceived(packet, talk_base::PacketTime());
     }
     if (dump_writer_.get() &&
         talk_base::SR_SUCCESS != dump_writer_->WriteRtpPacket(
@@ -136,6 +136,7 @@ class FileMediaEngineTest : public testing::Test {
     engine_->set_voice_output_filename(voice_out);
     engine_->set_video_input_filename(video_in);
     engine_->set_video_output_filename(video_out);
+    engine_->set_rtp_sender_thread(talk_base::Thread::Current());
 
     voice_channel_.reset(engine_->CreateChannel());
     video_channel_.reset(engine_->CreateVideoChannel(NULL));
@@ -220,8 +221,10 @@ TEST_F(FileMediaEngineTest, TestDefaultImplementation) {
   EXPECT_TRUE(NULL == voice_channel_.get());
   EXPECT_TRUE(NULL == video_channel_.get());
   EXPECT_TRUE(NULL == engine_->CreateSoundclip());
-  EXPECT_TRUE(engine_->SetAudioOptions(0));
-  EXPECT_TRUE(engine_->SetVideoOptions(0));
+  cricket::AudioOptions audio_options;
+  EXPECT_TRUE(engine_->SetAudioOptions(audio_options));
+  cricket::VideoOptions video_options;
+  EXPECT_TRUE(engine_->SetVideoOptions(video_options));
   VideoEncoderConfig video_encoder_config;
   EXPECT_TRUE(engine_->SetDefaultVideoEncoderConfig(video_encoder_config));
   EXPECT_TRUE(engine_->SetSoundDevices(NULL, NULL));

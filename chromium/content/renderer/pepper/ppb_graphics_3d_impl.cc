@@ -27,10 +27,10 @@
 
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_Graphics3D_API;
-using WebKit::WebConsoleMessage;
-using WebKit::WebFrame;
-using WebKit::WebPluginContainer;
-using WebKit::WebString;
+using blink::WebConsoleMessage;
+using blink::WebFrame;
+using blink::WebPluginContainer;
+using blink::WebString;
 
 namespace content {
 
@@ -160,7 +160,7 @@ gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSyncFast(
 }
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
-  return GetCommandBuffer()->InsertSyncPoint();
+  return platform_context_->GetGpuControl()->InsertSyncPoint();
 }
 
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
@@ -170,9 +170,6 @@ bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
 
 bool PPB_Graphics3D_Impl::IsOpaque() {
   return platform_context_->IsOpaque();
-}
-
-void PPB_Graphics3D_Impl::ViewWillInitiatePaint() {
 }
 
 void PPB_Graphics3D_Impl::ViewInitiatedPaint() {
@@ -189,12 +186,20 @@ gpu::CommandBuffer* PPB_Graphics3D_Impl::GetCommandBuffer() {
   return platform_context_->GetCommandBuffer();
 }
 
+gpu::GpuControl* PPB_Graphics3D_Impl::GetGpuControl() {
+  return platform_context_->GetGpuControl();
+}
+
 int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
   // We do not have a GLES2 implementation when using an OOP proxy.
   // The plugin-side proxy is responsible for adding the SwapBuffers command
   // to the command buffer in that case.
   if (gles2_impl())
     gles2_impl()->SwapBuffers();
+
+  // Since the backing texture has been updated, a new sync point should be
+  // inserted.
+  platform_context_->InsertSyncPointForBackingMailbox();
 
   if (bound_to_instance_) {
     // If we are bound to the instance, we need to ask the compositor
@@ -333,7 +338,11 @@ void PPB_Graphics3D_Impl::SendContextLost() {
       static_cast<const PPP_Graphics3D*>(
           instance->module()->GetPluginInterface(
               PPP_GRAPHICS_3D_INTERFACE));
-  if (ppp_graphics_3d)
+  // We have to check *again* that the instance exists, because it could have
+  // been deleted during GetPluginInterface(). Even the PluginModule could be
+  // deleted, but in that case, the instance should also be gone, so the
+  // GetInstance check covers both cases.
+  if (ppp_graphics_3d && HostGlobals::Get()->GetInstance(this_pp_instance))
     ppp_graphics_3d->Graphics3DContextLost(this_pp_instance);
 }
 

@@ -25,6 +25,8 @@
 
 namespace WebCore {
 
+class DisplayList;
+
 struct ClipperContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -62,31 +64,29 @@ public:
     // FIXME: We made applyClippingToContext public because we cannot call applyResource on HTML elements (it asserts on RenderObject::objectBoundingBox)
     bool applyClippingToContext(RenderObject*, const FloatRect&, const FloatRect&, GraphicsContext*, ClipperContext&);
 
-    virtual FloatRect resourceBoundingBox(RenderObject*);
+    FloatRect resourceBoundingBox(RenderObject*);
 
-    virtual RenderSVGResourceType resourceType() const { return ClipperResourceType; }
+    virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
 
     bool hitTestClipContent(const FloatRect&, const FloatPoint&);
 
     SVGUnitTypes::SVGUnitType clipPathUnits() const { return toSVGClipPathElement(element())->clipPathUnitsCurrentValue(); }
 
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 private:
     bool tryPathOnlyClipping(GraphicsContext*, const AffineTransform&, const FloatRect&);
-    void drawMaskContent(GraphicsContext*, const FloatRect& targetBoundingBox);
+    void drawClipMaskContent(GraphicsContext*, const FloatRect& targetBoundingBox);
+    PassRefPtr<DisplayList> asDisplayList(GraphicsContext*, const AffineTransform&);
     void calculateClipContentRepaintRect();
 
+    RefPtr<DisplayList> m_clipContentDisplayList;
     FloatRect m_clipBoundaries;
 
     // Reference cycle detection.
     bool m_inClipExpansion;
 };
 
-inline RenderSVGResourceClipper* toRenderSVGResourceClipper(RenderSVGResource* resource)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == ClipperResourceType);
-    return static_cast<RenderSVGResourceClipper*>(resource);
-}
+DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(RenderSVGResourceClipper, ClipperResourceType);
 
 }
 

@@ -34,31 +34,36 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 class Blob;
+class ChromiumDataObjectItem;
+class Clipboard;
 class File;
 class StringCallback;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class DataTransferItem : public RefCounted<DataTransferItem>, public ScriptWrappable {
 public:
-    DataTransferItem()
-    {
-        ScriptWrappable::init(this);
-    }
+    static PassRefPtr<DataTransferItem> create(PassRefPtr<Clipboard>, PassRefPtr<ChromiumDataObjectItem>);
+    ~DataTransferItem();
 
-    virtual ~DataTransferItem() { }
+    String kind() const;
+    String type() const;
 
-    static const char kindString[];
-    static const char kindFile[];
+    void getAsString(ExecutionContext*, PassOwnPtr<StringCallback>) const;
+    PassRefPtr<Blob> getAsFile() const;
 
-    virtual String kind() const = 0;
-    virtual String type() const = 0;
+    Clipboard* clipboard() { return m_clipboard.get(); }
+    ChromiumDataObjectItem* dataObjectItem() { return m_item.get(); }
 
-    virtual void getAsString(PassRefPtr<StringCallback>) const = 0;
-    virtual PassRefPtr<Blob> getAsFile() const = 0;
+private:
+    DataTransferItem(PassRefPtr<Clipboard>, PassRefPtr<ChromiumDataObjectItem>);
+
+    RefPtr<Clipboard> m_clipboard;
+    RefPtr<ChromiumDataObjectItem> m_item;
 };
 
 } // namespace WebCore

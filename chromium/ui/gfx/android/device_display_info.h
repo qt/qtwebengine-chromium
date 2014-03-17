@@ -8,7 +8,6 @@
 #include <jni.h>
 #include <string>
 
-#include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "ui/gfx/gfx_export.h"
 
@@ -16,7 +15,7 @@ namespace gfx {
 
 // Facilitates access to device information typically only
 // available using the Android SDK, including Display properties.
-class UI_EXPORT DeviceDisplayInfo {
+class GFX_EXPORT DeviceDisplayInfo {
  public:
   DeviceDisplayInfo();
   ~DeviceDisplayInfo();
@@ -37,12 +36,10 @@ class UI_EXPORT DeviceDisplayInfo {
   // (1.0 is 160dpi, 0.75 is 120dpi, 2.0 is 320dpi).
   double GetDIPScale();
 
-  // Registers methods with JNI and returns true if succeeded.
-  static bool RegisterDeviceDisplayInfo(JNIEnv* env);
+  // Smallest possible screen size in density-independent pixels.
+  int GetSmallestDIPWidth();
 
  private:
-  base::android::ScopedJavaGlobalRef<jobject> j_device_info_;
-
   DISALLOW_COPY_AND_ASSIGN(DeviceDisplayInfo);
 };
 

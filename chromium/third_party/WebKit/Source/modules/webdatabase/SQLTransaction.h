@@ -52,20 +52,22 @@ class VoidCallback;
 
 class SQLTransaction : public SQLTransactionStateMachine<SQLTransaction>, public AbstractSQLTransaction, public ScriptWrappable {
 public:
-    static PassRefPtr<SQLTransaction> create(Database*, PassRefPtr<SQLTransactionCallback>,
-        PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionErrorCallback>,
+    static PassRefPtr<SQLTransaction> create(Database*, PassOwnPtr<SQLTransactionCallback>,
+        PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback>,
         bool readOnly);
 
     void performPendingCallback();
 
     void executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments,
-        PassRefPtr<SQLStatementCallback>, PassRefPtr<SQLStatementErrorCallback>, ExceptionState&);
+        PassOwnPtr<SQLStatementCallback>, PassOwnPtr<SQLStatementErrorCallback>, ExceptionState&);
 
     Database* database() { return m_database.get(); }
 
+    PassOwnPtr<SQLTransactionErrorCallback> releaseErrorCallback();
+
 private:
-    SQLTransaction(Database*, PassRefPtr<SQLTransactionCallback>,
-        PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionErrorCallback>,
+    SQLTransaction(Database*, PassOwnPtr<SQLTransactionCallback>,
+        PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback>,
         bool readOnly);
 
     void clearCallbackWrappers();

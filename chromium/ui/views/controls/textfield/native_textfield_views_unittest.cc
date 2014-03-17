@@ -99,9 +99,10 @@ class GetTextHelper {
 // Convenience to make constructing a GestureEvent simpler.
 class GestureEventForTest : public ui::GestureEvent {
  public:
-  GestureEventForTest(ui::EventType type, int x, int y, int flags)
-      : GestureEvent(type, x, y, flags, base::TimeDelta(),
-                     ui::GestureEventDetails(type, 0.0f, 0.0f), 0) {
+  GestureEventForTest(ui::EventType type, int x, int y, float delta_x,
+                      float delta_y)
+      : GestureEvent(type, x, y, 0, base::TimeDelta(),
+                     ui::GestureEventDetails(type, delta_x, delta_y), 0) {
   }
 
  private:
@@ -167,10 +168,6 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
   }
 
   void InitTextfields(Textfield::StyleFlags style, int count) {
-    // Append kEnableViewsTextfield to use NativeTextfieldViews on Windows.
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    command_line->AppendSwitch(switches::kEnableViewsTextfield);
-
     ASSERT_FALSE(textfield_);
     textfield_ = new TestTextfield(style);
     textfield_->SetController(this);
@@ -252,14 +249,14 @@ class NativeTextfieldViewsTest : public ViewsTestBase,
   string16 GetClipboardText() const {
     string16 text;
     ui::Clipboard::GetForCurrentThread()->
-        ReadText(ui::Clipboard::BUFFER_STANDARD, &text);
+        ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE, &text);
     return text;
   }
 
   void SetClipboardText(const std::string& text) {
     ui::ScopedClipboardWriter clipboard_writer(
         ui::Clipboard::GetForCurrentThread(),
-        ui::Clipboard::BUFFER_STANDARD);
+        ui::CLIPBOARD_TYPE_COPY_PASTE);
     clipboard_writer.WriteText(ASCIIToUTF16(text));
   }
 
@@ -793,7 +790,7 @@ TEST_F(NativeTextfieldViewsTest, ContextMenuDisplayTest) {
   InitTextfield(Textfield::STYLE_DEFAULT);
   EXPECT_TRUE(textfield_->context_menu_controller());
   textfield_->SetText(ASCIIToUTF16("hello world"));
-  ui::Clipboard::GetForCurrentThread()->Clear(ui::Clipboard::BUFFER_STANDARD);
+  ui::Clipboard::GetForCurrentThread()->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   textfield_view_->ClearEditHistory();
   EXPECT_TRUE(GetContextMenuModel());
   VerifyTextfieldContextMenuContents(false, false, GetContextMenuModel());
@@ -1801,6 +1798,41 @@ TEST_F(NativeTextfieldViewsTest, GetCompositionCharacterBoundsTest) {
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count + 100, &rect));
 }
 
+TEST_F(NativeTextfieldViewsTest, GetCompositionCharacterBounds_ComplexText) {
+  InitTextfield(Textfield::STYLE_DEFAULT);
+
+  const char16 kUtf16Chars[] = {
+    // U+0020 SPACE
+    0x0020,
+    // U+1F408 (CAT) as surrogate pair
+    0xd83d, 0xdc08,
+    // U+5642 as Ideographic Variation Sequences
+    0x5642, 0xDB40, 0xDD00,
+    // U+260E (BLACK TELEPHONE) as Emoji Variation Sequences
+    0x260E, 0xFE0F,
+    // U+0020 SPACE
+    0x0020,
+  };
+  const size_t kUtf16CharsCount = arraysize(kUtf16Chars);
+
+  ui::CompositionText composition;
+  composition.text.assign(kUtf16Chars, kUtf16Chars + kUtf16CharsCount);
+  ui::TextInputClient* client = textfield_->GetTextInputClient();
+  client->SetCompositionText(composition);
+
+  // Make sure GetCompositionCharacterBounds never fails for index.
+  gfx::Rect rects[kUtf16CharsCount];
+  gfx::Rect prev_cursor = GetCursorBounds();
+  for (uint32 i = 0; i < kUtf16CharsCount; ++i)
+    EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &rects[i]));
+
+  // Here we might expect the following results but it actually depends on how
+  // Uniscribe or HarfBuzz treats them with given font.
+  // - rects[1] == rects[2]
+  // - rects[3] == rects[4] == rects[5]
+  // - rects[6] == rects[7]
+}
+
 // The word we select by double clicking should remain selected regardless of
 // where we drag the mouse afterwards without releasing the left button.
 TEST_F(NativeTextfieldViewsTest, KeepInitiallySelectedWord) {
@@ -1840,9 +1872,7 @@ TEST_F(NativeTextfieldViewsTest, TouchSelectionAndDraggingTest) {
   CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
 
   // Tapping on the textfield should turn on the TouchSelectionController.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, eventX, eventY, 0, base::TimeDelta(),
-                       ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f),
-                       0);
+  GestureEventForTest tap(ui::ET_GESTURE_TAP, eventX, eventY, 1.0f, 0.0f);
   textfield_view_->OnGestureEvent(&tap);
   EXPECT_TRUE(GetTouchSelectionController());
 
@@ -1852,9 +1882,11 @@ TEST_F(NativeTextfieldViewsTest, TouchSelectionAndDraggingTest) {
 
   // With touch editing enabled, long press should not show context menu.
   // Instead, select word and invoke TouchSelectionController.
-  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, eventX, eventY, 0);
+  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, eventX, eventY, 0.0f,
+      0.0f);
   textfield_view_->OnGestureEvent(&tap_down);
-  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS, eventX, eventY, 0);
+  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS, eventX, eventY,
+      0.0f, 0.0f);
   textfield_view_->OnGestureEvent(&long_press);
   EXPECT_STR_EQ("hello", textfield_->GetSelectedText());
   EXPECT_TRUE(GetTouchSelectionController());
@@ -1874,10 +1906,51 @@ TEST_F(NativeTextfieldViewsTest, TouchSelectionAndDraggingTest) {
   textfield_view_->OnGestureEvent(&tap_down);
 
   // Create a new long press event since the previous one is not marked handled.
-  GestureEventForTest long_press2(ui::ET_GESTURE_LONG_PRESS, eventX, eventY, 0);
+  GestureEventForTest long_press2(ui::ET_GESTURE_LONG_PRESS, eventX, eventY,
+      0.0f, 0.0f);
   textfield_view_->OnGestureEvent(&long_press2);
   EXPECT_STR_EQ("hello", textfield_->GetSelectedText());
   EXPECT_FALSE(GetTouchSelectionController());
+}
+
+TEST_F(NativeTextfieldViewsTest, TouchScrubbingSelection) {
+  InitTextfield(Textfield::STYLE_DEFAULT);
+  textfield_->SetText(ASCIIToUTF16("hello world"));
+  EXPECT_FALSE(GetTouchSelectionController());
+
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
+
+  // Simulate touch-scrubbing.
+  int scrubbing_start = GetCursorPositionX(1);
+  int scrubbing_end = GetCursorPositionX(6);
+
+  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, scrubbing_start, 0,
+                               0.0f, 0.0f);
+  textfield_view_->OnGestureEvent(&tap_down);
+
+  GestureEventForTest tap_cancel(ui::ET_GESTURE_TAP_CANCEL, scrubbing_start, 0,
+                                 0.0f, 0.0f);
+  textfield_view_->OnGestureEvent(&tap_cancel);
+
+  GestureEventForTest scroll_begin(ui::ET_GESTURE_SCROLL_BEGIN, scrubbing_start,
+                                   0, 0.0f, 0.0f);
+  textfield_view_->OnGestureEvent(&scroll_begin);
+
+  GestureEventForTest scroll_update(ui::ET_GESTURE_SCROLL_UPDATE, scrubbing_end,
+                                    0, scrubbing_end - scrubbing_start, 0.0f);
+  textfield_view_->OnGestureEvent(&scroll_update);
+
+  GestureEventForTest scroll_end(ui::ET_GESTURE_SCROLL_END, scrubbing_end, 0,
+                                 0.0f, 0.0f);
+  textfield_view_->OnGestureEvent(&scroll_end);
+
+  GestureEventForTest end(ui::ET_GESTURE_END, scrubbing_end, 0, 0.0f, 0.0f);
+  textfield_view_->OnGestureEvent(&end);
+
+  // In the end, part of text should have been selected and handles should have
+  // appeared.
+  EXPECT_STR_EQ("ello ", textfield_->GetSelectedText());
+  EXPECT_TRUE(GetTouchSelectionController());
 }
 #endif
 
@@ -1895,32 +1968,25 @@ TEST_F(NativeTextfieldViewsTest, TestLongPressInitiatesDragDrop) {
       switches::kEnableTouchDragDrop);
 
   // Create a long press event in the selected region should start a drag.
-  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS,
-      kStringPoint.x(), kStringPoint.y(), 0);
+  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS, kStringPoint.x(),
+                                 kStringPoint.y(), 0.0f, 0.0f);
   textfield_view_->OnGestureEvent(&long_press);
   EXPECT_TRUE(textfield_view_->CanStartDragForView(NULL,
       kStringPoint, kStringPoint));
 }
 
 TEST_F(NativeTextfieldViewsTest, GetTextfieldBaseline_FontFallbackTest) {
-#if defined(OS_WIN)
-  // This test fails on some versions of Windows because two different strings
-  // have the same baseline.
-  if (base::win::GetVersion() <= base::win::VERSION_XP ||
-      base::win::VERSION_WIN8 <= base::win::GetVersion())
-    return;
-#endif
-
   InitTextfield(Textfield::STYLE_DEFAULT);
   textfield_->SetText(UTF8ToUTF16("abc"));
   const int old_baseline = textfield_->GetBaseline();
 
   // Set text which may fall back to a font which has taller baseline than
-  // the default font.  |new_baseline| will be greater than |old_baseline|.
+  // the default font.
   textfield_->SetText(UTF8ToUTF16("\xE0\xB9\x91"));
   const int new_baseline = textfield_->GetBaseline();
 
-  EXPECT_GT(new_baseline, old_baseline);
+  // Regardless of the text, the baseline must be the same.
+  EXPECT_EQ(new_baseline, old_baseline);
 }
 
 }  // namespace views

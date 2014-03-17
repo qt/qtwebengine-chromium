@@ -11,6 +11,10 @@
 #include "content/public/browser/resource_controller.h"
 #include "url/gurl.h"
 
+namespace net {
+class URLRequest;
+}
+
 namespace content {
 
 class ResourceThrottle;
@@ -22,8 +26,7 @@ class ThrottlingResourceHandler : public LayeredResourceHandler,
  public:
   // Takes ownership of the ResourceThrottle instances.
   ThrottlingResourceHandler(scoped_ptr<ResourceHandler> next_handler,
-                            int child_id,
-                            int request_id,
+                            net::URLRequest* request,
                             ScopedVector<ResourceThrottle> throttles);
   virtual ~ThrottlingResourceHandler();
 
@@ -37,7 +40,7 @@ class ThrottlingResourceHandler : public LayeredResourceHandler,
   virtual bool OnWillStart(int request_id, const GURL& url,
                            bool* defer) OVERRIDE;
 
-  // ResourceThrottleController implementation:
+  // ResourceController implementation:
   virtual void Cancel() OVERRIDE;
   virtual void CancelAndIgnore() OVERRIDE;
   virtual void CancelWithError(int error_code) OVERRIDE;
@@ -48,6 +51,10 @@ class ThrottlingResourceHandler : public LayeredResourceHandler,
   void ResumeRedirect();
   void ResumeResponse();
 
+  // Called when the throttle at |throttle_index| defers a request.  Logs the
+  // name of the throttle that delayed the request.
+  void OnRequestDefered(int throttle_index);
+
   enum DeferredStage {
     DEFERRED_NONE,
     DEFERRED_START,
@@ -56,10 +63,8 @@ class ThrottlingResourceHandler : public LayeredResourceHandler,
   };
   DeferredStage deferred_stage_;
 
-  int request_id_;
-
   ScopedVector<ResourceThrottle> throttles_;
-  size_t index_;
+  size_t next_index_;
 
   GURL deferred_url_;
   scoped_refptr<ResourceResponse> deferred_response_;

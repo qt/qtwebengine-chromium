@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/MediaStreamAudioSourceNode.h"
 
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "wtf/Locker.h"
@@ -67,7 +67,7 @@ void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float source
         // The sample-rate must be equal to the context's sample-rate.
         if (!numberOfChannels || numberOfChannels > AudioContext::maxNumberOfChannels() || sourceSampleRate != sampleRate()) {
             // process() will generate silence for these uninitialized values.
-            LOG(Media, "MediaStreamAudioSourceNode::setFormat(%u, %f) - unhandled format change", static_cast<unsigned>(numberOfChannels), sourceSampleRate);
+            WTF_LOG(Media, "MediaStreamAudioSourceNode::setFormat(%u, %f) - unhandled format change", static_cast<unsigned>(numberOfChannels), sourceSampleRate);
             m_sourceNumberOfChannels = 0;
             return;
         }

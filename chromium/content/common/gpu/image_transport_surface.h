@@ -24,7 +24,6 @@
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
 namespace gfx {
 class GLSurface;
@@ -65,6 +64,7 @@ class ImageTransportSurface {
   virtual void OnResize(gfx::Size size, float scale_factor) = 0;
   virtual void SetLatencyInfo(
       const ui::LatencyInfo& latency_info) = 0;
+  virtual void WakeUpGpu() = 0;
 
   // Creates a surface with the given attributes.
   static scoped_refptr<gfx::GLSurface> CreateSurface(
@@ -120,8 +120,7 @@ class ImageTransportHelper
       GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params);
   void SendAcceleratedSurfacePostSubBuffer(
       GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params);
-  void SendAcceleratedSurfaceRelease(
-      GpuHostMsg_AcceleratedSurfaceRelease_Params params);
+  void SendAcceleratedSurfaceRelease();
   void SendResizeView(const gfx::Size& size);
   void SendUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
@@ -155,6 +154,7 @@ class ImageTransportHelper
   void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params);
   void OnResizeViewACK();
+  void OnWakeUpGpu();
 
   // Backbuffer resize callback.
   void Resize(gfx::Size size, float scale_factor);
@@ -199,6 +199,7 @@ class PassThroughImageTransportSurface
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void SetLatencyInfo(
       const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void WakeUpGpu() OVERRIDE;
 
  protected:
   virtual ~PassThroughImageTransportSurface();
@@ -206,6 +207,8 @@ class PassThroughImageTransportSurface
   // If updated vsync parameters can be determined, send this information to
   // the browser.
   virtual void SendVSyncUpdateIfAvailable();
+
+  ImageTransportHelper* GetHelper() { return helper_.get(); }
 
  private:
   scoped_ptr<ImageTransportHelper> helper_;

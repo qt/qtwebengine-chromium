@@ -63,7 +63,7 @@ struct _NPP;
 class SkBitmap;
 class TransportDIB;
 
-namespace WebKit {
+namespace blink {
 class WebInputEvent;
 class WebLayer;
 class WebMouseEvent;
@@ -105,6 +105,7 @@ class PluginObject;
 class PPB_Graphics3D_Impl;
 class PPB_ImageData_Impl;
 class PPB_URLLoader_Impl;
+class RenderFrameImpl;
 class RenderViewImpl;
 
 // Represents one time a plugin appears on one web page.
@@ -113,7 +114,6 @@ class RenderViewImpl;
 // ResourceTracker.
 class CONTENT_EXPORT PepperPluginInstanceImpl
     : public base::RefCounted<PepperPluginInstanceImpl>,
-      public base::SupportsWeakPtr<PepperPluginInstanceImpl>,
       public NON_EXPORTED_BASE(PepperPluginInstance),
       public ppapi::PPB_Instance_Shared,
       public NON_EXPORTED_BASE(cc::TextureLayerClient) {
@@ -123,15 +123,15 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // get_plugin_interface function. If the plugin does not support any valid
   // PPP_Instance interface, returns NULL.
   static PepperPluginInstanceImpl* Create(
-      RenderViewImpl* render_view,
+      RenderFrameImpl* render_frame,
       PluginModule* module,
-      WebKit::WebPluginContainer* container,
+      blink::WebPluginContainer* container,
       const GURL& plugin_url);
-  RenderViewImpl* render_view() const { return render_view_; }
+  RenderFrameImpl* render_frame() const { return render_frame_; }
   PluginModule* module() const { return module_.get(); }
   MessageChannel& message_channel() { return *message_channel_; }
 
-  WebKit::WebPluginContainer* container() const { return container_; }
+  blink::WebPluginContainer* container() const { return container_; }
 
   // Returns the PP_Instance uniquely identifying this instance. Guaranteed
   // nonzero.
@@ -147,8 +147,11 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // the WebPlugin implementation when WebKit is about to remove the plugin.
   void Delete();
 
+  // Returns true if Delete() has been called on this object.
+  bool is_deleted() const;
+
   // Paints the current backing store to the web page.
-  void Paint(WebKit::WebCanvas* canvas,
+  void Paint(blink::WebCanvas* canvas,
              const gfx::Rect& plugin_rect,
              const gfx::Rect& paint_rect);
 
@@ -178,9 +181,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   bool Initialize(const std::vector<std::string>& arg_names,
                   const std::vector<std::string>& arg_values,
                   bool full_frame);
-  bool HandleDocumentLoad(const WebKit::WebURLResponse& response);
-  bool HandleInputEvent(const WebKit::WebInputEvent& event,
-                        WebKit::WebCursorInfo* cursor_info);
+  bool HandleDocumentLoad(const blink::WebURLResponse& response);
+  bool HandleInputEvent(const blink::WebInputEvent& event,
+                        blink::WebCursorInfo* cursor_info);
   PP_Var GetInstanceObject();
   void ViewChanged(const gfx::Rect& position, const gfx::Rect& clip,
                    const std::vector<gfx::Rect>& cut_outs_rects);
@@ -189,7 +192,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   bool HandleCompositionStart(const base::string16& text);
   bool HandleCompositionUpdate(
       const base::string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
   bool HandleCompositionEnd(const base::string16& text);
@@ -208,10 +211,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Notification about page visibility. The default is "visible".
   void PageVisibilityChanged(bool is_visible);
 
-  // Notifications that the view is about to paint, has started painting, and
-  // has flushed the painted content to the screen. These messages are used to
-  // send Flush callbacks to the plugin for DeviceContext2D/3D.
-  void ViewWillInitiatePaint();
+  // Notifications that the view has started painting, and has flushed the
+  // painted content to the screen. These messages are used to send Flush
+  // callbacks to the plugin for DeviceContext2D/3D.
   void ViewInitiatedPaint();
   void ViewFlushedPaint();
 
@@ -242,12 +244,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   bool SupportsPrintInterface();
   bool IsPrintScalingDisabled();
-  int PrintBegin(const WebKit::WebPrintParams& print_params);
-  bool PrintPage(int page_number, WebKit::WebCanvas* canvas);
+  int PrintBegin(const blink::WebPrintParams& print_params);
+  bool PrintPage(int page_number, blink::WebCanvas* canvas);
   void PrintEnd();
 
   bool CanRotateView();
-  void RotateView(WebKit::WebPlugin::RotationType type);
+  void RotateView(blink::WebPlugin::RotationType type);
 
   // There are 2 implementations of the fullscreen interface
   // PPB_FlashFullscreen is used by Pepper Flash.
@@ -311,14 +313,14 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // Returns the user gesture token to use for creating a WebScopedUserGesture,
   // if IsProcessingUserGesture returned true.
-  WebKit::WebUserGestureToken CurrentUserGestureToken();
+  blink::WebUserGestureToken CurrentUserGestureToken();
 
   // A mouse lock request was pending and this reports success or failure.
   void OnLockMouseACK(bool succeeded);
   // A mouse lock was in place, but has been lost.
   void OnMouseLockLost();
   // A mouse lock is enabled and mouse events are being delivered.
-  void HandleMouseLockedInputEvent(const WebKit::WebMouseEvent& event);
+  void HandleMouseLockedInputEvent(const blink::WebMouseEvent& event);
 
   // Simulates an input event to the plugin by passing it down to WebKit,
   // which sends it back up to the plugin as if it came from the user.
@@ -334,10 +336,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // case is non-NULL as long as the corresponding loader resource is alive.
   // This pointer is non-owning, so the loader must use set_document_loader to
   // clear itself when it is destroyed.
-  WebKit::WebURLLoaderClient* document_loader() const {
+  blink::WebURLLoaderClient* document_loader() const {
     return document_loader_;
   }
-  void set_document_loader(WebKit::WebURLLoaderClient* loader) {
+  void set_document_loader(blink::WebURLLoaderClient* loader) {
     document_loader_ = loader;
   }
 
@@ -345,7 +347,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // PluginInstance implementation
   virtual RenderView* GetRenderView() OVERRIDE;
-  virtual WebKit::WebPluginContainer* GetContainer() OVERRIDE;
+  virtual blink::WebPluginContainer* GetContainer() OVERRIDE;
+  virtual v8::Isolate* GetIsolate() const OVERRIDE;
   virtual ppapi::VarTracker* GetVarTracker() OVERRIDE;
   virtual const GURL& GetPluginURL() OVERRIDE;
   virtual base::FilePath GetModulePath() OVERRIDE;
@@ -366,6 +369,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                            bool from_user_action) OVERRIDE;
   virtual int MakePendingFileRefRendererHost(
       const base::FilePath& path) OVERRIDE;
+  virtual void SetEmbedProperty(PP_Var key, PP_Var value) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -442,19 +446,20 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       PP_URLComponents_Dev* components) OVERRIDE;
 
   // PPB_ContentDecryptor_Private implementation.
-  virtual void KeyAdded(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id) OVERRIDE;
-  virtual void KeyMessage(PP_Instance instance,
-                          PP_Var key_system,
-                          PP_Var session_id,
-                          PP_Var message,
-                          PP_Var default_url) OVERRIDE;
-  virtual void KeyError(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id,
-                        int32_t media_error,
-                        int32_t system_code) OVERRIDE;
+  virtual void SessionCreated(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var web_session_id_var) OVERRIDE;
+  virtual void SessionMessage(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var message,
+                              PP_Var destination_url) OVERRIDE;
+  virtual void SessionReady(PP_Instance instance, uint32_t session_id) OVERRIDE;
+  virtual void SessionClosed(PP_Instance instance,
+                             uint32_t session_id) OVERRIDE;
+  virtual void SessionError(PP_Instance instance,
+                            uint32_t session_id,
+                            int32_t media_error,
+                            int32_t system_code) OVERRIDE;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) OVERRIDE;
@@ -471,9 +476,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void DeliverFrame(PP_Instance instance,
                             PP_Resource decrypted_frame,
                             const PP_DecryptedFrameInfo* frame_info) OVERRIDE;
-  virtual void DeliverSamples(PP_Instance instance,
-                              PP_Resource audio_frames,
-                              const PP_DecryptedBlockInfo* block_info) OVERRIDE;
+  virtual void DeliverSamples(
+      PP_Instance instance,
+      PP_Resource audio_frames,
+      const PP_DecryptedSampleInfo* sample_info) OVERRIDE;
 
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
@@ -493,13 +499,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // itself when making NPObject scripting calls to WebBindings.
   struct _NPP* instanceNPP();
 
-  // Returns the v8::Isolate that was current when this Instance was created.
-  // This is not inlined so as to avoid an unnecessary header include of v8.h.
-  v8::Isolate* GetIsolate() const;
-
   // cc::TextureLayerClient implementation.
   virtual unsigned PrepareTexture() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
   virtual bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
@@ -514,27 +515,27 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // Class to record document load notifications and play them back once the
   // real document loader becomes available. Used only by external instances.
-  class ExternalDocumentLoader : public WebKit::WebURLLoaderClient {
+  class ExternalDocumentLoader : public blink::WebURLLoaderClient {
    public:
     ExternalDocumentLoader();
     virtual ~ExternalDocumentLoader();
 
     void ReplayReceivedData(WebURLLoaderClient* document_loader);
 
-    // WebKit::WebURLLoaderClient implementation.
-    virtual void didReceiveData(WebKit::WebURLLoader* loader,
+    // blink::WebURLLoaderClient implementation.
+    virtual void didReceiveData(blink::WebURLLoader* loader,
                                 const char* data,
                                 int data_length,
                                 int encoded_data_length);
-    virtual void didFinishLoading(WebKit::WebURLLoader* loader,
+    virtual void didFinishLoading(blink::WebURLLoader* loader,
                                   double finish_time);
-    virtual void didFail(WebKit::WebURLLoader* loader,
-                         const WebKit::WebURLError& error);
+    virtual void didFail(blink::WebURLLoader* loader,
+                         const blink::WebURLError& error);
 
    private:
     std::list<std::string> data_;
     bool finished_loading_;
-    scoped_ptr<WebKit::WebURLError> error_;
+    scoped_ptr<blink::WebURLError> error_;
   };
 
   // Implements PPB_Gamepad_API. This is just to avoid having an excessive
@@ -555,10 +556,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // objects. This constructor is private so that we can hide the
   // PPP_Instance_Combined details while still having 1 constructor to maintain
   // for member initialization.
-  PepperPluginInstanceImpl(RenderViewImpl* render_view,
+  PepperPluginInstanceImpl(RenderFrameImpl* render_frame,
                            PluginModule* module,
                            ppapi::PPP_Instance_Combined* instance_interface,
-                           WebKit::WebPluginContainer* container,
+                           blink::WebPluginContainer* container,
                            const GURL& plugin_url);
 
   bool LoadFindInterface();
@@ -594,12 +595,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // best format to use. Returns false if the plugin does not support any
   // print format that we can handle (we can handle only PDF).
   bool GetPreferredPrintOutputFormat(PP_PrintOutputFormat_Dev* format);
-  bool PrintPDFOutput(PP_Resource print_output, WebKit::WebCanvas* canvas);
+  bool PrintPDFOutput(PP_Resource print_output, blink::WebCanvas* canvas);
 
   // Updates the layer for compositing. This creates a layer and attaches to the
   // container if:
-  // - we have a bound Graphics3D
-  // - the Graphics3D has a texture
+  // - we have a bound Graphics3D and the Graphics3D has a texture, OR
+  //   we have a bound Graphics2D and are using software compositing
   // - we are not in Flash full-screen mode (or transitioning to it)
   // Otherwise it destroys the layer.
   // It does either operation lazily.
@@ -608,9 +609,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Internal helper function for PrintPage().
   bool PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
                        int num_ranges,
-                       WebKit::WebCanvas* canvas);
+                       blink::WebCanvas* canvas);
 
-  void DoSetCursor(WebKit::WebCursorInfo* cursor);
+  void DoSetCursor(blink::WebCursorInfo* cursor);
 
   // Internal helper functions for HandleCompositionXXX().
   bool SendCompositionEventToPlugin(
@@ -619,7 +620,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   bool SendCompositionEventWithUnderlineInformationToPlugin(
       PP_InputEvent_Type type,
       const base::string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
 
@@ -647,11 +648,11 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   void UnSetAndDeleteLockTargetAdapter();
 
   void DidDataFromWebURLResponse(
-      const WebKit::WebURLResponse& response,
+      const blink::WebURLResponse& response,
       int pending_host_id,
       const ppapi::URLResponseInfoData& data);
 
-  RenderViewImpl* render_view_;
+  RenderFrameImpl* render_frame_;
   scoped_refptr<PluginModule> module_;
   scoped_ptr<ppapi::PPP_Instance_Combined> instance_interface_;
   // If this is the NaCl plugin, we create a new module when we switch to the
@@ -663,9 +664,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   PP_Instance pp_instance_;
 
   // NULL until we have been initialized.
-  WebKit::WebPluginContainer* container_;
+  blink::WebPluginContainer* container_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
-  scoped_ptr<WebKit::WebLayer> web_layer_;
+  scoped_ptr<blink::WebLayer> web_layer_;
   bool layer_bound_to_fullscreen_;
   bool layer_is_hardware_;
 
@@ -686,13 +687,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // always send an initial notification, even if the position and clip are the
   // same as the default values.
   bool sent_initial_did_change_view_;
-
-  // We use a weak ptr factory for scheduling DidChangeView events so that we
-  // can tell whether updates are pending and consolidate them. When there's
-  // already a weak ptr pending (HasWeakPtrs is true), code should update the
-  // view_data_ but not send updates. This also allows us to cancel scheduled
-  // view change events.
-  base::WeakPtrFactory<PepperPluginInstanceImpl> view_change_weak_ptr_factory_;
 
   // The current device context for painting in 2D and 3D.
   scoped_refptr<PPB_Graphics3D_Impl> bound_graphics_3d_;
@@ -748,7 +742,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // to generate the entire PDF given the variables below:
   //
   // The most recently used WebCanvas, guaranteed to be valid.
-  skia::RefPtr<WebKit::WebCanvas> canvas_;
+  skia::RefPtr<blink::WebCanvas> canvas_;
   // An array of page ranges.
   std::vector<PP_PrintPageNumberRange_Dev> ranges_;
 
@@ -761,7 +755,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   const PPP_Graphics3D* plugin_graphics_3d_interface_;
 
   // Contains the cursor if it's set by the plugin.
-  scoped_ptr<WebKit::WebCursorInfo> cursor_;
+  scoped_ptr<blink::WebCursorInfo> cursor_;
 
   // Set to true if this plugin thinks it will always be on top. This allows us
   // to use a more optimized painting path in some cases.
@@ -794,10 +788,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // WebKit does not resize the plugin when going into fullscreen mode, so we do
   // this here by modifying the various plugin attributes and then restoring
   // them on exit.
-  WebKit::WebString width_before_fullscreen_;
-  WebKit::WebString height_before_fullscreen_;
-  WebKit::WebString border_before_fullscreen_;
-  WebKit::WebString style_before_fullscreen_;
+  blink::WebString width_before_fullscreen_;
+  blink::WebString height_before_fullscreen_;
+  blink::WebString border_before_fullscreen_;
+  blink::WebString style_before_fullscreen_;
   gfx::Size screen_size_for_fullscreen_;
 
   // The MessageChannel used to implement bidirectional postMessage for the
@@ -831,7 +825,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Track pending user gestures so out-of-process plugins can respond to
   // a user gesture after it has been processed.
   PP_TimeTicks pending_user_gesture_;
-  WebKit::WebUserGestureToken pending_user_gesture_token_;
+  blink::WebUserGestureToken pending_user_gesture_token_;
 
   // We store the arguments so we can re-send them if we are reset to talk to
   // NaCl via the IPC NaCl proxy.
@@ -839,9 +833,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   std::vector<std::string> argv_;
 
   // Non-owning pointer to the document loader, if any.
-  WebKit::WebURLLoaderClient* document_loader_;
+  blink::WebURLLoaderClient* document_loader_;
   // State for deferring document loads. Used only by external instances.
-  WebKit::WebURLResponse external_document_response_;
+  blink::WebURLResponse external_document_response_;
   scoped_ptr<ExternalDocumentLoader> external_document_loader_;
   bool external_document_load_;
 
@@ -858,6 +852,16 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   v8::Isolate* isolate_;
 
   scoped_ptr<MouseLockDispatcher::LockTarget> lock_target_;
+
+  bool is_deleted_;
+
+  // We use a weak ptr factory for scheduling DidChangeView events so that we
+  // can tell whether updates are pending and consolidate them. When there's
+  // already a weak ptr pending (HasWeakPtrs is true), code should update the
+  // view_data_ but not send updates. This also allows us to cancel scheduled
+  // view change events.
+  base::WeakPtrFactory<PepperPluginInstanceImpl> view_change_weak_ptr_factory_;
+  base::WeakPtrFactory<PepperPluginInstanceImpl> weak_factory_;
 
   friend class PpapiPluginInstanceTest;
   DISALLOW_COPY_AND_ASSIGN(PepperPluginInstanceImpl);

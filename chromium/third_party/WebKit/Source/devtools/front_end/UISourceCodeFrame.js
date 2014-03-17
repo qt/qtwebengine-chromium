@@ -29,13 +29,14 @@
 /**
  * @constructor
  * @extends {WebInspector.SourceFrame}
- * @param {WebInspector.UISourceCode} uiSourceCode
+ * @param {!WebInspector.UISourceCode} uiSourceCode
  */
 WebInspector.UISourceCodeFrame = function(uiSourceCode)
 {
     this._uiSourceCode = uiSourceCode;
     WebInspector.SourceFrame.call(this, this._uiSourceCode);
-    this.textEditor.setCompletionDictionary(new WebInspector.SampleCompletionDictionary());
+    WebInspector.settings.textEditorAutocompletion.addChangeListener(this._enableAutocompletionIfNeeded, this);
+    this._enableAutocompletionIfNeeded();
 
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.FormattedChanged, this._onFormattedChanged, this);
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._onWorkingCopyChanged, this);
@@ -44,6 +45,11 @@ WebInspector.UISourceCodeFrame = function(uiSourceCode)
 }
 
 WebInspector.UISourceCodeFrame.prototype = {
+    _enableAutocompletionIfNeeded: function()
+    {
+        this.textEditor.setCompletionDictionary(WebInspector.settings.textEditorAutocompletion.get() ? new WebInspector.SampleCompletionDictionary() : null);
+    },
+
     wasShown: function()
     {
         WebInspector.SourceFrame.prototype.wasShown.call(this);
@@ -115,17 +121,30 @@ WebInspector.UISourceCodeFrame.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onFormattedChanged: function(event)
     {
         var content = /** @type {string} */ (event.data.content);
         this._textEditor.setReadOnly(this._uiSourceCode.formatted());
+        var selection = this._textEditor.selection();
         this._innerSetContent(content);
+        var start = null;
+        var end = null;
+        if (this._uiSourceCode.formatted()) {
+            start = event.data.newFormatter.originalToFormatted(selection.startLine, selection.startColumn);
+            end = event.data.newFormatter.originalToFormatted(selection.endLine, selection.endColumn);
+        } else {
+            start = event.data.oldFormatter.formattedToOriginal(selection.startLine, selection.startColumn);
+            end = event.data.oldFormatter.formattedToOriginal(selection.endLine, selection.endColumn);
+        }
+        this.textEditor.setSelection(new WebInspector.TextRange(start[0], start[1],
+            end[0], end[1]));
+        this.textEditor.revealLine(start[0]);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onWorkingCopyChanged: function(event)
     {
@@ -136,7 +155,7 @@ WebInspector.UISourceCodeFrame.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onWorkingCopyCommitted: function(event)
     {
@@ -163,7 +182,7 @@ WebInspector.UISourceCodeFrame.prototype = {
     _innerSetContent: function(content)
     {
         this._isSettingContent = true;
-        this.setContent(content, false, this._uiSourceCode.mimeType());
+        this.setContent(content);
         delete this._isSettingContent;
     },
 

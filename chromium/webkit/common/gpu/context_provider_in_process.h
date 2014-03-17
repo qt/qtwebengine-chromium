@@ -13,10 +13,7 @@
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/common/gpu/webkit_gpu_export.h"
 
-namespace WebKit {
-class WebGraphicsContext3D;
-struct WebGraphicsMemoryAllocation;
-}
+namespace blink { class WebGraphicsContext3D; }
 
 namespace webkit {
 namespace gpu {
@@ -35,15 +32,16 @@ class WEBKIT_GPU_EXPORT ContextProviderInProcess
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
+  virtual blink::WebGraphicsContext3D* Context3d() OVERRIDE;
+  virtual ::gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
+  virtual ::gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
+  virtual void MakeGrContextCurrent() OVERRIDE;
+  virtual bool IsContextLost() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
   virtual bool DestroyedOnMainThread() OVERRIDE;
   virtual void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) OVERRIDE;
-  virtual void SetSwapBuffersCompleteCallback(
-      const SwapBuffersCompleteCallback& swap_buffers_complete_callback)
-      OVERRIDE;
   virtual void SetMemoryPolicyChangedCallback(
       const MemoryPolicyChangedCallback& memory_policy_changed_callback)
       OVERRIDE;
@@ -55,11 +53,10 @@ class WEBKIT_GPU_EXPORT ContextProviderInProcess
   virtual ~ContextProviderInProcess();
 
   void OnLostContext();
-  void OnSwapBuffersComplete();
-  void OnMemoryAllocationChanged(
-      const WebKit::WebGraphicsMemoryAllocation& allocation);
 
  private:
+  void InitializeCapabilities();
+
   base::ThreadChecker main_thread_checker_;
   base::ThreadChecker context_thread_checker_;
 
@@ -68,8 +65,6 @@ class WEBKIT_GPU_EXPORT ContextProviderInProcess
   scoped_ptr<webkit::gpu::GrContextForWebGraphicsContext3D> gr_context_;
 
   LostContextCallback lost_context_callback_;
-  SwapBuffersCompleteCallback swap_buffers_complete_callback_;
-  MemoryPolicyChangedCallback memory_policy_changed_callback_;
 
   base::Lock destroyed_lock_;
   bool destroyed_;
@@ -78,12 +73,9 @@ class WEBKIT_GPU_EXPORT ContextProviderInProcess
   class LostContextCallbackProxy;
   scoped_ptr<LostContextCallbackProxy> lost_context_callback_proxy_;
 
-  class SwapBuffersCompleteCallbackProxy;
-  scoped_ptr<SwapBuffersCompleteCallbackProxy>
-      swap_buffers_complete_callback_proxy_;
+  cc::ContextProvider::Capabilities capabilities_;
 
-  class MemoryAllocationCallbackProxy;
-  scoped_ptr<MemoryAllocationCallbackProxy> memory_allocation_callback_proxy_;
+  DISALLOW_COPY_AND_ASSIGN(ContextProviderInProcess);
 };
 
 }  // namespace gpu

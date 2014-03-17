@@ -8,6 +8,7 @@
 #include "cc/base/math_util.h"
 #include "cc/output/filter_operation.h"
 #include "third_party/skia/include/core/SkMath.h"
+#include "ui/gfx/animation/tween.h"
 
 namespace cc {
 
@@ -21,6 +22,8 @@ bool FilterOperation::operator==(const FilterOperation& other) const {
            drop_shadow_offset_ == other.drop_shadow_offset_ &&
            drop_shadow_color_ == other.drop_shadow_color_;
   }
+  if (type_ == REFERENCE)
+    return image_filter_.get() == other.image_filter_.get();
   return amount_ == other.amount_;
 }
 
@@ -32,6 +35,7 @@ FilterOperation::FilterOperation(FilterType type, float amount)
       zoom_inset_(0) {
   DCHECK_NE(type_, DROP_SHADOW);
   DCHECK_NE(type_, COLOR_MATRIX);
+  DCHECK_NE(type_, REFERENCE);
   memset(matrix_, 0, sizeof(matrix_));
 }
 
@@ -68,50 +72,30 @@ FilterOperation::FilterOperation(FilterType type, float amount, int inset)
   memset(matrix_, 0, sizeof(matrix_));
 }
 
-// TODO(ajuma): Define a version of gfx::Tween::ValueBetween for floats, and use
-// that instead.
-static float BlendFloats(float from, float to, double progress) {
-  return from * (1.0 - progress) + to * progress;
+FilterOperation::FilterOperation(
+    FilterType type,
+    const skia::RefPtr<SkImageFilter>& image_filter)
+    : type_(type),
+      amount_(0),
+      drop_shadow_offset_(0, 0),
+      drop_shadow_color_(0),
+      image_filter_(image_filter),
+      zoom_inset_(0) {
+  DCHECK_EQ(type_, REFERENCE);
+  memset(matrix_, 0, sizeof(matrix_));
 }
 
-static int BlendInts(int from, int to, double progress) {
-  return static_cast<int>(
-      MathUtil::Round(from * (1.0 - progress) + to * progress));
+FilterOperation::FilterOperation(const FilterOperation& other)
+    : type_(other.type_),
+      amount_(other.amount_),
+      drop_shadow_offset_(other.drop_shadow_offset_),
+      drop_shadow_color_(other.drop_shadow_color_),
+      image_filter_(other.image_filter_),
+      zoom_inset_(other.zoom_inset_) {
+  memcpy(matrix_, other.matrix_, sizeof(matrix_));
 }
 
-static uint8_t  BlendColorComponents(uint8_t from,
-                                     uint8_t to,
-                                     uint8_t from_alpha,
-                                     uint8_t to_alpha,
-                                     uint8_t blended_alpha,
-                                     double progress) {
-  // Since progress can be outside [0, 1], blending can produce a value outside
-  // [0, 255].
-  int blended_premultiplied = BlendInts(SkMulDiv255Round(from, from_alpha),
-                                        SkMulDiv255Round(to, to_alpha),
-                                        progress);
-  int blended = static_cast<int>(
-      MathUtil::Round(blended_premultiplied * 255.f / blended_alpha));
-  return static_cast<uint8_t>(MathUtil::ClampToRange(blended, 0, 255));
-}
-
-static SkColor BlendSkColors(SkColor from, SkColor to, double progress) {
-  int from_a = SkColorGetA(from);
-  int to_a = SkColorGetA(to);
-  int blended_a = BlendInts(from_a, to_a, progress);
-  if (blended_a <= 0)
-    return SkColorSetARGB(0, 0, 0, 0);
-  blended_a = std::min(blended_a, 255);
-
-  // TODO(ajuma): Use SkFourByteInterp once http://crbug.com/260369 is fixed.
-  uint8_t blended_r = BlendColorComponents(
-      SkColorGetR(from), SkColorGetR(to), from_a, to_a, blended_a, progress);
-  uint8_t blended_g = BlendColorComponents(
-      SkColorGetG(from), SkColorGetG(to), from_a, to_a, blended_a, progress);
-  uint8_t blended_b = BlendColorComponents(
-      SkColorGetB(from), SkColorGetB(to), from_a, to_a, blended_a, progress);
-
-  return SkColorSetARGB(blended_a, blended_r, blended_g, blended_b);
+FilterOperation::~FilterOperation() {
 }
 
 static FilterOperation CreateNoOpFilter(FilterOperation::FilterType type) {
@@ -147,6 +131,9 @@ static FilterOperation CreateNoOpFilter(FilterOperation::FilterType type) {
       return FilterOperation::CreateZoomFilter(1.f, 0);
     case FilterOperation::SATURATING_BRIGHTNESS:
       return FilterOperation::CreateSaturatingBrightnessFilter(0.f);
+    case FilterOperation::REFERENCE:
+      return FilterOperation::CreateReferenceFilter(
+          skia::RefPtr<SkImageFilter>());
   }
   NOTREACHED();
   return FilterOperation::CreateEmptyFilter();
@@ -172,6 +159,7 @@ static float ClampAmountForFilterType(float amount,
     case FilterOperation::SATURATING_BRIGHTNESS:
       return amount;
     case FilterOperation::COLOR_MATRIX:
+    case FilterOperation::REFERENCE:
       NOTREACHED();
       return amount;
   }
@@ -197,22 +185,34 @@ FilterOperation FilterOperation::Blend(const FilterOperation* from,
   DCHECK(to_op.type() != FilterOperation::COLOR_MATRIX);
   blended_filter.set_type(to_op.type());
 
+  if (to_op.type() == FilterOperation::REFERENCE) {
+    if (progress > 0.5)
+      blended_filter.set_image_filter(to_op.image_filter());
+    else
+      blended_filter.set_image_filter(from_op.image_filter());
+    return blended_filter;
+  }
+
   blended_filter.set_amount(ClampAmountForFilterType(
-      BlendFloats(from_op.amount(), to_op.amount(), progress), to_op.type()));
+      gfx::Tween::FloatValueBetween(progress, from_op.amount(), to_op.amount()),
+      to_op.type()));
 
   if (to_op.type() == FilterOperation::DROP_SHADOW) {
-    gfx::Point blended_offset(BlendInts(from_op.drop_shadow_offset().x(),
-                                        to_op.drop_shadow_offset().x(),
-                                        progress),
-                              BlendInts(from_op.drop_shadow_offset().y(),
-                                        to_op.drop_shadow_offset().y(),
-                                        progress));
+    gfx::Point blended_offset(
+        gfx::Tween::LinearIntValueBetween(progress,
+                                          from_op.drop_shadow_offset().x(),
+                                          to_op.drop_shadow_offset().x()),
+        gfx::Tween::LinearIntValueBetween(progress,
+                                          from_op.drop_shadow_offset().y(),
+                                          to_op.drop_shadow_offset().y()));
     blended_filter.set_drop_shadow_offset(blended_offset);
-    blended_filter.set_drop_shadow_color(BlendSkColors(
-        from_op.drop_shadow_color(), to_op.drop_shadow_color(), progress));
+    blended_filter.set_drop_shadow_color(gfx::Tween::ColorValueBetween(
+        progress, from_op.drop_shadow_color(), to_op.drop_shadow_color()));
   } else if (to_op.type() == FilterOperation::ZOOM) {
-    blended_filter.set_zoom_inset(std::max(
-        BlendInts(from_op.zoom_inset(), to_op.zoom_inset(), progress), 0));
+    blended_filter.set_zoom_inset(
+        std::max(gfx::Tween::LinearIntValueBetween(
+                     from_op.zoom_inset(), to_op.zoom_inset(), progress),
+                 0));
   }
 
   return blended_filter;
@@ -250,6 +250,18 @@ scoped_ptr<base::Value> FilterOperation::AsValue() const {
       value->SetDouble("amount", amount_);
       value->SetDouble("inset", zoom_inset_);
       break;
+    case FilterOperation::REFERENCE: {
+      int count_inputs = 0;
+      bool can_filter_image_gpu = false;
+      if (image_filter_) {
+        count_inputs = image_filter_->countInputs();
+        can_filter_image_gpu = image_filter_->canFilterImageGPU();
+      }
+      value->SetBoolean("is_null", !image_filter_);
+      value->SetInteger("count_inputs", count_inputs);
+      value->SetBoolean("can_filter_image_gpu", can_filter_image_gpu);
+      break;
+    }
   }
   return value.PassAs<base::Value>();
 }

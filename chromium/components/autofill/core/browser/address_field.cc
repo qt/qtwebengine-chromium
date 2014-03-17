@@ -35,12 +35,12 @@ FormField* AddressField::Parse(AutofillScanner* scanner) {
   bool has_trailing_non_labeled_fields = false;
   while (!scanner->IsEnd()) {
     const size_t cursor = scanner->SaveCursor();
-    if (ParseAddressLines(scanner, address_field.get()) ||
-        ParseCity(scanner, address_field.get()) ||
-        ParseState(scanner, address_field.get()) ||
-        ParseZipCode(scanner, address_field.get()) ||
-        ParseCountry(scanner, address_field.get()) ||
-        ParseCompany(scanner, address_field.get())) {
+    if (address_field->ParseAddressLines(scanner) ||
+        address_field->ParseCity(scanner) ||
+        address_field->ParseState(scanner) ||
+        address_field->ParseZipCode(scanner) ||
+        address_field->ParseCountry(scanner) ||
+        address_field->ParseCompany(scanner)) {
       has_trailing_non_labeled_fields = false;
       continue;
     } else if (ParseField(scanner, attention_ignored, NULL) ||
@@ -72,16 +72,19 @@ FormField* AddressField::Parse(AutofillScanner* scanner) {
 
   // If we have identified any address fields in this field then it should be
   // added to the list of fields.
-  if (address_field->company_ != NULL ||
-      address_field->address1_ != NULL || address_field->address2_ != NULL ||
-      address_field->city_ != NULL || address_field->state_ != NULL ||
-      address_field->zip_ != NULL || address_field->zip4_ ||
-      address_field->country_ != NULL) {
+  if (address_field->company_ ||
+      address_field->address1_ ||
+      address_field->address2_ ||
+      address_field->street_address_ ||
+      address_field->city_ ||
+      address_field->state_ ||
+      address_field->zip_ ||
+      address_field->zip4_ ||
+      address_field->country_) {
     // Don't slurp non-labeled fields at the end into the address.
     if (has_trailing_non_labeled_fields)
       scanner->RewindTo(begin_trailing_non_labeled_fields);
 
-    address_field->type_ = address_field->FindType();
     return address_field.release();
   }
 
@@ -89,113 +92,43 @@ FormField* AddressField::Parse(AutofillScanner* scanner) {
   return NULL;
 }
 
-AddressField::AddressType AddressField::FindType() const {
-  // First look at the field name, which itself will sometimes contain
-  // "bill" or "ship".
-  if (company_) {
-    base::string16 name = StringToLowerASCII(company_->name);
-    return AddressTypeFromText(name);
-  }
-  if (address1_) {
-    base::string16 name = StringToLowerASCII(address1_->name);
-    return AddressTypeFromText(name);
-  }
-  if (address2_) {
-    base::string16 name = StringToLowerASCII(address2_->name);
-    return AddressTypeFromText(name);
-  }
-  if (city_) {
-    base::string16 name = StringToLowerASCII(city_->name);
-    return AddressTypeFromText(name);
-  }
-  if (zip_) {
-    base::string16 name = StringToLowerASCII(zip_->name);
-    return AddressTypeFromText(name);
-  }
-  if (state_) {
-    base::string16 name = StringToLowerASCII(state_->name);
-    return AddressTypeFromText(name);
-  }
-  if (country_) {
-    base::string16 name = StringToLowerASCII(country_->name);
-    return AddressTypeFromText(name);
-  }
-
-  return kGenericAddress;
-}
-
 AddressField::AddressField()
     : company_(NULL),
       address1_(NULL),
       address2_(NULL),
+      street_address_(NULL),
       city_(NULL),
       state_(NULL),
       zip_(NULL),
       zip4_(NULL),
-      country_(NULL),
-      type_(kGenericAddress) {
+      country_(NULL) {
 }
 
 bool AddressField::ClassifyField(ServerFieldTypeMap* map) const {
-  ServerFieldType address_company;
-  ServerFieldType address_line1;
-  ServerFieldType address_line2;
-  ServerFieldType address_city;
-  ServerFieldType address_state;
-  ServerFieldType address_zip;
-  ServerFieldType address_country;
+  // The page can request the address lines as a single textarea input or as
+  // multiple text fields (or not at all), but it shouldn't be possible to
+  // request both.
+  DCHECK(!(address1_ && street_address_));
+  DCHECK(!(address2_ && street_address_));
 
-  switch (type_) {
-    case kShippingAddress:
-     // Fall through. Autofill does not support shipping addresses.
-    case kGenericAddress:
-      address_company = COMPANY_NAME;
-      address_line1 = ADDRESS_HOME_LINE1;
-      address_line2 = ADDRESS_HOME_LINE2;
-      address_city = ADDRESS_HOME_CITY;
-      address_state = ADDRESS_HOME_STATE;
-      address_zip = ADDRESS_HOME_ZIP;
-      address_country = ADDRESS_HOME_COUNTRY;
-      break;
-
-    case kBillingAddress:
-      address_company = COMPANY_NAME;
-      address_line1 = ADDRESS_BILLING_LINE1;
-      address_line2 = ADDRESS_BILLING_LINE2;
-      address_city = ADDRESS_BILLING_CITY;
-      address_state = ADDRESS_BILLING_STATE;
-      address_zip = ADDRESS_BILLING_ZIP;
-      address_country = ADDRESS_BILLING_COUNTRY;
-      break;
-
-    default:
-      NOTREACHED();
-      return false;
-  }
-
-  bool ok = AddClassification(company_, address_company, map);
-  ok = ok && AddClassification(address1_, address_line1, map);
-  ok = ok && AddClassification(address2_, address_line2, map);
-  ok = ok && AddClassification(city_, address_city, map);
-  ok = ok && AddClassification(state_, address_state, map);
-  ok = ok && AddClassification(zip_, address_zip, map);
-  ok = ok && AddClassification(country_, address_country, map);
-  return ok;
+  return AddClassification(company_, COMPANY_NAME, map) &&
+         AddClassification(address1_, ADDRESS_HOME_LINE1, map) &&
+         AddClassification(address2_, ADDRESS_HOME_LINE2, map) &&
+         AddClassification(street_address_, ADDRESS_HOME_STREET_ADDRESS, map) &&
+         AddClassification(city_, ADDRESS_HOME_CITY, map) &&
+         AddClassification(state_, ADDRESS_HOME_STATE, map) &&
+         AddClassification(zip_, ADDRESS_HOME_ZIP, map) &&
+         AddClassification(country_, ADDRESS_HOME_COUNTRY, map);
 }
 
-// static
-bool AddressField::ParseCompany(AutofillScanner* scanner,
-                                AddressField* address_field) {
-  if (address_field->company_ && !address_field->company_->IsEmpty())
+bool AddressField::ParseCompany(AutofillScanner* scanner) {
+  if (company_ && !company_->IsEmpty())
     return false;
 
-  return ParseField(scanner, UTF8ToUTF16(autofill::kCompanyRe),
-                    &address_field->company_);
+  return ParseField(scanner, UTF8ToUTF16(autofill::kCompanyRe), &company_);
 }
 
-// static
-bool AddressField::ParseAddressLines(AutofillScanner* scanner,
-                                     AddressField* address_field) {
+bool AddressField::ParseAddressLines(AutofillScanner* scanner) {
   // We only match the string "address" in page text, not in element names,
   // because sometimes every element in a group of address fields will have
   // a name containing the string "address"; for example, on the page
@@ -204,31 +137,36 @@ bool AddressField::ParseAddressLines(AutofillScanner* scanner,
   // such as "address1", which appear as element names on various pages (eg
   // AmericanGirl-Registration.html, BloomingdalesBilling.html,
   // EBay Registration Enter Information.html).
-  if (address_field->address1_)
+  if (address1_ || street_address_)
     return false;
 
   base::string16 pattern = UTF8ToUTF16(autofill::kAddressLine1Re);
   base::string16 label_pattern = UTF8ToUTF16(autofill::kAddressLine1LabelRe);
-
-  if (!ParseField(scanner, pattern, &address_field->address1_) &&
+  if (!ParseFieldSpecifics(scanner, pattern, MATCH_DEFAULT, &address1_) &&
       !ParseFieldSpecifics(scanner, label_pattern, MATCH_LABEL | MATCH_TEXT,
-                           &address_field->address1_)) {
+                           &address1_) &&
+      !ParseFieldSpecifics(scanner, pattern, MATCH_DEFAULT | MATCH_TEXT_AREA,
+                           &street_address_) &&
+      !ParseFieldSpecifics(scanner, label_pattern,
+                           MATCH_LABEL | MATCH_TEXT_AREA,
+                           &street_address_)) {
     return false;
   }
 
   // Optionally parse more address lines, which may have empty labels.
-  // Some pages have 3 address lines (eg SharperImageModifyAccount.html)
-  // Some pages even have 4 address lines (e.g. uk/ShoesDirect2.html)!
   pattern = UTF8ToUTF16(autofill::kAddressLine2Re);
   label_pattern = UTF8ToUTF16(autofill::kAddressLine2LabelRe);
-  if (!ParseEmptyLabel(scanner, &address_field->address2_) &&
-      !ParseField(scanner, pattern, &address_field->address2_)) {
+  if (!street_address_ &&
+      !ParseEmptyLabel(scanner, &address2_) &&
+      !ParseField(scanner, pattern, &address2_)) {
     ParseFieldSpecifics(scanner, label_pattern, MATCH_LABEL | MATCH_TEXT,
-                        &address_field->address2_);
+                        &address2_);
   }
 
   // Try for surplus lines, which we will promptly discard.
-  if (address_field->address2_ != NULL) {
+  // Some pages have 3 address lines (eg SharperImageModifyAccount.html)
+  // Some pages even have 4 address lines (e.g. uk/ShoesDirect2.html)!
+  if (address2_) {
     pattern = UTF8ToUTF16(autofill::kAddressLinesExtraRe);
     while (ParseField(scanner, pattern, NULL)) {
       // Consumed a surplus line, try for another.
@@ -238,104 +176,55 @@ bool AddressField::ParseAddressLines(AutofillScanner* scanner,
   return true;
 }
 
-// static
-bool AddressField::ParseCountry(AutofillScanner* scanner,
-                                AddressField* address_field) {
+bool AddressField::ParseCountry(AutofillScanner* scanner) {
   // Parse a country.  The occasional page (e.g.
   // Travelocity_New Member Information1.html) calls this a "location".
-  if (address_field->country_ && !address_field->country_->IsEmpty())
+  if (country_ && !country_->IsEmpty())
     return false;
 
   return ParseFieldSpecifics(scanner,
                              UTF8ToUTF16(autofill::kCountryRe),
                              MATCH_DEFAULT | MATCH_SELECT,
-                             &address_field->country_);
+                             &country_);
 }
 
-// static
-bool AddressField::ParseZipCode(AutofillScanner* scanner,
-                                AddressField* address_field) {
+bool AddressField::ParseZipCode(AutofillScanner* scanner) {
   // Parse a zip code.  On some UK pages (e.g. The China Shop2.html) this
   // is called a "post code".
-  //
-  // HACK: Just for the MapQuest driving directions page we match the
-  // exact name "1z", which MapQuest uses to label its zip code field.
-  // Hopefully before long we'll be smart enough to find the zip code
-  // on that page automatically.
-  if (address_field->zip_)
+  if (zip_)
     return false;
 
   base::string16 pattern = UTF8ToUTF16(autofill::kZipCodeRe);
-  if (!ParseField(scanner, pattern, &address_field->zip_))
+  if (!ParseField(scanner, pattern, &zip_))
     return false;
 
-  address_field->type_ = kGenericAddress;
   // Look for a zip+4, whose field name will also often contain
   // the substring "zip".
-  ParseField(scanner,
-             UTF8ToUTF16(autofill::kZip4Re),
-             &address_field->zip4_);
-
+  ParseField(scanner, UTF8ToUTF16(autofill::kZip4Re), &zip4_);
   return true;
 }
 
-// static
-bool AddressField::ParseCity(AutofillScanner* scanner,
-                             AddressField* address_field) {
+bool AddressField::ParseCity(AutofillScanner* scanner) {
   // Parse a city name.  Some UK pages (e.g. The China Shop2.html) use
   // the term "town".
-  if (address_field->city_)
+  if (city_)
     return false;
 
   // Select fields are allowed here.  This occurs on top-100 site rediff.com.
   return ParseFieldSpecifics(scanner,
                              UTF8ToUTF16(autofill::kCityRe),
                              MATCH_DEFAULT | MATCH_SELECT,
-                             &address_field->city_);
+                             &city_);
 }
 
-// static
-bool AddressField::ParseState(AutofillScanner* scanner,
-                              AddressField* address_field) {
-  if (address_field->state_)
+bool AddressField::ParseState(AutofillScanner* scanner) {
+  if (state_)
     return false;
 
   return ParseFieldSpecifics(scanner,
                              UTF8ToUTF16(autofill::kStateRe),
                              MATCH_DEFAULT | MATCH_SELECT,
-                             &address_field->state_);
-}
-
-AddressField::AddressType AddressField::AddressTypeFromText(
-    const base::string16 &text) {
-  size_t same_as = text.find(UTF8ToUTF16(autofill::kAddressTypeSameAsRe));
-  size_t use_shipping = text.find(UTF8ToUTF16(autofill::kAddressTypeUseMyRe));
-  if (same_as != base::string16::npos || use_shipping != base::string16::npos)
-    // This text could be a checkbox label such as "same as my billing
-    // address" or "use my shipping address".
-    // ++ It would help if we generally skipped all text that appears
-    // after a check box.
-    return kGenericAddress;
-
-  // Not all pages say "billing address" and "shipping address" explicitly;
-  // for example, Craft Catalog1.html has "Bill-to Address" and
-  // "Ship-to Address".
-  size_t bill = text.rfind(UTF8ToUTF16(autofill::kBillingDesignatorRe));
-  size_t ship = text.rfind(UTF8ToUTF16(autofill::kShippingDesignatorRe));
-
-  if (bill == base::string16::npos && ship == base::string16::npos)
-    return kGenericAddress;
-
-  if (bill != base::string16::npos && ship == base::string16::npos)
-    return kBillingAddress;
-
-  if (bill == base::string16::npos && ship != base::string16::npos)
-    return kShippingAddress;
-
-  if (bill > ship)
-    return kBillingAddress;
-
-  return kShippingAddress;
+                             &state_);
 }
 
 }  // namespace autofill

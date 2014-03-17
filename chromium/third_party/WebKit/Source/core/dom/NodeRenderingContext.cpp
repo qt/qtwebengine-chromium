@@ -27,7 +27,6 @@
 #include "core/dom/NodeRenderingContext.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/animation/css/CSSAnimations.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/FullscreenElementStack.h"
@@ -83,9 +82,8 @@ RenderObject* NodeRenderingContext::nextRenderer() const
     if (m_parentFlowRenderer)
         return m_parentFlowRenderer->nextRendererForNode(m_node);
 
-    // Avoid an O(N^2) problem with this function by not checking for
-    // nextRenderer() when the parent element hasn't attached yet.
-    if (m_renderingParent && !m_renderingParent->attached())
+    // Avoid an O(N^2) walk over the children when reattaching all children of a node.
+    if (m_renderingParent && m_renderingParent->needsAttach())
         return 0;
 
     for (Node* sibling = NodeRenderingTraversal::nextSibling(m_node); sibling; sibling = NodeRenderingTraversal::nextSibling(sibling)) {
@@ -164,7 +162,7 @@ bool NodeRenderingContext::elementInsideRegionNeedsRenderer()
     Element* element = toElement(m_node);
     bool elementInsideRegionNeedsRenderer = false;
     RenderObject* parentRenderer = this->parentRenderer();
-    if ((parentRenderer && !parentRenderer->canHaveChildren() && parentRenderer->isRenderRegion())
+    if ((parentRenderer && !parentRenderer->canHaveChildren() && parentRenderer->isRenderNamedFlowFragmentContainer())
         || (!parentRenderer && element->parentElement() && element->parentElement()->isInsideRegion())) {
 
         if (!m_style)
@@ -207,11 +205,8 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     if (!shouldCreateRenderer() && !elementInsideRegionNeedsRenderer())
         return;
 
-    // If m_style is already available, this scope shouldn't attempt to trigger animation updates.
-    CSSAnimationUpdateScope cssAnimationUpdateScope(m_style ? 0 : element);
     if (!m_style)
         m_style = element->styleForRenderer();
-    ASSERT(m_style);
 
     moveToFlowThreadIfNeeded();
 
@@ -259,7 +254,7 @@ void NodeRenderingContext::createRendererForTextIfNeeded()
     RenderObject* parentRenderer = this->parentRenderer();
 
     if (m_parentDetails.resetStyleInheritance())
-        m_style = textNode->document().styleResolver()->defaultStyleForElement();
+        m_style = textNode->document().ensureStyleResolver().defaultStyleForElement();
     else
         m_style = parentRenderer->style();
 

@@ -74,8 +74,6 @@ private:
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
-
     virtual void addOverflowFromChildren();
 
     void updateMarkerLocation();
@@ -92,14 +90,7 @@ private:
     bool m_notInList : 1;
 };
 
-inline RenderListItem* toRenderListItem(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListItem());
-    return static_cast<RenderListItem*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderListItem(const RenderListItem*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListItem, isListItem());
 
 } // namespace WebCore
 

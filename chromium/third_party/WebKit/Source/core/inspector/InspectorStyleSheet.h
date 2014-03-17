@@ -29,7 +29,7 @@
 #include "core/css/CSSPropertySourceData.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/inspector/InspectorStyleTextEditor.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -129,10 +129,9 @@ struct InspectorStyleProperty {
     String rawText;
 };
 
-class InspectorStyle : public RefCounted<InspectorStyle> {
+class InspectorStyle FINAL : public RefCounted<InspectorStyle> {
 public:
     static PassRefPtr<InspectorStyle> create(const InspectorCSSId& styleId, PassRefPtr<CSSStyleDeclaration> style, InspectorStyleSheet* parentStyleSheet);
-    virtual ~InspectorStyle();
 
     CSSStyleDeclaration* cssStyle() const { return m_style.get(); }
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForStyle() const;
@@ -184,7 +183,6 @@ public:
     virtual Document* ownerDocument() const;
     bool canBind() const { return m_origin != TypeBuilder::CSS::StyleSheetOrigin::User_agent && m_origin != TypeBuilder::CSS::StyleSheetOrigin::User; }
     CSSStyleSheet* pageStyleSheet() const { return m_pageStyleSheet.get(); }
-    bool isReparsing() const { return m_isReparsing; }
     void reparseStyleSheet(const String&);
     bool setText(const String&, ExceptionState&);
     String ruleSelector(const InspectorCSSId&, ExceptionState&);
@@ -237,6 +235,7 @@ private:
     bool originalStyleSheetText(String* result) const;
     bool resourceStyleSheetText(String* result) const;
     bool inlineStyleSheetText(String* result) const;
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector> > selectorsFromSource(const CSSRuleSourceData*, const String&) const;
     PassRefPtr<TypeBuilder::CSS::SelectorList> buildObjectForSelectorList(CSSStyleRule*);
     String url() const;
     bool hasSourceURL() const;
@@ -249,7 +248,6 @@ private:
     TypeBuilder::CSS::StyleSheetOrigin::Enum m_origin;
     String m_documentURL;
     bool m_isRevalidating;
-    bool m_isReparsing;
     ParsedStyleSheet* m_parsedStyleSheet;
     mutable CSSRuleVector m_flatRules;
     Listener* m_listener;

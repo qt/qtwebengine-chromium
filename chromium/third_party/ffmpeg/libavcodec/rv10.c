@@ -28,6 +28,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "error_resilience.h"
+#include "internal.h"
 #include "mpegvideo.h"
 #include "mpeg4video.h"
 #include "h263.h"
@@ -374,7 +375,11 @@ static int rv20_decode_picture_header(RVDecContext *rv)
                 s->avctx->sample_aspect_ratio = av_mul_q(old_aspect, (AVRational){2, 1});
             if (new_w * s->height == 2 * new_h * s->width)
                 s->avctx->sample_aspect_ratio = av_mul_q(old_aspect, (AVRational){1, 2});
-            avcodec_set_dimensions(s->avctx, new_w, new_h);
+
+            ret = ff_set_dimensions(s->avctx, new_w, new_h);
+            if (ret < 0)
+                return ret;
+
             s->width  = new_w;
             s->height = new_h;
             if ((ret = ff_MPV_common_init(s)) < 0)
@@ -449,6 +454,9 @@ static av_cold int rv10_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Extradata is too small.\n");
         return AVERROR_INVALIDDATA;
     }
+    if ((ret = av_image_check_size(avctx->coded_width,
+                                   avctx->coded_height, 0, avctx)) < 0)
+        return ret;
 
     ff_MPV_decode_defaults(s);
 
@@ -494,6 +502,7 @@ static av_cold int rv10_decode_init(AVCodecContext *avctx)
     if ((ret = ff_MPV_common_init(s)) < 0)
         return ret;
 
+    ff_h263dsp_init(&s->h263dsp);
     ff_h263_decode_init_vlc();
 
     /* init rv vlc */
@@ -754,6 +763,7 @@ static int rv10_decode_frame(AVCodecContext *avctx,
 
 AVCodec ff_rv10_decoder = {
     .name           = "rv10",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 1.0"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_RV10,
     .priv_data_size = sizeof(RVDecContext),
@@ -762,12 +772,12 @@ AVCodec ff_rv10_decoder = {
     .decode         = rv10_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 1.0"),
     .pix_fmts       = ff_pixfmt_list_420,
 };
 
 AVCodec ff_rv20_decoder = {
     .name           = "rv20",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 2.0"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_RV20,
     .priv_data_size = sizeof(RVDecContext),
@@ -777,6 +787,5 @@ AVCodec ff_rv20_decoder = {
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
     .flush          = ff_mpeg_flush,
     .max_lowres     = 3,
-    .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 2.0"),
     .pix_fmts       = ff_pixfmt_list_420,
 };

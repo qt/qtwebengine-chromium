@@ -149,48 +149,6 @@ body.platform-linux {
     color: rgb(153, 69, 0);
 }
 
-#right-gutter {
-    display: none;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    position: absolute;
-    background-color: darkgray;
-}
-
-#bottom-gutter {
-    display: none;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    position: absolute;
-    background-color: darkgray;
-}
-
-#overrides-container {
-    display: inline-block;
-    padding: 0 0 10px 10px;
-    position: absolute;
-    top: 0;
-    right: 0;
-}
-
-#overrides-message > div:not(:first-child) {
-    text-indent: 8px;
-}
-
-#overrides-message {
-    display: inline-block;
-    font-size: 14px;
-    padding: 4px 6px;
-    color: red;
-    background-color: rgba(17, 17, 17, 0.843); /* Same as DebugColors::HUDBackgroundColor() */
-}
-
-#overrides-container:hover #overrides-message,
-#overrides-container.hidden #overrides-message {
-    visibility: hidden;
-}
 </style>
 <script>
 const lightGridColor = "rgba(0,0,0,0.2)";
@@ -198,15 +156,9 @@ const darkGridColor = "rgba(0,0,0,0.7)";
 const transparentColor = "rgba(0, 0, 0, 0)";
 const gridBackgroundColor = "rgba(255, 255, 255, 0.8)";
 
-// The order must correspond to that in InspectorOverlay::OverrideType.
-const overrideEntries = ["User-Agent", "Device Metrics", "Geolocation", "Device Orientation", "Touch", "Media"];
-const overrideTouchBit = 1 << 4;
-
-var overridesContainer;
-var overridesMessageElement;
-
 function drawPausedInDebuggerMessage(message)
 {
+    window._controlsVisible = true;
     document.querySelector(".controls-line").style.visibility = "visible";
     document.getElementById("paused-in-debugger").textContent = message;
     document.body.classList.add("dimmed");
@@ -401,26 +353,6 @@ function quadEquals(quad1, quad2)
         quad1[3].x === quad2[3].x && quad1[3].y === quad2[3].y;
 }
 
-function drawGutter()
-{
-    var frameWidth = frameViewFullSize.width;
-    var frameHeight = frameViewFullSize.height;
-
-    if (!frameWidth || document.body.offsetWidth <= frameWidth)
-        rightGutter.style.removeProperty("display");
-    else {
-        rightGutter.style.display = "block";
-        rightGutter.style.left = frameWidth + "px";
-    }
-
-    if (!frameHeight || document.body.offsetHeight <= frameHeight)
-        bottomGutter.style.removeProperty("display");
-    else {
-        bottomGutter.style.display = "block";
-        bottomGutter.style.top = frameHeight + "px";
-    }
-}
-
 function drawViewSize(drawViewSizeWithGrid)
 {
     var drawGridBoolean = drawViewSizeWithGrid === "true";
@@ -444,39 +376,6 @@ function drawViewSize(drawViewSizeWithGrid)
         _drawGrid();
 }
 
-function drawOverridesMessage(data)
-{
-    overridesContainer.style.top = data.topOffset + "px";
-    var overrides = data.overrides;
-    overridesMessageElement.textContent = "";
-    if (!overrides) {
-        overridesContainer.classList.add("hidden");
-        document.body.classList.remove("touch");
-        return;
-    }
-
-    var header = document.createElement("div");
-    header.id = "overrides-header";
-    header.textContent = "Overrides:";
-    overridesMessageElement.appendChild(header);
-
-    var maskBit = 1;
-    for (var i = 0; i < overrideEntries.length; ++i, maskBit <<= 1) {
-        if (!(overrides & maskBit))
-            continue;
-        var item = document.createElement("div");
-        item.textContent = overrideEntries[i];
-        overridesMessageElement.appendChild(item);
-    }
-
-    overridesContainer.classList.remove("hidden");
-    var hasTouch = overrides & overrideTouchBit;
-    if (hasTouch)
-        document.body.classList.add("touch");
-    else
-        document.body.classList.remove("touch");
-}
-
 function reset(resetData)
 {
     window.viewportSize = resetData.viewportSize;
@@ -489,8 +388,6 @@ function reset(resetData)
 
     window.canvas = document.getElementById("canvas");
     window.context = canvas.getContext("2d");
-    window.rightGutter = document.getElementById("right-gutter");
-    window.bottomGutter = document.getElementById("bottom-gutter");
 
     canvas.width = deviceScaleFactor * viewportSize.width;
     canvas.height = deviceScaleFactor * viewportSize.height;
@@ -500,6 +397,7 @@ function reset(resetData)
     window.canvasWidth = viewportSize.width;
     window.canvasHeight = viewportSize.height;
 
+    window._controlsVisible = false;
     document.querySelector(".controls-line").style.visibility = "hidden";
     document.getElementById("element-title").style.visibility = "hidden";
     document.body.classList.remove("dimmed");
@@ -756,53 +654,43 @@ function onStepOverClick()
     InspectorOverlayHost.stepOver();
 }
 
-function onMouseMotion(isOverElement)
-{
-    if (!overridesMessageElement.textContent.length)
-        return;
-    if (isOverElement)
-        overridesContainer.classList.add("hidden");
-    else
-        overridesContainer.classList.remove("hidden");
-}
-
-function onFocus()
-{
-    if (overridesMessageElement.textContent.length)
-        overridesContainer.classList.remove("hidden");
-}
-
 function onLoaded()
 {
-    overridesContainer = document.getElementById("overrides-container");
-    overridesMessageElement = document.getElementById("overrides-message");
     document.getElementById("resume-button").addEventListener("click", onResumeClick);
     document.getElementById("step-over-button").addEventListener("click", onStepOverClick);
-    overridesContainer.addEventListener("mousemove", onMouseMotion.bind(this, true));
-    overridesContainer.addEventListener("mouseout", onMouseMotion.bind(this, false));
-    window.addEventListener("focus", onFocus);
+}
+
+function eventHasCtrlOrMeta(event)
+{
+    return window.platform == "mac" ? (event.metaKey && !event.ctrlKey) : (event.ctrlKey && !event.metaKey);
+}
+
+function onDocumentKeyDown(event)
+{
+    if (!window._controlsVisible)
+        return;
+    if (event.keyIdentifier == "F8" || eventHasCtrlOrMeta(event) && event.keyCode == 220 /* backslash */)
+        InspectorOverlayHost.resume();
+    else if (event.keyIdentifier == "F10" || eventHasCtrlOrMeta(event) && event.keyCode == 222 /* single quote */)
+        InspectorOverlayHost.stepOver();
 }
 
 window.addEventListener("DOMContentLoaded", onLoaded);
+document.addEventListener("keydown", onDocumentKeyDown);
 
 </script>
 </head>
 <body class="fill">
 <div class="controls-line">
     <div class="message-box"><div id="paused-in-debugger"></div></div>
-    <button id="resume-button" title="Resume script execution"><div class="glyph"></div></button>
-    <button id="step-over-button" title="Step over next function call"><div class="glyph"></div></button>
+    <button id="resume-button" title="Resume script execution (F8)."><div class="glyph"></div></button>
+    <button id="step-over-button" title="Step over next function call (F10)."><div class="glyph"></div></button>
 </div>
 </body>
 <canvas id="canvas" class="fill"></canvas>
 <div id="element-title">
   <span id="tag-name"></span><span id="node-id"></span><span id="class-name"></span>
   <span id="node-width"></span><span class="px">px</span><span class="px"> &#xD7; </span><span id="node-height"></span><span class="px">px</span>
-</div>
-<div id="right-gutter"></div>
-<div id="bottom-gutter"></div>
-<div id="overrides-container">
-  <div id="overrides-message"></div>
 </div>
 <div id="log"></div>
 </html>

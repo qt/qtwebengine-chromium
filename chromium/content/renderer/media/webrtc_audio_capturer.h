@@ -12,8 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
+#include "content/renderer/media/tagged_list.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
-#include "content/renderer/media/webrtc_local_audio_source_provider.h"
 #include "media/audio/audio_input_device.h"
 #include "media/base/audio_capturer_source.h"
 
@@ -53,16 +54,22 @@ class CONTENT_EXPORT WebRtcAudioCapturer
                   int sample_rate,
                   int buffer_size,
                   int session_id,
-                  const std::string& device_id);
+                  const std::string& device_id,
+                  int paired_output_sample_rate,
+                  int paired_output_frames_per_buffer,
+                  int effects);
 
   // Add a audio track to the sinks of the capturer.
   // WebRtcAudioDeviceImpl calls this method on the main render thread but
   // other clients may call it from other threads. The current implementation
   // does not support multi-thread calling.
+  // The first AddTrack will implicitly trigger the Start() of this object.
   // Called on the main render thread or libjingle working thread.
   void AddTrack(WebRtcLocalAudioTrack* track);
 
   // Remove a audio track from the sinks of the capturer.
+  // If the track has been added to the capturer, it  must call RemoveTrack()
+  // before it goes away.
   // Called on the main render thread or libjingle working thread.
   void RemoveTrack(WebRtcLocalAudioTrack* track);
 
@@ -73,7 +80,8 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   void SetCapturerSource(
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::ChannelLayout channel_layout,
-      float sample_rate);
+      float sample_rate,
+      int effects);
 
   // Called when a stream is connecting to a peer connection. This will set
   // up the native buffer size for the stream in order to optimize the
@@ -86,10 +94,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   int Volume() const;
   int MaxVolume() const;
 
-  // Enables or disables the WebRtc AGC control.
-  // Called from a Libjingle working thread.
-  void SetAutomaticGainControl(bool enable);
-
   bool is_recording() const { return running_; }
 
   // Audio parameters utilized by the audio capturer. Can be utilized by
@@ -100,11 +104,26 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // of this accessor and if we can remove it.
   media::AudioParameters audio_parameters() const;
 
-  const std::string& device_id() const { return device_id_; }
+  // Gets information about the paired output device. Returns true if such a
+  // device exists.
+  bool GetPairedOutputParameters(int* session_id,
+                                 int* output_sample_rate,
+                                 int* output_frames_per_buffer) const;
 
-  WebKit::WebAudioSourceProvider* audio_source_provider() const {
-    return source_provider_.get();
-  }
+  const std::string& device_id() const { return device_id_; }
+  int session_id() const { return session_id_; }
+
+  // Stops recording audio. This method will empty its track lists since
+  // stopping the capturer will implicitly invalidate all its tracks.
+  // This method is exposed to the public because the media stream track can
+  // call Stop() on its source.
+  void Stop();
+
+  // Called by the WebAudioCapturerSource to get the audio processing params.
+  // This function is triggered by provideInput() on the WebAudio audio thread,
+  // TODO(xians): Remove after moving APM from WebRtc to Chrome.
+  void GetAudioProcessingParams(base::TimeDelta* delay, int* volume,
+                                bool* key_pressed);
 
  protected:
   friend class base::RefCountedThreadSafe<WebRtcAudioCapturer>;
@@ -113,7 +132,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
  private:
   class TrackOwner;
-  typedef std::list<scoped_refptr<TrackOwner> > TrackList;
+  typedef TaggedList<TrackOwner> TrackList;
 
   // AudioCapturerSource::CaptureCallback implementation.
   // Called on the AudioInputDevice audio thread.
@@ -125,17 +144,13 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   // Reconfigures the capturer with a new capture parameters.
   // Must be called without holding the lock.
-  void Reconfigure(int sample_rate, media::ChannelLayout channel_layout);
+  void Reconfigure(int sample_rate, media::ChannelLayout channel_layout,
+                   int effects);
 
   // Starts recording audio.
   // Triggered by AddSink() on the main render thread or a Libjingle working
   // thread. It should NOT be called under |lock_|.
   void Start();
-
-  // Stops recording audio.
-  // Triggered by RemoveSink() on the main render thread or a Libjingle working
-  // thread. It should NOT be called under |lock_|.
-  void Stop();
 
   // Helper function to get the buffer size based on |peer_connection_mode_|
   // and sample rate;
@@ -145,10 +160,12 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   base::ThreadChecker thread_checker_;
 
   // Protects |source_|, |audio_tracks_|, |running_|, |loopback_fifo_|,
-  // |params_|, |buffering_| and |agc_is_enabled_|.
+  // |params_| and |buffering_|.
   mutable base::Lock lock_;
 
-  // A list of audio tracks that the audio data is fed to.
+  // A tagged list of audio tracks that the audio data is fed
+  // to. Tagged items need to be notified that the audio format has
+  // changed.
   TrackList tracks_;
 
   // The audio data source from the browser process.
@@ -158,9 +175,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   media::AudioParameters params_;
 
   bool running_;
-
-  // True when automatic gain control is enabled, false otherwise.
-  bool agc_is_enabled_;
 
   int render_view_id_;
 
@@ -179,14 +193,15 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // Range is [0, 255].
   int volume_;
 
-  // The source provider to feed the capture data to other clients like
-  // WebAudio.
-  // TODO(xians): Move the source provider to track once we don't need to feed
-  // delay, volume, key_pressed information to WebAudioCapturerSource.
-  const scoped_ptr<WebRtcLocalAudioSourceProvider> source_provider_;
-
   // Flag which affects the buffer size used by the capturer.
   bool peer_connection_mode_;
+
+  int output_sample_rate_;
+  int output_frames_per_buffer_;
+
+  // Cache value for the audio processing params.
+  base::TimeDelta audio_delay_;
+  bool key_pressed_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioCapturer);
 };

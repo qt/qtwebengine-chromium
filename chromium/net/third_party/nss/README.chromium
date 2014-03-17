@@ -57,6 +57,7 @@ Patches:
 
   * Add support for TLS Channel IDs
     patches/channelid.patch
+    patches/channelid2.patch
 
   * Add support for extracting the tls-unique channel binding value
     patches/tlsunique.patch
@@ -108,10 +109,13 @@ Patches:
     libraries at run time.
     patches/aesgcmchromium.patch
 
-  * Prefer to generate SHA-1 signatures for TLS 1.2 client authentication if
-    the client private key is in a CAPI service provider on Windows or if the
-    client private key is a 1024-bit RSA or DSA key.
+  * Support generating SHA-1 signatures for TLS 1.2 client authentication. Use
+    SHA-1 instead of SHA-256 if the server's preferences do not allow for
+    SHA-256 or if the client private key may only support SHA-1 signatures. The
+    latter happens when the key is in a CAPI service provider on Windows or if
+    it is a 1024-bit RSA or DSA key.
     patches/tls12backuphash.patch
+    patches/tls12backuphash2.patch
 
   * Support ChaCha20+Poly1305 ciphersuites
     http://tools.ietf.org/html/draft-agl-tls-chacha20poly1305-01
@@ -138,6 +142,36 @@ Patches:
   * Have the Null Cipher limit output to the maximum allowed
     https://bugzilla.mozilla.org/show_bug.cgi?id=934016
     patches/nullcipher_934016.patch
+
+  * In the case that a ClientHello record is between 256 and 511 bytes long,
+    add an extension to make it 512 bytes. This works around a bug in F5
+    terminators.
+    patches/paddingextension.patch
+    patches/paddingextensionall.patch
+
+  * Support the Certificate Transparency (RFC 6962) TLS extension
+    signed_certificate_timestamp (client only).
+    patches/signedcertificatetimestamps.patch
+
+  * Add a function to allow the cipher suites preference order to be set.
+    patches/cipherorder.patch
+
+  * Add TLS_FALLBACK_SCSV cipher suite to version fallback connections.
+    patches/fallbackscsv.patch
+
+  * Disable session ticket renewal.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=930857
+    patches/disableticketrenewal.patch
+
+  * Add explicit functions for managing the SSL/TLS session cache.
+    This is a temporary workaround until Chromium migrates to NSS's
+    asynchronous certificate verification.
+    patches/sessioncache.patch
+
+  * Remove static storage qualifier from variables in sslnonce.c. Due to
+    a clang codegen bug on Mac, this caused an infinite loop.
+    https://code.google.com/p/chromium/issues/detail?id=326011
+    patches/sslnoncestatics.patch
 
 Apply the patches to NSS by running the patches/applypatches.sh script.  Read
 the comments at the top of patches/applypatches.sh for instructions.

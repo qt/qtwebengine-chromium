@@ -32,11 +32,11 @@
 #include "core/html/forms/SearchInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/KeyboardEvent.h"
+#include "core/events/KeyboardEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/rendering/RenderSearchField.h"
@@ -46,30 +46,30 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline SearchInputType::SearchInputType(HTMLInputElement* element)
+inline SearchInputType::SearchInputType(HTMLInputElement& element)
     : BaseTextInputType(element)
     , m_searchEventTimer(this, &SearchInputType::searchEventTimerFired)
 {
 }
 
-PassRefPtr<InputType> SearchInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> SearchInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new SearchInputType(element));
 }
 
 void SearchInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeSearch);
+    countUsageIfVisible(UseCounter::InputTypeSearch);
 }
 
 RenderObject* SearchInputType::createRenderer(RenderStyle*) const
 {
-    return new RenderSearchField(element());
+    return new RenderSearchField(&element());
 }
 
 const AtomicString& SearchInputType::formControlType() const
 {
-    return InputTypeNames::search();
+    return InputTypeNames::search;
 }
 
 bool SearchInputType::shouldRespectSpeechAttribute()
@@ -90,25 +90,25 @@ bool SearchInputType::needsContainer() const
 void SearchInputType::createShadowSubtree()
 {
     TextFieldInputType::createShadowSubtree();
-    HTMLElement* container = containerElement();
-    Element* viewPort = element()->userAgentShadowRoot()->getElementById(ShadowElementNames::editingViewPort());
+    Element* container = containerElement();
+    Element* viewPort = element().userAgentShadowRoot()->getElementById(ShadowElementNames::editingViewPort());
     ASSERT(container);
     ASSERT(viewPort);
 
-    container->insertBefore(SearchFieldDecorationElement::create(element()->document()), viewPort);
-    container->insertBefore(SearchFieldCancelButtonElement::create(element()->document()), viewPort->nextSibling());
+    container->insertBefore(SearchFieldDecorationElement::create(element().document()), viewPort);
+    container->insertBefore(SearchFieldCancelButtonElement::create(element().document()), viewPort->nextSibling());
 }
 
 void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 {
-    if (element()->isDisabledOrReadOnly()) {
+    if (element().isDisabledOrReadOnly()) {
         TextFieldInputType::handleKeydownEvent(event);
         return;
     }
 
     const String& key = event->keyIdentifier();
     if (key == "U+001B") {
-        RefPtr<HTMLInputElement> input = element();
+        RefPtr<HTMLInputElement> input(element());
         input->setValueForUser("");
         input->onSearch();
         event->setDefaultHandled();
@@ -119,12 +119,12 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 
 void SearchInputType::startSearchEventTimer()
 {
-    ASSERT(element()->renderer());
-    unsigned length = element()->innerTextValue().length();
+    ASSERT(element().renderer());
+    unsigned length = element().innerTextValue().length();
 
     if (!length) {
         stopSearchEventTimer();
-        element()->onSearch();
+        element().onSearch();
         return;
     }
 
@@ -140,12 +140,12 @@ void SearchInputType::stopSearchEventTimer()
 
 void SearchInputType::searchEventTimerFired(Timer<SearchInputType>*)
 {
-    element()->onSearch();
+    element().onSearch();
 }
 
 bool SearchInputType::searchEventsShouldBeDispatched() const
 {
-    return element()->hasAttribute(incrementalAttr);
+    return element().hasAttribute(incrementalAttr);
 }
 
 void SearchInputType::didSetValueByUserEdit(ValueChangeState state)
@@ -159,21 +159,24 @@ void SearchInputType::didSetValueByUserEdit(ValueChangeState state)
     TextFieldInputType::didSetValueByUserEdit(state);
 }
 
-void SearchInputType::updateInnerTextValue()
+void SearchInputType::updateView()
 {
-    BaseTextInputType::updateInnerTextValue();
+    BaseTextInputType::updateView();
     updateCancelButtonVisibility();
 }
 
 void SearchInputType::updateCancelButtonVisibility()
 {
-    Element* button = element()->userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton());
+    Element* button = element().userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton());
     if (!button)
         return;
-    if (element()->value().isEmpty())
-        button->setInlineStyleProperty(CSSPropertyVisibility, CSSValueHidden);
-    else
-        button->removeInlineStyleProperty(CSSPropertyVisibility);
+    if (element().value().isEmpty()) {
+        button->setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::CSS_NUMBER);
+        button->setInlineStyleProperty(CSSPropertyPointerEvents, CSSValueNone);
+    } else {
+        button->removeInlineStyleProperty(CSSPropertyOpacity);
+        button->removeInlineStyleProperty(CSSPropertyPointerEvents);
+    }
 }
 
 bool SearchInputType::supportsInputModeAttribute() const

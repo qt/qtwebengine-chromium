@@ -26,11 +26,10 @@
 #include "config.h"
 #include "core/fetch/RawResource.h"
 
-#include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
-#include "core/platform/SharedBuffer.h"
+#include "platform/SharedBuffer.h"
 
 namespace WebCore {
 
@@ -93,7 +92,7 @@ void RawResource::willSendRequest(ResourceRequest& request, const ResourceRespon
 
 void RawResource::responseReceived(const ResourceResponse& response)
 {
-    ResourcePtr<RawResource> protect(this);
+    InternalResourcePtr protect(this);
     Resource::responseReceived(response);
     ResourceClientWalker<RawResourceClient> w(m_clients);
     while (RawResourceClient* c = w.next())
@@ -131,7 +130,6 @@ static bool shouldIgnoreHeaderForCacheReuse(AtomicString headerName)
     // FIXME: This list of headers that don't affect cache policy almost certainly isn't complete.
     DEFINE_STATIC_LOCAL(HashSet<AtomicString>, m_headers, ());
     if (m_headers.isEmpty()) {
-        m_headers.add("Accept");
         m_headers.add("Cache-Control");
         m_headers.add("If-Modified-Since");
         m_headers.add("If-None-Match");

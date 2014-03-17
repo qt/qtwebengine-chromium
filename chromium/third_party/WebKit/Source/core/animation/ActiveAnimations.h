@@ -33,28 +33,47 @@
 
 #include "core/animation/AnimationStack.h"
 #include "core/animation/css/CSSAnimations.h"
+#include "wtf/HashCountedSet.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class RenderObject;
+class Element;
+
+// FIXME: Move these to CompositorAnimations
+bool shouldCompositeForActiveAnimations(const RenderObject&);
+bool hasActiveAnimations(const RenderObject&, CSSPropertyID);
+bool hasActiveAnimationsOnCompositor(const RenderObject&, CSSPropertyID);
+
 class ActiveAnimations {
 public:
     // Animations that are currently active for this element, their effects will be applied
-    // during a style recalc.
-    AnimationStack* defaultStack() { return &m_defaultStack; }
-    // Tracks the state of active CSS Animations. The individual animations will also be
-    // part of the default stack, but the mapping betwen animation name and player is kept
-    // here.
-    CSSAnimations* cssAnimations() { return &m_cssAnimations; }
-    // FIXME: Add AnimationStack for CSS Transitions
-    // CSS Transitions form a separate animation stack as they apply at a different level of
-    // the style cascade. Active transitions will not be present in the default stack.
+    // during a style recalc. CSS Transitions are included in this stack.
+    AnimationStack& defaultStack() { return m_defaultStack; }
+    // Tracks the state of active CSS Animations and Transitions. The individual animations
+    // will also be part of the default stack, but the mapping betwen animation name and
+    // player is kept here.
+    CSSAnimations& cssAnimations() { return m_cssAnimations; }
+    const CSSAnimations& cssAnimations() const { return m_cssAnimations; }
+
+    typedef HashCountedSet<Player*> PlayerSet;
+    // Players which have animations targeting this element.
+    const PlayerSet& players() const { return m_players; }
+    PlayerSet& players() { return m_players; }
+
     bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty(); }
+
+    bool hasActiveAnimations(CSSPropertyID) const;
+    bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
+    void cancelAnimationOnCompositor();
+
 private:
     AnimationStack m_defaultStack;
     CSSAnimations m_cssAnimations;
+    PlayerSet m_players;
 };
 
 } // namespace WebCore

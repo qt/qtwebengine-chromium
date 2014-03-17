@@ -31,7 +31,7 @@
 #ifndef MIDIConnectionEvent_h
 #define MIDIConnectionEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "modules/webmidi/MIDIPort.h"
 
 namespace WebCore {
@@ -64,7 +64,7 @@ public:
 
     RefPtr<MIDIPort> port() { return m_port; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForMIDIConnectionEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MIDIConnectionEvent; }
 
 private:
     MIDIConnectionEvent()

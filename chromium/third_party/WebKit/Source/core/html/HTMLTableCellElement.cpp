@@ -130,32 +130,32 @@ bool HTMLTableCellElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == backgroundAttr || HTMLTablePartElement::isURLAttribute(attribute);
 }
 
-String HTMLTableCellElement::abbr() const
+const AtomicString& HTMLTableCellElement::abbr() const
 {
     return getAttribute(abbrAttr);
 }
 
-String HTMLTableCellElement::axis() const
+const AtomicString& HTMLTableCellElement::axis() const
 {
     return getAttribute(axisAttr);
 }
 
 void HTMLTableCellElement::setColSpan(int n)
 {
-    setAttribute(colspanAttr, String::number(n));
+    setIntegralAttribute(colspanAttr, n);
 }
 
-String HTMLTableCellElement::headers() const
+const AtomicString& HTMLTableCellElement::headers() const
 {
     return getAttribute(headersAttr);
 }
 
 void HTMLTableCellElement::setRowSpan(int n)
 {
-    setAttribute(rowspanAttr, String::number(n));
+    setIntegralAttribute(rowspanAttr, n);
 }
 
-String HTMLTableCellElement::scope() const
+const AtomicString& HTMLTableCellElement::scope() const
 {
     return getAttribute(scopeAttr);
 }

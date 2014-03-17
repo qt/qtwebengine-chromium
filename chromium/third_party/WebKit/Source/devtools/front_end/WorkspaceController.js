@@ -40,7 +40,7 @@ WebInspector.WorkspaceController = function(workspace)
 
 WebInspector.WorkspaceController.prototype = {
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _inspectedURLChanged: function(event)
     {
@@ -48,7 +48,7 @@ WebInspector.WorkspaceController.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _windowFocused: function(event)
     {
@@ -65,9 +65,3 @@ WebInspector.WorkspaceController.prototype = {
         }
     }
 }
-
-/**
- * @type {?WebInspector.WorkspaceController}
- */
-WebInspector.workspaceController = null;
-

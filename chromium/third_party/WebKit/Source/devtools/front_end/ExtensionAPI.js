@@ -60,7 +60,7 @@ function defineCommonExtensionSymbols(apiPrivate)
         AuditStarted: "audit-started-",
         ButtonClicked: "button-clicked-",
         ConsoleMessageAdded: "console-message-added",
-        ElementsPanelObjectSelected: "panel-objectSelected-elements",
+        PanelObjectSelected: "panel-objectSelected-",
         NetworkRequestFinished: "network-request-finished",
         OpenResource: "open-resource",
         PanelSearch: "panel-search-",
@@ -76,6 +76,7 @@ function defineCommonExtensionSymbols(apiPrivate)
         AddAuditResult: "addAuditResult",
         AddConsoleMessage: "addConsoleMessage",
         AddRequestHeaders: "addRequestHeaders",
+        ApplyStyleSheet: "applyStyleSheet",
         CreatePanel: "createPanel",
         CreateSidebarPane: "createSidebarPane",
         CreateStatusBarButton: "createStatusBarButton",
@@ -86,6 +87,8 @@ function defineCommonExtensionSymbols(apiPrivate)
         GetPageResources: "getPageResources",
         GetRequestContent: "getRequestContent",
         GetResourceContent: "getResourceContent",
+        InspectedURLChanged: "inspectedURLChanged",
+        OpenResource: "openResource",
         Reload: "Reload",
         Subscribe: "subscribe",
         SetOpenResourceHandler: "setOpenResourceHandler",
@@ -95,12 +98,9 @@ function defineCommonExtensionSymbols(apiPrivate)
         SetSidebarPage: "setSidebarPage",
         ShowPanel: "showPanel",
         StopAuditCategoryRun: "stopAuditCategoryRun",
-        OpenResource: "openResource",
-        Reload: "Reload",
         Unsubscribe: "unsubscribe",
         UpdateAuditProgress: "updateAuditProgress",
-        UpdateButton: "updateButton",
-        InspectedURLChanged: "inspectedURLChanged"
+        UpdateButton: "updateButton"
     };
 }
 
@@ -156,7 +156,10 @@ EventSinkImpl.prototype = {
             extensionServer.sendRequest({ command: commands.Unsubscribe, type: this._type });
     },
 
-    _fire: function()
+    /**
+     * @param {...} vararg
+     */
+    _fire: function(vararg)
     {
         var listeners = this._listeners.slice();
         for (var i = 0; i < listeners.length; ++i)
@@ -216,6 +219,9 @@ ConsoleAPI.prototype = {
  */
 function Network()
 {
+    /**
+     * @this {EventSinkImpl}
+     */
     function dispatchRequestEvent(message)
     {
         var request = message.arguments[1];
@@ -273,7 +279,8 @@ RequestImpl.prototype = {
 function Panels()
 {
     var panels = {
-        elements: new ElementsPanel()
+        elements: new ElementsPanel(),
+        sources: new SourcesPanel(),
     };
 
     function panelGetter(name)
@@ -282,6 +289,7 @@ function Panels()
     }
     for (var panel in panels)
         this.__defineGetter__(panel, panelGetter.bind(null, panel));
+    this.applyStyleSheet = function(styleSheet) { extensionServer.sendRequest({ command: commands.ApplyStyleSheet, styleSheet: styleSheet }); };
 }
 
 Panels.prototype = {
@@ -302,21 +310,22 @@ Panels.prototype = {
     {
         var hadHandler = extensionServer.hasHandler(events.OpenResource);
 
+        function callbackWrapper(message)
+        {
+            // Allow the panel to show itself when handling the event.
+            userAction = true;
+            try {
+                callback.call(null, new Resource(message.resource), message.lineNumber);
+            } finally {
+                userAction = false;
+            }
+        }
+
         if (!callback)
             extensionServer.unregisterHandler(events.OpenResource);
-        else {
-            function callbackWrapper(message)
-            {
-                // Allow the panel to show itself when handling the event.
-                userAction = true;
-                try {
-                    callback.call(null, new Resource(message.resource), message.lineNumber);
-                } finally {
-                    userAction = false;
-                }
-            }
+        else
             extensionServer.registerHandler(events.OpenResource, callbackWrapper);
-        }
+
         // Only send command if we either removed an existing handler or added handler and had none before.
         if (hadHandler === !callback)
             extensionServer.sendRequest({ command: commands.SetOpenResourceHandler, "handlerPresent": !!callback });
@@ -340,10 +349,16 @@ function ExtensionViewImpl(id)
 {
     this._id = id;
 
+    /**
+     * @this {EventSinkImpl}
+     */
     function dispatchShowEvent(message)
     {
         var frameIndex = message.arguments[0];
-        this._fire(window.parent.frames[frameIndex]);
+        if (typeof frameIndex === "number")
+            this._fire(window.parent.frames[frameIndex]);
+        else
+            this._fire();
     }
     this.onShown = new EventSink(events.ViewShown + id, dispatchShowEvent);
     this.onHidden = new EventSink(events.ViewHidden + id);
@@ -352,9 +367,10 @@ function ExtensionViewImpl(id)
 /**
  * @constructor
  */
-function PanelWithSidebarImpl(id)
+function PanelWithSidebarImpl(hostPanelName)
 {
-    this._id = id;
+    this._hostPanelName = hostPanelName;
+    this.onSelectionChanged = new EventSink(events.PanelObjectSelected + hostPanelName);
 }
 
 PanelWithSidebarImpl.prototype = {
@@ -363,7 +379,7 @@ PanelWithSidebarImpl.prototype = {
         var id = "extension-sidebar-" + extensionServer.nextObjectId();
         var request = {
             command: commands.CreateSidebarPane,
-            panel: this._id,
+            panel: this._hostPanelName,
             id: id,
             title: title
         };
@@ -383,9 +399,16 @@ PanelWithSidebarImpl.prototype = {
  */
 function ElementsPanel()
 {
-    var id = "elements";
-    PanelWithSidebar.call(this, id);
-    this.onSelectionChanged = new EventSink(events.ElementsPanelObjectSelected);
+    PanelWithSidebar.call(this, "elements");
+}
+
+/**
+ * @constructor
+ * @extends {PanelWithSidebar}
+ */
+function SourcesPanel()
+{
+    PanelWithSidebar.call(this, "sources");
 }
 
 /**
@@ -515,6 +538,9 @@ Audits.prototype = {
  */
 function AuditCategoryImpl(id)
 {
+    /**
+     * @this {EventSinkImpl}
+     */
     function dispatchAuditEvent(request)
     {
         var auditResult = new AuditResult(request.arguments[0]);
@@ -622,14 +648,22 @@ AuditResultNode.prototype = {
  */
 function InspectedWindow()
 {
+    /**
+     * @this {EventSinkImpl}
+     */
     function dispatchResourceEvent(message)
     {
         this._fire(new Resource(message.arguments[0]));
     }
+
+    /**
+     * @this {EventSinkImpl}
+     */
     function dispatchResourceContentEvent(message)
     {
         this._fire(new Resource(message.arguments[0]), message.arguments[1]);
     }
+
     this.onResourceAdded = new EventSink(events.ResourceAdded, dispatchResourceEvent);
     this.onResourceContentCommitted = new EventSink(events.ResourceContentCommitted, dispatchResourceContentEvent);
 }
@@ -891,7 +925,7 @@ return new InspectorExtensionAPI();
 }
 
 /**
- * @param {ExtensionDescriptor} extensionInfo
+ * @param {!ExtensionDescriptor} extensionInfo
  * @return {string}
  */
 function buildExtensionAPIInjectedScript(extensionInfo)

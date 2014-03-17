@@ -28,9 +28,9 @@
 #include "core/fetch/ScriptResource.h"
 
 #include "core/fetch/TextResourceDecoder.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/HTTPParsers.h"
+#include "platform/MIMETypeRegistry.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/HTTPParsers.h"
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ String ScriptResource::encoding() const
     return m_decoder->encoding().name();
 }
 
-String ScriptResource::mimeType() const
+AtomicString ScriptResource::mimeType() const
 {
     return extractMIMETypeFromMediaType(m_response.httpHeaderField("Content-Type")).lower();
 }

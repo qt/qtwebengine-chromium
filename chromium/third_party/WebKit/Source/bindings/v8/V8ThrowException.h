@@ -41,25 +41,21 @@ enum V8ErrorType {
 class V8ThrowException {
 public:
 
-    static v8::Handle<v8::Value> createDOMException(int ec, v8::Isolate* isolate)
+    static v8::Handle<v8::Value> createDOMException(int ec, const String& message, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
     {
-        return createDOMException(ec, String(), isolate);
+        return createDOMException(ec, message, String(), creationContext, isolate);
     }
-    static v8::Handle<v8::Value> createDOMException(int ec, const String& message, v8::Isolate* isolate)
-    {
-        return createDOMException(ec, message, String(), isolate);
-    }
-    static v8::Handle<v8::Value> createDOMException(int, const String& sanitizedMessage, const String& unsanitizedMessage, v8::Isolate*);
+    static v8::Handle<v8::Value> createDOMException(int, const String& sanitizedMessage, const String& unsanitizedMessage, const v8::Handle<v8::Object>& creationContext, v8::Isolate*);
 
-    static v8::Handle<v8::Value> throwDOMException(int ec, v8::Isolate* isolate)
+    static v8::Handle<v8::Value> throwDOMException(int ec, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
     {
-        return throwDOMException(ec, String(), isolate);
+        return throwDOMException(ec, String(), creationContext, isolate);
     }
-    static v8::Handle<v8::Value> throwDOMException(int ec, const String& message, v8::Isolate* isolate)
+    static v8::Handle<v8::Value> throwDOMException(int ec, const String& message, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
     {
-        return throwDOMException(ec, message, String(), isolate);
+        return throwDOMException(ec, message, String(), creationContext, isolate);
     }
-    static v8::Handle<v8::Value> throwDOMException(int, const String& sanitizedMessage, const String& unsanitizedMessage, v8::Isolate*);
+    static v8::Handle<v8::Value> throwDOMException(int, const String& sanitizedMessage, const String& unsanitizedMessage, const v8::Handle<v8::Object>& creationContext, v8::Isolate*);
 
     static v8::Handle<v8::Value> createError(V8ErrorType, const String&, v8::Isolate*);
     static v8::Handle<v8::Value> throwError(V8ErrorType, const String&, v8::Isolate*);
@@ -67,9 +63,6 @@ public:
 
     static v8::Handle<v8::Value> createTypeError(const String&, v8::Isolate*);
     static v8::Handle<v8::Value> throwTypeError(const String&, v8::Isolate*);
-
-    // FIXME: Kill this once we kill all the callsites, since we want to pass in useful information as a string.
-    static v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate*);
 };
 
 } // namespace WebCore

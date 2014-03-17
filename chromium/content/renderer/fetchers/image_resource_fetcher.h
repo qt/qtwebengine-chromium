@@ -7,11 +7,20 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "content/renderer/fetchers/resource_fetcher.h"
+#include "base/memory/scoped_ptr.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "url/gurl.h"
 
 class SkBitmap;
 
+namespace blink {
+class WebFrame;
+class WebURLResponse;
+}
+
 namespace content {
+
+class ResourceFetcher;
 
 // ImageResourceFetcher handles downloading an image for a webview. Once
 // downloading is done the supplied callback is notified. ImageResourceFetcher
@@ -22,10 +31,10 @@ class ImageResourceFetcher {
 
   ImageResourceFetcher(
       const GURL& image_url,
-      WebKit::WebFrame* frame,
+      blink::WebFrame* frame,
       int id,
       int image_size,
-      WebKit::WebURLRequest::TargetType target_type,
+      blink::WebURLRequest::TargetType target_type,
       const Callback& callback);
 
   virtual ~ImageResourceFetcher();
@@ -38,7 +47,7 @@ class ImageResourceFetcher {
 
  private:
   // ResourceFetcher::Callback. Decodes the image and invokes callback_.
-  void OnURLFetchComplete(const WebKit::WebURLResponse& response,
+  void OnURLFetchComplete(const blink::WebURLResponse& response,
                           const std::string& data);
 
   Callback callback_;

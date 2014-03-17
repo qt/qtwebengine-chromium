@@ -44,19 +44,11 @@ private:
 
     virtual const char* renderName() const { return "RenderMeter"; }
     virtual bool isMeter() const { return true; }
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     double valueRatio() const;
 };
 
-inline RenderMeter* toRenderMeter(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isMeter());
-    return static_cast<RenderMeter*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderMeter(const RenderMeter*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderMeter, isMeter());
 
 } // namespace WebCore
 

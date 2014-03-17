@@ -40,7 +40,7 @@ namespace WebCore {
 class MediaStreamSource;
 }
 
-namespace WebKit {
+namespace blink {
 class WebAudioDestinationConsumer;
 class WebMediaConstraints;
 class WebString;
@@ -52,10 +52,10 @@ public:
         ExtraData() : m_owner(0) { }
         virtual ~ExtraData() { }
 
-        WEBKIT_EXPORT WebMediaStreamSource owner();
+        BLINK_PLATFORM_EXPORT WebMediaStreamSource owner();
 
-#if WEBKIT_IMPLEMENTATION
-        void setOwner(WebCore::MediaStreamSource*);
+#if INSIDE_BLINK
+        BLINK_PLATFORM_EXPORT void setOwner(WebCore::MediaStreamSource*);
 #endif
 
     private:
@@ -83,49 +83,46 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebMediaStreamSource&);
+    BLINK_PLATFORM_EXPORT void assign(const WebMediaStreamSource&);
 
-    WEBKIT_EXPORT void initialize(const WebString& id, Type, const WebString& name);
-    WEBKIT_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void initialize(const WebString& id, Type, const WebString& name);
+    BLINK_PLATFORM_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT WebString id() const;
-    WEBKIT_EXPORT Type type() const;
-    WEBKIT_EXPORT WebString name() const;
+    BLINK_PLATFORM_EXPORT WebString id() const;
+    BLINK_PLATFORM_EXPORT Type type() const;
+    BLINK_PLATFORM_EXPORT WebString name() const;
 
-    WEBKIT_EXPORT void setReadyState(ReadyState);
-    WEBKIT_EXPORT ReadyState readyState() const;
+    BLINK_PLATFORM_EXPORT void setReadyState(ReadyState);
+    BLINK_PLATFORM_EXPORT ReadyState readyState() const;
 
     // Extra data associated with this object.
     // If non-null, the extra data pointer will be deleted when the object is destroyed.
     // Setting the extra data pointer will cause any existing non-null
     // extra data pointer to be deleted.
-    WEBKIT_EXPORT ExtraData* extraData() const;
-    WEBKIT_EXPORT void setExtraData(ExtraData*);
+    BLINK_PLATFORM_EXPORT ExtraData* extraData() const;
+    BLINK_PLATFORM_EXPORT void setExtraData(ExtraData*);
 
-    WEBKIT_EXPORT WebMediaConstraints constraints();
-
-    WEBKIT_EXPORT WebString deviceId() const;
-    WEBKIT_EXPORT void setDeviceId(const WebString&);
+    BLINK_PLATFORM_EXPORT WebMediaConstraints constraints();
 
     // Only used if if this is a WebAudio source.
     // The WebAudioDestinationConsumer is not owned, and has to be disposed of separately
     // after calling removeAudioConsumer.
-    WEBKIT_EXPORT bool requiresAudioConsumer() const;
-    WEBKIT_EXPORT void addAudioConsumer(WebAudioDestinationConsumer*);
-    WEBKIT_EXPORT bool removeAudioConsumer(WebAudioDestinationConsumer*);
+    BLINK_PLATFORM_EXPORT bool requiresAudioConsumer() const;
+    BLINK_PLATFORM_EXPORT void addAudioConsumer(WebAudioDestinationConsumer*);
+    BLINK_PLATFORM_EXPORT bool removeAudioConsumer(WebAudioDestinationConsumer*);
 
-#if WEBKIT_IMPLEMENTATION
-    WebMediaStreamSource(const WTF::PassRefPtr<WebCore::MediaStreamSource>&);
-    WebMediaStreamSource& operator=(WebCore::MediaStreamSource*);
-    operator WTF::PassRefPtr<WebCore::MediaStreamSource>() const;
-    operator WebCore::MediaStreamSource*() const;
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebMediaStreamSource(const WTF::PassRefPtr<WebCore::MediaStreamSource>&);
+    BLINK_PLATFORM_EXPORT WebMediaStreamSource& operator=(WebCore::MediaStreamSource*);
+    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<WebCore::MediaStreamSource>() const;
+    BLINK_PLATFORM_EXPORT operator WebCore::MediaStreamSource*() const;
 #endif
 
 private:
     WebPrivatePtr<WebCore::MediaStreamSource> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMediaStreamSource_h

@@ -33,7 +33,9 @@
 #include "WebPrivateOwnPtr.h"
 #include "WebSize.h"
 
-namespace WebKit {
+class SkBitmap;
+
+namespace blink {
 class WebGraphicsContext3D;
 class WebLayer;
 struct WebPoint;
@@ -75,6 +77,9 @@ public:
     // Sets the background transparency for the viewport. The default is 'false'.
     virtual void setHasTransparentBackground(bool) = 0;
 
+    // Sets the overhang gutter bitmap.
+    virtual void setOverhangBitmap(const SkBitmap&) { }
+
     // Sets whether this view is visible. In threaded mode, a view that is not visible will not
     // composite or trigger updateAnimations() or layout() calls until it becomes visible.
     virtual void setVisible(bool) = 0;
@@ -92,9 +97,6 @@ public:
 
     // Indicates that an animation needs to be updated.
     virtual void setNeedsAnimate() = 0;
-
-    // Indicates that the view needs to be redrawn. This is typically used when the frontbuffer is damaged.
-    virtual void setNeedsRedraw() = 0;
 
     // Indicates whether a commit is pending.
     virtual bool commitRequested() const = 0;
@@ -146,6 +148,6 @@ public:
     virtual void setShowScrollBottleneckRects(bool) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebLayerTreeView_h

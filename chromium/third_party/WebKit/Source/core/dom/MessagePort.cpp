@@ -29,68 +29,77 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/MessageEvent.h"
-#include "core/page/DOMWindow.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/MessageEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/DOMWindow.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "public/platform/WebString.h"
+#include "wtf/Functional.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-MessagePort::MessagePort(ScriptExecutionContext& scriptExecutionContext)
-    : m_started(false)
+PassRefPtr<MessagePort> MessagePort::create(ExecutionContext& executionContext)
+{
+    RefPtr<MessagePort> port = adoptRef(new MessagePort(executionContext));
+    port->suspendIfNeeded();
+    return port.release();
+}
+
+MessagePort::MessagePort(ExecutionContext& executionContext)
+    : ActiveDOMObject(&executionContext)
+    , m_started(false)
     , m_closed(false)
-    , m_scriptExecutionContext(&scriptExecutionContext)
+    , m_weakFactory(this)
 {
     ScriptWrappable::init(this);
-    m_scriptExecutionContext->createdMessagePort(this);
-
-    // Don't need to call processMessagePortMessagesSoon() here, because the port will not be opened until start() is invoked.
 }
 
 MessagePort::~MessagePort()
 {
     close();
-    if (m_scriptExecutionContext)
-        m_scriptExecutionContext->destroyedMessagePort(this);
 }
 
-void MessagePort::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& es)
+void MessagePort::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     if (!isEntangled())
         return;
-    ASSERT(m_scriptExecutionContext);
+    ASSERT(executionContext());
+    ASSERT(m_entangledChannel);
 
     OwnPtr<MessagePortChannelArray> channels;
     // Make sure we aren't connected to any of the passed-in ports.
     if (ports) {
         for (unsigned int i = 0; i < ports->size(); ++i) {
             MessagePort* dataPort = (*ports)[i].get();
-            if (dataPort == this || m_entangledChannel->isConnectedTo(dataPort)) {
-                es.throwDOMException(DataCloneError);
+            if (dataPort == this) {
+                exceptionState.throwDOMException(DataCloneError, "Item #" + String::number(i) + " in the array of ports contains the source port.");
                 return;
             }
         }
-        channels = MessagePort::disentanglePorts(ports, es);
-        if (es.hadException())
+        channels = MessagePort::disentanglePorts(ports, exceptionState);
+        if (exceptionState.hadException())
             return;
     }
-    m_entangledChannel->postMessageToRemote(message, channels.release());
+
+    blink::WebString messageString = message->toWireString();
+    blink::WebMessagePortChannelArray* webChannels = 0;
+    if (channels && channels->size()) {
+        webChannels = new blink::WebMessagePortChannelArray(channels->size());
+        for (size_t i = 0; i < channels->size(); ++i)
+            (*webChannels)[i] = (*channels)[i].leakPtr();
+    }
+    m_entangledChannel->postMessage(messageString, webChannels);
 }
 
-PassOwnPtr<MessagePortChannel> MessagePort::disentangle()
+PassOwnPtr<blink::WebMessagePortChannel> MessagePort::disentangle()
 {
     ASSERT(m_entangledChannel);
-
-    m_entangledChannel->disentangle();
-
-    // We can't receive any messages or generate any events, so remove ourselves from the list of active ports.
-    ASSERT(m_scriptExecutionContext);
-    m_scriptExecutionContext->destroyedMessagePort(this);
-    m_scriptExecutionContext = 0;
-
+    m_entangledChannel->setClient(0);
     return m_entangledChannel.release();
 }
 
@@ -98,8 +107,8 @@ PassOwnPtr<MessagePortChannel> MessagePort::disentangle()
 // This code may be called from another thread, and so should not call any non-threadsafe APIs (i.e. should not call into the entangled channel or access mutable variables).
 void MessagePort::messageAvailable()
 {
-    ASSERT(m_scriptExecutionContext);
-    m_scriptExecutionContext->processMessagePortMessagesSoon();
+    ASSERT(executionContext());
+    executionContext()->postTask(bind(&MessagePort::dispatchMessages, m_weakFactory.createWeakPtr()));
 }
 
 void MessagePort::start()
@@ -108,89 +117,83 @@ void MessagePort::start()
     if (!isEntangled())
         return;
 
-    ASSERT(m_scriptExecutionContext);
+    ASSERT(executionContext());
     if (m_started)
         return;
 
     m_started = true;
-    m_scriptExecutionContext->processMessagePortMessagesSoon();
+    messageAvailable();
 }
 
 void MessagePort::close()
 {
     if (isEntangled())
-        m_entangledChannel->close();
+        m_entangledChannel->setClient(0);
     m_closed = true;
 }
 
-void MessagePort::entangle(PassOwnPtr<MessagePortChannel> remote)
+void MessagePort::entangle(PassOwnPtr<blink::WebMessagePortChannel> remote)
 {
     // Only invoked to set our initial entanglement.
     ASSERT(!m_entangledChannel);
-    ASSERT(m_scriptExecutionContext);
+    ASSERT(executionContext());
 
-    // Don't entangle the ports if the channel is closed.
-    if (remote->entangleIfOpen(this))
-        m_entangledChannel = remote;
-}
-
-void MessagePort::contextDestroyed()
-{
-    ASSERT(m_scriptExecutionContext);
-    // Must be closed before blowing away the cached context, to ensure that we get no more calls to messageAvailable().
-    // ScriptExecutionContext::closeMessagePorts() takes care of that.
-    ASSERT(m_closed);
-    m_scriptExecutionContext = 0;
+    m_entangledChannel = remote;
+    m_entangledChannel->setClient(this);
 }
 
 const AtomicString& MessagePort::interfaceName() const
 {
-    return eventNames().interfaceForMessagePort;
+    return EventTargetNames::MessagePort;
 }
 
-ScriptExecutionContext* MessagePort::scriptExecutionContext() const
+static bool tryGetMessageFrom(blink::WebMessagePortChannel& webChannel, RefPtr<SerializedScriptValue>& message, OwnPtr<MessagePortChannelArray>& channels)
 {
-    return m_scriptExecutionContext;
+    blink::WebString messageString;
+    blink::WebMessagePortChannelArray webChannels;
+    if (!webChannel.tryGetMessage(&messageString, webChannels))
+        return false;
+
+    if (webChannels.size()) {
+        channels = adoptPtr(new MessagePortChannelArray(webChannels.size()));
+        for (size_t i = 0; i < webChannels.size(); ++i)
+            (*channels)[i] = adoptPtr(webChannels[i]);
+    }
+    message = SerializedScriptValue::createFromWire(messageString);
+    return true;
 }
 
 void MessagePort::dispatchMessages()
 {
     // Messages for contexts that are not fully active get dispatched too, but JSAbstractEventListener::handleEvent() doesn't call handlers for these.
     // The HTML5 spec specifies that any messages sent to a document that is not fully active should be dropped, so this behavior is OK.
-    ASSERT(started());
+    if (!started())
+        return;
 
     RefPtr<SerializedScriptValue> message;
     OwnPtr<MessagePortChannelArray> channels;
-    while (m_entangledChannel && m_entangledChannel->tryGetMessageFromRemote(message, channels)) {
-
+    while (m_entangledChannel && tryGetMessageFrom(*m_entangledChannel, message, channels)) {
         // close() in Worker onmessage handler should prevent next message from dispatching.
-        if (m_scriptExecutionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_scriptExecutionContext)->isClosing())
+        if (executionContext()->isWorkerGlobalScope() && toWorkerGlobalScope(executionContext())->isClosing())
             return;
 
-        OwnPtr<MessagePortArray> ports = MessagePort::entanglePorts(*m_scriptExecutionContext, channels.release());
+        OwnPtr<MessagePortArray> ports = MessagePort::entanglePorts(*executionContext(), channels.release());
         RefPtr<Event> evt = MessageEvent::create(ports.release(), message.release());
 
         dispatchEvent(evt.release(), ASSERT_NO_EXCEPTION);
     }
 }
 
-bool MessagePort::hasPendingActivity()
+bool MessagePort::hasPendingActivity() const
 {
     // The spec says that entangled message ports should always be treated as if they have a strong reference.
     // We'll also stipulate that the queue needs to be open (if the app drops its reference to the port before start()-ing it, then it's not really entangled as it's unreachable).
-    if (m_started && m_entangledChannel && m_entangledChannel->hasPendingActivity())
+    if (m_started && m_entangledChannel)
         return true;
-    if (isEntangled() && !locallyEntangledPort())
-        return true;
-    return false;
+    return isEntangled();
 }
 
-MessagePort* MessagePort::locallyEntangledPort()
-{
-    return m_entangledChannel ? m_entangledChannel->locallyEntangledPort(m_scriptExecutionContext) : 0;
-}
-
-PassOwnPtr<MessagePortChannelArray> MessagePort::disentanglePorts(const MessagePortArray* ports, ExceptionState& es)
+PassOwnPtr<MessagePortChannelArray> MessagePort::disentanglePorts(const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     if (!ports || !ports->size())
         return nullptr;
@@ -199,10 +202,17 @@ PassOwnPtr<MessagePortChannelArray> MessagePort::disentanglePorts(const MessageP
     HashSet<MessagePort*> portSet;
 
     // Walk the incoming array - if there are any duplicate ports, or null ports or cloned ports, throw an error (per section 8.3.3 of the HTML5 spec).
-    for (unsigned int i = 0; i < ports->size(); ++i) {
+    for (unsigned i = 0; i < ports->size(); ++i) {
         MessagePort* port = (*ports)[i].get();
         if (!port || port->isNeutered() || portSet.contains(port)) {
-            es.throwDOMException(DataCloneError);
+            String type;
+            if (!port)
+                type = "null";
+            else if (port->isNeutered())
+                type = "already neutered";
+            else
+                type = "a duplicate";
+            exceptionState.throwDOMException(DataCloneError, "Item #"  + String::number(i) + " in the array of ports is " + type + ".");
             return nullptr;
         }
         portSet.add(port);
@@ -210,14 +220,12 @@ PassOwnPtr<MessagePortChannelArray> MessagePort::disentanglePorts(const MessageP
 
     // Passed-in ports passed validity checks, so we can disentangle them.
     OwnPtr<MessagePortChannelArray> portArray = adoptPtr(new MessagePortChannelArray(ports->size()));
-    for (unsigned int i = 0 ; i < ports->size() ; ++i) {
-        OwnPtr<MessagePortChannel> channel = (*ports)[i]->disentangle();
-        (*portArray)[i] = channel.release();
-    }
+    for (unsigned i = 0; i < ports->size(); ++i)
+        (*portArray)[i] = (*ports)[i]->disentangle();
     return portArray.release();
 }
 
-PassOwnPtr<MessagePortArray> MessagePort::entanglePorts(ScriptExecutionContext& context, PassOwnPtr<MessagePortChannelArray> channels)
+PassOwnPtr<MessagePortArray> MessagePort::entanglePorts(ExecutionContext& context, PassOwnPtr<MessagePortChannelArray> channels)
 {
     if (!channels || !channels->size())
         return nullptr;
@@ -229,16 +237,6 @@ PassOwnPtr<MessagePortArray> MessagePort::entanglePorts(ScriptExecutionContext& 
         (*portArray)[i] = port.release();
     }
     return portArray.release();
-}
-
-EventTargetData* MessagePort::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* MessagePort::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 } // namespace WebCore

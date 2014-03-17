@@ -25,7 +25,6 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSFilterRule.h"
 #include "core/css/CSSFontFaceRule.h"
-#include "core/css/CSSHostRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSMediaRule.h"
@@ -43,7 +42,7 @@ struct SameSizeAsStyleRuleBase : public WTF::RefCountedBase {
     unsigned bitfields;
 };
 
-COMPILE_ASSERT(sizeof(StyleRuleBase) == sizeof(SameSizeAsStyleRuleBase), StyleRuleBase_should_stay_small);
+COMPILE_ASSERT(sizeof(StyleRuleBase) <= sizeof(SameSizeAsStyleRuleBase), StyleRuleBase_should_stay_small);
 
 PassRefPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSStyleSheet* parentSheet) const
 {
@@ -62,34 +61,31 @@ void StyleRuleBase::destroy()
         delete toStyleRule(this);
         return;
     case Page:
-        delete static_cast<StyleRulePage*>(this);
+        delete toStyleRulePage(this);
         return;
     case FontFace:
-        delete static_cast<StyleRuleFontFace*>(this);
+        delete toStyleRuleFontFace(this);
         return;
     case Media:
-        delete static_cast<StyleRuleMedia*>(this);
+        delete toStyleRuleMedia(this);
         return;
     case Supports:
-        delete static_cast<StyleRuleSupports*>(this);
+        delete toStyleRuleSupports(this);
         return;
     case Region:
-        delete static_cast<StyleRuleRegion*>(this);
+        delete toStyleRuleRegion(this);
         return;
     case Import:
-        delete static_cast<StyleRuleImport*>(this);
+        delete toStyleRuleImport(this);
         return;
     case Keyframes:
-        delete static_cast<StyleRuleKeyframes*>(this);
-        return;
-    case HostInternal:
-        delete static_cast<StyleRuleHost*>(this);
+        delete toStyleRuleKeyframes(this);
         return;
     case Viewport:
-        delete static_cast<StyleRuleViewport*>(this);
+        delete toStyleRuleViewport(this);
         return;
     case Filter:
-        delete static_cast<StyleRuleFilter*>(this);
+        delete toStyleRuleFilter(this);
         return;
     case Unknown:
     case Charset:
@@ -104,29 +100,27 @@ PassRefPtr<StyleRuleBase> StyleRuleBase::copy() const
 {
     switch (type()) {
     case Style:
-        return static_cast<const StyleRule*>(this)->copy();
+        return toStyleRule(this)->copy();
     case Page:
-        return static_cast<const StyleRulePage*>(this)->copy();
+        return toStyleRulePage(this)->copy();
     case FontFace:
-        return static_cast<const StyleRuleFontFace*>(this)->copy();
+        return toStyleRuleFontFace(this)->copy();
     case Media:
-        return static_cast<const StyleRuleMedia*>(this)->copy();
+        return toStyleRuleMedia(this)->copy();
     case Supports:
-        return static_cast<const StyleRuleSupports*>(this)->copy();
+        return toStyleRuleSupports(this)->copy();
     case Region:
-        return static_cast<const StyleRuleRegion*>(this)->copy();
+        return toStyleRuleRegion(this)->copy();
     case Import:
         // FIXME: Copy import rules.
         ASSERT_NOT_REACHED();
         return 0;
     case Keyframes:
-        return static_cast<const StyleRuleKeyframes*>(this)->copy();
-    case HostInternal:
-        return static_cast<const StyleRuleHost*>(this)->copy();
+        return toStyleRuleKeyframes(this)->copy();
     case Viewport:
-        return static_cast<const StyleRuleViewport*>(this)->copy();
+        return toStyleRuleViewport(this)->copy();
     case Filter:
-        return static_cast<const StyleRuleFilter*>(this)->copy();
+        return toStyleRuleFilter(this)->copy();
     case Unknown:
     case Charset:
     case Keyframe:
@@ -146,34 +140,31 @@ PassRefPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSStyleSheet* parentSheet
         rule = CSSStyleRule::create(toStyleRule(self), parentSheet);
         break;
     case Page:
-        rule = CSSPageRule::create(static_cast<StyleRulePage*>(self), parentSheet);
+        rule = CSSPageRule::create(toStyleRulePage(self), parentSheet);
         break;
     case FontFace:
-        rule = CSSFontFaceRule::create(static_cast<StyleRuleFontFace*>(self), parentSheet);
+        rule = CSSFontFaceRule::create(toStyleRuleFontFace(self), parentSheet);
         break;
     case Media:
-        rule = CSSMediaRule::create(static_cast<StyleRuleMedia*>(self), parentSheet);
+        rule = CSSMediaRule::create(toStyleRuleMedia(self), parentSheet);
         break;
     case Supports:
-        rule = CSSSupportsRule::create(static_cast<StyleRuleSupports*>(self), parentSheet);
+        rule = CSSSupportsRule::create(toStyleRuleSupports(self), parentSheet);
         break;
     case Region:
-        rule = CSSRegionRule::create(static_cast<StyleRuleRegion*>(self), parentSheet);
+        rule = CSSRegionRule::create(toStyleRuleRegion(self), parentSheet);
         break;
     case Import:
-        rule = CSSImportRule::create(static_cast<StyleRuleImport*>(self), parentSheet);
+        rule = CSSImportRule::create(toStyleRuleImport(self), parentSheet);
         break;
     case Keyframes:
-        rule = CSSKeyframesRule::create(static_cast<StyleRuleKeyframes*>(self), parentSheet);
+        rule = CSSKeyframesRule::create(toStyleRuleKeyframes(self), parentSheet);
         break;
     case Viewport:
-        rule = CSSViewportRule::create(static_cast<StyleRuleViewport*>(self), parentSheet);
-        break;
-    case HostInternal:
-        rule = CSSHostRule::create(static_cast<StyleRuleHost*>(self), parentSheet);
+        rule = CSSViewportRule::create(toStyleRuleViewport(self), parentSheet);
         break;
     case Filter:
-        rule = CSSFilterRule::create(static_cast<StyleRuleFilter*>(self), parentSheet);
+        rule = CSSFilterRule::create(toStyleRuleFilter(self), parentSheet);
         break;
     case Unknown:
     case Charset:
@@ -211,7 +202,7 @@ MutableStylePropertySet* StyleRule::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return static_cast<MutableStylePropertySet*>(m_properties.get());
+    return toMutableStylePropertySet(m_properties);
 }
 
 void StyleRule::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -239,7 +230,7 @@ MutableStylePropertySet* StyleRulePage::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return static_cast<MutableStylePropertySet*>(m_properties.get());
+    return toMutableStylePropertySet(m_properties);
 }
 
 void StyleRulePage::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -266,7 +257,7 @@ MutableStylePropertySet* StyleRuleFontFace::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return static_cast<MutableStylePropertySet*>(m_properties.get());
+    return toMutableStylePropertySet(m_properties);
 }
 
 void StyleRuleFontFace::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -358,7 +349,7 @@ MutableStylePropertySet* StyleRuleViewport::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return static_cast<MutableStylePropertySet*>(m_properties.get());
+    return toMutableStylePropertySet(m_properties);
 }
 
 void StyleRuleViewport::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -387,7 +378,7 @@ MutableStylePropertySet* StyleRuleFilter::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return static_cast<MutableStylePropertySet*>(m_properties.get());
+    return toMutableStylePropertySet(m_properties);
 }
 
 void StyleRuleFilter::setProperties(PassRefPtr<StylePropertySet> properties)

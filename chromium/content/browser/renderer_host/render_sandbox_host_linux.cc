@@ -25,24 +25,25 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/launch.h"
+#include "base/process/process_metrics.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/common/font_config_ipc_linux.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/skia_utils_base.h"
+#include "third_party/WebKit/public/platform/linux/WebFontInfo.h"
 #include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/WebKit/public/web/linux/WebFontInfo.h"
 #include "third_party/npapi/bindings/npapi_extensions.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #include "ui/gfx/font_render_params_linux.h"
 
-using WebKit::WebCString;
-using WebKit::WebFontInfo;
-using WebKit::WebUChar;
-using WebKit::WebUChar32;
+using blink::WebCString;
+using blink::WebFontInfo;
+using blink::WebUChar;
+using blink::WebUChar32;
 
 namespace content {
 
@@ -240,7 +241,7 @@ class SandboxIPCProcess  {
     SendRendererReply(fds, reply, result_fd);
 
     if (result_fd >= 0) {
-      int err = HANDLE_EINTR(close(result_fd));
+      int err = IGNORE_EINTR(close(result_fd));
       DCHECK(!err);
     }
   }
@@ -260,7 +261,7 @@ class SandboxIPCProcess  {
     if (!pickle.ReadString(&iter, &preferred_locale))
       return;
 
-    WebKit::WebFontFamily family;
+    blink::WebFontFamily family;
     WebFontInfo::familyForChar(c, preferred_locale.c_str(), &family);
 
     Pickle reply;
@@ -286,7 +287,7 @@ class SandboxIPCProcess  {
     }
 
     EnsureWebKitInitialized();
-    WebKit::WebFontRenderStyle style;
+    blink::WebFontRenderStyle style;
     WebFontInfo::renderStyleForStrike(family.c_str(), sizeAndStyle, &style);
 
     Pickle reply;
@@ -515,7 +516,7 @@ class SandboxIPCProcess  {
     SendRendererReply(fds, reply, font_fd);
 
     if (font_fd >= 0) {
-      if (HANDLE_EINTR(close(font_fd)) < 0)
+      if (IGNORE_EINTR(close(font_fd)) < 0)
         PLOG(ERROR) << "close";
     }
   }
@@ -654,14 +655,14 @@ class SandboxIPCProcess  {
 SandboxIPCProcess::~SandboxIPCProcess() {
   paths_.deleteAll();
   if (webkit_platform_support_)
-    WebKit::shutdownWithoutV8();
+    blink::shutdownWithoutV8();
 }
 
 void SandboxIPCProcess::EnsureWebKitInitialized() {
   if (webkit_platform_support_)
     return;
   webkit_platform_support_.reset(new WebKitPlatformSupportImpl);
-  WebKit::initializeWithoutV8(webkit_platform_support_.get());
+  blink::initializeWithoutV8(webkit_platform_support_.get());
 }
 
 // -----------------------------------------------------------------------------
@@ -707,11 +708,18 @@ void RenderSandboxHostLinux::Init(const std::string& sandbox_path) {
   const int child_lifeline_fd = pipefds[0];
   childs_lifeline_fd_ = pipefds[1];
 
+  // We need to be monothreaded before we fork().
+#if !defined(TOOLKIT_GTK)
+  // Exclude gtk port as TestSuite in base/tests/test_suite.cc is calling
+  // gtk_init.
+  // TODO(oshima): Remove ifdef when above issues are resolved.
+  DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
+#endif
   pid_ = fork();
   if (pid_ == 0) {
-    if (HANDLE_EINTR(close(fds[0])) < 0)
+    if (IGNORE_EINTR(close(fds[0])) < 0)
       DPLOG(ERROR) << "close";
-    if (HANDLE_EINTR(close(pipefds[1])) < 0)
+    if (IGNORE_EINTR(close(pipefds[1])) < 0)
       DPLOG(ERROR) << "close";
 
     SandboxIPCProcess handler(child_lifeline_fd, browser_socket, sandbox_path);
@@ -722,9 +730,9 @@ void RenderSandboxHostLinux::Init(const std::string& sandbox_path) {
 
 RenderSandboxHostLinux::~RenderSandboxHostLinux() {
   if (initialized_) {
-    if (HANDLE_EINTR(close(renderer_socket_)) < 0)
+    if (IGNORE_EINTR(close(renderer_socket_)) < 0)
       PLOG(ERROR) << "close";
-    if (HANDLE_EINTR(close(childs_lifeline_fd_)) < 0)
+    if (IGNORE_EINTR(close(childs_lifeline_fd_)) < 0)
       PLOG(ERROR) << "close";
   }
 }

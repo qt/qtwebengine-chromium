@@ -28,7 +28,7 @@
 
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
 #include "core/dom/Microtask.h"
 #include "core/dom/ScriptLoader.h"
@@ -36,8 +36,8 @@
 #include "core/html/parser/HTMLInputStream.h"
 #include "core/html/parser/HTMLScriptRunnerHost.h"
 #include "core/html/parser/NestingLevelIncrementer.h"
-#include "core/page/Frame.h"
-#include "core/platform/NotImplemented.h"
+#include "core/frame/Frame.h"
+#include "platform/NotImplemented.h"
 
 namespace WebCore {
 
@@ -81,7 +81,7 @@ static KURL documentURLForScriptExecution(Document* document)
 
 inline PassRefPtr<Event> createScriptLoadEvent()
 {
-    return Event::create(eventNames().loadEvent);
+    return Event::create(EventTypeNames::load);
 }
 
 ScriptSourceCode HTMLScriptRunner::sourceFromPendingScript(const PendingScript& script, bool& errorOccurred) const
@@ -137,8 +137,8 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            scriptLoader->executeScript(sourceCode);
-            element->dispatchEvent(createScriptLoadEvent());
+            if (scriptLoader->executePotentiallyCrossOriginScript(sourceCode))
+                element->dispatchEvent(createScriptLoadEvent());
         }
     }
     ASSERT(!isExecutingScript());

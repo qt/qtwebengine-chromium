@@ -35,7 +35,7 @@ namespace device {
 class MediaTransferProtocolDaemonClient {
  public:
   // A callback to be called when DBus method call fails.
-  typedef base::Callback<void()> ErrorCallback;
+  typedef base::Closure ErrorCallback;
 
   // A callback to handle the result of EnumerateAutoMountableDevices.
   // The argument is the enumerated storage names.
@@ -52,7 +52,7 @@ class MediaTransferProtocolDaemonClient {
   typedef base::Callback<void(const std::string& handle)> OpenStorageCallback;
 
   // A callback to handle the result of CloseStorage.
-  typedef base::Callback<void()> CloseStorageCallback;
+  typedef base::Closure CloseStorageCallback;
 
   // A callback to handle the result of ReadDirectoryByPath/Id.
   // The argument is a vector of file entries.
@@ -157,15 +157,13 @@ class MediaTransferProtocolDaemonClient {
                                const GetFileInfoCallback& callback,
                                const ErrorCallback& error_callback) = 0;
 
-  // Registers given callback for events.
+  // Registers given callback for events. Should only be called once.
   // |storage_event_handler| is called when a mtp storage attach or detach
   // signal is received.
-  virtual void SetUpConnections(const MTPStorageEventHandler& handler) = 0;
+  virtual void ListenForChanges(const MTPStorageEventHandler& handler) = 0;
 
   // Factory function, creates a new instance and returns ownership.
-  // For normal usage, set |is_stub| to false.
-  static MediaTransferProtocolDaemonClient* Create(dbus::Bus* bus,
-                                                   bool is_stub);
+  static MediaTransferProtocolDaemonClient* Create(dbus::Bus* bus);
 
  protected:
   // Create() should be used instead.

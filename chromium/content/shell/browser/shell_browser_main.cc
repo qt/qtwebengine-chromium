@@ -151,7 +151,7 @@ int ShellBrowserMain(
       // We're outside of the message loop here, and this is a test.
       base::ThreadRestrictions::ScopedAllowIO allow_io;
       base::FilePath temp_path;
-      file_util::GetTempDir(&temp_path);
+      base::GetTempDir(&temp_path);
       test_controller.SetTempPath(temp_path);
     }
     std::string test_string;
@@ -160,10 +160,8 @@ int ShellBrowserMain(
     size_t command_line_position = 0;
     bool ran_at_least_once = false;
 
-#if defined(OS_ANDROID)
     std::cout << "#READY\n";
     std::cout.flush();
-#endif
 
     while (GetNextTest(args, &command_line_position, &test_string)) {
       if (test_string.empty())

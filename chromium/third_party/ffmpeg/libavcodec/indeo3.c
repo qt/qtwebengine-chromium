@@ -956,7 +956,7 @@ static int decode_frame_headers(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
         free_frame_buffers(ctx);
         if ((res = allocate_frame_buffers(ctx, avctx, width, height)) < 0)
              return res;
-        avcodec_set_dimensions(avctx, width, height);
+        ff_set_dimensions(avctx, width, height);
     }
 
     y_offset = bytestream2_get_le32(&gb);
@@ -1132,6 +1132,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
 
 AVCodec ff_indeo3_decoder = {
     .name           = "indeo3",
+    .long_name      = NULL_IF_CONFIG_SMALL("Intel Indeo 3"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_INDEO3,
     .priv_data_size = sizeof(Indeo3DecodeContext),
@@ -1139,5 +1140,4 @@ AVCodec ff_indeo3_decoder = {
     .close          = decode_close,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Intel Indeo 3"),
 };

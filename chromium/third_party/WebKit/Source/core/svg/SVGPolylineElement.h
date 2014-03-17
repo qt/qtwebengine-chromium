@@ -28,17 +28,13 @@ namespace WebCore {
 
 class SVGPolylineElement FINAL : public SVGPolyElement {
 public:
-    static PassRefPtr<SVGPolylineElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGPolylineElement> create(Document&);
 
 private:
-    SVGPolylineElement(const QualifiedName&, Document&);
+    explicit SVGPolylineElement(Document&);
 };
 
-inline SVGPolylineElement* toSVGPolylineElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::polylineTag));
-    return static_cast<SVGPolylineElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGPolylineElement, hasTagName(SVGNames::polylineTag));
 
 } // namespace WebCore
 

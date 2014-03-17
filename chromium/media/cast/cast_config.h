@@ -5,6 +5,7 @@
 #ifndef MEDIA_CAST_CAST_CONFIG_H_
 #define MEDIA_CAST_CAST_CONFIG_H_
 
+#include <list>
 #include <string>
 #include <vector>
 
@@ -50,8 +51,11 @@ struct AudioSenderConfig {
   bool use_external_encoder;
   int frequency;
   int channels;
-  int bitrate;
+  int bitrate;  // Set to <= 0 for "auto variable bitrate" (libopus knows best).
   AudioCodec codec;
+
+  std::string aes_key;  // Binary string of size kAesKeySize.
+  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
 };
 
 struct VideoSenderConfig {
@@ -82,6 +86,9 @@ struct VideoSenderConfig {
   int max_number_of_video_buffers_used;  // Max value depend on codec.
   VideoCodec codec;
   int number_of_cores;
+
+  std::string aes_key;  // Binary string of size kAesKeySize.
+  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
 };
 
 struct AudioReceiverConfig {
@@ -102,6 +109,9 @@ struct AudioReceiverConfig {
   int frequency;
   int channels;
   AudioCodec codec;
+
+  std::string aes_key;  // Binary string of size kAesKeySize.
+  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
 };
 
 struct VideoReceiverConfig {
@@ -125,20 +135,9 @@ struct VideoReceiverConfig {
   // from catching up after a glitch.
   bool decoder_faster_than_max_frame_rate;
   VideoCodec codec;
-};
 
-struct I420VideoPlane {
-  int stride;
-  int length;
-  uint8* data;
-};
-
-struct I420VideoFrame {
-  int width;
-  int height;
-  I420VideoPlane y_plane;
-  I420VideoPlane u_plane;
-  I420VideoPlane v_plane;
+  std::string aes_key;  // Binary string of size kAesKeySize.
+  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
 };
 
 struct EncodedVideoFrame {
@@ -147,11 +146,13 @@ struct EncodedVideoFrame {
 
   VideoCodec codec;
   bool key_frame;
-  uint8 frame_id;
-  uint8 last_referenced_frame_id;
-  std::vector<uint8> data;
+  uint32 frame_id;
+  uint32 last_referenced_frame_id;
+  std::string data;
 };
 
+// DEPRECATED: Do not use in new code.  Please migrate existing code to use
+// media::AudioBus.
 struct PcmAudioFrame {
   PcmAudioFrame();
   ~PcmAudioFrame();
@@ -166,16 +167,24 @@ struct EncodedAudioFrame {
   ~EncodedAudioFrame();
 
   AudioCodec codec;
-  uint8 frame_id;  // Needed to release the frame. Not used send side.
+  uint32 frame_id;  // Needed to release the frame.
   int samples;  // Needed send side to advance the RTP timestamp.
                 // Not used receive side.
-  std::vector<uint8> data;
+  // Support for max sampling rate of 48KHz, 2 channels, 100 ms duration.
+  static const int kMaxNumberOfSamples = 48 * 2 * 100;
+  std::string data;
 };
+
+typedef std::vector<uint8> Packet;
+typedef std::vector<Packet> PacketList;
 
 class PacketSender {
  public:
-  // All packets to be sent to the network will be delivered via this function.
-  virtual bool SendPacket(const uint8* packet, int length) = 0;
+  // All packets to be sent to the network will be delivered via these
+  // functions.
+  virtual bool SendPackets(const PacketList& packets) = 0;
+
+  virtual bool SendPacket(const Packet& packet) = 0;
 
   virtual ~PacketSender() {}
 };
@@ -184,10 +193,16 @@ class PacketReceiver : public base::RefCountedThreadSafe<PacketReceiver> {
  public:
   // All packets received from the network should be delivered via this
   // function.
-  virtual void ReceivedPacket(const uint8* packet, int length,
+  virtual void ReceivedPacket(const uint8* packet, size_t length,
                               const base::Closure callback) = 0;
 
+  static void DeletePacket(const uint8* packet);
+
+ protected:
   virtual ~PacketReceiver() {}
+
+ private:
+  friend class base::RefCountedThreadSafe<PacketReceiver>;
 };
 
 class VideoEncoderController {
@@ -203,7 +218,7 @@ class VideoEncoderController {
   virtual void GenerateKeyFrame() = 0;
 
   // Inform the encoder to only reference frames older or equal to frame_id;
-  virtual void LatestFrameIdToReference(uint8 frame_id) = 0;
+  virtual void LatestFrameIdToReference(uint32 frame_id) = 0;
 
   // Query the codec about how many frames it has skipped due to slow ACK.
   virtual int NumberOfSkippedFrames() const = 0;

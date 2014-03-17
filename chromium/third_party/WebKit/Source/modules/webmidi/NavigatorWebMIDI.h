@@ -31,9 +31,9 @@
 #ifndef NavigatorWebMIDI_h
 #define NavigatorWebMIDI_h
 
-#include "core/page/DOMWindowProperty.h"
-#include "core/platform/Supplementable.h"
+#include "core/frame/DOMWindowProperty.h"
 #include "modules/webmidi/MIDIOptions.h"
+#include "platform/Supplementable.h"
 
 namespace WebCore {
 

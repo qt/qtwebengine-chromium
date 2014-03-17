@@ -14,7 +14,9 @@
 #import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
@@ -194,7 +196,11 @@
 - (void)configureCustomBox:(NSBox*)box;
 
 // Initializes the icon_ ivar and returns the view to insert into the hierarchy.
-- (NSView*)createImageView;
+- (NSView*)createIconView;
+
+// Creates a box that shows a border when the icon is not big enough to fill the
+// space.
+- (NSBox*)createImageBox;
 
 // Initializes the closeButton_ ivar with the configured button.
 - (void)configureCloseButtonInFrame:(NSRect)rootFrame;
@@ -243,7 +249,7 @@
 - (void)loadView {
   // Create the root view of the notification.
   NSRect rootFrame = NSMakeRect(0, 0,
-      message_center::kNotificationPreferredImageSize,
+      message_center::kNotificationPreferredImageWidth,
       message_center::kNotificationIconSize);
   base::scoped_nsobject<MCNotificationView> rootView(
       [[MCNotificationView alloc] initWithController:self frame:rootFrame]);
@@ -252,7 +258,7 @@
       message_center::kNotificationBackgroundColor)];
   [self setView:rootView];
 
-  [rootView addSubview:[self createImageView]];
+  [rootView addSubview:[self createIconView]];
 
   // Create the close button.
   [self configureCloseButtonInFrame:rootFrame];
@@ -279,7 +285,7 @@
   notification_ = notification;
 
   NSRect rootFrame = NSMakeRect(0, 0,
-      message_center::kNotificationPreferredImageSize,
+      message_center::kNotificationPreferredImageWidth,
       message_center::kNotificationIconSize);
 
   // Update the icon.
@@ -503,19 +509,18 @@
   }
 
   // Create the image view if appropriate.
-  if (!notification->image().IsEmpty()) {
-    NSImage* image = notification->image().AsNSImage();
-    NSRect imageFrame = frame;
-    imageFrame.origin = NSMakePoint(0, y);
-    imageFrame.size = NSSizeFromCGSize(message_center::GetImageSizeForWidth(
-        NSWidth(frame), notification->image().Size()).ToCGSize());
-    base::scoped_nsobject<NSImageView> imageView(
-        [[NSImageView alloc] initWithFrame:imageFrame]);
-    [imageView setImage:image];
-    [imageView setImageScaling:NSImageScaleProportionallyUpOrDown];
-    y += NSHeight(imageFrame);
-    frame.size.height += NSHeight(imageFrame);
-    [bottomView_ addSubview:imageView];
+  gfx::Image notificationImage = notification->image();
+  if (!notificationImage.IsEmpty()) {
+    NSBox* imageBox = [self createImageBox:notificationImage];
+    NSRect outerFrame = frame;
+    outerFrame.origin = NSMakePoint(0, y);
+    outerFrame.size = [imageBox frame].size;
+    [imageBox setFrame:outerFrame];
+
+    y += NSHeight(outerFrame);
+    frame.size.height += NSHeight(outerFrame);
+
+    [bottomView_ addSubview:imageBox];
   }
 
   [bottomView_ setFrame:frame];
@@ -582,7 +587,7 @@
   [box setContentViewMargins:NSZeroSize];
 }
 
-- (NSView*)createImageView {
+- (NSView*)createIconView {
   // Create another box that shows a background color when the icon is not
   // big enough to fill the space.
   NSRect imageFrame = NSMakeRect(0, 0,
@@ -592,12 +597,47 @@
       [[AccessibilityIgnoredBox alloc] initWithFrame:imageFrame]);
   [self configureCustomBox:imageBox];
   [imageBox setFillColor:gfx::SkColorToCalibratedNSColor(
-      message_center::kLegacyIconBackgroundColor)];
+      message_center::kIconBackgroundColor)];
   [imageBox setAutoresizingMask:NSViewMinYMargin];
 
   // Inside the image box put the actual icon view.
   icon_.reset([[NSImageView alloc] initWithFrame:imageFrame]);
   [imageBox setContentView:icon_];
+
+  return imageBox.autorelease();
+}
+
+- (NSBox*)createImageBox:(gfx::Image)notificationImage {
+  using message_center::kNotificationImageBorderSize;
+  using message_center::kNotificationPreferredImageWidth;
+  using message_center::kNotificationPreferredImageHeight;
+
+  NSRect imageFrame = NSMakeRect(0, 0,
+       kNotificationPreferredImageWidth,
+       kNotificationPreferredImageHeight);
+  base::scoped_nsobject<NSBox> imageBox(
+      [[AccessibilityIgnoredBox alloc] initWithFrame:imageFrame]);
+  [self configureCustomBox:imageBox];
+  [imageBox setFillColor:gfx::SkColorToCalibratedNSColor(
+      message_center::kImageBackgroundColor)];
+
+  // Images with non-preferred aspect ratios get a border on all sides.
+  gfx::Size idealSize = gfx::Size(
+      kNotificationPreferredImageWidth, kNotificationPreferredImageHeight);
+  gfx::Size scaledSize = message_center::GetImageSizeForWidth(
+      kNotificationPreferredImageWidth, notificationImage.Size());
+  if (scaledSize != idealSize) {
+    NSSize borderSize =
+        NSMakeSize(kNotificationImageBorderSize, kNotificationImageBorderSize);
+    [imageBox setContentViewMargins:borderSize];
+  }
+
+  NSImage* image = notificationImage.AsNSImage();
+  base::scoped_nsobject<NSImageView> imageView(
+      [[NSImageView alloc] initWithFrame:imageFrame]);
+  [imageView setImage:image];
+  [imageView setImageScaling:NSImageScaleProportionallyUpOrDown];
+  [imageBox setContentView:imageView];
 
   return imageBox.autorelease();
 }
@@ -689,12 +729,12 @@
     maxNumberOfLines:(size_t)lines {
   if (text.empty())
     return text;
-  gfx::Font font(nsfont);
+  gfx::FontList font_list((gfx::Font(nsfont)));
   int width = NSWidth([self currentContentRect]);
-  int height = (lines + 1) * font.GetHeight();
+  int height = (lines + 1) * font_list.GetHeight();
 
   std::vector<string16> wrapped;
-  gfx::ElideRectangleText(text, font, width, height,
+  gfx::ElideRectangleText(text, font_list, width, height,
                           gfx::WRAP_LONG_WORDS, &wrapped);
 
   // This could be possible when the input text contains only spaces.
@@ -705,8 +745,8 @@
     // Add an ellipsis to the last line. If this ellipsis makes the last line
     // too wide, that line will be further elided by the gfx::ElideText below.
     string16 last = wrapped[lines - 1] + UTF8ToUTF16(gfx::kEllipsis);
-    if (font.GetStringWidth(last) > width)
-      last = gfx::ElideText(last, font, width, gfx::ELIDE_AT_END);
+    if (gfx::GetStringWidth(last, font_list) > width)
+      last = gfx::ElideText(last, font_list, width, gfx::ELIDE_AT_END);
     wrapped.resize(lines - 1);
     wrapped.push_back(last);
   }

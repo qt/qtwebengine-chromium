@@ -31,8 +31,8 @@
 #ifndef DOMWindowQuota_h
 #define DOMWindowQuota_h
 
-#include "core/page/DOMWindowProperty.h"
-#include "core/platform/Supplementable.h"
+#include "core/frame/DOMWindowProperty.h"
+#include "platform/Supplementable.h"
 
 namespace WebCore {
 

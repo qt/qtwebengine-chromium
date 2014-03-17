@@ -7,7 +7,6 @@
 
 #include "GrSimpleTextureEffect.h"
 #include "gl/GrGLEffect.h"
-#include "gl/GrGLEffectMatrix.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
 #include "GrTBackendEffectFactory.h"
@@ -15,18 +14,8 @@
 
 class GrGLSimpleTextureEffect : public GrGLEffect {
 public:
-    GrGLSimpleTextureEffect(const GrBackendEffectFactory& factory, const GrDrawEffect& drawEffect)
-    : INHERITED (factory) {
-        GrEffect::CoordsType coordsType =
-            drawEffect.castEffect<GrSimpleTextureEffect>().coordsType();
-        if (GrEffect::kCustom_CoordsType != coordsType) {
-            SkNEW_IN_TLAZY(&fEffectMatrix, GrGLEffectMatrix, (coordsType));
-        }
-    }
-
-    virtual bool requiresVertexShader(const GrDrawEffect& drawEffect) const SK_OVERRIDE {
-        const GrSimpleTextureEffect& ste = drawEffect.castEffect<GrSimpleTextureEffect>();
-        return GrEffect::kCustom_CoordsType == ste.coordsType();
+    GrGLSimpleTextureEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
+        : INHERITED (factory) {
     }
 
     virtual void emitCode(GrGLShaderBuilder* builder,
@@ -34,58 +23,17 @@ public:
                           EffectKey key,
                           const char* outputColor,
                           const char* inputColor,
+                          const TransformedCoordsArray& coords,
                           const TextureSamplerArray& samplers) SK_OVERRIDE {
-        const GrSimpleTextureEffect& ste = drawEffect.castEffect<GrSimpleTextureEffect>();
-        SkString fsCoordName;
-        GrSLType fsCoordSLType;
-        if (GrEffect::kCustom_CoordsType == ste.coordsType()) {
-            SkASSERT(ste.getMatrix().isIdentity());
-            SkASSERT(1 == ste.numVertexAttribs());
-            fsCoordSLType = kVec2f_GrSLType;
-            const char* vsVaryingName;
-            const char* fsVaryingNamePtr;
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-            vertexBuilder->addVarying(kVec2f_GrSLType, "textureCoords", &vsVaryingName, &fsVaryingNamePtr);
-            fsCoordName = fsVaryingNamePtr;
-            const char* attrName =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0])->c_str();
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsVaryingName, attrName);
-        } else {
-            fsCoordSLType = fEffectMatrix.get()->emitCode(builder, key, &fsCoordName);
-        }
         builder->fsCodeAppendf("\t%s = ", outputColor);
         builder->fsAppendTextureLookupAndModulate(inputColor,
                                                   samplers[0],
-                                                  fsCoordName.c_str(),
-                                                  fsCoordSLType);
+                                                  coords[0].c_str(),
+                                                  coords[0].type());
         builder->fsCodeAppend(";\n");
     }
 
-    static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
-        const GrSimpleTextureEffect& ste = drawEffect.castEffect<GrSimpleTextureEffect>();
-        if (GrEffect::kCustom_CoordsType == ste.coordsType()) {
-            return 1 << GrGLEffectMatrix::kKeyBits;
-        } else {
-            return GrGLEffectMatrix::GenKey(ste.getMatrix(),
-                                            drawEffect,
-                                            ste.coordsType(),
-                                            ste.texture(0));
-        }
-    }
-
-    virtual void setData(const GrGLUniformManager& uman,
-                         const GrDrawEffect& drawEffect) SK_OVERRIDE {
-        const GrSimpleTextureEffect& ste = drawEffect.castEffect<GrSimpleTextureEffect>();
-        if (GrEffect::kCustom_CoordsType == ste.coordsType()) {
-            SkASSERT(ste.getMatrix().isIdentity());
-        } else {
-            fEffectMatrix.get()->setData(uman, ste.getMatrix(), drawEffect, ste.texture(0));
-        }
-    }
-
 private:
-    SkTLazy<GrGLEffectMatrix> fEffectMatrix;
     typedef GrGLEffect INHERITED;
 };
 
@@ -121,17 +69,12 @@ GrEffectRef* GrSimpleTextureEffect::TestCreate(SkRandom* random,
     GrTextureParams params(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
                                                            GrTextureParams::kNone_FilterMode);
 
-    static const CoordsType kCoordsTypes[] = {
-        kLocal_CoordsType,
-        kPosition_CoordsType,
-        kCustom_CoordsType
+    static const GrCoordSet kCoordSets[] = {
+        kLocal_GrCoordSet,
+        kPosition_GrCoordSet
     };
-    CoordsType coordsType = kCoordsTypes[random->nextULessThan(GR_ARRAY_COUNT(kCoordsTypes))];
+    GrCoordSet coordSet = kCoordSets[random->nextULessThan(GR_ARRAY_COUNT(kCoordSets))];
 
-    if (kCustom_CoordsType == coordsType) {
-        return GrSimpleTextureEffect::CreateWithCustomCoords(textures[texIdx], params);
-    } else {
-        const SkMatrix& matrix = GrEffectUnitTest::TestMatrix(random);
-        return GrSimpleTextureEffect::Create(textures[texIdx], matrix);
-    }
+    const SkMatrix& matrix = GrEffectUnitTest::TestMatrix(random);
+    return GrSimpleTextureEffect::Create(textures[texIdx], matrix, coordSet);
 }

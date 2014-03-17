@@ -38,27 +38,27 @@ class V8ArrayBufferDeallocationObserver: public WTF::ArrayBufferDeallocationObse
 public:
     virtual void arrayBufferDeallocated(unsigned sizeInBytes)
     {
-        v8::V8::AdjustAmountOfExternalAllocatedMemory(-static_cast<int>(sizeInBytes));
+        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-static_cast<int>(sizeInBytes));
     }
-    static V8ArrayBufferDeallocationObserver* instance();
+    static V8ArrayBufferDeallocationObserver* instanceTemplate();
 
 protected:
     virtual void blinkAllocatedMemory(unsigned sizeInBytes) OVERRIDE
     {
-        v8::V8::AdjustAmountOfExternalAllocatedMemory(static_cast<int>(sizeInBytes));
+        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(static_cast<int>(sizeInBytes));
     }
 };
 
 class V8ArrayBuffer {
 public:
-    static bool HasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
-    static bool HasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
+    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
+    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
     static ArrayBuffer* toNative(v8::Handle<v8::Object>);
     static void derefObject(void*);
-    static WrapperTypeInfo info;
+    static const WrapperTypeInfo wrapperTypeInfo;
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount;
-    static void installPerContextProperties(v8::Handle<v8::Object>, ArrayBuffer*, v8::Isolate*) { }
-    static void installPerContextPrototypeProperties(v8::Handle<v8::Object>, v8::Isolate*) { }
+    static void installPerContextEnabledProperties(v8::Handle<v8::Object>, ArrayBuffer*, v8::Isolate*) { }
+    static void installPerContextEnabledMethods(v8::Handle<v8::Object>, v8::Isolate*) { }
 
     static inline void* toInternalPointer(ArrayBuffer* impl)
     {
@@ -78,7 +78,7 @@ private:
 template<>
 class WrapperTypeTraits<ArrayBuffer > {
 public:
-    static WrapperTypeInfo* info() { return &V8ArrayBuffer::info; }
+    static const WrapperTypeInfo* wrapperTypeInfo() { return &V8ArrayBuffer::wrapperTypeInfo; }
 };
 
 
@@ -92,7 +92,7 @@ inline v8::Handle<v8::Object> wrap(ArrayBuffer* impl, v8::Handle<v8::Object> cre
 inline v8::Handle<v8::Value> toV8(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (UNLIKELY(!impl))
-        return v8NullWithCheck(isolate);
+        return v8::Null(isolate);
     v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapper<V8ArrayBuffer>(impl, isolate);
     if (!wrapper.IsEmpty())
         return wrapper;
@@ -100,43 +100,43 @@ inline v8::Handle<v8::Value> toV8(ArrayBuffer* impl, v8::Handle<v8::Object> crea
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, ArrayBuffer* impl, v8::Handle<v8::Object> creationContext)
+inline void v8SetReturnValue(const CallbackInfo& info, ArrayBuffer* impl)
 {
     if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
+        v8SetReturnValueNull(info);
         return;
     }
-    if (DOMDataStore::setReturnValueFromWrapper<V8ArrayBuffer>(callbackInfo.GetReturnValue(), impl))
+    if (DOMDataStore::setReturnValueFromWrapper<V8ArrayBuffer>(info.GetReturnValue(), impl))
         return;
-    v8::Handle<v8::Object> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
+    v8::Handle<v8::Object> wrapper = wrap(impl, info.Holder(), info.GetIsolate());
+    v8SetReturnValue(info, wrapper);
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, ArrayBuffer* impl, v8::Handle<v8::Object> creationContext)
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& info, ArrayBuffer* impl)
 {
-    ASSERT(worldType(callbackInfo.GetIsolate()) == MainWorld);
+    ASSERT(worldType(info.GetIsolate()) == MainWorld);
     if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
+        v8SetReturnValueNull(info);
         return;
     }
-    if (DOMDataStore::setReturnValueFromWrapperForMainWorld<V8ArrayBuffer>(callbackInfo.GetReturnValue(), impl))
+    if (DOMDataStore::setReturnValueFromWrapperForMainWorld<V8ArrayBuffer>(info.GetReturnValue(), impl))
         return;
-    v8::Handle<v8::Value> wrapper = wrap(impl, creationContext, callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
+    v8::Handle<v8::Value> wrapper = wrap(impl, info.Holder(), info.GetIsolate());
+    v8SetReturnValue(info, wrapper);
 }
 
 template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, ArrayBuffer* impl, Wrappable* wrappable)
+inline void v8SetReturnValueFast(const CallbackInfo& info, ArrayBuffer* impl, Wrappable* wrappable)
 {
     if (UNLIKELY(!impl)) {
-        v8SetReturnValueNull(callbackInfo);
+        v8SetReturnValueNull(info);
         return;
     }
-    if (DOMDataStore::setReturnValueFromWrapperFast<V8ArrayBuffer>(callbackInfo.GetReturnValue(), impl, callbackInfo.Holder(), wrappable))
+    if (DOMDataStore::setReturnValueFromWrapperFast<V8ArrayBuffer>(info.GetReturnValue(), impl, info.Holder(), wrappable))
         return;
-    v8::Handle<v8::Object> wrapper = wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
-    v8SetReturnValue(callbackInfo, wrapper);
+    v8::Handle<v8::Object> wrapper = wrap(impl, info.Holder(), info.GetIsolate());
+    v8SetReturnValue(info, wrapper);
 }
 
 inline v8::Handle<v8::Value> toV8(PassRefPtr< ArrayBuffer > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -145,21 +145,21 @@ inline v8::Handle<v8::Value> toV8(PassRefPtr< ArrayBuffer > impl, v8::Handle<v8:
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValue(const CallbackInfo& callbackInfo, PassRefPtr< ArrayBuffer > impl, v8::Handle<v8::Object> creationContext)
+inline void v8SetReturnValue(const CallbackInfo& info, PassRefPtr< ArrayBuffer > impl)
 {
-    v8SetReturnValue(callbackInfo, impl.get(), creationContext);
+    v8SetReturnValue(info, impl.get());
 }
 
 template<class CallbackInfo>
-inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, PassRefPtr< ArrayBuffer > impl, v8::Handle<v8::Object> creationContext)
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& info, PassRefPtr< ArrayBuffer > impl)
 {
-    v8SetReturnValueForMainWorld(callbackInfo, impl.get(), creationContext);
+    v8SetReturnValueForMainWorld(info, impl.get());
 }
 
 template<class CallbackInfo, class Wrappable>
-inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, PassRefPtr< ArrayBuffer > impl, Wrappable* wrappable)
+inline void v8SetReturnValueFast(const CallbackInfo& info, PassRefPtr< ArrayBuffer > impl, Wrappable* wrappable)
 {
-    v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
+    v8SetReturnValueFast(info, impl.get(), wrappable);
 }
 
 } // namespace WebCore

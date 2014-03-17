@@ -28,12 +28,12 @@ namespace WebCore {
 
 class SVGTextElement FINAL : public SVGTextPositioningElement {
 public:
-    static PassRefPtr<SVGTextElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGTextElement> create(Document&);
 
     virtual AffineTransform animatedLocalTransform() const;
 
 private:
-    SVGTextElement(const QualifiedName&, Document&);
+    explicit SVGTextElement(Document&);
 
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
@@ -41,11 +41,7 @@ private:
     virtual bool childShouldCreateRenderer(const Node& child) const;
 };
 
-inline SVGTextElement* toSVGTextElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::textTag));
-    return static_cast<SVGTextElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGTextElement, hasTagName(SVGNames::textTag));
 
 } // namespace WebCore
 

@@ -7,6 +7,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "ui/events/event.h"
 #include "ui/gfx/render_text.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/grid_layout.h"
@@ -45,10 +47,13 @@ class MultilineExample::RenderTextView : public View {
     // TODO(ckocagil): Why does this happen?
     if (w == 0)
       return View::GetHeightForWidth(w);
-    gfx::Rect rect = render_text_->display_rect();
+    const gfx::Rect old_rect = render_text_->display_rect();
+    gfx::Rect rect = old_rect;
     rect.set_width(w - GetInsets().width());
     render_text_->SetDisplayRect(rect);
-    return render_text_->GetStringSize().height() + GetInsets().height();
+    int height = render_text_->GetStringSize().height() + GetInsets().height();
+    render_text_->SetDisplayRect(old_rect);
+    return height;
   }
 
   void SetText(const string16& new_contents) {

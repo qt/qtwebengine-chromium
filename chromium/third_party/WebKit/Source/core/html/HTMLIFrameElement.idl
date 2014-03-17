@@ -22,23 +22,22 @@ interface HTMLIFrameElement : HTMLElement {
     [Reflect] attribute DOMString align;
     [Reflect] attribute DOMString frameBorder;
     [Reflect] attribute DOMString height;
-    [Reflect] attribute DOMString longDesc;
-    [Reflect] attribute DOMString marginHeight;
-    [Reflect] attribute DOMString marginWidth;
+    [Reflect, URL] attribute DOMString longDesc;
+    [Reflect, TreatNullAs=NullString] attribute DOMString marginHeight;
+    [Reflect, TreatNullAs=NullString] attribute DOMString marginWidth;
     [Reflect] attribute DOMString name;
-    [Reflect] attribute DOMString sandbox;
-    [Reflect, EnabledAtRuntime=SeamlessIFrames] attribute boolean seamless;
+    [Reflect, TreatNullAs=NullString] attribute DOMString sandbox;
+    [Reflect, RuntimeEnabled=SeamlessIFrames] attribute boolean seamless;
     [Reflect] attribute DOMString scrolling;
-    [Reflect, URL] attribute DOMString src;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
     [Reflect] attribute DOMString srcdoc;
     [Reflect] attribute DOMString width;
 
     // Introduced in DOM Level 2:
-    [CheckSecurityForNode] readonly attribute Document contentDocument;
+    [CheckSecurity=Node] readonly attribute Document contentDocument;
 
     // Extensions
     readonly attribute Window contentWindow;
 
-    [CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
+    [CheckSecurity=Node, RaisesException] SVGDocument getSVGDocument();
 };
-

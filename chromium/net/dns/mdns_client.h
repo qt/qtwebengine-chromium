@@ -16,6 +16,7 @@
 
 namespace net {
 
+class DatagramServerSocket;
 class RecordParsed;
 
 // Represents a one-time record lookup. A transaction takes one
@@ -120,6 +121,15 @@ class NET_EXPORT MDnsListener {
   virtual uint16 GetType() const = 0;
 };
 
+// Creates bound datagram sockets ready to use by MDnsClient.
+class NET_EXPORT MDnsSocketFactory {
+ public:
+  virtual ~MDnsSocketFactory() {}
+  virtual void CreateSockets(ScopedVector<DatagramServerSocket>* sockets) = 0;
+
+  static scoped_ptr<MDnsSocketFactory> CreateDefault();
+};
+
 // Listens for Multicast DNS on the local network. You can access information
 // regarding multicast DNS either by creating an |MDnsListener| to be notified
 // of new records, or by creating an |MDnsTransaction| to look up the value of a
@@ -144,7 +154,7 @@ class NET_EXPORT MDnsClient {
       int flags,
       const MDnsTransaction::ResultCallback& callback) = 0;
 
-  virtual bool StartListening() = 0;
+  virtual bool StartListening(MDnsSocketFactory* factory) = 0;
 
   // Do not call this inside callbacks from related MDnsListener and
   // MDnsTransaction objects.
@@ -155,7 +165,20 @@ class NET_EXPORT MDnsClient {
   static scoped_ptr<MDnsClient> CreateDefault();
 };
 
-IPEndPoint NET_EXPORT GetMDnsIPEndPoint(AddressFamily address_family);
+NET_EXPORT IPEndPoint GetMDnsIPEndPoint(AddressFamily address_family);
+
+typedef std::vector<std::pair<uint32, AddressFamily> > InterfaceIndexFamilyList;
+// Returns pairs of interface and address family to bind. Current
+// implementation returns unique list of all available interfaces.
+NET_EXPORT InterfaceIndexFamilyList GetMDnsInterfacesToBind();
+
+// Create sockets, binds socket to MDns endpoint, and sets multicast interface
+// and joins multicast group on for |interface_index|.
+// Returns NULL if failed.
+NET_EXPORT scoped_ptr<DatagramServerSocket> CreateAndBindMDnsSocket(
+    AddressFamily address_family,
+    uint32 interface_index);
 
 }  // namespace net
+
 #endif  // NET_DNS_MDNS_CLIENT_H_

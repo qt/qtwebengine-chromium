@@ -37,18 +37,21 @@ namespace WebCore {
 class Settings;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebSettingsImpl : public WebSettings {
 public:
     explicit WebSettingsImpl(WebCore::Settings*);
     virtual ~WebSettingsImpl() { }
 
+    virtual bool mainFrameResizesAreOrientationChanges() const;
     virtual bool deviceSupportsTouch();
     virtual bool scrollAnimatorEnabled() const;
     virtual bool touchEditingEnabled() const;
     virtual bool viewportEnabled() const;
+    virtual bool viewportMetaEnabled() const;
     virtual void setAccelerated2dCanvasEnabled(bool);
+    virtual void setAccelerated2dCanvasMSAASampleCount(int);
     virtual void setAcceleratedCompositingEnabled(bool);
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool);
     virtual void setAcceleratedCompositingForAnimationEnabled(bool);
@@ -71,10 +74,11 @@ public:
     virtual void setAllowUniversalAccessFromFileURLs(bool);
     virtual void setAntialiased2dCanvasEnabled(bool);
     virtual void setAsynchronousSpellCheckingEnabled(bool);
-    virtual void setAuthorAndUserStylesEnabled(bool);
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool);
     virtual void setCaretBrowsingEnabled(bool);
+    virtual void setClobberUserAgentInitialScaleQuirk(bool);
     virtual void setCompositedScrollingForFramesEnabled(bool);
+    virtual void setCompositorTouchHitTesting(bool);
     virtual void setCookieEnabled(bool);
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setDNSPrefetchingEnabled(bool);
@@ -85,6 +89,7 @@ public:
     virtual void setDefaultVideoPosterURL(const WebString&);
     virtual void setDeferred2dCanvasEnabled(bool);
     virtual void setDeferredImageDecodingEnabled(bool);
+    virtual void setDeviceScaleAdjustment(float);
     virtual void setDeviceSupportsMouse(bool);
     virtual void setDeviceSupportsTouch(bool);
     virtual void setDoubleTapToZoomEnabled(bool);
@@ -93,9 +98,7 @@ public:
     virtual void setEditingBehavior(EditingBehavior);
     virtual void setEnableScrollAnimator(bool);
     virtual void setEnableTouchAdjustment(bool);
-    virtual void setExperimentalCSSCustomFilterEnabled(bool);
     virtual void setRegionBasedColumnsEnabled(bool);
-    virtual void setCSSStickyPositionEnabled(bool);
     virtual void setExperimentalWebGLEnabled(bool);
     virtual void setExperimentalWebSocketEnabled(bool);
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
@@ -111,10 +114,14 @@ public:
     virtual void setJavaScriptCanAccessClipboard(bool);
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool);
     virtual void setJavaScriptEnabled(bool);
+    virtual void setLayerSquashingEnabled(bool);
     virtual void setLayoutFallbackWidth(int);
     virtual void setLoadsImagesAutomatically(bool);
     virtual void setLoadWithOverviewMode(bool);
     virtual void setLocalStorageEnabled(bool);
+    virtual void setMainFrameClipsContent(bool);
+    virtual void setMainFrameResizesAreOrientationChanges(bool);
+    virtual void setMaxTouchPoints(int);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
     virtual void setMediaFullscreenRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
@@ -134,6 +141,7 @@ public:
     virtual void setPluginsEnabled(bool);
     virtual void setPrivilegedWebGLExtensionsEnabled(bool);
     virtual void setRenderVSyncNotificationEnabled(bool);
+    virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool);
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setSelectTrailingWhitespaceEnabled(bool);
     virtual void setSelectionIncludesAltImageText(bool);
@@ -142,6 +150,7 @@ public:
     virtual void setShouldDisplaySubtitles(bool);
     virtual void setShouldDisplayTextDescriptions(bool);
     virtual void setShouldPrintBackgrounds(bool);
+    virtual void setShouldClearDocumentBackground(bool);
     virtual void setShouldRespectImageOrientation(bool);
     virtual void setShowFPSCounter(bool);
     virtual void setShowPaintRects(bool);
@@ -154,27 +163,31 @@ public:
     virtual void setSyncXHRInDocumentsEnabled(bool);
     virtual void setTextAreasAreResizable(bool);
     virtual void setTextAutosizingEnabled(bool);
-    virtual void setTextAutosizingFontScaleFactor(float);
+    virtual void setAccessibilityFontScaleFactor(float);
     virtual void setTouchDragDropEnabled(bool);
     virtual void setTouchEditingEnabled(bool);
     virtual void setThreadedHTMLParser(bool);
     virtual void setUnifiedTextCheckerEnabled(bool);
     virtual void setUnsafePluginPastingEnabled(bool);
-    virtual void setUserStyleSheetLocation(const WebURL&);
     virtual void setUsesEncodingDetector(bool);
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool);
     virtual void setUseSolidColorScrollbars(bool);
     virtual void setUseWideViewport(bool);
     virtual void setValidationMessageTimerMagnification(int);
     virtual void setViewportEnabled(bool);
+    virtual void setViewportMetaEnabled(bool);
     virtual void setViewportMetaLayoutSizeQuirk(bool);
+    virtual void setViewportMetaMergeContentQuirk(bool);
+    virtual void setViewportMetaNonUserScalableQuirk(bool);
     virtual void setViewportMetaZeroValuesQuirk(bool);
-    virtual void setVisualWordMovementEnabled(bool);
     virtual void setWebAudioEnabled(bool);
     virtual void setWebGLErrorsToConsoleEnabled(bool);
     virtual void setWebSecurityEnabled(bool);
     virtual void setWideViewportQuirkEnabled(bool);
     virtual void setXSSAuditorEnabled(bool);
+
+    // FIXME: Make chromium stop calling this and delete the method.
+    virtual void setVisualWordMovementEnabled(bool) { }
 
     bool showFPSCounter() const { return m_showFPSCounter; }
     bool showPaintRects() const { return m_showPaintRects; }
@@ -185,6 +198,8 @@ public:
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool supportDeprecatedTargetDensityDPI() const { return m_supportDeprecatedTargetDensityDPI; }
     bool viewportMetaLayoutSizeQuirk() const { return m_viewportMetaLayoutSizeQuirk; }
+    bool viewportMetaNonUserScalableQuirk() const { return m_viewportMetaNonUserScalableQuirk; }
+    bool clobberUserAgentInitialScaleQuirk() const { return m_clobberUserAgentInitialScaleQuirk; }
     int pinchOverlayScrollbarThickness() const { return m_pinchOverlayScrollbarThickness; }
 
 private:
@@ -202,9 +217,18 @@ private:
     // the Android SDK prior to and including version 18. Presumably, this
     // can be removed any time after 2015. See http://crbug.com/277369.
     bool m_viewportMetaLayoutSizeQuirk;
+    // This quirk is to maintain compatibility with Android apps built on
+    // the Android SDK prior to and including version 18. Presumably, this
+    // can be removed any time after 2015. See http://crbug.com/312691.
+    bool m_viewportMetaNonUserScalableQuirk;
+    // This quirk is to maintain compatibility with Android apps built on
+    // the Android SDK prior to and including version 18. Presumably, this
+    // can be removed any time after 2015. See http://crbug.com/313754.
+    bool m_clobberUserAgentInitialScaleQuirk;
     int m_pinchOverlayScrollbarThickness;
+    bool m_mainFrameResizesAreOrientationChanges;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -40,15 +40,16 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8PerContextData.h"
-#include "core/dom/CustomElementCallbackDispatcher.h"
-#include "core/dom/CustomElementDefinition.h"
-#include "core/dom/CustomElementDescriptor.h"
-#include "core/dom/CustomElementException.h"
 #include "core/dom/Document.h"
+#include "core/dom/custom/CustomElementCallbackDispatcher.h"
+#include "core/dom/custom/CustomElementDefinition.h"
+#include "core/dom/custom/CustomElementDescriptor.h"
+#include "core/dom/custom/CustomElementException.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
@@ -69,20 +70,20 @@ bool CustomElementConstructorBuilder::isFeatureAllowed() const
     return !DOMWrapperWorld::isolatedWorld(m_context);
 }
 
-bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, QualifiedName& tagName, ExceptionState& es)
+bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, QualifiedName& tagName, ExceptionState& exceptionState)
 {
     ASSERT(m_prototype.IsEmpty());
 
     ScriptValue prototypeScriptValue;
     if (m_options->get("prototype", prototypeScriptValue) && !prototypeScriptValue.isNull()) {
-        m_prototype = prototypeScriptValue.v8Value().As<v8::Object>();
-        if (m_prototype.IsEmpty()) {
-            CustomElementException::throwException(CustomElementException::PrototypeNotAnObject, type, es);
+        if (!prototypeScriptValue.isObject()) {
+            CustomElementException::throwException(CustomElementException::PrototypeNotAnObject, type, exceptionState);
             return false;
         }
+        m_prototype = prototypeScriptValue.v8Value().As<v8::Object>();
     } else {
         m_prototype = v8::Object::New();
-        v8::Local<v8::Object> basePrototype = V8PerContextData::from(m_context)->prototypeForType(&V8HTMLElement::info);
+        v8::Local<v8::Object> basePrototype = V8PerContextData::from(m_context)->prototypeForType(&V8HTMLElement::wrapperTypeInfo);
         if (!basePrototype.IsEmpty())
             m_prototype->SetPrototype(basePrototype);
     }
@@ -92,12 +93,12 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
 
     if (!V8PerContextData::from(m_context)) {
         // FIXME: This should generate an InvalidContext exception at a later point.
-        CustomElementException::throwException(CustomElementException::ContextDestroyedCheckingPrototype, type, es);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedCheckingPrototype, type, exceptionState);
         return false;
     }
 
     AtomicString namespaceURI = HTMLNames::xhtmlNamespaceURI;
-    if (hasValidPrototypeChainFor(&V8SVGElement::info))
+    if (hasValidPrototypeChainFor(&V8SVGElement::wrapperTypeInfo))
         namespaceURI = SVGNames::svgNamespaceURI;
 
     AtomicString localName;
@@ -106,19 +107,23 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
         localName = extends.lower();
 
         if (!Document::isValidName(localName)) {
-            CustomElementException::throwException(CustomElementException::ExtendsIsInvalidName, type, es);
+            CustomElementException::throwException(CustomElementException::ExtendsIsInvalidName, type, exceptionState);
             return false;
         }
         if (CustomElement::isValidName(localName)) {
-            CustomElementException::throwException(CustomElementException::ExtendsIsCustomElementName, type, es);
+            CustomElementException::throwException(CustomElementException::ExtendsIsCustomElementName, type, exceptionState);
             return false;
         }
     } else {
+        if (namespaceURI == SVGNames::svgNamespaceURI) {
+            CustomElementException::throwException(CustomElementException::ExtendsIsInvalidName, type, exceptionState);
+            return false;
+        }
         localName = type;
     }
 
     if (!extendsProvidedAndNonNull)
-        m_wrapperType = &V8HTMLElement::info;
+        m_wrapperType = &V8HTMLElement::wrapperTypeInfo;
     else if (namespaceURI == HTMLNames::xhtmlNamespaceURI)
         m_wrapperType = findWrapperTypeForHTMLTagName(localName);
     else
@@ -133,7 +138,7 @@ PassRefPtr<CustomElementLifecycleCallbacks> CustomElementConstructorBuilder::cre
 {
     ASSERT(!m_prototype.IsEmpty());
 
-    RefPtr<ScriptExecutionContext> scriptExecutionContext(toScriptExecutionContext(m_context));
+    RefPtr<ExecutionContext> executionContext(toExecutionContext(m_context));
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
@@ -144,19 +149,19 @@ PassRefPtr<CustomElementLifecycleCallbacks> CustomElementConstructorBuilder::cre
     v8::Handle<v8::Function> leftView = retrieveCallback(isolate, "leftViewCallback");
     v8::Handle<v8::Function> attributeChanged = retrieveCallback(isolate, "attributeChangedCallback");
 
-    m_callbacks = V8CustomElementLifecycleCallbacks::create(scriptExecutionContext.get(), m_prototype, created, enteredView, leftView, attributeChanged);
+    m_callbacks = V8CustomElementLifecycleCallbacks::create(executionContext.get(), m_prototype, created, enteredView, leftView, attributeChanged);
     return m_callbacks.get();
 }
 
 v8::Handle<v8::Function> CustomElementConstructorBuilder::retrieveCallback(v8::Isolate* isolate, const char* name)
 {
-    v8::Handle<v8::Value> value = m_prototype->Get(v8String(name, isolate));
+    v8::Handle<v8::Value> value = m_prototype->Get(v8String(isolate, name));
     if (value.IsEmpty() || !value->IsFunction())
         return v8::Handle<v8::Function>();
     return value.As<v8::Function>();
 }
 
-bool CustomElementConstructorBuilder::createConstructor(Document* document, CustomElementDefinition* definition, ExceptionState& es)
+bool CustomElementConstructorBuilder::createConstructor(Document* document, CustomElementDefinition* definition, ExceptionState& exceptionState)
 {
     ASSERT(!m_prototype.IsEmpty());
     ASSERT(m_constructor.IsEmpty());
@@ -164,34 +169,34 @@ bool CustomElementConstructorBuilder::createConstructor(Document* document, Cust
 
     v8::Isolate* isolate = m_context->GetIsolate();
 
-    if (!prototypeIsValid(definition->descriptor().type(), es))
+    if (!prototypeIsValid(definition->descriptor().type(), exceptionState))
         return false;
 
-    v8::Local<v8::FunctionTemplate> constructorTemplate = v8::FunctionTemplate::New();
+    v8::Local<v8::FunctionTemplate> constructorTemplate = v8::FunctionTemplate::New(isolate);
     constructorTemplate->SetCallHandler(constructCustomElement);
     m_constructor = constructorTemplate->GetFunction();
     if (m_constructor.IsEmpty()) {
-        CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, definition->descriptor().type(), es);
+        CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, definition->descriptor().type(), exceptionState);
         return false;
     }
 
     const CustomElementDescriptor& descriptor = definition->descriptor();
 
-    v8::Handle<v8::String> v8TagName = v8String(descriptor.localName(), isolate);
+    v8::Handle<v8::String> v8TagName = v8String(isolate, descriptor.localName());
     v8::Handle<v8::Value> v8Type;
     if (descriptor.isTypeExtension())
-        v8Type = v8String(descriptor.type(), isolate);
+        v8Type = v8String(isolate, descriptor.type());
     else
         v8Type = v8::Null(isolate);
 
     m_constructor->SetName(v8Type->IsNull() ? v8TagName : v8Type.As<v8::String>());
 
     V8HiddenPropertyName::setNamedHiddenReference(m_constructor, "customElementDocument", toV8(document, m_context->Global(), isolate));
-    V8HiddenPropertyName::setNamedHiddenReference(m_constructor, "customElementNamespaceURI", v8String(descriptor.namespaceURI(), isolate));
+    V8HiddenPropertyName::setNamedHiddenReference(m_constructor, "customElementNamespaceURI", v8String(isolate, descriptor.namespaceURI()));
     V8HiddenPropertyName::setNamedHiddenReference(m_constructor, "customElementTagName", v8TagName);
     V8HiddenPropertyName::setNamedHiddenReference(m_constructor, "customElementType", v8Type);
 
-    v8::Handle<v8::String> prototypeKey = v8String("prototype", isolate);
+    v8::Handle<v8::String> prototypeKey = v8String(isolate, "prototype");
     ASSERT(m_constructor->HasOwnProperty(prototypeKey));
     // This sets the property *value*; calling Set is safe because
     // "prototype" is a non-configurable data property so there can be
@@ -203,20 +208,20 @@ bool CustomElementConstructorBuilder::createConstructor(Document* document, Cust
     m_constructor->ForceSet(prototypeKey, m_prototype, v8::PropertyAttribute(v8::ReadOnly | v8::DontEnum | v8::DontDelete));
 
     V8HiddenPropertyName::setNamedHiddenReference(m_prototype, "customElementIsInterfacePrototypeObject", v8::True(isolate));
-    m_prototype->ForceSet(v8String("constructor", isolate), m_constructor, v8::DontEnum);
+    m_prototype->ForceSet(v8String(isolate, "constructor"), m_constructor, v8::DontEnum);
 
     return true;
 }
 
-bool CustomElementConstructorBuilder::prototypeIsValid(const AtomicString& type, ExceptionState& es) const
+bool CustomElementConstructorBuilder::prototypeIsValid(const AtomicString& type, ExceptionState& exceptionState) const
 {
     if (m_prototype->InternalFieldCount() || !m_prototype->GetHiddenValue(V8HiddenPropertyName::customElementIsInterfacePrototypeObject(m_context->GetIsolate())).IsEmpty()) {
-        CustomElementException::throwException(CustomElementException::PrototypeInUse, type, es);
+        CustomElementException::throwException(CustomElementException::PrototypeInUse, type, exceptionState);
         return false;
     }
 
-    if (m_prototype->GetPropertyAttributes(v8String("constructor", m_context->GetIsolate())) & v8::DontDelete) {
-        CustomElementException::throwException(CustomElementException::ConstructorPropertyNotConfigurable, type, es);
+    if (m_prototype->GetPropertyAttributes(v8String(m_context->GetIsolate(), "constructor")) & v8::DontDelete) {
+        CustomElementException::throwException(CustomElementException::ConstructorPropertyNotConfigurable, type, exceptionState);
         return false;
     }
 
@@ -235,7 +240,7 @@ ScriptValue CustomElementConstructorBuilder::bindingsReturnValue() const
     return ScriptValue(m_constructor, m_context->GetIsolate());
 }
 
-bool CustomElementConstructorBuilder::hasValidPrototypeChainFor(WrapperTypeInfo* type) const
+bool CustomElementConstructorBuilder::hasValidPrototypeChainFor(const WrapperTypeInfo* type) const
 {
     v8::Handle<v8::Object> elementPrototype = V8PerContextData::from(m_context)->prototypeForType(type);
     if (elementPrototype.IsEmpty())
@@ -251,32 +256,32 @@ bool CustomElementConstructorBuilder::hasValidPrototypeChainFor(WrapperTypeInfo*
     return false;
 }
 
-static void constructCustomElement(const v8::FunctionCallbackInfo<v8::Value>& args)
+static void constructCustomElement(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Isolate* isolate = args.GetIsolate();
+    v8::Isolate* isolate = info.GetIsolate();
 
-    if (!args.IsConstructCall()) {
+    if (!info.IsConstructCall()) {
         throwTypeError("DOM object constructor cannot be called as a function.", isolate);
         return;
     }
 
-    if (args.Length() > 0) {
-        throwTypeError(isolate);
+    if (info.Length() > 0) {
+        throwUninformativeAndGenericTypeError(isolate);
         return;
     }
 
-    Document* document = V8Document::toNative(args.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementDocument(isolate)).As<v8::Object>());
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, namespaceURI, args.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementNamespaceURI(isolate)));
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, tagName, args.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementTagName(isolate)));
-    v8::Handle<v8::Value> maybeType = args.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementType(isolate));
+    Document* document = V8Document::toNative(info.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementDocument(isolate)).As<v8::Object>());
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, namespaceURI, info.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementNamespaceURI(isolate)));
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, tagName, info.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementTagName(isolate)));
+    v8::Handle<v8::Value> maybeType = info.Callee()->GetHiddenValue(V8HiddenPropertyName::customElementType(isolate));
     V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, maybeType);
 
-    ExceptionState es(args.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "CustomElement", info.Holder(), info.GetIsolate());
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
-    RefPtr<Element> element = document->createElementNS(namespaceURI, tagName, maybeType->IsNull() ? nullAtom : type, es);
-    if (es.throwIfNeeded())
+    RefPtr<Element> element = document->createElementNS(namespaceURI, tagName, maybeType->IsNull() ? nullAtom : type, exceptionState);
+    if (exceptionState.throwIfNeeded())
         return;
-    v8SetReturnValueFast(args, element.release(), document);
+    v8SetReturnValueFast(info, element.release(), document);
 }
 
 } // namespace WebCore

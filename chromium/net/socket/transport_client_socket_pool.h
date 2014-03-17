@@ -93,6 +93,12 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
     STATE_NONE,
   };
 
+  enum ConnectInterval {
+    CONNECT_INTERVAL_LE_10MS,
+    CONNECT_INTERVAL_LE_20MS,
+    CONNECT_INTERVAL_GT_20MS,
+  };
+
   void OnIOComplete(int result);
 
   // Runs the state transition loop.
@@ -124,6 +130,9 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
   scoped_ptr<AddressList> fallback_addresses_;
   base::TimeTicks fallback_connect_start_time_;
   base::OneShotTimer<TransportConnectJob> fallback_timer_;
+
+  // Track the interval between this connect and previous connect.
+  ConnectInterval interval_between_connects_;
 
   DISALLOW_COPY_AND_ASSIGN(TransportConnectJob);
 };

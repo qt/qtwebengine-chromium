@@ -27,14 +27,14 @@
 #include "ScrollbarGroup.h"
 
 #include "WebPluginScrollbarImpl.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Scrollbar.h"
-#include "core/platform/ScrollbarTheme.h"
+#include "core/frame/FrameView.h"
+#include "platform/scroll/Scrollbar.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/WebRect.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 ScrollbarGroup::ScrollbarGroup(FrameView* frameView, const IntRect& frameRect)
     : m_frameView(frameView)
@@ -56,11 +56,11 @@ void ScrollbarGroup::scrollbarCreated(WebPluginScrollbarImpl* scrollbar)
     if (scrollbar->scrollbar()->orientation() == HorizontalScrollbar) {
         ASSERT(!m_horizontalScrollbar);
         m_horizontalScrollbar = scrollbar;
-        didAddHorizontalScrollbar(scrollbar->scrollbar());
+        didAddScrollbar(scrollbar->scrollbar(), HorizontalScrollbar);
     } else {
         ASSERT(!m_verticalScrollbar);
         m_verticalScrollbar = scrollbar;
-        didAddVerticalScrollbar(scrollbar->scrollbar());
+        didAddScrollbar(scrollbar->scrollbar(), VerticalScrollbar);
     }
 
     if (!hadScrollbars) {
@@ -72,11 +72,11 @@ void ScrollbarGroup::scrollbarCreated(WebPluginScrollbarImpl* scrollbar)
 void ScrollbarGroup::scrollbarDestroyed(WebPluginScrollbarImpl* scrollbar)
 {
     if (scrollbar == m_horizontalScrollbar) {
-        willRemoveHorizontalScrollbar(scrollbar->scrollbar());
+        willRemoveScrollbar(scrollbar->scrollbar(), HorizontalScrollbar);
         m_horizontalScrollbar = 0;
     } else {
         ASSERT(scrollbar == m_verticalScrollbar);
-        willRemoveVerticalScrollbar(scrollbar->scrollbar());
+        willRemoveScrollbar(scrollbar->scrollbar(), VerticalScrollbar);
         m_verticalScrollbar = 0;
     }
 
@@ -158,7 +158,7 @@ IntPoint ScrollbarGroup::convertFromContainingViewToScrollbar(const Scrollbar* s
         return m_horizontalScrollbar->convertFromContainingViewToScrollbar(parentPoint);
     if (m_verticalScrollbar && scrollbar == m_verticalScrollbar->scrollbar())
         return m_verticalScrollbar->convertFromContainingViewToScrollbar(parentPoint);
-    WEBKIT_ASSERT_NOT_REACHED();
+    BLINK_ASSERT_NOT_REACHED();
     return IntPoint();
 }
 
@@ -195,7 +195,7 @@ int ScrollbarGroup::visibleHeight() const
         return m_verticalScrollbar->scrollbar()->height();
     if (m_horizontalScrollbar)
         return m_horizontalScrollbar->scrollbar()->height();
-    WEBKIT_ASSERT_NOT_REACHED();
+    BLINK_ASSERT_NOT_REACHED();
     return 0;
 }
 
@@ -205,7 +205,7 @@ int ScrollbarGroup::visibleWidth() const
         return m_horizontalScrollbar->scrollbar()->width();
     if (m_verticalScrollbar)
         return m_verticalScrollbar->scrollbar()->width();
-    WEBKIT_ASSERT_NOT_REACHED();
+    BLINK_ASSERT_NOT_REACHED();
     return 0;
 }
 
@@ -292,4 +292,4 @@ int ScrollbarGroup::pageStep(ScrollbarOrientation orientation) const
     return std::max(pageStep, 1);
 }
 
-} // namespace WebKit
+} // namespace blink

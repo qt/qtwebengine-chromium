@@ -32,20 +32,25 @@
 #define MediaSourceBase_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "core/html/HTMLMediaSource.h"
 #include "core/html/URLRegistry.h"
-#include "core/platform/graphics/MediaSourcePrivate.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
+
+namespace blink {
+class WebMediaSource;
+class WebSourceBuffer;
+}
 
 namespace WebCore {
 
 class ExceptionState;
 class GenericEventQueue;
 
-class MediaSourceBase : public RefCounted<MediaSourceBase>, public HTMLMediaSource, public ActiveDOMObject, public EventTarget {
+class MediaSourceBase : public RefCounted<MediaSourceBase>, public HTMLMediaSource, public ActiveDOMObject, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(MediaSourceBase);
 public:
     static const AtomicString& openKeyword();
     static const AtomicString& closedKeyword();
@@ -60,7 +65,7 @@ public:
 
     // HTMLMediaSource
     virtual bool attachToElement(HTMLMediaElement*) OVERRIDE;
-    virtual void setPrivateAndOpen(PassOwnPtr<MediaSourcePrivate>) OVERRIDE;
+    virtual void setWebMediaSourceAndOpen(PassOwnPtr<blink::WebMediaSource>) OVERRIDE;
     virtual void close() OVERRIDE;
     virtual bool isClosed() const OVERRIDE;
     virtual double duration() const OVERRIDE;
@@ -79,31 +84,23 @@ public:
     virtual void stop() OVERRIDE;
 
     // EventTarget interface
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     // URLRegistrable interface
     virtual URLRegistry& registry() const OVERRIDE;
 
-    using RefCounted<MediaSourceBase>::ref;
-    using RefCounted<MediaSourceBase>::deref;
-
 protected:
-    explicit MediaSourceBase(ScriptExecutionContext*);
+    explicit MediaSourceBase(ExecutionContext*);
 
     virtual void onReadyStateChange(const AtomicString& oldState, const AtomicString& newState) = 0;
     virtual Vector<RefPtr<TimeRanges> > activeRanges() const = 0;
 
-    PassOwnPtr<SourceBufferPrivate> createSourceBufferPrivate(const String& type, const MediaSourcePrivate::CodecsArray&, ExceptionState&);
+    PassOwnPtr<blink::WebSourceBuffer> createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState&);
     void scheduleEvent(const AtomicString& eventName);
     GenericEventQueue* asyncEventQueue() const { return m_asyncEventQueue.get(); }
 
 private:
-    OwnPtr<MediaSourcePrivate> m_private;
-    EventTargetData m_eventTargetData;
+    OwnPtr<blink::WebMediaSource> m_webMediaSource;
     AtomicString m_readyState;
     OwnPtr<GenericEventQueue> m_asyncEventQueue;
     HTMLMediaElement* m_attachedElement;

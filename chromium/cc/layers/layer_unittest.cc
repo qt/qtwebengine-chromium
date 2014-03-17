@@ -38,9 +38,9 @@ namespace {
 
 class MockLayerTreeHost : public LayerTreeHost {
  public:
-  explicit MockLayerTreeHost(LayerTreeHostClient* client)
-      : LayerTreeHost(client, LayerTreeSettings()) {
-    Initialize(NULL);
+  explicit MockLayerTreeHost(FakeLayerTreeHostClient* client)
+      : LayerTreeHost(client, NULL, LayerTreeSettings()) {
+    InitializeSingleThreaded(client);
   }
 
   MOCK_METHOD0(SetNeedsCommit, void());
@@ -545,11 +545,14 @@ TEST_F(LayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBackgroundColor(SK_ColorLTGRAY));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetMasksToBounds(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBlendMode(SkXfermode::kHue_Mode));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetIsRootForIsolatedGroup(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetContentsOpaque(true));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetPosition(gfx::PointF(4.f, 9.f)));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetSublayerTransform(
       gfx::Transform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetScrollable(true));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetUserScrollable(true, false));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetScrollOffset(
       gfx::Vector2d(10, 10)));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetShouldScrollOnMainThread(true));
@@ -607,7 +610,7 @@ TEST_F(LayerTest, PushPropertiesAccumulatesUpdateRect) {
                        impl_layer->update_rect());
 }
 
-TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForTransform) {
+TEST_F(LayerTest, PushPropertiesCausesLayerPropertyChangedForTransform) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
@@ -619,14 +622,14 @@ TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForTransform) {
   transform.Rotate(45.0);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
 
   test_layer->PushPropertiesTo(impl_layer.get());
 
-  EXPECT_TRUE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_TRUE(impl_layer->LayerPropertyChanged());
 }
 
-TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForOpacity) {
+TEST_F(LayerTest, PushPropertiesCausesLayerPropertyChangedForOpacity) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
@@ -636,15 +639,15 @@ TEST_F(LayerTest, PushPropertiesCausesSurfacePropertyChangedForOpacity) {
 
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
 
   test_layer->PushPropertiesTo(impl_layer.get());
 
-  EXPECT_TRUE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_TRUE(impl_layer->LayerPropertyChanged());
 }
 
 TEST_F(LayerTest,
-       PushPropsDoesntCauseSurfacePropertyChangedDuringImplOnlyTransformAnim) {
+       PushPropsDoesntCauseLayerPropertyChangedDuringImplOnlyTransformAnim) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
@@ -665,9 +668,9 @@ TEST_F(LayerTest,
   transform.Rotate(45.0);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
-  EXPECT_TRUE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_TRUE(impl_layer->LayerPropertyChanged());
 
   impl_layer->ResetAllChangeTrackingForSubtree();
   AddAnimatedTransformToController(impl_layer->layer_animation_controller(),
@@ -679,13 +682,13 @@ TEST_F(LayerTest,
   transform.Rotate(45.0);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
 }
 
 TEST_F(LayerTest,
-       PushPropsDoesntCauseSurfacePropertyChangedDuringImplOnlyOpacityAnim) {
+       PushPropsDoesntCauseLayerPropertyChangedDuringImplOnlyOpacityAnim) {
   scoped_refptr<Layer> test_layer = Layer::Create();
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
@@ -705,9 +708,9 @@ TEST_F(LayerTest,
 
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.5f));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
-  EXPECT_TRUE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_TRUE(impl_layer->LayerPropertyChanged());
 
   impl_layer->ResetAllChangeTrackingForSubtree();
   AddOpacityTransitionToController(impl_layer->layer_animation_controller(),
@@ -719,11 +722,47 @@ TEST_F(LayerTest,
       set_is_impl_only(true);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.75f));
 
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
   test_layer->PushPropertiesTo(impl_layer.get());
-  EXPECT_FALSE(impl_layer->LayerSurfacePropertyChanged());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
 }
 
+TEST_F(LayerTest,
+       PushPropsDoesntCauseLayerPropertyChangedDuringImplOnlyFilterAnim) {
+  scoped_refptr<Layer> test_layer = Layer::Create();
+  scoped_ptr<LayerImpl> impl_layer =
+      LayerImpl::Create(host_impl_.active_tree(), 1);
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1,
+                                  layer_tree_host_->SetRootLayer(test_layer));
+
+  scoped_ptr<AnimationRegistrar> registrar = AnimationRegistrar::Create();
+  impl_layer->layer_animation_controller()->SetAnimationRegistrar(
+      registrar.get());
+
+  AddAnimatedFilterToController(
+      impl_layer->layer_animation_controller(), 1.0, 1.f, 2.f);
+
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBlurFilter(2.f));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetFilters(filters));
+
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
+  test_layer->PushPropertiesTo(impl_layer.get());
+  EXPECT_TRUE(impl_layer->LayerPropertyChanged());
+
+  impl_layer->ResetAllChangeTrackingForSubtree();
+  AddAnimatedFilterToController(
+      impl_layer->layer_animation_controller(), 1.0, 1.f, 2.f);
+  impl_layer->layer_animation_controller()->GetAnimation(Animation::Filter)->
+      set_is_impl_only(true);
+  filters.Append(FilterOperation::CreateSepiaFilter(0.5f));
+  EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetFilters(filters));
+
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
+  test_layer->PushPropertiesTo(impl_layer.get());
+  EXPECT_FALSE(impl_layer->LayerPropertyChanged());
+}
 
 TEST_F(LayerTest, MaskAndReplicaHasParent) {
   scoped_refptr<Layer> parent = Layer::Create();
@@ -766,11 +805,17 @@ class LayerTreeHostFactory {
       : client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
   scoped_ptr<LayerTreeHost> Create() {
-    return LayerTreeHost::Create(&client_, LayerTreeSettings(), NULL).Pass();
+    return LayerTreeHost::CreateSingleThreaded(&client_,
+                                               &client_,
+                                               NULL,
+                                               LayerTreeSettings()).Pass();
   }
 
   scoped_ptr<LayerTreeHost> Create(LayerTreeSettings settings) {
-    return LayerTreeHost::Create(&client_, settings, NULL).Pass();
+    return LayerTreeHost::CreateSingleThreaded(&client_,
+                                               &client_,
+                                               NULL,
+                                               settings).Pass();
   }
 
  private:

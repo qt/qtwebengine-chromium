@@ -207,6 +207,11 @@ void Processor::VisitSwitchStatement(SwitchStatement* node) {
 }
 
 
+void Processor::VisitCaseClause(CaseClause* clause) {
+  UNREACHABLE();
+}
+
+
 void Processor::VisitContinueStatement(ContinueStatement* node) {
   is_set_ = false;
 }
@@ -258,7 +263,7 @@ bool Rewriter::Rewrite(CompilationInfo* info) {
   ZoneList<Statement*>* body = function->body();
   if (!body->is_empty()) {
     Variable* result = scope->NewTemporary(
-        info->isolate()->factory()->result_string());
+        info->isolate()->factory()->dot_result_string());
     Processor processor(result, info->zone());
     processor.Process(body);
     if (processor.HasStackOverflow()) return false;
@@ -271,13 +276,12 @@ bool Rewriter::Rewrite(CompilationInfo* info) {
       //   eval('with ({x:1}) x = 1');
       // the end position of the function generated for executing the eval code
       // coincides with the end of the with scope which is the position of '1'.
-      int position = function->end_position();
+      int pos = function->end_position();
       VariableProxy* result_proxy = processor.factory()->NewVariableProxy(
-          result->name(), false, result->interface(), position);
+          result->name(), false, result->interface(), pos);
       result_proxy->BindTo(result);
       Statement* result_statement =
-          processor.factory()->NewReturnStatement(result_proxy);
-      result_statement->set_statement_pos(position);
+          processor.factory()->NewReturnStatement(result_proxy, pos);
       body->Add(result_statement, info->zone());
     }
   }

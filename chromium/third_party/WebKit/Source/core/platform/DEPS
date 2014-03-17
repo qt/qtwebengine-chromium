@@ -7,18 +7,9 @@ include_rules = [
     "+dl",
     "+skia",
     "+third_party",
-    "+webp",
     # platform/ shouldn't depends on core/ but unfortunately does (crbug.com/258901).
     # Please don't add anything to this list of exceptions.
-    "!core/accessibility",
-    "!core/css",
     "!core/dom",
-    "!core/editing",
     "!core/fileapi",
-    "!core/html",
-    "!core/inspector",
-    "!core/fetch",
-    "!core/page",
-    "!core/plugins",
     "!core/rendering",
 ]

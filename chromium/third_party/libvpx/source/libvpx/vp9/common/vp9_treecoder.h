@@ -21,6 +21,8 @@ typedef uint8_t vp9_prob;
 
 typedef int8_t vp9_tree_index;
 
+#define TREE_SIZE(leaf_count) (2 * (leaf_count) - 2)
+
 #define vp9_complement(x) (255 - x)
 
 /* We build coding trees compactly in arrays.
@@ -30,7 +32,7 @@ typedef int8_t vp9_tree_index;
    Index > 0 means need another bit, specification at index.
    Nonnegative indices are always even;  processing begins at node 0. */
 
-typedef const vp9_tree_index vp9_tree[], *vp9_tree_p;
+typedef const vp9_tree_index vp9_tree[];
 
 struct vp9_token {
   int value;

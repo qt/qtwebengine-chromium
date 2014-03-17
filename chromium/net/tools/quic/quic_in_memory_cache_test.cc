@@ -9,8 +9,9 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
-#include "net/tools/flip_server/balsa_headers.h"
+#include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
+#include "net/tools/quic/test_tools/quic_in_memory_cache_peer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::IntToString;
@@ -39,7 +40,7 @@ class QuicInMemoryCacheTest : public ::testing::Test {
   }
 
   virtual void SetUp() {
-    QuicInMemoryCache::GetInstance()->ResetForTests();
+    QuicInMemoryCachePeer::ResetForTests();
   }
 
   // This method was copied from end_to_end_test.cc in this directory.

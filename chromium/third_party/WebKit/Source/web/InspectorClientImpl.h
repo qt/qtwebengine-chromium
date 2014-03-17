@@ -36,7 +36,7 @@
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebDevToolsAgentClient;
 class WebDevToolsAgentImpl;
@@ -59,8 +59,7 @@ public:
     virtual void clearBrowserCache();
     virtual void clearBrowserCookies();
 
-    virtual void overrideDeviceMetrics(int, int, float, bool);
-    virtual void autoZoomPageToFitWidth();
+    virtual void overrideDeviceMetrics(int, int, float, bool, bool);
 
     virtual bool overridesShowPaintRects();
     virtual void setShowPaintRects(bool);
@@ -68,6 +67,7 @@ public:
     virtual void setShowFPSCounter(bool);
     virtual void setContinuousPaintingEnabled(bool);
     virtual void setShowScrollBottleneckRects(bool);
+    virtual void requestPageScaleFactor(float scale, const WebCore::IntPoint& origin);
 
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
@@ -77,6 +77,9 @@ public:
 
     virtual void setTraceEventCallback(TraceEventCallback);
 
+    virtual void startGPUEventsRecording() OVERRIDE;
+    virtual void stopGPUEventsRecording() OVERRIDE;
+
 private:
     WebDevToolsAgentImpl* devToolsAgent();
 
@@ -84,6 +87,6 @@ private:
     WebViewImpl* m_inspectedWebView;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

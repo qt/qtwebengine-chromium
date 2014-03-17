@@ -50,11 +50,6 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
                                           public ui::TextInputClient,
                                           public TextfieldViewsModel::Delegate {
  public:
-  // Interval over which the cursor/caret blinks.  This represents the full
-  // cycle; the caret is shown for half of this time and hidden for the other
-  // half.
-  static const int kCursorBlinkCycleMs;
-
   explicit NativeTextfieldViews(Textfield* parent);
   virtual ~NativeTextfieldViews();
 
@@ -125,7 +120,6 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual gfx::Insets CalculateInsets() OVERRIDE;
   virtual void UpdateHorizontalMargins() OVERRIDE;
   virtual void UpdateVerticalMargins() OVERRIDE;
-  virtual void UpdateVerticalAlignment() OVERRIDE;
   virtual bool SetFocus() OVERRIDE;
   virtual View* GetView() OVERRIDE;
   virtual gfx::NativeView GetTestingHandle() const OVERRIDE;
@@ -188,22 +182,25 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
   virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
-  virtual gfx::Rect GetCaretBounds() OVERRIDE;
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE;
   virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE;
-  virtual bool HasCompositionText() OVERRIDE;
-  virtual bool GetTextRange(gfx::Range* range) OVERRIDE;
-  virtual bool GetCompositionTextRange(gfx::Range* range) OVERRIDE;
-  virtual bool GetSelectionRange(gfx::Range* range) OVERRIDE;
+                                             gfx::Rect* rect) const OVERRIDE;
+  virtual bool HasCompositionText() const OVERRIDE;
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE;
   virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
   virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
   virtual bool GetTextFromRange(const gfx::Range& range,
-                                string16* text) OVERRIDE;
+                                string16* text) const OVERRIDE;
   virtual void OnInputMethodChanged() OVERRIDE;
   virtual bool ChangeTextDirectionAndLayoutAlignment(
       base::i18n::TextDirection direction) OVERRIDE;
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void OnCandidateWindowShown() OVERRIDE;
+  virtual void OnCandidateWindowUpdated() OVERRIDE;
+  virtual void OnCandidateWindowHidden() OVERRIDE;
 
   // Overridden from TextfieldViewsModel::Delegate:
   virtual void OnCompositionTextConfirmedOrCleared() OVERRIDE;

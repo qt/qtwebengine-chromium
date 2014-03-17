@@ -32,9 +32,9 @@
 #include "WebDocument.h"
 #include "WebElement.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/CustomElementCallbackDispatcher.h"
 #include "core/dom/Element.h"
 #include "core/dom/NamedNodeMap.h"
+#include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
@@ -44,7 +44,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 bool WebElement::isFormControlElement() const
 {
@@ -101,9 +101,9 @@ bool WebElement::setAttribute(const WebString& attrName, const WebString& attrVa
     // TODO: Custom element callbacks need to be called on WebKit API methods that
     // mutate the DOM in any way.
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliverCustomElementCallbacks;
-    TrackExceptionState es;
-    unwrap<Element>()->setAttribute(attrName, attrValue, es);
-    return !es.hadException();
+    TrackExceptionState exceptionState;
+    unwrap<Element>()->setAttribute(attrName, attrValue, exceptionState);
+    return !exceptionState.hadException();
 }
 
 unsigned WebElement::attributeCount() const
@@ -150,11 +150,6 @@ void WebElement::requestFullScreen()
     unwrap<Element>()->webkitRequestFullScreen(Element::ALLOW_KEYBOARD_INPUT);
 }
 
-WebDocument WebElement::document() const
-{
-    return WebDocument(&constUnwrap<Element>()->document());
-}
-
 WebRect WebElement::boundsInViewportSpace()
 {
     return unwrap<Element>()->boundsInRootViewSpace();
@@ -192,4 +187,4 @@ WebElement::operator PassRefPtr<Element>() const
     return toElement(m_private.get());
 }
 
-} // namespace WebKit
+} // namespace blink

@@ -41,8 +41,8 @@ public:
     }
     virtual ~HTMLDocument();
 
-    String dir();
-    void setDir(const String&);
+    const AtomicString& dir();
+    void setDir(const AtomicString&);
 
     String designMode() const;
     void setDesignMode(const String&);
@@ -50,16 +50,16 @@ public:
     Element* activeElement();
     bool hasFocus();
 
-    String bgColor();
-    void setBgColor(const String&);
-    String fgColor();
-    void setFgColor(const String&);
-    String alinkColor();
-    void setAlinkColor(const String&);
-    String linkColor();
-    void setLinkColor(const String&);
-    String vlinkColor();
-    void setVlinkColor(const String&);
+    const AtomicString& bgColor() const;
+    void setBgColor(const AtomicString&);
+    const AtomicString& fgColor() const;
+    void setFgColor(const AtomicString&);
+    const AtomicString& alinkColor() const;
+    void setAlinkColor(const AtomicString&);
+    const AtomicString& linkColor() const;
+    void setLinkColor(const AtomicString&);
+    const AtomicString& vlinkColor() const;
+    void setVlinkColor(const AtomicString&);
 
     void clear();
 
@@ -74,13 +74,24 @@ public:
     void removeExtraNamedItem(const AtomicString& name);
     bool hasExtraNamedItem(const AtomicString& name);
 
+    using Document::write;
+    using Document::writeln;
+    void write(DOMWindow*, const Vector<String>& text);
+    void writeln(DOMWindow*, const Vector<String>& text);
+
     static bool isCaseSensitiveAttribute(const QualifiedName&);
+
+    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
 
 protected:
     HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
 
 private:
-    HTMLBodyElement* bodyAsHTMLBodyElement() const;
+    HTMLBodyElement* htmlBodyElement() const;
+
+    const AtomicString& bodyAttributeValue(const QualifiedName&) const;
+    void setBodyAttribute(const QualifiedName&, const AtomicString&);
+
     void addItemToMap(HashCountedSet<AtomicString>&, const AtomicString&);
     void removeItemFromMap(HashCountedSet<AtomicString>&, const AtomicString&);
 
@@ -98,32 +109,7 @@ inline bool HTMLDocument::hasExtraNamedItem(const AtomicString& name)
     return m_extraNamedItemCounts.contains(name);
 }
 
-inline HTMLDocument* toHTMLDocument(Document* document)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!document || document->isHTMLDocument());
-    return static_cast<HTMLDocument*>(document);
-}
-
-inline const HTMLDocument* toHTMLDocument(const Document* document)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!document || document->isHTMLDocument());
-    return static_cast<const HTMLDocument*>(document);
-}
-
-inline HTMLDocument& toHTMLDocument(Document& document)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(document.isHTMLDocument());
-    return static_cast<HTMLDocument&>(document);
-}
-
-inline const HTMLDocument& toHTMLDocument(const Document& document)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(document.isHTMLDocument());
-    return static_cast<const HTMLDocument&>(document);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toHTMLDocument(const HTMLDocument*);
+DEFINE_DOCUMENT_TYPE_CASTS(HTMLDocument);
 
 } // namespace WebCore
 

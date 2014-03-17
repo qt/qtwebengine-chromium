@@ -7,7 +7,10 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/format_macros.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/url_util.h"
@@ -20,7 +23,7 @@ const char kProdWalletServiceUrl[] = "https://wallet.google.com/";
 
 // TODO(ahutter): Remove this once production is ready.
 const char kSandboxWalletServiceUrl[] =
-    "https://payments-form-dogfood.sandbox.google.com/";
+    "https://wallet-web.sandbox.google.com/";
 
 // TODO(ahutter): Remove this once production is ready.
 const char kSandboxWalletSecureServiceUrl[] =
@@ -32,11 +35,7 @@ bool IsWalletProductionEnabled() {
       command_line->GetSwitchValueASCII(switches::kWalletServiceUseSandbox));
   if (!sandbox_enabled.empty())
     return sandbox_enabled != "1";
-#if defined(OS_MACOSX)
-  return false;
-#else
   return true;
-#endif
 }
 
 GURL GetWalletHostUrl() {
@@ -50,12 +49,13 @@ GURL GetWalletHostUrl() {
   return GURL(kSandboxWalletServiceUrl);
 }
 
-GURL GetBaseWalletUrl() {
-  return GetWalletHostUrl().Resolve("online/v2/");
+GURL GetBaseWalletUrl(size_t user_index) {
+  std::string path = base::StringPrintf("online/v2/u/%" PRIuS "/", user_index);
+  return GetWalletHostUrl().Resolve(path);
 }
 
-GURL GetBaseAutocheckoutUrl() {
-  return GetBaseWalletUrl().Resolve("wallet/autocheckout/v1/");
+GURL GetBaseAutocheckoutUrl(size_t user_index) {
+  return GetBaseWalletUrl(user_index).Resolve("wallet/autocheckout/v1/");
 }
 
 GURL GetBaseSecureUrl() {
@@ -69,64 +69,72 @@ GURL GetBaseSecureUrl() {
   return GURL(kSandboxWalletSecureServiceUrl);
 }
 
-GURL GetBaseEncryptedFrontendUrl() {
+GURL GetBaseEncryptedFrontendUrl(size_t user_index) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   // TODO(ahutter): Stop checking these switches once we switch over to prod.
   GURL base_url = IsWalletProductionEnabled() ||
       command_line.HasSwitch(switches::kWalletServiceUrl) ?
           GetWalletHostUrl() : GetBaseSecureUrl();
-  return base_url.Resolve("online-secure/v2/autocheckout/v1/");
+  std::string path =
+      base::StringPrintf("online-secure/v2/u/%" PRIuS "/autocheckout/v1/",
+                         user_index);
+  return base_url.Resolve(path);
 }
 
 }  // namespace
 
 namespace wallet {
 
-GURL GetGetWalletItemsUrl() {
-  return GetBaseAutocheckoutUrl().Resolve("getWalletItemsJwtless");
+GURL GetGetWalletItemsUrl(size_t user_index) {
+  return GetBaseAutocheckoutUrl(user_index).Resolve("getWalletItemsJwtless");
 }
 
-GURL GetGetFullWalletUrl() {
-  return GetBaseEncryptedFrontendUrl().Resolve("getFullWalletJwtless?s7e=otp");
+GURL GetGetFullWalletUrl(size_t user_index) {
+  return GetBaseEncryptedFrontendUrl(user_index)
+      .Resolve("getFullWalletJwtless?s7e=otp");
 }
 
-GURL GetManageInstrumentsUrl() {
-  return GetBaseSecureUrl().Resolve("manage/paymentMethods");
+GURL GetManageInstrumentsUrl(size_t user_index) {
+  std::string path =
+      base::StringPrintf("manage/w/%" PRIuS "/paymentMethods", user_index);
+  return GetBaseSecureUrl().Resolve(path);
 }
 
-GURL GetManageAddressesUrl() {
-  return GetBaseSecureUrl().Resolve("manage/settings/addresses");
+GURL GetManageAddressesUrl(size_t user_index) {
+  std::string path =
+      base::StringPrintf("manage/w/%" PRIuS "/settings/addresses", user_index);
+  return GetBaseSecureUrl().Resolve(path);
 }
 
-GURL GetAcceptLegalDocumentsUrl() {
-  return GetBaseAutocheckoutUrl().Resolve("acceptLegalDocument");
+GURL GetAcceptLegalDocumentsUrl(size_t user_index) {
+  return GetBaseAutocheckoutUrl(user_index).Resolve("acceptLegalDocument");
 }
 
-GURL GetAuthenticateInstrumentUrl() {
-  return GetBaseEncryptedFrontendUrl()
+GURL GetAuthenticateInstrumentUrl(size_t user_index) {
+  return GetBaseEncryptedFrontendUrl(user_index)
       .Resolve("authenticateInstrument?s7e=cvn");
 }
 
-GURL GetSendStatusUrl() {
-  return GetBaseAutocheckoutUrl().Resolve("reportStatus");
+GURL GetSendStatusUrl(size_t user_index) {
+  return GetBaseAutocheckoutUrl(user_index).Resolve("reportStatus");
 }
 
-GURL GetSaveToWalletNoEscrowUrl() {
-  return GetBaseAutocheckoutUrl().Resolve("saveToWallet");
+GURL GetSaveToWalletNoEscrowUrl(size_t user_index) {
+  return GetBaseAutocheckoutUrl(user_index).Resolve("saveToWallet");
 }
 
-GURL GetSaveToWalletUrl() {
-  return GetBaseEncryptedFrontendUrl()
+GURL GetSaveToWalletUrl(size_t user_index) {
+  return GetBaseEncryptedFrontendUrl(user_index)
       .Resolve("saveToWallet?s7e=card_number%3Bcvn");
 }
 
-GURL GetPassiveAuthUrl() {
-  return GetBaseWalletUrl().Resolve("passiveauth?isChromePayments=true");
+GURL GetPassiveAuthUrl(size_t user_index) {
+  return GetBaseWalletUrl(user_index)
+      .Resolve("passiveauth?isChromePayments=true");
 }
 
 GURL GetSignInUrl() {
-  GURL url(GaiaUrls::GetInstance()->service_login_url());
-  url = net::AppendQueryParameter(url, "service", "toolbar");
+  GURL url(GaiaUrls::GetInstance()->add_account_url());
   url = net::AppendQueryParameter(url, "nui", "1");
   // Prevents promos from showing (see http://crbug.com/235227).
   url = net::AppendQueryParameter(url, "sarp", "1");
@@ -136,16 +144,42 @@ GURL GetSignInUrl() {
   return url;
 }
 
-// The continue url portion of the sign-in URL.
+// The continue url portion of the sign-in URL. This URL is used as a milestone
+// to determine that the sign-in process is finished. It has to be a Google
+// domain, use https://, and do almost nothing, but otherwise it's not too
+// important what the URL actually is: it's not important that this URL has the
+// ability to generate a gdToken.
 GURL GetSignInContinueUrl() {
-  return GetPassiveAuthUrl();
+  return GetPassiveAuthUrl(0);
 }
 
-bool IsSignInContinueUrl(const GURL& url) {
+bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
   GURL final_url = wallet::GetSignInContinueUrl();
-  return url.SchemeIsSecure() &&
-         url.host() == final_url.host() &&
-         url.path() == final_url.path();
+  if (!url.SchemeIsSecure() ||
+      url.host() != final_url.host() ||
+      url.path() != final_url.path()) {
+    return false;
+  }
+
+  *user_index = 0;
+  std::string query_str = url.query();
+  url_parse::Component query(0, query_str.length());
+  url_parse::Component key, value;
+  const char kUserIndexKey[] = "authuser";
+  while (url_parse::ExtractQueryKeyValue(query_str.c_str(), &query, &key,
+                                         &value)) {
+    if (key.is_nonempty() &&
+        query_str.substr(key.begin, key.len) == kUserIndexKey) {
+      base::StringToSizeT(query_str.substr(value.begin, value.len), user_index);
+      break;
+    }
+  }
+
+  return true;
+}
+
+bool IsSignInRelatedUrl(const GURL& url) {
+  return url.GetOrigin() == GetSignInUrl().GetOrigin();
 }
 
 bool IsUsingProd() {

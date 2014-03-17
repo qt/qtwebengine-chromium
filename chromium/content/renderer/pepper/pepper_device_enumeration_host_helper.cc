@@ -34,6 +34,9 @@ class PepperDeviceEnumerationHostHelper::ScopedRequest
         requested_(false),
         request_id_(0),
         sync_call_(false) {
+    if (!owner_->document_url_.is_valid())
+      return;
+
     requested_ = true;
 
     // Note that the callback passed into
@@ -46,6 +49,7 @@ class PepperDeviceEnumerationHostHelper::ScopedRequest
     sync_call_ = true;
     request_id_ = owner_->delegate_->EnumerateDevices(
         owner_->device_type_,
+        owner_->document_url_,
         base::Bind(&ScopedRequest::EnumerateDevicesCallbackBody, AsWeakPtr()));
     sync_call_ = false;
   }
@@ -61,7 +65,6 @@ class PepperDeviceEnumerationHostHelper::ScopedRequest
  private:
   void EnumerateDevicesCallbackBody(
       int request_id,
-      bool succeeded,
       const std::vector<ppapi::DeviceRefData>& devices) {
     if (sync_call_) {
       base::MessageLoop::current()->PostTask(
@@ -69,11 +72,10 @@ class PepperDeviceEnumerationHostHelper::ScopedRequest
           base::Bind(&ScopedRequest::EnumerateDevicesCallbackBody,
                      AsWeakPtr(),
                      request_id,
-                     succeeded,
                      devices));
     } else {
       DCHECK_EQ(request_id_, request_id);
-      callback_.Run(request_id, succeeded, devices);
+      callback_.Run(request_id, devices);
       // This object may have been destroyed at this point.
     }
   }
@@ -91,10 +93,12 @@ class PepperDeviceEnumerationHostHelper::ScopedRequest
 PepperDeviceEnumerationHostHelper::PepperDeviceEnumerationHostHelper(
     ppapi::host::ResourceHost* resource_host,
     Delegate* delegate,
-    PP_DeviceType_Dev device_type)
+    PP_DeviceType_Dev device_type,
+    const GURL& document_url)
     : resource_host_(resource_host),
       delegate_(delegate),
-      device_type_(device_type) {
+      device_type_(device_type),
+      document_url_(document_url) {
 }
 
 PepperDeviceEnumerationHostHelper::~PepperDeviceEnumerationHostHelper() {
@@ -165,31 +169,27 @@ int32_t PepperDeviceEnumerationHostHelper::OnStopMonitoringDeviceChange(
 
 void PepperDeviceEnumerationHostHelper::OnEnumerateDevicesComplete(
     int /* request_id */,
-    bool succeeded,
     const std::vector<ppapi::DeviceRefData>& devices) {
   DCHECK(enumerate_devices_context_.get());
 
   enumerate_.reset(NULL);
 
-  enumerate_devices_context_->params.set_result(
-      succeeded ? PP_OK : PP_ERROR_FAILED);
+  enumerate_devices_context_->params.set_result(PP_OK);
   resource_host_->host()->SendReply(
       *enumerate_devices_context_,
-      PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply(
-          succeeded ? devices : std::vector<ppapi::DeviceRefData>()));
+      PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply(devices));
   enumerate_devices_context_.reset();
 }
 
 void PepperDeviceEnumerationHostHelper::OnNotifyDeviceChange(
     uint32_t callback_id,
     int /* request_id */,
-    bool succeeded,
     const std::vector<ppapi::DeviceRefData>& devices) {
   resource_host_->host()->SendUnsolicitedReply(
       resource_host_->pp_resource(),
       PpapiPluginMsg_DeviceEnumeration_NotifyDeviceChange(
           callback_id,
-          succeeded ? devices : std::vector<ppapi::DeviceRefData>()));
+          devices));
 }
 
 }  // namespace content

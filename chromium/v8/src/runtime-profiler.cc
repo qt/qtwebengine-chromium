@@ -33,7 +33,6 @@
 #include "bootstrapper.h"
 #include "code-stubs.h"
 #include "compilation-cache.h"
-#include "deoptimizer.h"
 #include "execution.h"
 #include "full-codegen.h"
 #include "global-handles.h"
@@ -140,8 +139,9 @@ void RuntimeProfiler::Optimize(JSFunction* function, const char* reason) {
   }
 
 
-  if (FLAG_concurrent_recompilation && !isolate_->bootstrapper()->IsActive()) {
-    if (FLAG_concurrent_osr &&
+  if (isolate_->concurrent_recompilation_enabled() &&
+      !isolate_->bootstrapper()->IsActive()) {
+    if (isolate_->concurrent_osr_enabled() &&
         isolate_->optimizing_compiler_thread()->IsQueuedForOSR(function)) {
       // Do not attempt regular recompilation if we already queued this for OSR.
       // TODO(yangguo): This is necessary so that we don't install optimized
@@ -185,7 +185,7 @@ void RuntimeProfiler::AttemptOnStackReplacement(JSFunction* function) {
     PrintF("]\n");
   }
 
-  Deoptimizer::PatchInterruptCode(isolate_, shared->code());
+  BackEdgeTable::Patch(isolate_, shared->code());
 }
 
 

@@ -13,6 +13,7 @@
 #include "content/child/indexed_db/indexed_db_message_filter.h"
 #include "content/child/runtime_features.h"
 #include "content/child/web_database_observer_impl.h"
+#include "content/common/child_process_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/worker/websharedworker_stub.h"
@@ -24,7 +25,7 @@
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebRuntimeFeatures;
+using blink::WebRuntimeFeatures;
 
 namespace content {
 
@@ -37,23 +38,33 @@ WorkerThread::WorkerThread() {
       thread_safe_sender(),
       sync_message_filter(),
       quota_message_filter()));
-  WebKit::initialize(webkit_platform_support_.get());
+
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
+    webkit_glue::SetJavaScriptFlags(
+        command_line.GetSwitchValueASCII(switches::kJavaScriptFlags));
+  }
+  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
+
+  blink::initialize(webkit_platform_support_.get());
 
   appcache_dispatcher_.reset(
       new AppCacheDispatcher(this, new AppCacheFrontendImpl()));
 
-  web_database_observer_impl_.reset(
-      new WebDatabaseObserverImpl(sync_message_filter()));
-  WebKit::WebDatabase::setObserver(web_database_observer_impl_.get());
   db_message_filter_ = new DBMessageFilter();
   channel()->AddFilter(db_message_filter_.get());
 
   indexed_db_message_filter_ = new IndexedDBMessageFilter(
       thread_safe_sender());
-  channel()->AddFilter(indexed_db_message_filter_.get());
+  channel()->AddFilter(indexed_db_message_filter_->GetFilter());
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
+}
+
+void WorkerThread::OnShutdown() {
+  // The worker process is to be shut down gracefully. Ask the browser
+  // process to shut it down forcefully instead and wait on the message, so that
+  // there are no races between threads when the process is shutting down.
+  Send(new WorkerProcessHostMsg_ForceKillWorker());
 }
 
 WorkerThread::~WorkerThread() {
@@ -62,14 +73,18 @@ WorkerThread::~WorkerThread() {
 void WorkerThread::Shutdown() {
   ChildThread::Shutdown();
 
+  if (webkit_platform_support_) {
+    webkit_platform_support_->web_database_observer_impl()->
+        WaitForAllDatabasesToClose();
+  }
+
   // Shutdown in reverse of the initialization order.
-  channel()->RemoveFilter(indexed_db_message_filter_.get());
   indexed_db_message_filter_ = NULL;
 
   channel()->RemoveFilter(db_message_filter_.get());
   db_message_filter_ = NULL;
 
-  WebKit::shutdown();
+  blink::shutdown();
   lazy_tls.Pointer()->Set(NULL);
 }
 
@@ -86,6 +101,15 @@ bool WorkerThread::OnControlMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(WorkerThread, msg)
     IPC_MESSAGE_HANDLER(WorkerProcessMsg_CreateWorker, OnCreateWorker)
     IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+bool WorkerThread::OnMessageReceived(const IPC::Message& msg) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(WorkerThread, msg)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_Shutdown, OnShutdown)
+    IPC_MESSAGE_UNHANDLED(handled = ChildThread::OnMessageReceived(msg))
   IPC_END_MESSAGE_MAP()
   return handled;
 }

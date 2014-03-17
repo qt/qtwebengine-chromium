@@ -7,6 +7,8 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "net/tools/balsa/balsa_headers.h"
 
 using base::FilePath;
 using base::StringPiece;
@@ -19,19 +21,16 @@ using std::string;
 namespace net {
 namespace tools {
 
-std::string FLAGS_quic_in_memory_cache_dir = "/tmp/quic-data";
+std::string FLAGS_quic_in_memory_cache_dir = "";
 
 namespace {
 
 // BalsaVisitor implementation (glue) which caches response bodies.
-class CachingBalsaVisitor : public BalsaVisitorInterface {
+class CachingBalsaVisitor : public NoOpBalsaVisitor {
  public:
   CachingBalsaVisitor() : done_framing_(false) {}
   virtual void ProcessBodyData(const char* input, size_t size) OVERRIDE {
     AppendToBody(input, size);
-  }
-  virtual void ProcessTrailers(const BalsaHeaders& trailer) {
-    LOG(DFATAL) << "Trailers not supported.";
   }
   virtual void MessageDone() OVERRIDE {
     done_framing_ = true;
@@ -42,8 +41,6 @@ class CachingBalsaVisitor : public BalsaVisitorInterface {
   virtual void HandleHeaderWarning(BalsaFrame* framer) OVERRIDE {
     UnhandledError();
   }
-  virtual void HandleTrailerError(BalsaFrame* framer) { UnhandledError(); }
-  virtual void HandleTrailerWarning(BalsaFrame* framer) { UnhandledError(); }
   virtual void HandleChunkingError(BalsaFrame* framer) OVERRIDE {
     UnhandledError();
   }
@@ -53,20 +50,6 @@ class CachingBalsaVisitor : public BalsaVisitorInterface {
   void UnhandledError() {
     LOG(DFATAL) << "Unhandled error framing HTTP.";
   }
-  virtual void ProcessBodyInput(const char*, size_t) OVERRIDE {}
-  virtual void ProcessHeaderInput(const char*, size_t) OVERRIDE {}
-  virtual void ProcessTrailerInput(const char*, size_t) OVERRIDE {}
-  virtual void ProcessHeaders(const net::BalsaHeaders&) OVERRIDE {}
-  virtual void ProcessRequestFirstLine(
-      const char*, size_t, const char*, size_t,
-      const char*, size_t, const char*, size_t) OVERRIDE {}
-  virtual void ProcessResponseFirstLine(
-      const char*, size_t, const char*,
-      size_t, const char*, size_t, const char*, size_t) OVERRIDE {}
-  virtual void ProcessChunkLength(size_t) OVERRIDE {}
-  virtual void ProcessChunkExtensions(const char*, size_t) OVERRIDE {}
-  virtual void HeaderDone() OVERRIDE {}
-
   void AppendToBody(const char* input, size_t size) {
     body_.append(input, size);
   }
@@ -80,6 +63,7 @@ class CachingBalsaVisitor : public BalsaVisitorInterface {
 
 }  // namespace
 
+// static
 QuicInMemoryCache* QuicInMemoryCache::GetInstance() {
   return Singleton<QuicInMemoryCache>::get();
 }
@@ -93,12 +77,32 @@ const QuicInMemoryCache::Response* QuicInMemoryCache::GetResponse(
   return it->second;
 }
 
+void QuicInMemoryCache::AddSimpleResponse(StringPiece method,
+                                          StringPiece path,
+                                          StringPiece version,
+                                          StringPiece response_code,
+                                          StringPiece response_detail,
+                                          StringPiece body) {
+  BalsaHeaders request_headers, response_headers;
+  request_headers.SetRequestFirstlineFromStringPieces(method,
+                                                      path,
+                                                      version);
+  response_headers.SetRequestFirstlineFromStringPieces(version,
+                                                       response_code,
+                                                       response_detail);
+  response_headers.AppendHeader("content-length",
+                                base::IntToString(body.length()));
+
+  AddResponse(request_headers, response_headers, body);
+}
+
 void QuicInMemoryCache::AddResponse(const BalsaHeaders& request_headers,
                                     const BalsaHeaders& response_headers,
                                     StringPiece response_body) {
   LOG(INFO) << "Adding response for: " << GetKey(request_headers);
   if (ContainsKey(responses_, GetKey(request_headers))) {
     LOG(DFATAL) << "Response for given request already exists!";
+    return;
   }
   Response* new_response = new Response();
   new_response->set_headers(response_headers);
@@ -106,12 +110,12 @@ void QuicInMemoryCache::AddResponse(const BalsaHeaders& request_headers,
   responses_[GetKey(request_headers)] = new_response;
 }
 
-void QuicInMemoryCache::ResetForTests() {
-  STLDeleteValues(&responses_);
+QuicInMemoryCache::QuicInMemoryCache() {
   Initialize();
 }
 
-QuicInMemoryCache::QuicInMemoryCache() {
+void QuicInMemoryCache::ResetForTests() {
+  STLDeleteValues(&responses_);
   Initialize();
 }
 

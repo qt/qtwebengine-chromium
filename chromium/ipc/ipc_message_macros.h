@@ -202,7 +202,7 @@
 #include "ipc/ipc_message_utils_impl.h"
 #endif
 
-// Convenience macro for defining structs without inheritence. Should not need
+// Convenience macro for defining structs without inheritance. Should not need
 // to be subsequently redefined.
 #define IPC_STRUCT_BEGIN(struct_name) \
   IPC_STRUCT_BEGIN_WITH_PARENT(struct_name, IPC::NoParams)
@@ -996,8 +996,8 @@
                               ipc_message__.type())
 
 #define IPC_END_MESSAGE_MAP() \
-    DCHECK(msg_is_ok__); \
   } \
+  DCHECK(msg_is_ok__); \
 }
 
 #define IPC_END_MESSAGE_MAP_EX() \
@@ -1010,7 +1010,14 @@
 
 #endif  // IPC_IPC_MESSAGE_MACROS_H_
 
+// The following #ifdef cannot be removed.  Although the code is semantically
+// equivalent without the #ifdef, VS2013 contains a bug where it is
+// over-aggressive in optimizing out #includes.  Putting the #ifdef is a
+// workaround for this bug.  See http://goo.gl/eGt2Fb for more details.
+// This can be removed once VS2013 is fixed.
+#ifdef IPC_MESSAGE_START
 // Clean up IPC_MESSAGE_START in this unguarded section so that the
 // XXX_messages.h files need not do so themselves.  This makes the
 // XXX_messages.h files easier to write.
 #undef IPC_MESSAGE_START
+#endif

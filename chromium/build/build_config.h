@@ -31,7 +31,7 @@
 #elif defined(__linux__)
 #define OS_LINUX 1
 // Use TOOLKIT_GTK on linux if TOOLKIT_VIEWS isn't defined.
-#if !defined(TOOLKIT_VIEWS) && defined(USE_X11)
+#if !defined(TOOLKIT_VIEWS) && defined(USE_X11) && !defined(USE_AURA)
 #define TOOLKIT_GTK
 #endif
 #if defined(__GLIBC__) && !defined(__UCLIBC__)
@@ -108,6 +108,7 @@
 #define ARCH_CPU_LITTLE_ENDIAN 1
 #elif defined(__pnacl__)
 #define ARCH_CPU_32_BITS 1
+#define ARCH_CPU_LITTLE_ENDIAN 1
 #elif defined(__MIPSEL__)
 #define ARCH_CPU_MIPS_FAMILY 1
 #define ARCH_CPU_MIPSEL 1

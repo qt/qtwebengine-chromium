@@ -51,10 +51,10 @@ PrintedDocument::PrintedDocument(const PrintSettings& settings,
       immutable_(settings, source, cookie) {
 
   // Records the expected page count if a range is setup.
-  if (!settings.ranges.empty()) {
+  if (!settings.ranges().empty()) {
     // If there is a range, set the number of page
-    for (unsigned i = 0; i < settings.ranges.size(); ++i) {
-      const PageRange& range = settings.ranges[i];
+    for (unsigned i = 0; i < settings.ranges().size(); ++i) {
+      const PageRange& range = settings.ranges()[i];
       mutable_.expected_page_count_ += range.to - range.from + 1;
     }
   }
@@ -153,7 +153,7 @@ void PrintedDocument::set_page_count(int max_page) {
   base::AutoLock lock(lock_);
   DCHECK_EQ(0, mutable_.page_count_);
   mutable_.page_count_ = max_page;
-  if (immutable_.settings_.ranges.empty()) {
+  if (immutable_.settings_.ranges().empty()) {
     mutable_.expected_page_count_ = max_page;
   } else {
     // If there is a range, don't bother since expected_page_count_ is already
@@ -176,18 +176,20 @@ void PrintedDocument::DebugDump(const PrintedPage& page) {
   if (!g_debug_dump_info.Get().enabled)
     return;
 
-  string16 filename;
+  base::string16 filename;
   filename += name();
-  filename += ASCIIToUTF16("_");
-  filename += ASCIIToUTF16(base::StringPrintf("%02d", page.page_number()));
+  filename += base::ASCIIToUTF16("_");
+  filename += base::ASCIIToUTF16(
+      base::StringPrintf("%02d", page.page_number()));
 #if defined(OS_WIN)
-  filename += ASCIIToUTF16("_.emf");
+  filename += base::ASCIIToUTF16("_.emf");
   page.metafile()->SaveTo(
       g_debug_dump_info.Get().debug_dump_path.Append(filename));
 #else  // OS_WIN
-  filename += ASCIIToUTF16("_.pdf");
+  filename += base::ASCIIToUTF16("_.pdf");
   page.metafile()->SaveTo(
-      g_debug_dump_info.Get().debug_dump_path.Append(UTF16ToUTF8(filename)));
+      g_debug_dump_info.Get().debug_dump_path.Append(
+          base::UTF16ToUTF8(filename)));
 #endif  // OS_WIN
 }
 

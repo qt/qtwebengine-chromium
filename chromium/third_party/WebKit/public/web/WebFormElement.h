@@ -34,11 +34,11 @@
 #include "../platform/WebVector.h"
 #include "WebElement.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WebCore { class HTMLFormElement; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
     class WebInputElement;
     class WebFormControlElement;
@@ -59,16 +59,16 @@ namespace WebKit {
         }
         void assign(const WebFormElement& element) { WebElement::assign(element); }
 
-        WEBKIT_EXPORT bool autoComplete() const;
-        WEBKIT_EXPORT WebString action() const;
-        WEBKIT_EXPORT WebString name() const;
-        WEBKIT_EXPORT WebString method() const;
-        WEBKIT_EXPORT bool wasUserSubmitted() const;
-        WEBKIT_EXPORT void submit();
+        BLINK_EXPORT bool autoComplete() const;
+        BLINK_EXPORT WebString action() const;
+        BLINK_EXPORT WebString name() const;
+        BLINK_EXPORT WebString method() const;
+        BLINK_EXPORT bool wasUserSubmitted() const;
+        BLINK_EXPORT void submit();
         // FIXME: Deprecate and replace with WebVector<WebElement>.
-        WEBKIT_EXPORT void getNamedElements(const WebString&, WebVector<WebNode>&);
-        WEBKIT_EXPORT void getFormControlElements(WebVector<WebFormControlElement>&) const;
-        WEBKIT_EXPORT bool checkValidityWithoutDispatchingEvents();
+        BLINK_EXPORT void getNamedElements(const WebString&, WebVector<WebNode>&);
+        BLINK_EXPORT void getFormControlElements(WebVector<WebFormControlElement>&) const;
+        BLINK_EXPORT bool checkValidityWithoutDispatchingEvents();
 
         enum AutocompleteResult {
             AutocompleteResultSuccess,
@@ -76,15 +76,15 @@ namespace WebKit {
             AutocompleteResultErrorCancel,
             AutocompleteResultErrorInvalid,
         };
-        WEBKIT_EXPORT void finishRequestAutocomplete(WebFormElement::AutocompleteResult);
+        BLINK_EXPORT void finishRequestAutocomplete(WebFormElement::AutocompleteResult);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
         WebFormElement(const WTF::PassRefPtr<WebCore::HTMLFormElement>&);
         WebFormElement& operator=(const WTF::PassRefPtr<WebCore::HTMLFormElement>&);
         operator WTF::PassRefPtr<WebCore::HTMLFormElement>() const;
 #endif
     };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

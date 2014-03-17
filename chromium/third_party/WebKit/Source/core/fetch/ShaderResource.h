@@ -30,7 +30,7 @@
 #ifndef ShaderResource_h
 #define ShaderResource_h
 
-#include "core/fetch/Resource.h"
+#include "core/fetch/ResourcePtr.h"
 
 namespace WebCore {
 
@@ -38,15 +38,19 @@ class TextResourceDecoder;
 
 class ShaderResource : public Resource {
 public:
+    typedef ResourceClient ClientType;
+
     ShaderResource(const ResourceRequest&);
     virtual ~ShaderResource();
 
     const String& shaderString();
 
 private:
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
     String m_shaderString;
 };
+
+DEFINE_RESOURCE_TYPE_CASTS(Shader);
 
 }
 

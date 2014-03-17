@@ -35,7 +35,6 @@
 #include "wtf/HashCountedSet.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -115,6 +114,8 @@ public:
     };
     RenderRegion* regionAtBlockOffset(LayoutUnit, bool extendLastRegion = false, RegionAutoGenerationPolicy = AllowRegionAutoGeneration);
 
+    RenderRegion* regionFromAbsolutePointAndBox(IntPoint, const RenderBox* flowedBox);
+
     bool regionsHaveUniformLogicalWidth() const { return m_regionsHaveUniformLogicalWidth; }
     bool regionsHaveUniformLogicalHeight() const { return m_regionsHaveUniformLogicalHeight; }
 
@@ -170,6 +171,9 @@ public:
     void pushFlowThreadLayoutState(const RenderObject*);
     void popFlowThreadLayoutState();
     LayoutUnit offsetFromLogicalTopOfFirstRegion(const RenderBlock*) const;
+
+    // Used to estimate the maximum height of the flow thread.
+    static LayoutUnit maxLogicalHeight() { return LayoutUnit::max() / 2; }
 
 protected:
     virtual const char* renderName() const = 0;
@@ -291,20 +295,7 @@ private:
 
 };
 
-inline RenderFlowThread* toRenderFlowThread(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderFlowThread());
-    return static_cast<RenderFlowThread*>(object);
-}
-
-inline const RenderFlowThread* toRenderFlowThread(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderFlowThread());
-    return static_cast<const RenderFlowThread*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderFlowThread(const RenderFlowThread*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFlowThread, isRenderFlowThread());
 
 class CurrentRenderFlowThreadMaintainer {
     WTF_MAKE_NONCOPYABLE(CurrentRenderFlowThreadMaintainer);

@@ -24,7 +24,7 @@
 #define ElementStyleResources_h
 
 #include "CSSPropertyNames.h"
-#include "core/platform/graphics/Color.h"
+#include "platform/graphics/Color.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 
@@ -45,9 +45,6 @@ typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
 
 // Holds information about resources, requested by stylesheets.
 // Lifetime: per-element style resolve.
-// FIXME: At least for the moment, the lifetime actually matches that of StyleResolverState,
-// but all data is cleared for each element resolve. We must investigate performance
-// implications of matching effective and intended lifetime.
 class ElementStyleResources {
 WTF_MAKE_NONCOPYABLE(ElementStyleResources);
 public:
@@ -63,20 +60,18 @@ public:
     const PendingImagePropertyMap& pendingImageProperties() const { return m_pendingImageProperties; }
     const PendingSVGDocumentMap& pendingSVGDocuments() const { return m_pendingSVGDocuments; }
 
-    void setHasPendingShaders(bool hasPendingShaders) { m_hasPendingShaders = hasPendingShaders; }
-    bool hasPendingShaders() const { return m_hasPendingShaders; }
+    void setHasNewCustomFilterProgram(bool hasNewCustomFilterProgram) { m_hasNewCustomFilterProgram = hasNewCustomFilterProgram; }
+    bool hasNewCustomFilterProgram() const { return m_hasNewCustomFilterProgram; }
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float deviceScaleFactor) { m_deviceScaleFactor = deviceScaleFactor; }
 
     void addPendingSVGDocument(FilterOperation*, CSSSVGDocumentValue*);
 
-    void clear();
-
 private:
     PendingImagePropertyMap m_pendingImageProperties;
     PendingSVGDocumentMap m_pendingSVGDocuments;
-    bool m_hasPendingShaders;
+    bool m_hasNewCustomFilterProgram;
     float m_deviceScaleFactor;
 };
 

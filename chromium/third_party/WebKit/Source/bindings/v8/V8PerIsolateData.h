@@ -29,6 +29,7 @@
 #include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/WrapperTypeInfo.h"
+#include "gin/public/gin_embedders.h"
 #include <v8.h>
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -58,18 +59,18 @@ public:
     static V8PerIsolateData* from(v8::Isolate* isolate)
     {
         ASSERT(isolate);
-        ASSERT(isolate->GetData());
-        return static_cast<V8PerIsolateData*>(isolate->GetData());
+        ASSERT(isolate->GetData(gin::kEmbedderBlink));
+        return static_cast<V8PerIsolateData*>(isolate->GetData(gin::kEmbedderBlink));
     }
     static void dispose(v8::Isolate*);
 
-    typedef HashMap<void*, UnsafePersistent<v8::FunctionTemplate> > TemplateMap;
+    typedef HashMap<const void*, UnsafePersistent<v8::FunctionTemplate> > TemplateMap;
 
-    TemplateMap& rawTemplateMap(WrapperWorldType worldType)
+    TemplateMap& rawDOMTemplateMap(WrapperWorldType worldType)
     {
         if (worldType == MainWorld)
-            return m_rawTemplatesForMainWorld;
-        return m_rawTemplatesForNonMainWorld;
+            return m_rawDOMTemplatesForMainWorld;
+        return m_rawDOMTemplatesForNonMainWorld;
     }
 
     TemplateMap& templateMap(WrapperWorldType worldType)
@@ -133,9 +134,9 @@ public:
     v8::Handle<v8::FunctionTemplate> privateTemplateIfExists(WrapperWorldType, void* privatePointer);
     void setPrivateTemplate(WrapperWorldType, void* privatePointer, v8::Handle<v8::FunctionTemplate>);
 
-    v8::Handle<v8::FunctionTemplate> rawTemplate(WrapperTypeInfo*, WrapperWorldType);
+    v8::Handle<v8::FunctionTemplate> rawDOMTemplate(const WrapperTypeInfo*, WrapperWorldType);
 
-    bool hasInstance(WrapperTypeInfo*, v8::Handle<v8::Value>, WrapperWorldType);
+    bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>, WrapperWorldType);
 
     v8::Local<v8::Context> ensureRegexContext();
 
@@ -148,8 +149,8 @@ private:
     static void constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>&);
 
     v8::Isolate* m_isolate;
-    TemplateMap m_rawTemplatesForMainWorld;
-    TemplateMap m_rawTemplatesForNonMainWorld;
+    TemplateMap m_rawDOMTemplatesForMainWorld;
+    TemplateMap m_rawDOMTemplatesForNonMainWorld;
     TemplateMap m_templatesForMainWorld;
     TemplateMap m_templatesForNonMainWorld;
     ScopedPersistent<v8::FunctionTemplate> m_toStringTemplate;

@@ -53,6 +53,11 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
                          bool fin,
                          const SpdyHeaderBlock& headers) = 0;
 
+  // Called when a data frame header is received.
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) = 0;
+
   // Called when data is received.
   // |stream_id| The stream receiving data.
   // |data| A buffer containing the data received.
@@ -154,7 +159,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
 
   // SpdyFramer methods.
   size_t ProcessInput(const char* data, size_t len);
-  int protocol_version();
+  SpdyMajorVersion protocol_version();
   void Reset();
   SpdyFramer::SpdyError error_code() const;
   SpdyFramer::SpdyState state() const;
@@ -165,11 +170,9 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                              SpdyPriority priority,
                              uint8 credential_slot,
                              SpdyControlFlags flags,
-                             bool compressed,
                              const SpdyHeaderBlock* headers);
   SpdyFrame* CreateSynReply(SpdyStreamId stream_id,
                             SpdyControlFlags flags,
-                            bool compressed,
                             const SpdyHeaderBlock* headers);
   SpdyFrame* CreateRstStream(SpdyStreamId stream_id,
                              SpdyRstStreamStatus status) const;
@@ -180,13 +183,10 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
       SpdyGoAwayStatus status) const;
   SpdyFrame* CreateHeaders(SpdyStreamId stream_id,
                            SpdyControlFlags flags,
-                           bool compressed,
                            const SpdyHeaderBlock* headers);
   SpdyFrame* CreateWindowUpdate(
       SpdyStreamId stream_id,
       uint32 delta_window_size) const;
-  SpdyFrame* CreateCredentialFrame(
-      const SpdyCredential& credential) const;
   SpdyFrame* CreateDataFrame(SpdyStreamId stream_id,
                              const char* data,
                              uint32 len,

@@ -29,54 +29,45 @@
 #include "config.h"
 #include "modules/webdatabase/DatabaseThread.h"
 
-#include "core/platform/Logging.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "modules/webdatabase/SQLTransactionClient.h"
 #include "modules/webdatabase/SQLTransactionCoordinator.h"
+#include "platform/Logging.h"
+#include "public/platform/Platform.h"
 #include "wtf/AutodrainedPool.h"
-#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
 DatabaseThread::DatabaseThread()
-    : m_threadID(0)
-    , m_transactionClient(adoptPtr(new SQLTransactionClient()))
+    : m_transactionClient(adoptPtr(new SQLTransactionClient()))
     , m_transactionCoordinator(adoptPtr(new SQLTransactionCoordinator()))
     , m_cleanupSync(0)
+    , m_terminationRequested(false)
 {
-    m_selfRef = this;
 }
 
 DatabaseThread::~DatabaseThread()
 {
-    // The DatabaseThread will only be destructed when both its owner
-    // DatabaseContext has deref'ed it, and the databaseThread() thread function
-    // has deref'ed the DatabaseThread object. The DatabaseContext destructor
-    // will take care of ensuring that a termination request has been issued.
-    // The termination request will trigger an orderly shutdown of the thread
-    // function databaseThread(). In shutdown, databaseThread() will deref the
-    // DatabaseThread before returning.
-    ASSERT(terminationRequested());
+    if (!m_terminationRequested)
+        requestTermination(0);
+    m_thread.clear();
 }
 
-bool DatabaseThread::start()
+void DatabaseThread::start()
 {
-    MutexLocker lock(m_threadCreationMutex);
-
-    if (m_threadID)
-        return true;
-
-    m_threadID = createThread(DatabaseThread::databaseThreadStart, this, "WebCore: Database");
-
-    return m_threadID;
+    if (m_thread)
+        return;
+    m_thread = adoptPtr(blink::Platform::current()->createThread("WebCore: Database"));
 }
 
 void DatabaseThread::requestTermination(DatabaseTaskSynchronizer *cleanupSync)
 {
+    ASSERT(!m_terminationRequested);
+    m_terminationRequested = true;
     m_cleanupSync = cleanupSync;
-    LOG(StorageAPI, "DatabaseThread %p was asked to terminate\n", this);
-    m_queue.kill();
+    WTF_LOG(StorageAPI, "DatabaseThread %p was asked to terminate\n", this);
+    m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThread, this)));
 }
 
 bool DatabaseThread::terminationRequested(DatabaseTaskSynchronizer* taskSynchronizer) const
@@ -84,37 +75,17 @@ bool DatabaseThread::terminationRequested(DatabaseTaskSynchronizer* taskSynchron
 #ifndef NDEBUG
     if (taskSynchronizer)
         taskSynchronizer->setHasCheckedForTermination();
-#else
-    UNUSED_PARAM(taskSynchronizer);
 #endif
 
-    return m_queue.killed();
+    return m_terminationRequested;
 }
 
-void DatabaseThread::databaseThreadStart(void* vDatabaseThread)
+void DatabaseThread::cleanupDatabaseThread()
 {
-    DatabaseThread* dbThread = static_cast<DatabaseThread*>(vDatabaseThread);
-    dbThread->databaseThread();
-}
-
-void DatabaseThread::databaseThread()
-{
-    {
-        // Wait for DatabaseThread::start() to complete.
-        MutexLocker lock(m_threadCreationMutex);
-        LOG(StorageAPI, "Started DatabaseThread %p", this);
-    }
-
-    AutodrainedPool pool;
-    while (OwnPtr<DatabaseTask> task = m_queue.waitForMessage()) {
-        task->performTask();
-        pool.cycle();
-    }
+    WTF_LOG(StorageAPI, "Cleaning up DatabaseThread %p", this);
 
     // Clean up the list of all pending transactions on this database thread
     m_transactionCoordinator->shutdown();
-
-    LOG(StorageAPI, "About to detach thread %i and clear the ref to DatabaseThread %p, which currently has %i ref(s)", m_threadID, this, refCount());
 
     // Close the databases that we ran transactions on. This ensures that if any transactions are still open, they are rolled back and we don't leave the database in an
     // inconsistent or locked state.
@@ -127,21 +98,13 @@ void DatabaseThread::databaseThread()
             (*it).get()->close();
     }
 
-    // Detach the thread so its resources are no longer of any concern to anyone else
-    detachThread(m_threadID);
-
-    DatabaseTaskSynchronizer* cleanupSync = m_cleanupSync;
-
-    // Clear the self refptr, possibly resulting in deletion
-    m_selfRef = 0;
-
-    if (cleanupSync) // Someone wanted to know when we were done cleaning up.
-        cleanupSync->taskCompleted();
+    if (m_cleanupSync) // Someone wanted to know when we were done cleaning up.
+        m_cleanupSync->taskCompleted();
 }
 
 void DatabaseThread::recordDatabaseOpen(DatabaseBackend* database)
 {
-    ASSERT(currentThread() == m_threadID);
+    ASSERT(isDatabaseThread());
     ASSERT(database);
     ASSERT(!m_openDatabaseSet.contains(database));
     m_openDatabaseSet.add(database);
@@ -149,37 +112,25 @@ void DatabaseThread::recordDatabaseOpen(DatabaseBackend* database)
 
 void DatabaseThread::recordDatabaseClosed(DatabaseBackend* database)
 {
-    ASSERT(currentThread() == m_threadID);
+    ASSERT(isDatabaseThread());
     ASSERT(database);
-    ASSERT(m_queue.killed() || m_openDatabaseSet.contains(database));
+    ASSERT(m_terminationRequested || m_openDatabaseSet.contains(database));
     m_openDatabaseSet.remove(database);
+}
+
+bool DatabaseThread::isDatabaseOpen(DatabaseBackend* database)
+{
+    ASSERT(isDatabaseThread());
+    ASSERT(database);
+    return !m_terminationRequested && m_openDatabaseSet.contains(database);
 }
 
 void DatabaseThread::scheduleTask(PassOwnPtr<DatabaseTask> task)
 {
+    ASSERT(m_thread);
     ASSERT(!task->hasSynchronizer() || task->hasCheckedForTermination());
-    m_queue.append(task);
+    // WebThread takes ownership of the task.
+    m_thread->postTask(task.leakPtr());
 }
 
-void DatabaseThread::scheduleImmediateTask(PassOwnPtr<DatabaseTask> task)
-{
-    ASSERT(!task->hasSynchronizer() || task->hasCheckedForTermination());
-    m_queue.prepend(task);
-}
-
-class SameDatabasePredicate {
-public:
-    SameDatabasePredicate(const DatabaseBackend* database) : m_database(database) { }
-    bool operator()(DatabaseTask* task) const { return task->database() == m_database; }
-private:
-    const DatabaseBackend* m_database;
-};
-
-void DatabaseThread::unscheduleDatabaseTasks(DatabaseBackend* database)
-{
-    // Note that the thread loop is running, so some tasks for the database
-    // may still be executed. This is unavoidable.
-    SameDatabasePredicate predicate(database);
-    m_queue.removeIf(predicate);
-}
 } // namespace WebCore

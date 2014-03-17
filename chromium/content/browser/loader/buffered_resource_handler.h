@@ -37,14 +37,15 @@ class BufferedResourceHandler
                                  ResourceResponse* response,
                                  bool* defer) OVERRIDE;
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
   virtual bool OnReadCompleted(int request_id, int bytes_read,
                                bool* defer) OVERRIDE;
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
 
   // ResourceController implementation:
   virtual void Resume() OVERRIDE;
@@ -95,7 +96,6 @@ class BufferedResourceHandler
 
   scoped_refptr<ResourceResponse> response_;
   ResourceDispatcherHostImpl* host_;
-  net::URLRequest* request_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_size_;
   int bytes_read_;

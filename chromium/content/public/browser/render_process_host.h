@@ -9,6 +9,7 @@
 #include "base/id_map.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
+#include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
@@ -18,17 +19,16 @@
 class GURL;
 struct ViewMsg_SwapOut_Params;
 
-namespace content {
-class BrowserContext;
-class RenderWidgetHost;
-class StoragePartition;
-}
-
 namespace base {
 class TimeDelta;
 }
 
 namespace content {
+class BrowserContext;
+class BrowserMessageFilter;
+class RenderProcessHostObserver;
+class RenderWidgetHost;
+class StoragePartition;
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
     const std::string& id);
@@ -37,7 +37,8 @@ typedef base::Thread* (*RendererMainThreadFactoryFunction)(
 // communication channel. There will generally be one RenderProcessHost per
 // renderer process.
 class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
-                                         public IPC::Listener {
+                                         public IPC::Listener,
+                                         public base::SupportsUserData {
  public:
   typedef IDMap<RenderProcessHost>::iterator iterator;
 
@@ -54,6 +55,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
     base::TerminationStatus status;
     int exit_code;
   };
+
+  // General functions ---------------------------------------------------------
 
   virtual ~RenderProcessHost() {}
 
@@ -72,6 +75,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // listeners own it any more, it will delete itself.
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
   virtual void RemoveRoute(int32 routing_id) = 0;
+
+  // Add and remove observers for lifecycle events. The order in which
+  // notifications are sent to observers is undefined. Observers must be sure to
+  // remove the observer before they go away.
+  virtual void AddObserver(RenderProcessHostObserver* observer) = 0;
+  virtual void RemoveObserver(RenderProcessHostObserver* observer) = 0;
 
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a
@@ -159,6 +168,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Returns the renderer channel.
   virtual IPC::ChannelProxy* GetChannel() = 0;
+
+  // Adds a message filter to the IPC channel.
+  virtual void AddFilter(BrowserMessageFilter* filter) = 0;
 
   // Try to shutdown the associated render process as fast as possible
   virtual bool FastShutdownForPageCount(size_t count) = 0;

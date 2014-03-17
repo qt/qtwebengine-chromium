@@ -294,7 +294,8 @@ void DownloadItemImpl::ValidateDangerousDownload() {
   if (IsDone() || !IsDangerous())
     return;
 
-  RecordDangerousDownloadAccept(GetDangerType());
+  RecordDangerousDownloadAccept(GetDangerType(),
+                                GetTargetFilePath());
 
   danger_type_ = DOWNLOAD_DANGER_TYPE_USER_VALIDATED;
 
@@ -380,7 +381,8 @@ void DownloadItemImpl::Cancel(bool user_cancel) {
     RecordDangerousDownloadDiscard(
         user_cancel ? DOWNLOAD_DISCARD_DUE_TO_USER_ACTION
                     : DOWNLOAD_DISCARD_DUE_TO_SHUTDOWN,
-        GetDangerType());
+        GetDangerType(),
+        GetTargetFilePath());
   }
 
   last_reason_ = user_cancel ? DOWNLOAD_INTERRUPT_REASON_USER_CANCELED
@@ -892,6 +894,50 @@ DownloadItemImpl::ResumeMode DownloadItemImpl::GetResumeMode() const {
   }
 
   return mode;
+}
+
+void DownloadItemImpl::MergeOriginInfoOnResume(
+    const DownloadCreateInfo& new_create_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(RESUMING_INTERNAL, state_);
+  DCHECK(!new_create_info.url_chain.empty());
+
+  // We are going to tack on any new redirects to our list of redirects.
+  // When a download is resumed, the URL used for the resumption request is the
+  // one at the end of the previous redirect chain. Tacking additional redirects
+  // to the end of this chain ensures that:
+  // - If the download needs to be resumed again, the ETag/Last-Modified headers
+  //   will be used with the last server that sent them to us.
+  // - The redirect chain contains all the servers that were involved in this
+  //   download since the initial request, in order.
+  std::vector<GURL>::const_iterator chain_iter =
+      new_create_info.url_chain.begin();
+  if (*chain_iter == url_chain_.back())
+    ++chain_iter;
+
+  // Record some stats. If the precondition failed (the server returned
+  // HTTP_PRECONDITION_FAILED), then the download will automatically retried as
+  // a full request rather than a partial. Full restarts clobber validators.
+  int origin_state = 0;
+  if (chain_iter != new_create_info.url_chain.end())
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_ADDITIONAL_REDIRECTS;
+  if (etag_ != new_create_info.etag ||
+      last_modified_time_ != new_create_info.last_modified)
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_VALIDATORS_CHANGED;
+  if (content_disposition_ != new_create_info.content_disposition)
+    origin_state |= ORIGIN_STATE_ON_RESUMPTION_CONTENT_DISPOSITION_CHANGED;
+  RecordOriginStateOnResumption(new_create_info.save_info->offset != 0,
+                                origin_state);
+
+  url_chain_.insert(
+      url_chain_.end(), chain_iter, new_create_info.url_chain.end());
+  etag_ = new_create_info.etag;
+  last_modified_time_ = new_create_info.last_modified;
+  content_disposition_ = new_create_info.content_disposition;
+
+  // Don't update observers. This method is expected to be called just before a
+  // DownloadFile is created and Start() is called. The observers will be
+  // notified when the download transitions to the IN_PROGRESS state.
 }
 
 void DownloadItemImpl::NotifyRemoved() {
@@ -1544,6 +1590,18 @@ void DownloadItemImpl::SetDangerType(DownloadDangerType danger_type) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_ITEM_SAFETY_STATE_UPDATED,
         base::Bind(&ItemCheckedNetLogCallback, danger_type));
+  }
+  // Only record the Malicious UMA stat if it's going from {not malicious} ->
+  // {malicious}.
+  if ((danger_type_ == DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT ||
+       danger_type_ == DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT) &&
+      (danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
+       danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
+       danger_type == DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
+       danger_type == DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED)) {
+    RecordMaliciousDownloadClassified(danger_type);
   }
   danger_type_ = danger_type;
 }

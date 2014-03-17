@@ -18,10 +18,16 @@ public:
     GrRectanizerPow2(int w, int h) : GrRectanizer(w, h) {
         fNextStripY = 0;
         fAreaSoFar = 0;
-        Gr_bzero(fRows, sizeof(fRows));
+        sk_bzero(fRows, sizeof(fRows));
     }
 
     virtual ~GrRectanizerPow2() {
+    }
+
+    virtual void reset() {
+        fNextStripY = 0;
+        fAreaSoFar = 0;
+        sk_bzero(fRows, sizeof(fRows));
     }
 
     virtual bool addRect(int w, int h, GrIPoint16* loc);
@@ -116,6 +122,7 @@ bool GrRectanizerPow2::addRect(int width, int height, GrIPoint16* loc) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrRectanizer* GrRectanizer::Factory(int width, int height) {
-    return SkNEW_ARGS(GrRectanizerPow2, (width, height));
-}
+// factory is now in GrRectanizer_skyline.cpp
+//GrRectanizer* GrRectanizer::Factory(int width, int height) {
+//    return SkNEW_ARGS(GrRectanizerPow2, (width, height));
+//}

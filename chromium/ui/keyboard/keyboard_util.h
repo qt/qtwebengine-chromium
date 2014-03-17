@@ -8,11 +8,10 @@
 #include <string>
 
 #include "base/strings/string16.h"
+// TODO(beng): replace with forward decl once RootWindow is renamed.
+#include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_export.h"
 
-namespace aura {
-class RootWindow;
-}
 struct GritResourceMap;
 
 namespace keyboard {
@@ -25,37 +24,62 @@ enum CursorMoveDirection {
   kCursorMoveDown = 0x08
 };
 
+// An enumeration of different keyboard control events that should be logged.
+enum KeyboardControlEvent {
+  KEYBOARD_CONTROL_SHOW = 0,
+  KEYBOARD_CONTROL_HIDE_AUTO,
+  KEYBOARD_CONTROL_HIDE_USER,
+  KEYBOARD_CONTROL_MAX,
+};
+
 // Returns true if the virtual keyboard is enabled.
 KEYBOARD_EXPORT bool IsKeyboardEnabled();
+
+// Returns true if the keyboard usability test is enabled.
+KEYBOARD_EXPORT bool IsKeyboardUsabilityExperimentEnabled();
 
 // Insert |text| into the active TextInputClient associated with |root_window|,
 // if there is one. Returns true if |text| was successfully inserted. Note
 // that this may convert |text| into ui::KeyEvents for injection in some
 // special circumstances (i.e. VKEY_RETURN, VKEY_BACK).
 KEYBOARD_EXPORT bool InsertText(const base::string16& text,
-                                aura::RootWindow* root_window);
+                                aura::Window* root_window);
 
 // Move cursor when swipe on the virtualkeyboard. Returns true if cursor was
 // successfully moved according to |swipe_direction|.
 KEYBOARD_EXPORT bool MoveCursor(int swipe_direction,
                                 int modifier_flags,
-                                aura::RootWindow* root_window);
+                                aura::WindowEventDispatcher* dispatcher);
 
 // Sends a fabricated key event, where |type| is the event type, |key_value|
 // is the unicode value of the character, |key_code| is the legacy key code
-// value, and |shift_modifier| indicates if the shift key is being virtually
-// pressed. The event is dispatched to the active TextInputClient associated
-// with |root_window|. The type may be "keydown" or "keyup".
+// value, |key_name| is the name of the key as defined in the DOM3 key event
+// specification, and |modifier| indicates if any modifier keys are being
+// virtually pressed. The event is dispatched to the active TextInputClient
+// associated with |root_window|. The type may be "keydown" or "keyup".
 KEYBOARD_EXPORT bool SendKeyEvent(std::string type,
                                    int key_value,
                                    int key_code,
-                                   bool shift_modifier,
-                                   aura::RootWindow* root_window);
+                                   std::string key_name,
+                                   int modifiers,
+                                   aura::WindowEventDispatcher* dispatcher);
+
+// Marks that the keyboard load has started. This is used to measure the time it
+// takes to fully load the keyboard. This should be called before
+// MarkKeyboardLoadFinished.
+KEYBOARD_EXPORT const void MarkKeyboardLoadStarted();
+
+// Marks that the keyboard load has ended. This finishes measuring that the
+// keyboard is loaded.
+KEYBOARD_EXPORT const void MarkKeyboardLoadFinished();
 
 // Get the list of keyboard resources. |size| is populated with the number of
 // resources in the returned array.
 KEYBOARD_EXPORT const GritResourceMap* GetKeyboardExtensionResources(
     size_t* size);
+
+// Logs the keyboard control event as a UMA stat.
+void LogKeyboardControlEvent(KeyboardControlEvent event);
 
 }  // namespace keyboard
 

@@ -159,13 +159,15 @@ Range CharRangeToGlyphRange(const internal::TextRun& run,
 // Starting from |start_char|, finds a suitable line break position at or before
 // |available_width| using word break info from |breaks|. If |empty_line| is
 // true, this function will not roll back to |start_char| and |*next_char| will
-// be greater than |start_char| (to avoid constructing empty lines).
+// be greater than |start_char| (to avoid constructing empty lines). Returns
+// whether to skip the line before |*next_char|.
 // TODO(ckocagil): Do not break ligatures and diacritics.
 //                 TextRun::logical_clusters might help.
 // TODO(ckocagil): We might have to reshape after breaking at ligatures.
 //                 See whether resolving the TODO above resolves this too.
 // TODO(ckocagil): Do not reserve width for whitespace at the end of lines.
-void BreakRunAtWidth(const internal::TextRun& run,
+bool BreakRunAtWidth(const wchar_t* text,
+                     const internal::TextRun& run,
                      const BreakList<size_t>& breaks,
                      size_t start_char,
                      int available_width,
@@ -180,6 +182,11 @@ void BreakRunAtWidth(const internal::TextRun& run,
   *width = 0;
 
   for (size_t i = start_char; i < run.range.end(); ++i) {
+    if (U16_IS_SINGLE(text[i]) && text[i] == L'\n') {
+      *next_char = i + 1;
+      return true;
+    }
+
     // |word| holds the word boundary at or before |i|, and |next_word| holds
     // the word boundary right after |i|. Advance both |word| and |next_word|
     // when |i| reaches |next_word|.
@@ -198,20 +205,24 @@ void BreakRunAtWidth(const internal::TextRun& run,
 
     if (*width > available_width) {
       if (!empty_line || word_width < *width) {
+        // Roll back one word.
         *width -= word_width;
         *next_char = std::max(word->first, start_char);
       } else if (char_width < *width) {
+        // Roll back one character.
         *width -= char_width;
         *next_char = i;
       } else {
+        // Continue from the next character.
         *next_char = i + 1;
       }
 
-      return;
+      return true;
     }
   }
 
   *next_char = run.range.end();
+  return false;
 }
 
 // For segments in the same run, checks the continuity and order of |x_range|
@@ -244,6 +255,12 @@ void CheckLineIntegrity(const std::vector<internal::Line>& lines,
       }
     }
   }
+}
+
+// Returns true if characters of |block_code| may trigger font fallback.
+bool IsUnusualBlockCode(const UBlockCode block_code) {
+  return block_code == UBLOCK_GEOMETRIC_SHAPES ||
+         block_code == UBLOCK_MISCELLANEOUS_SYMBOLS;
 }
 
 }  // namespace
@@ -302,12 +319,14 @@ class LineBreaker {
               int min_baseline,
               int min_height,
               bool multiline,
+              const wchar_t* text,
               const BreakList<size_t>* words,
               const ScopedVector<TextRun>& runs)
       : max_width_(max_width),
         min_baseline_(min_baseline),
         min_height_(min_height),
         multiline_(multiline),
+        text_(text),
         words_(words),
         runs_(runs),
         text_x_(0),
@@ -320,7 +339,16 @@ class LineBreaker {
   // Breaks the run at given |run_index| into Line structs.
   void AddRun(int run_index) {
     const TextRun* run = runs_[run_index];
-    if (multiline_ && line_x_ + run->width > max_width_)
+    bool run_fits = !multiline_;
+    if (multiline_ && line_x_ + run->width <= max_width_) {
+      DCHECK(!run->range.is_empty());
+      const wchar_t first_char = text_[run->range.start()];
+      // Uniscribe always puts newline characters in their own runs.
+      if (!U16_IS_SINGLE(first_char) || first_char != L'\n')
+        run_fits = true;
+    }
+
+    if (!run_fits)
       BreakRun(run_index);
     else
       AddSegment(run_index, run->range, run->width);
@@ -356,10 +384,10 @@ class LineBreaker {
     // Break the run until it fits the current line.
     while (next_char < run->range.end()) {
       const size_t current_char = next_char;
-      BreakRunAtWidth(*run, *words_, current_char, max_width_ - line_x_,
-                      line_x_ == 0, &width, &next_char);
+      const bool skip_line = BreakRunAtWidth(text_, *run, *words_, current_char,
+          max_width_ - line_x_, line_x_ == 0, &width, &next_char);
       AddSegment(run_index, Range(current_char, next_char), width);
-      if (next_char < run->range.end())
+      if (skip_line)
         AdvanceLine();
     }
   }
@@ -443,6 +471,7 @@ class LineBreaker {
   const int min_baseline_;
   const int min_height_;
   const bool multiline_;
+  const wchar_t* text_;
   const BreakList<size_t>* const words_;
   const ScopedVector<TextRun>& runs_;
 
@@ -493,11 +522,6 @@ Size RenderTextWin::GetStringSize() {
   return multiline_string_size_;
 }
 
-int RenderTextWin::GetBaseline() {
-  EnsureLayout();
-  return lines()[0].baseline;
-}
-
 SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
   if (text().empty())
     return SelectionModel();
@@ -539,6 +563,11 @@ std::vector<RenderText::FontSpan> RenderTextWin::GetFontSpansForTesting() {
   }
 
   return spans;
+}
+
+int RenderTextWin::GetLayoutTextBaseline() {
+  EnsureLayout();
+  return lines()[0].baseline;
 }
 
 SelectionModel RenderTextWin::AdjacentCharSelectionModel(
@@ -741,6 +770,7 @@ void RenderTextWin::EnsureLayout() {
     internal::LineBreaker line_breaker(display_rect().width() - 1,
                                        font_list().GetBaseline(),
                                        font_list().GetHeight(), multiline(),
+                                       GetLayoutText().c_str(),
                                        multiline() ? &GetLineBreaks() : NULL,
                                        runs_);
     for (size_t i = 0; i < runs_.size(); ++i)
@@ -914,27 +944,31 @@ void RenderTextWin::ItemizeLogicalText() {
     // Clamp run lengths to avoid exceeding the maximum supported glyph count.
     if ((run_break - run->range.start()) > max_run_length) {
       run_break = run->range.start() + max_run_length;
-      if (!gfx::IsValidCodePointIndex(layout_text, run_break))
+      if (!IsValidCodePointIndex(layout_text, run_break))
         --run_break;
     }
 
-    // Break runs between characters in different code blocks. This avoids using
-    // fallback fonts for more characters than needed. http://crbug.com/278913
+    // Break runs adjacent to character substrings in certain code blocks.
+    // This avoids using their fallback fonts for more characters than needed,
+    // in cases like "\x25B6 Media Title", etc. http://crbug.com/278913
     if (run_break > run->range.start()) {
       const size_t run_start = run->range.start();
       const int32 run_length = static_cast<int32>(run_break - run_start);
       base::i18n::UTF16CharIterator iter(layout_text.c_str() + run_start,
                                          run_length);
       const UBlockCode first_block_code = ublock_getCode(iter.get());
+      const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
       while (iter.Advance() && iter.array_pos() < run_length) {
-        if (ublock_getCode(iter.get()) != first_block_code) {
+        const UBlockCode current_block_code = ublock_getCode(iter.get());
+        if (current_block_code != first_block_code &&
+            (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
           run_break = run_start + iter.array_pos();
           break;
         }
       }
     }
 
-    DCHECK(gfx::IsValidCodePointIndex(layout_text, run_break));
+    DCHECK(IsValidCodePointIndex(layout_text, run_break));
 
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     if (script_item_break == run_break)

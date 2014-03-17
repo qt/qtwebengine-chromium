@@ -27,6 +27,7 @@ class GURL;
 namespace base {
 class MessageLoop;
 class SingleThreadTaskRunner;
+class TimeDelta;
 }  // namespace base
 
 namespace net {
@@ -147,10 +148,15 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                                 const BoundNetLog& net_log);
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
-  // list of bad proxies to include the first entry of |results|. Returns true
-  // if there will be at least one proxy remaining in the list after fallback
-  // and false otherwise.
-  bool MarkProxyAsBad(const ProxyInfo& results, const BoundNetLog& net_log);
+  // list of bad proxies to include the first entry of |results|, and,
+  // optionally, another bad proxy. Will retry after |retry_delay| if positive,
+  // and will use the default proxy retry duration otherwise. Returns true if
+  // there will be at least one proxy remaining in the list after fallback and
+  // false otherwise.
+  bool MarkProxiesAsBad(const ProxyInfo& results,
+                        base::TimeDelta retry_delay,
+                        const ProxyServer& another_bad_proxy,
+                        const BoundNetLog& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -256,6 +262,38 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // This method should only be used by unit tests. Creates an instance
   // of the default internal PacPollPolicy used by ProxyService.
   static scoped_ptr<PacPollPolicy> CreateDefaultPacPollPolicy();
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  // Values of the UMA DataReductionProxy.BypassInfo{Primary|Fallback}
+  // histograms. This enum must remain synchronized with the enum of the same
+  // name in metrics/histograms/histograms.xml.
+  enum DataReductionProxyBypassEventType {
+    // Bypass the proxy for less than 30 minutes.
+    SHORT_BYPASS = 0,
+
+    // Bypass the proxy for 30 minutes or more.
+    LONG_BYPASS,
+
+    // Bypass the proxy because of an internal server error.
+    INTERNAL_SERVER_ERROR_BYPASS,
+
+    // Bypass the proxy because of any other error.
+    ERROR_BYPASS,
+
+    // Bypass the proxy because responses appear not to be coming via it.
+    MISSING_VIA_HEADER,
+
+    // This must always be last.
+    BYPASS_EVENT_TYPE_MAX
+  };
+
+  // Records a |DataReductionProxyBypassEventType| for either the data reduction
+  // proxy (|is_primary| is true) or the data reduction proxy fallback.
+  void RecordDataReductionProxyBypassInfo(
+      bool is_primary,
+      const ProxyServer& proxy_server,
+      DataReductionProxyBypassEventType bypass_type) const;
+#endif
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);

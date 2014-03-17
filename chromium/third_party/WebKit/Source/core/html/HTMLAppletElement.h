@@ -23,29 +23,33 @@
 #ifndef HTMLAppletElement_h
 #define HTMLAppletElement_h
 
-#include "core/html/HTMLPlugInImageElement.h"
+#include "core/html/HTMLPlugInElement.h"
 
 namespace WebCore {
 
-class HTMLAppletElement FINAL : public HTMLPlugInImageElement {
+class KURL;
+
+class HTMLAppletElement FINAL : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLAppletElement> create(const QualifiedName&, Document&, bool createdByParser);
+    static PassRefPtr<HTMLAppletElement> create(Document&, bool createdByParser);
 
 protected:
     virtual RenderWidget* renderWidgetForJSBindings() const OVERRIDE;
 
 private:
-    HTMLAppletElement(const QualifiedName&, Document&, bool createdByParser);
+    HTMLAppletElement(Document&, bool createdByParser);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
-    virtual void updateWidget(PluginCreationOption) OVERRIDE;
+    virtual void updateWidgetInternal() OVERRIDE;
 
     bool canEmbedJava() const;
+    bool canEmbedURL(const KURL&) const;
 
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }

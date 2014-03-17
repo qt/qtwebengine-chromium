@@ -32,7 +32,7 @@
 
 namespace WebCore { class PlatformSpeechSynthesisUtterance; }
 
-namespace WebKit {
+namespace blink {
 
 class WebSpeechSynthesisUtterance {
 public:
@@ -46,32 +46,32 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebSpeechSynthesisUtterance&);
-    WEBKIT_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void assign(const WebSpeechSynthesisUtterance&);
+    BLINK_PLATFORM_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT WebString text() const;
-    WEBKIT_EXPORT WebString lang() const;
-    WEBKIT_EXPORT WebString voice() const;
+    BLINK_PLATFORM_EXPORT WebString text() const;
+    BLINK_PLATFORM_EXPORT WebString lang() const;
+    BLINK_PLATFORM_EXPORT WebString voice() const;
 
     // As defined in: https://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html
-    WEBKIT_EXPORT float volume() const; // 0...1, 1 is default
-    WEBKIT_EXPORT float rate() const; // 0.1...10, 1 is default
-    WEBKIT_EXPORT float pitch() const; // 0...2, 1 is default
+    BLINK_PLATFORM_EXPORT float volume() const; // 0...1, 1 is default
+    BLINK_PLATFORM_EXPORT float rate() const; // 0.1...10, 1 is default
+    BLINK_PLATFORM_EXPORT float pitch() const; // 0...2, 1 is default
 
-    WEBKIT_EXPORT double startTime() const; // In seconds.
+    BLINK_PLATFORM_EXPORT double startTime() const; // In seconds.
 
-#if WEBKIT_IMPLEMENTATION
-    WebSpeechSynthesisUtterance(const PassRefPtr<WebCore::PlatformSpeechSynthesisUtterance>&);
-    WebSpeechSynthesisUtterance& operator=(WebCore::PlatformSpeechSynthesisUtterance*);
-    operator PassRefPtr<WebCore::PlatformSpeechSynthesisUtterance>() const;
-    operator WebCore::PlatformSpeechSynthesisUtterance*() const;
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebSpeechSynthesisUtterance(const PassRefPtr<WebCore::PlatformSpeechSynthesisUtterance>&);
+    BLINK_PLATFORM_EXPORT WebSpeechSynthesisUtterance& operator=(WebCore::PlatformSpeechSynthesisUtterance*);
+    BLINK_PLATFORM_EXPORT operator PassRefPtr<WebCore::PlatformSpeechSynthesisUtterance>() const;
+    BLINK_PLATFORM_EXPORT operator WebCore::PlatformSpeechSynthesisUtterance*() const;
 #endif
 
 private:
     WebPrivatePtr<WebCore::PlatformSpeechSynthesisUtterance> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSpeechSynthesisUtterance_h

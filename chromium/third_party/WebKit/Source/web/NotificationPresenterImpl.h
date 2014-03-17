@@ -37,7 +37,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebNotificationPresenter;
 
@@ -49,22 +49,20 @@ public:
     bool isInitialized();
 
     // WebCore::NotificationPresenter implementation.
-    virtual bool show(WebCore::Notification* object);
-    virtual void cancel(WebCore::Notification* object);
-    virtual void notificationObjectDestroyed(WebCore::Notification* object);
-    virtual void notificationControllerDestroyed();
-    virtual WebCore::NotificationClient::Permission checkPermission(WebCore::ScriptExecutionContext*);
+    virtual bool show(WebCore::NotificationBase*);
+    virtual void cancel(WebCore::NotificationBase*);
+    virtual void notificationObjectDestroyed(WebCore::NotificationBase*);
+    virtual WebCore::NotificationClient::Permission checkPermission(WebCore::ExecutionContext*);
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    virtual void requestPermission(WebCore::ScriptExecutionContext*, WTF::PassRefPtr<WebCore::VoidCallback> callback);
+    virtual void requestPermission(WebCore::ExecutionContext*, WTF::PassOwnPtr<WebCore::VoidCallback>);
 #endif
-    virtual void requestPermission(WebCore::ScriptExecutionContext*, WTF::PassRefPtr<WebCore::NotificationPermissionCallback>);
-    virtual void cancelRequestsForPermission(WebCore::ScriptExecutionContext*) {}
+    virtual void requestPermission(WebCore::ExecutionContext*, WTF::PassOwnPtr<WebCore::NotificationPermissionCallback>);
 
 private:
     // WebNotificationPresenter that this object delegates to.
     WebNotificationPresenter* m_presenter;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // NotificationPresenterImpl_h

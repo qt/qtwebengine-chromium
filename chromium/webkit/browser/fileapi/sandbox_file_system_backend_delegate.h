@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/files/file_path.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -43,6 +44,7 @@ class FileSystemOperationContext;
 class FileSystemURL;
 class FileSystemUsageCache;
 class ObfuscatedFileUtil;
+class QuotaReservationManager;
 class SandboxFileSystemBackend;
 class SandboxFileSystemTestHelper;
 class SandboxQuotaObserver;
@@ -70,6 +72,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
     virtual bool HasFileSystemType(FileSystemType type) const = 0;
   };
 
+  // Returns the type directory name in sandbox directory for given |type|.
+  static std::string GetTypeString(FileSystemType type);
+
   SandboxFileSystemBackendDelegate(
       quota::QuotaManagerProxy* quota_manager_proxy,
       base::SequencedTaskRunner* file_task_runner,
@@ -78,14 +83,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
       const FileSystemOptions& file_system_options);
 
   virtual ~SandboxFileSystemBackendDelegate();
-
-  // Performs API-specific validity checks on the given path |url|.
-  // Returns true if access to |url| is valid in this filesystem.
-  bool IsAccessValid(const FileSystemURL& url) const;
-
-  // Returns true if the given |url|'s scheme is allowed to access
-  // filesystem.
-  bool IsAllowedScheme(const GURL& url) const;
 
   // Returns an origin enumerator of sandbox filesystem.
   // This method can only be called on the file thread.
@@ -141,6 +138,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
       FileSystemContext* context,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
+  virtual scoped_refptr<QuotaReservation>
+      CreateQuotaReservationOnFileTaskRunner(
+          const GURL& origin_url,
+          FileSystemType type) OVERRIDE;
   virtual void AddFileUpdateObserver(
       FileSystemType type,
       FileUpdateObserver* observer,
@@ -159,6 +160,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
       FileSystemType type) const OVERRIDE;
   virtual const AccessObserverList* GetAccessObservers(
       FileSystemType type) const OVERRIDE;
+
+  // Registers quota observer for file updates on filesystem of |type|.
+  void RegisterQuotaUpdateObserver(FileSystemType type);
 
   void InvalidateUsageCache(const GURL& origin_url,
                             FileSystemType type);
@@ -188,6 +192,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
  private:
   friend class SandboxQuotaObserver;
   friend class SandboxFileSystemTestHelper;
+  friend class QuotaBackendImpl;
+  FRIEND_TEST_ALL_PREFIXES(SandboxFileSystemBackendDelegateTest, IsAccessValid);
+
+  // Performs API-specific validity checks on the given path |url|.
+  // Returns true if access to |url| is valid in this filesystem.
+  bool IsAccessValid(const FileSystemURL& url) const;
+
+  // Returns true if the given |url|'s scheme is allowed to access
+  // filesystem.
+  bool IsAllowedScheme(const GURL& url) const;
 
   // Returns a path to the usage cache file.
   base::FilePath GetUsageCachePathForOriginAndType(
@@ -212,6 +226,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
   scoped_ptr<AsyncFileUtil> sandbox_file_util_;
   scoped_ptr<FileSystemUsageCache> file_system_usage_cache_;
   scoped_ptr<SandboxQuotaObserver> quota_observer_;
+  scoped_ptr<QuotaReservationManager> quota_reservation_manager_;
 
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
 

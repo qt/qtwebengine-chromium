@@ -46,7 +46,11 @@ MediaOptimization::MediaOptimization(int32_t id, Clock* clock)
       qm_resolution_(new VCMQmResolution()),
       last_qm_update_time_(0),
       last_change_time_(0),
-      num_layers_(0) {
+      num_layers_(0),
+      suspension_enabled_(false),
+      video_suspended_(false),
+      suspension_threshold_bps_(0),
+      suspension_window_bps_(0) {
   memset(send_statistics_, 0, sizeof(send_statistics_));
   memset(incoming_frame_times_, -1, sizeof(incoming_frame_times_));
 }
@@ -189,6 +193,8 @@ uint32_t MediaOptimization::SetTargetRates(uint32_t target_bitrate,
     content_->ResetShortTermAvgData();
   }
 
+  CheckSuspendConditions();
+
   return target_bit_rate_;
 }
 
@@ -285,8 +291,7 @@ int32_t MediaOptimization::UpdateWithEncodedData(int encoded_length,
   UpdateSentBitrate(now_ms);
   UpdateSentFramerate();
   if (encoded_length > 0) {
-    const bool delta_frame = (encoded_frame_type != kVideoFrameKey &&
-                              encoded_frame_type != kVideoFrameGolden);
+    const bool delta_frame = (encoded_frame_type != kVideoFrameKey);
 
     frame_dropper_->Fill(encoded_length, delta_frame);
     if (max_payload_size_ > 0 && encoded_length > 0) {
@@ -345,7 +350,9 @@ void MediaOptimization::EnableFrameDropper(bool enable) {
 bool MediaOptimization::DropFrame() {
   // Leak appropriate number of bytes.
   frame_dropper_->Leak((uint32_t)(InputFrameRate() + 0.5f));
-
+  if (video_suspended_) {
+    return true;  // Drop all frames when muted.
+  }
   return frame_dropper_->DropFrame();
 }
 
@@ -408,6 +415,15 @@ int32_t MediaOptimization::SelectQuality() {
   content_->Reset();
 
   return VCM_OK;
+}
+
+void MediaOptimization::SuspendBelowMinBitrate(int threshold_bps,
+                                               int window_bps) {
+  assert(threshold_bps > 0 && window_bps >= 0);
+  suspension_threshold_bps_ = threshold_bps;
+  suspension_window_bps_ = window_bps;
+  suspension_enabled_ = true;
+  video_suspended_ = false;
 }
 
 // Private methods below this line.
@@ -580,6 +596,25 @@ void MediaOptimization::ProcessIncomingFrameRate(int64_t now) {
     incoming_frame_rate_ = 1.0;
     if (diff > 0) {
       incoming_frame_rate_ = nr_of_frames * 1000.0f / static_cast<float>(diff);
+    }
+  }
+}
+
+void MediaOptimization::CheckSuspendConditions() {
+  // Check conditions for SuspendBelowMinBitrate. |target_bit_rate_| is in bps.
+  if (suspension_enabled_) {
+    if (!video_suspended_) {
+      // Check if we just went below the threshold.
+      if (target_bit_rate_ < suspension_threshold_bps_) {
+        video_suspended_ = true;
+      }
+    } else {
+      // Video is already suspended. Check if we just went over the threshold
+      // with a margin.
+      if (target_bit_rate_ >
+          suspension_threshold_bps_ + suspension_window_bps_) {
+        video_suspended_ = false;
+      }
     }
   }
 }

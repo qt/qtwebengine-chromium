@@ -38,10 +38,11 @@
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class ExecutionContext;
 
-bool invokeCallback(v8::Handle<v8::Object> callback, int argc, v8::Handle<v8::Value> argv[], bool& callbackReturnValue, ScriptExecutionContext*, v8::Isolate*);
-bool invokeCallback(v8::Handle<v8::Object> callback, v8::Handle<v8::Object> thisObject, int argc, v8::Handle<v8::Value> argv[], bool& callbackReturnValue, ScriptExecutionContext*, v8::Isolate*);
+// Returns false if the callback threw an exception, true otherwise.
+bool invokeCallback(v8::Local<v8::Function> callback, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
+bool invokeCallback(v8::Local<v8::Function> callback, v8::Handle<v8::Object> thisObject, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
 
 enum CallbackAllowedValueFlag {
     CallbackAllowUndefined = 1,
@@ -52,23 +53,23 @@ typedef unsigned CallbackAllowedValueFlags;
 
 // 'FunctionOnly' is assumed for the created callback.
 template <typename V8CallbackType>
-PassRefPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value, bool& succeeded, v8::Isolate* isolate, CallbackAllowedValueFlags acceptedValues = 0)
+PassOwnPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value, bool& succeeded, v8::Isolate* isolate, CallbackAllowedValueFlags acceptedValues = 0)
 {
     succeeded = true;
 
     if (value->IsUndefined() && (acceptedValues & CallbackAllowUndefined))
-        return 0;
+        return nullptr;
 
     if (value->IsNull() && (acceptedValues & CallbackAllowNull))
-        return 0;
+        return nullptr;
 
     if (!value->IsFunction()) {
         succeeded = false;
         setDOMException(TypeMismatchError, isolate);
-        return 0;
+        return nullptr;
     }
 
-    return V8CallbackType::create(value, getScriptExecutionContext());
+    return V8CallbackType::create(v8::Handle<v8::Function>::Cast(value), getExecutionContext());
 }
 
 } // namespace WebCore

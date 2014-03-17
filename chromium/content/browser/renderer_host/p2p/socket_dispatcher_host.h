@@ -6,11 +6,14 @@
 #define CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_DISPATCHER_HOST_H_
 
 #include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "content/browser/renderer_host/p2p/socket_host_throttler.h"
-#include "content/common/p2p_sockets.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/p2p_socket_type.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_change_notifier.h"
 
@@ -68,7 +71,9 @@ class P2PSocketDispatcherHost
                                      int connected_socket_id);
   void OnSend(int socket_id,
               const net::IPEndPoint& socket_address,
-              const std::vector<char>& data);
+              const std::vector<char>& data,
+              net::DiffServCodePoint dscp,
+              uint64 packet_id);
   void OnDestroySocket(int socket_id);
 
   void DoGetNetworkList();

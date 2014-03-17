@@ -33,13 +33,13 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebURL.h"
-#include "weborigin/KURL.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebNode WebHitTestResult::node() const
 {
@@ -102,4 +102,4 @@ void WebHitTestResult::reset()
     m_private.reset(0);
 }
 
-} // namespace WebKit
+} // namespace blink

@@ -3,13 +3,16 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'chromium_code': 1,
+  },
   'targets': [
     {
       'target_name': 'memory_watcher',
       'type': 'shared_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../ui/ui.gyp:ui',
+        '../../ui/gfx/gfx.gyp:gfx',
       ],
       'defines': [
         'BUILD_MEMORY_WATCHER',
@@ -18,10 +21,12 @@
         '../..',
         '<(DEPTH)/third_party/wtl/include',
       ],
-      # "/GS can not protect parameters and local variables from local buffer
-      # overrun because optimizations are disabled in function". Nothing to be
-      # done about this warning.
-      'msvs_disabled_warnings': [ 4748 ],
+      # 4748 "/GS can not protect parameters and local variables from local
+      # buffer overrun because optimizations are disabled in function".
+      # 4740 "flow in or out of inline asm code suppresses global optimization"
+      # (result of __asm call x, __asm x:).
+      # Nothing to be done about these warnings.
+      'msvs_disabled_warnings': [ 4748, 4740 ],
       'sources': [
         'call_stack.cc',
         'call_stack.h',

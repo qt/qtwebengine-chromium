@@ -34,23 +34,15 @@
 
 namespace WebCore {
 
-class IDBCallbacks;
-class IDBDatabase;
-class IDBDatabaseCallbacks;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-// This class is shared by IDBFactory (async) and IDBFactorySync (sync).
-// This is implemented by IDBFactoryBackendImpl and optionally others (in order to proxy
-// calls across process barriers). All calls to these classes should be non-blocking and
-// trigger work on a background thread if necessary.
+// FIXME: This is just a permission client at this point. Rename/refactor.
 class IDBFactoryBackendInterface : public RefCounted<IDBFactoryBackendInterface> {
 public:
     static PassRefPtr<IDBFactoryBackendInterface> create();
     virtual ~IDBFactoryBackendInterface() { }
 
-    virtual void getDatabaseNames(PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
-    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
-    virtual void deleteDatabase(const String& name, PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
+    virtual bool allowIndexedDB(ExecutionContext*, const String& name) = 0;
 };
 
 } // namespace WebCore

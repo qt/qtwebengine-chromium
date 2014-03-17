@@ -4,8 +4,6 @@
 
 #include "content/common/gpu/gpu_memory_manager_client.h"
 
-#if defined(ENABLE_GPU)
-
 #include "content/common/gpu/gpu_memory_manager.h"
 
 namespace content {
@@ -26,7 +24,6 @@ GpuMemoryManagerClientState::GpuMemoryManagerClientState(
       bytes_nicetohave_limit_low_(0),
       bytes_nicetohave_limit_high_(0),
       bytes_allocation_when_visible_(0),
-      bytes_allocation_when_nonvisible_(0),
       bytes_allocation_ideal_nicetohave_(0),
       bytes_allocation_ideal_required_(0),
       bytes_allocation_ideal_minimum_(0),
@@ -42,10 +39,8 @@ void GpuMemoryManagerClientState::SetVisible(bool visible) {
 }
 
 void GpuMemoryManagerClientState::SetManagedMemoryStats(
-    const GpuManagedMemoryStats& stats) {
+    const gpu::ManagedMemoryStats& stats) {
   memory_manager_->SetClientStateManagedMemoryStats(this, stats);
 }
 
 }  // namespace content
-
-#endif

@@ -31,18 +31,18 @@
 #ifndef WorkerGlobalScopeCrypto_h
 #define WorkerGlobalScopeCrypto_h
 
-#include "core/platform/Supplementable.h"
+#include "core/workers/WorkerSupplementable.h"
 
 namespace WebCore {
 
 class WorkerCrypto;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class WorkerGlobalScopeCrypto : public Supplement<ScriptExecutionContext> {
+class WorkerGlobalScopeCrypto : public WorkerSupplement {
 public:
     virtual ~WorkerGlobalScopeCrypto();
-    static WorkerGlobalScopeCrypto* from(ScriptExecutionContext*);
-    static WorkerCrypto* crypto(ScriptExecutionContext*);
+    static WorkerGlobalScopeCrypto* from(WorkerSupplementable*);
+    static WorkerCrypto* crypto(WorkerSupplementable*);
     WorkerCrypto* crypto() const;
 
 private:

@@ -30,8 +30,9 @@
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
 #include "WebDateTimeInputType.h"
+#include "WebDateTimeSuggestion.h"
 
-namespace WebKit {
+namespace blink {
 
 // This class conveys various information to make date/time chooser UI.
 // See WebViewClient::openDateTimeChooser.
@@ -41,18 +42,14 @@ struct WebDateTimeChooserParams {
     // Bounding rectangle of the requester element.
     WebRect anchorRectInScreen;
     // The current value of the requester element.
+    // FIXME: Remove. Deprecated in favor of doubleValue.
     WebString currentValue;
-    // <datalist> option values associated to the requester element. These
-    // values should not be shown to users. The vector size might be 0.
-    WebVector<WebString> suggestionValues;
-    // Localized values of <datalist> options associated to the requester
-    // element. These values should be shown to users. The vector size must be
-    // same as suggestionValues size.
-    WebVector<WebString> localizedSuggestionValues;
-    // <datalist> option labels associated to the requester element. These
-    // values should be shown to users. The vector size must be same as
-    // suggestionValues size.
-    WebVector<WebString> suggestionLabels;
+    // The current value of the requester element as a double.
+    // NaN means empty value. Should not be infinity.
+    double doubleValue;
+    // <datalist> option suggestions associated to the requester element. The
+    // vector size might be 0.
+    WebVector<WebDateTimeSuggestion> suggestions;
     // HTMLInputElement::min attribute value parsed in the valusAsNumber rule,
     // that is to say, milliseconds from the epoch for non-month types and
     // months from the epoch for month type. If the min attribute is missing,
@@ -81,6 +78,6 @@ struct WebDateTimeChooserParams {
     }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -21,13 +21,14 @@
 #ifndef RootInlineBox_h
 #define RootInlineBox_h
 
-#include "core/platform/text/BidiContext.h"
 #include "core/rendering/InlineFlowBox.h"
+#include "platform/text/BidiContext.h"
 
 namespace WebCore {
 
 class EllipsisBox;
 class HitTestResult;
+class RenderBlockFlow;
 class RenderRegion;
 
 struct BidiStatus;
@@ -35,7 +36,7 @@ struct GapRects;
 
 class RootInlineBox : public InlineFlowBox {
 public:
-    explicit RootInlineBox(RenderBlock*);
+    explicit RootInlineBox(RenderBlockFlow*);
 
     virtual void destroy() OVERRIDE FINAL;
 
@@ -128,7 +129,7 @@ public:
 
     GapRects lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*);
 
-    RenderBlock* block() const;
+    RenderBlockFlow* block() const;
 
     InlineBox* closestLeafChildForPoint(const IntPoint&, bool onlyEditableLeaves);
     InlineBox* closestLeafChildForLogicalLeftPosition(int, bool onlyEditableLeaves = false);
@@ -181,10 +182,8 @@ public:
         return InlineFlowBox::logicalBottomLayoutOverflow(lineBottom());
     }
 
-#if ENABLE(CSS3_TEXT)
     // Used to calculate the underline offset for TextUnderlinePositionUnder.
     float maxLogicalTop() const;
-#endif // CSS3_TEXT
 
     Node* getLogicalStartBoxWithNode(InlineBox*&) const;
     Node* getLogicalEndBoxWithNode(InlineBox*&) const;

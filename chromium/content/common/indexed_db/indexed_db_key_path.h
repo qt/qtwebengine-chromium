@@ -16,22 +16,22 @@ namespace content {
 
 class CONTENT_EXPORT IndexedDBKeyPath {
  public:
-  IndexedDBKeyPath();  // Defaults to WebKit::WebIDBKeyPathTypeNull.
-  explicit IndexedDBKeyPath(const string16&);
-  explicit IndexedDBKeyPath(const std::vector<string16>&);
+  IndexedDBKeyPath();  // Defaults to blink::WebIDBKeyPathTypeNull.
+  explicit IndexedDBKeyPath(const base::string16&);
+  explicit IndexedDBKeyPath(const std::vector<base::string16>&);
   ~IndexedDBKeyPath();
 
-  bool IsNull() const { return type_ == WebKit::WebIDBKeyPathTypeNull; }
+  bool IsNull() const { return type_ == blink::WebIDBKeyPathTypeNull; }
   bool operator==(const IndexedDBKeyPath& other) const;
 
-  WebKit::WebIDBKeyPathType type() const { return type_; }
-  const std::vector<string16>& array() const;
-  const string16& string() const;
+  blink::WebIDBKeyPathType type() const { return type_; }
+  const std::vector<base::string16>& array() const;
+  const base::string16& string() const;
 
  private:
-  WebKit::WebIDBKeyPathType type_;
-  string16 string_;
-  std::vector<string16> array_;
+  blink::WebIDBKeyPathType type_;
+  base::string16 string_;
+  std::vector<base::string16> array_;
 };
 
 }  // namespace content

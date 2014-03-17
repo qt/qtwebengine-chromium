@@ -34,7 +34,7 @@ private:
 DEFINE_DECODER_CREATOR(BMPImageDecoder);
 ///////////////////////////////////////////////////////////////////////////////
 
-static bool is_bmp(SkStream* stream) {
+static bool is_bmp(SkStreamRewindable* stream) {
     static const char kBmpMagic[] = { 'B', 'M' };
 
 
@@ -44,7 +44,7 @@ static bool is_bmp(SkStream* stream) {
         !memcmp(buffer, kBmpMagic, sizeof(kBmpMagic));
 }
 
-static SkImageDecoder* sk_libbmp_dfactory(SkStream* stream) {
+static SkImageDecoder* sk_libbmp_dfactory(SkStreamRewindable* stream) {
     if (is_bmp(stream)) {
         return SkNEW(SkBMPImageDecoder);
     }
@@ -53,7 +53,7 @@ static SkImageDecoder* sk_libbmp_dfactory(SkStream* stream) {
 
 static SkImageDecoder_DecodeReg gReg(sk_libbmp_dfactory);
 
-static SkImageDecoder::Format get_format_bmp(SkStream* stream) {
+static SkImageDecoder::Format get_format_bmp(SkStreamRewindable* stream) {
     if (is_bmp(stream)) {
         return SkImageDecoder::kBMP_Format;
     }
@@ -133,8 +133,8 @@ bool SkBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
 
     SkScaledBitmapSampler sampler(width, height, getSampleSize());
 
-    bm->setConfig(config, sampler.scaledWidth(), sampler.scaledHeight());
-    bm->setIsOpaque(true);
+    bm->setConfig(config, sampler.scaledWidth(), sampler.scaledHeight(), 0,
+                  kOpaque_SkAlphaType);
 
     if (justBounds) {
         return true;
@@ -146,7 +146,7 @@ bool SkBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
 
     SkAutoLockPixels alp(*bm);
 
-    if (!sampler.begin(bm, SkScaledBitmapSampler::kRGB, getDitherImage())) {
+    if (!sampler.begin(bm, SkScaledBitmapSampler::kRGB, *this)) {
         return false;
     }
 

@@ -1,7 +1,9 @@
+namespace="FetchInitiatorType"
+
 css
 document
 icon
-inspector
+internal
 link
 processinginstruction
 texttrack

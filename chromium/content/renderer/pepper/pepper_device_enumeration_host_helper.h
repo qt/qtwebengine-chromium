@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
+#include "url/gurl.h"
 
 namespace ppapi {
 struct DeviceRefData;
@@ -42,13 +43,13 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
 
     typedef base::Callback<
         void (int /* request_id */,
-              bool /* succeeded */,
               const std::vector<ppapi::DeviceRefData>& /* devices */)>
         EnumerateDevicesCallback;
 
     // Enumerates devices of the specified type. The request ID passed into the
     // callback will be the same as the return value.
     virtual int EnumerateDevices(PP_DeviceType_Dev type,
+                                 const GURL& document_url,
                                  const EnumerateDevicesCallback& callback) = 0;
     // Stop enumerating devices of the specified |request_id|. The |request_id|
     // is the return value of EnumerateDevicesCallback.
@@ -58,7 +59,8 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
   // |resource_host| and |delegate| must outlive this object.
   PepperDeviceEnumerationHostHelper(ppapi::host::ResourceHost* resource_host,
                                     Delegate* delegate,
-                                    PP_DeviceType_Dev device_type);
+                                    PP_DeviceType_Dev device_type,
+                                    const GURL& document_url);
   ~PepperDeviceEnumerationHostHelper();
 
   // Returns true if the message has been handled.
@@ -84,12 +86,10 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
 
   void OnEnumerateDevicesComplete(
       int request_id,
-      bool succeeded,
       const std::vector<ppapi::DeviceRefData>& devices);
   void OnNotifyDeviceChange(
       uint32_t callback_id,
       int request_id,
-      bool succeeded,
       const std::vector<ppapi::DeviceRefData>& devices);
 
   // Non-owning pointers.
@@ -97,6 +97,7 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
   Delegate* delegate_;
 
   PP_DeviceType_Dev device_type_;
+  GURL document_url_;
 
   scoped_ptr<ScopedRequest> enumerate_;
   scoped_ptr<ScopedRequest> monitor_;

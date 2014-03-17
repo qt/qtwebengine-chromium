@@ -28,9 +28,7 @@ class ResourceMessageFilter;
 // events from the resource dispatcher host.
 class SyncResourceHandler : public ResourceHandler {
  public:
-  SyncResourceHandler(ResourceMessageFilter* filter,
-                      ResourceContext* resource_context,
-                      net::URLRequest* request,
+  SyncResourceHandler(net::URLRequest* request,
                       IPC::Message* result_message,
                       ResourceDispatcherHostImpl* resource_dispatcher_host);
   virtual ~SyncResourceHandler();
@@ -49,15 +47,16 @@ class SyncResourceHandler : public ResourceHandler {
                            const GURL& url,
                            bool* defer) OVERRIDE;
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
   virtual bool OnReadCompleted(int request_id,
                                int bytes_read,
                                bool* defer) OVERRIDE;
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
   virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;
 
  private:
@@ -66,9 +65,6 @@ class SyncResourceHandler : public ResourceHandler {
   scoped_refptr<net::IOBuffer> read_buffer_;
 
   SyncLoadResult result_;
-  scoped_refptr<ResourceMessageFilter> filter_;
-  ResourceContext* resource_context_;
-  net::URLRequest* request_;
   IPC::Message* result_message_;
   ResourceDispatcherHostImpl* rdh_;
 };

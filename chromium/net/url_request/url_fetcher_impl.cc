@@ -6,8 +6,10 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
 #include "net/url_request/url_fetcher_core.h"
 #include "net/url_request/url_fetcher_factory.h"
+#include "net/url_request/url_fetcher_response_writer.h"
 
 namespace net {
 
@@ -120,13 +122,18 @@ void URLFetcherImpl::SetAutomaticallyRetryOnNetworkChanges(int max_retries) {
 
 void URLFetcherImpl::SaveResponseToFileAtPath(
     const base::FilePath& file_path,
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
   core_->SaveResponseToFileAtPath(file_path, file_task_runner);
 }
 
 void URLFetcherImpl::SaveResponseToTemporaryFile(
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
   core_->SaveResponseToTemporaryFile(file_task_runner);
+}
+
+void URLFetcherImpl::SaveResponseWithWriter(
+    scoped_ptr<URLFetcherResponseWriter> response_writer) {
+  core_->SaveResponseWithWriter(response_writer.Pass());
 }
 
 HttpResponseHeaders* URLFetcherImpl::GetResponseHeaders() const {
@@ -163,10 +170,6 @@ int URLFetcherImpl::GetResponseCode() const {
 
 const ResponseCookies& URLFetcherImpl::GetCookies() const {
   return core_->GetCookies();
-}
-
-bool URLFetcherImpl::FileErrorOccurred(int* out_error_code) const {
-  return core_->FileErrorOccurred(out_error_code);
 }
 
 void URLFetcherImpl::ReceivedContentWasMalformed() {

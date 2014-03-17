@@ -29,7 +29,6 @@
 
 #include "HTMLNames.h"
 #include "core/css/CSSParser.h"
-#include "core/css/CSSSelectorList.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/QualifiedName.h"
@@ -42,20 +41,14 @@ using namespace HTMLNames;
 
 PassRefPtr<HTMLContentElement> HTMLContentElement::create(Document& document)
 {
-    return adoptRef(new HTMLContentElement(contentTag, document));
+    return adoptRef(new HTMLContentElement(document));
 }
 
-PassRefPtr<HTMLContentElement> HTMLContentElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLContentElement(tagName, document));
-}
-
-HTMLContentElement::HTMLContentElement(const QualifiedName& name, Document& document)
-    : InsertionPoint(name, document)
+HTMLContentElement::HTMLContentElement(Document& document)
+    : InsertionPoint(contentTag, document)
     , m_shouldParseSelect(false)
     , m_isValidSelector(true)
 {
-    ASSERT(hasTagName(contentTag));
     ScriptWrappable::init(this);
 }
 
@@ -106,17 +99,16 @@ bool HTMLContentElement::validateSelect() const
     return true;
 }
 
-static inline bool checkOneSelector(const CSSSelector* selector, const Vector<Node*>& siblings, int nth)
+static inline bool checkOneSelector(const CSSSelector* selector, const Vector<Node*, 32>& siblings, int nth)
 {
     Element* element = toElement(siblings[nth]);
-    SelectorChecker selectorChecker(element->document(), SelectorChecker::CollectingRules);
+    SelectorChecker selectorChecker(element->document(), SelectorChecker::CollectingCSSRules);
     SelectorChecker::SelectorCheckingContext context(selector, element, SelectorChecker::VisitedMatchEnabled);
     ShadowDOMSiblingTraversalStrategy strategy(siblings, nth);
-    PseudoId ignoreDynamicPseudo = NOPSEUDO;
-    return selectorChecker.match(context, ignoreDynamicPseudo, strategy) == SelectorChecker::SelectorMatches;
+    return selectorChecker.match(context, strategy) == SelectorChecker::SelectorMatches;
 }
 
-bool HTMLContentElement::matchSelector(const Vector<Node*>& siblings, int nth) const
+bool HTMLContentElement::matchSelector(const Vector<Node*, 32>& siblings, int nth) const
 {
     for (const CSSSelector* selector = selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
         if (checkOneSelector(selector, siblings, nth))

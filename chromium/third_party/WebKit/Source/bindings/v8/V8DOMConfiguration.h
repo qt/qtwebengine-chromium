@@ -50,27 +50,40 @@ public:
         v8::AccessorSetterCallback setter;
         v8::AccessorGetterCallback getterForMainWorld;
         v8::AccessorSetterCallback setterForMainWorld;
-        WrapperTypeInfo* data;
+        const WrapperTypeInfo* data;
         v8::AccessControl settings;
         v8::PropertyAttribute attribute;
         bool onPrototype;
     };
 
+    // AccessorConfiguration translates into calls to SetAccessorProperty()
+    // on prototype ObjectTemplate.
+    struct AccessorConfiguration {
+        const char* const name;
+        v8::FunctionCallback getter;
+        v8::FunctionCallback setter;
+        v8::FunctionCallback getterForMainWorld;
+        v8::FunctionCallback setterForMainWorld;
+        const WrapperTypeInfo* data;
+        v8::AccessControl settings;
+        v8::PropertyAttribute attribute;
+    };
+
     static void installAttributes(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::ObjectTemplate>, const AttributeConfiguration*, size_t attributeCount, v8::Isolate*, WrapperWorldType currentWorldType);
 
     template<class ObjectOrTemplate>
-    static inline void installAttribute(v8::Handle<ObjectOrTemplate> instance, v8::Handle<ObjectOrTemplate> prototype, const AttributeConfiguration& attribute, v8::Isolate*)
+    static inline void installAttribute(v8::Handle<ObjectOrTemplate> instanceTemplate, v8::Handle<ObjectOrTemplate> prototype, const AttributeConfiguration& attribute, v8::Isolate* isolate)
     {
-        (attribute.onPrototype ? prototype : instance)->SetAccessor(v8::String::NewSymbol(attribute.name),
+        (attribute.onPrototype ? prototype : instanceTemplate)->SetAccessor(v8::String::NewFromUtf8(isolate, attribute.name, v8::String::kInternalizedString),
                                                                     attribute.getter,
                                                                     attribute.setter,
-                                                                    v8::External::New(attribute.data),
+                                                                    v8::External::New(isolate, const_cast<WrapperTypeInfo*>(attribute.data)),
                                                                     attribute.settings,
                                                                     attribute.attribute);
     }
 
     template<class ObjectOrTemplate>
-    static inline void installAttribute(v8::Handle<ObjectOrTemplate> instance, v8::Handle<ObjectOrTemplate> prototype, const AttributeConfiguration& attribute, v8::Isolate*, WrapperWorldType currentWorldType)
+    static inline void installAttribute(v8::Handle<ObjectOrTemplate> instanceTemplate, v8::Handle<ObjectOrTemplate> prototype, const AttributeConfiguration& attribute, v8::Isolate* isolate, WrapperWorldType currentWorldType)
     {
         v8::AccessorGetterCallback getter = attribute.getter;
         v8::AccessorSetterCallback setter = attribute.setter;
@@ -80,10 +93,10 @@ public:
             if (attribute.setterForMainWorld)
                 setter = attribute.setterForMainWorld;
         }
-        (attribute.onPrototype ? prototype : instance)->SetAccessor(v8::String::NewSymbol(attribute.name),
+        (attribute.onPrototype ? prototype : instanceTemplate)->SetAccessor(v8::String::NewFromUtf8(isolate, attribute.name, v8::String::kInternalizedString),
             getter,
             setter,
-            v8::External::New(attribute.data),
+            v8::External::New(isolate, const_cast<WrapperTypeInfo*>(attribute.data)),
             attribute.settings,
             attribute.attribute);
     }
@@ -109,7 +122,13 @@ public:
 
     static void installCallbacks(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
 
-    static v8::Local<v8::Signature> installDOMClassTemplate(v8::Handle<v8::FunctionTemplate>, const char* interfaceName, v8::Handle<v8::FunctionTemplate> parentClass, size_t fieldCount, const AttributeConfiguration*, size_t attributeCount, const MethodConfiguration*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
+    static void installAccessors(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, const AccessorConfiguration*, size_t accessorCount, v8::Isolate*, WrapperWorldType);
+
+    static v8::Local<v8::Signature> installDOMClassTemplate(v8::Handle<v8::FunctionTemplate>, const char* interfaceName, v8::Handle<v8::FunctionTemplate> parentClass, size_t fieldCount,
+        const AttributeConfiguration*, size_t attributeCount,
+        const AccessorConfiguration*, size_t accessorCount,
+        const MethodConfiguration*, size_t callbackCount,
+        v8::Isolate*, WrapperWorldType);
 };
 
 } // namespace WebCore

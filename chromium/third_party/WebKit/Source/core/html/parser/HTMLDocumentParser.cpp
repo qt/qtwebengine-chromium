@@ -32,17 +32,13 @@
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
-#include "core/html/parser/CompactHTMLToken.h"
-#include "core/html/parser/HTMLIdentifier.h"
 #include "core/html/parser/HTMLParserScheduler.h"
 #include "core/html/parser/HTMLParserThread.h"
-#include "core/html/parser/HTMLPreloadScanner.h"
 #include "core/html/parser/HTMLScriptRunner.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/Frame.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/Frame.h"
+#include "platform/TraceEvent.h"
 #include "wtf/Functional.h"
 
 namespace WebCore {
@@ -288,7 +284,7 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
     //        parser to stop parsing cleanly.  The problem is we're not
     //        perpared to do that at every point where we run JavaScript.
     if (!isParsingFragment()
-        && document()->frame() && document()->frame()->navigationScheduler()->locationChangePending())
+        && document()->frame() && document()->frame()->navigationScheduler().locationChangePending())
         return false;
 
     if (mode == AllowYield)
@@ -299,6 +295,8 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
 
 void HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> chunk)
 {
+    TRACE_EVENT0("webkit", "HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser");
+
     // alert(), runModalDialog, and the JavaScript Debugger all run nested event loops
     // which can cause this method to be re-entered. We detect re-entry using
     // hasActiveParser(), save the chunk as a speculation, and return.
@@ -378,6 +376,8 @@ void HTMLDocumentParser::discardSpeculationsAndResumeFrom(PassOwnPtr<ParsedChunk
 
 void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> popChunk)
 {
+    TRACE_EVENT0("webkit", "HTMLDocumentParser::processParsedChunkFromBackgroundParser");
+
     ASSERT_WITH_SECURITY_IMPLICATION(!document()->activeParserCount());
     ASSERT(!isParsingFragment());
     ASSERT(!isWaitingForScripts());
@@ -407,7 +407,7 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
         ASSERT(!isWaitingForScripts());
 
         if (!isParsingFragment()
-            && document()->frame() && document()->frame()->navigationScheduler()->locationChangePending()) {
+            && document()->frame() && document()->frame()->navigationScheduler().locationChangePending()) {
 
             // To match main-thread parser behavior (which never checks locationChangePending on the EOF path)
             // we peek to see if this chunk has an EOF and process it anyway.
@@ -553,6 +553,12 @@ void HTMLDocumentParser::pumpTokenizer(SynchronousMode mode)
     if (isStopped())
         return;
 
+    // There should only be PendingText left since the tree-builder always flushes
+    // the task queue before returning. In case that ever changes, crash.
+    if (mode == ForceSynchronous)
+        m_treeBuilder->flush();
+    RELEASE_ASSERT(!isStopped());
+
     if (session.needsYield)
         m_parserScheduler->scheduleForResume();
 
@@ -614,6 +620,8 @@ void HTMLDocumentParser::insert(const SegmentedString& source)
     if (isStopped())
         return;
 
+    TRACE_EVENT0("webkit", "HTMLDocumentParser::insert");
+
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
     RefPtr<HTMLDocumentParser> protect(this);
@@ -648,8 +656,6 @@ void HTMLDocumentParser::startBackgroundParser()
     ASSERT(shouldUseThreading());
     ASSERT(!m_haveBackgroundParser);
     m_haveBackgroundParser = true;
-
-    HTMLIdentifier::init();
 
     RefPtr<WeakReference<BackgroundHTMLParser> > reference = WeakReference<BackgroundHTMLParser>::createUnbound();
     m_backgroundParser = WeakPtr<BackgroundHTMLParser>(reference);

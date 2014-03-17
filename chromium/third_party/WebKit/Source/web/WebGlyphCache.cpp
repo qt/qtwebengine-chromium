@@ -31,15 +31,15 @@
 #include "config.h"
 #include "WebGlyphCache.h"
 
-#include "core/platform/graphics/GlyphPageTreeNode.h"
+#include "platform/fonts/GlyphPageTreeNode.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 size_t WebGlyphCache::pageCount()
 {
     return GlyphPageTreeNode::treeGlyphPageCount();
 }
 
-} // namespace WebKit
+} // namespace blink

@@ -26,12 +26,17 @@ namespace sandbox {
 // 4. Use open_broker.Open() to open files.
 class BrokerProcess {
  public:
-  // |allowed_file_names| is a white list of files that can be opened later via
-  // the Open() API.
+  // |denied_errno| is the error code returned when methods such as Open()
+  // or Access() are invoked on a file which is not in the whitelist. EACCESS
+  // would be a typical value.
+  // |allowed_r_files| and |allowed_w_files| are white lists of files that can
+  // be opened later via the Open() API, respectively for reading and writing.
+  // A file available read-write should be listed in both.
   // |fast_check_in_client| and |quiet_failures_for_tests| are reserved for
   // unit tests, don't use it.
-  explicit BrokerProcess(const std::vector<std::string>& allowed_r_files_,
-                         const std::vector<std::string>& allowed_w_files_,
+  explicit BrokerProcess(int denied_errno,
+                         const std::vector<std::string>& allowed_r_files,
+                         const std::vector<std::string>& allowed_w_files,
                          bool fast_check_in_client = true,
                          bool quiet_failures_for_tests = false);
   ~BrokerProcess();
@@ -42,8 +47,8 @@ class BrokerProcess {
   bool Init(bool (*sandbox_callback)(void));
 
   // Can be used in place of access(). Will be async signal safe.
-  // X_OK will always EPERM in practice since the broker process doesn't support
-  // execute permissions.
+  // X_OK will always return an error in practice since the broker process
+  // doesn't support execute permissions.
   // It's similar to the access() system call and will return -errno on errors.
   int Access(const char* pathname, int mode) const;
   // Can be used in place of open(). Will be async signal safe.
@@ -61,25 +66,31 @@ class BrokerProcess {
     kCommandAccess,
   };
   int PathAndFlagsSyscall(enum IPCCommands command_type,
-                          const char* pathname, int flags) const;
+                          const char* pathname,
+                          int flags) const;
   bool HandleRequest() const;
-  bool HandleRemoteCommand(IPCCommands command_type, int reply_ipc,
-      const Pickle& read_pickle, PickleIterator iter) const;
+  bool HandleRemoteCommand(IPCCommands command_type,
+                           int reply_ipc,
+                           const Pickle& read_pickle,
+                           PickleIterator iter) const;
 
   void AccessFileForIPC(const std::string& requested_filename,
-                        int mode, Pickle* write_pickle) const;
+                        int mode,
+                        Pickle* write_pickle) const;
   void OpenFileForIPC(const std::string& requested_filename,
-                      int flags, Pickle* write_pickle,
+                      int flags,
+                      Pickle* write_pickle,
                       std::vector<int>* opened_files) const;
   bool GetFileNameIfAllowedToAccess(const char*, int, const char**) const;
   bool GetFileNameIfAllowedToOpen(const char*, int, const char**) const;
-  bool initialized_;  // Whether we've been through Init() yet.
-  bool is_child_;  // Whether we're the child (broker process).
-  bool fast_check_in_client_;  // Whether to forward a request that we know
-                               // will be denied to the broker.
+  const int denied_errno_;
+  bool initialized_;               // Whether we've been through Init() yet.
+  bool is_child_;                  // Whether we're the child (broker process).
+  bool fast_check_in_client_;      // Whether to forward a request that we know
+                                   // will be denied to the broker.
   bool quiet_failures_for_tests_;  // Disable certain error message when
                                    // testing for failures.
-  pid_t broker_pid_;  // The PID of the broker (child).
+  pid_t broker_pid_;               // The PID of the broker (child).
   const std::vector<std::string> allowed_r_files_;  // Files allowed for read.
   const std::vector<std::string> allowed_w_files_;  // Files allowed for write.
   int ipc_socketpair_;  // Our communication channel to parent or child.

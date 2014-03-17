@@ -14,38 +14,21 @@
 
 namespace content {
 
-MediaStreamDispatcher::EnumerationRequest::EnumerationRequest(
-    const base::WeakPtr<MediaStreamDispatcherEventHandler>& handler,
-    int request_id)
-    : handler(handler),
-      request_id(request_id) {
-}
+namespace {
 
-MediaStreamDispatcher::EnumerationRequest::~EnumerationRequest() {}
-
-bool MediaStreamDispatcher::EnumerationRequest::IsThisRequest(
-    int request_id1,
-    const base::WeakPtr<MediaStreamDispatcherEventHandler>& handler1) {
-  return (request_id1 == request_id && handler1.get() == handler.get());
-}
-
-MediaStreamDispatcher::EnumerationState::EnumerationState()
-    : ipc_id(-1) {
-}
-
-MediaStreamDispatcher::EnumerationState::~EnumerationState() {}
-
-struct MediaStreamDispatcher::EnumerationState::CachedDevices {
-  CachedDevices(const std::string& label,
-                const StreamDeviceInfoArray& device_array)
-      : label(label),
-        devices(device_array) {
+bool RemoveStreamDeviceFromArray(const StreamDeviceInfo device_info,
+                                 StreamDeviceInfoArray* array) {
+  for (StreamDeviceInfoArray::iterator device_it = array->begin();
+       device_it != array->end(); ++device_it) {
+    if (StreamDeviceInfo::IsEqual(*device_it, device_info)) {
+      array->erase(device_it);
+      return true;
+    }
   }
-  ~CachedDevices() {}
+  return false;
+}
 
-  std::string label;
-  StreamDeviceInfoArray devices;
-};
+}  // namespace
 
 MediaStreamDispatcher::MediaStreamDispatcher(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
@@ -89,17 +72,31 @@ void MediaStreamDispatcher::CancelGenerateStream(
   }
 }
 
-void MediaStreamDispatcher::StopStream(const std::string& label) {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-  DVLOG(1) << "MediaStreamDispatcher::StopStream"
-           << ", {label = " << label << "}";
+void MediaStreamDispatcher::StopStreamDevice(
+    const StreamDeviceInfo& device_info) {
+  DVLOG(1) << "MediaStreamDispatcher::StopStreamDevice"
+           << ", {device_id = " << device_info.device.id << "}";
+  // Remove |device_info| from all streams in |label_stream_map_|.
+  bool device_found = false;
+  LabelStreamMap::iterator stream_it = label_stream_map_.begin();
+  while (stream_it != label_stream_map_.end()) {
+    StreamDeviceInfoArray& audio_array = stream_it->second.audio_array;
+    StreamDeviceInfoArray& video_array = stream_it->second.video_array;
 
-  LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
-    return;
+    if (RemoveStreamDeviceFromArray(device_info, &audio_array) ||
+        RemoveStreamDeviceFromArray(device_info, &video_array)) {
+      device_found = true;
+      if (audio_array.empty() && video_array.empty()) {
+        label_stream_map_.erase(stream_it++);
+        continue;
+      }
+    }
+    ++stream_it;
+  }
+  DCHECK(device_found);
 
-  Send(new MediaStreamHostMsg_StopGeneratedStream(routing_id(), label));
-  label_stream_map_.erase(it);
+  Send(new MediaStreamHostMsg_StopStreamDevice(routing_id(),
+                                               device_info.device.id));
 }
 
 void MediaStreamDispatcher::EnumerateDevices(
@@ -113,21 +110,16 @@ void MediaStreamDispatcher::EnumerateDevices(
   DVLOG(1) << "MediaStreamDispatcher::EnumerateDevices("
            << request_id << ")";
 
-  EnumerationState* state =
-      (type == MEDIA_DEVICE_AUDIO_CAPTURE ?
-       &audio_enumeration_state_ : &video_enumeration_state_);
-  state->requests.push_back(EnumerationRequest(event_handler, request_id));
-
-  if (state->cached_devices) {
-    event_handler->OnDevicesEnumerated(
-        request_id, state->cached_devices->devices);
-  } else if (state->ipc_id < 0) {
-    Send(new MediaStreamHostMsg_EnumerateDevices(routing_id(),
-                                                 next_ipc_id_,
-                                                 type,
-                                                 security_origin));
-    state->ipc_id = next_ipc_id_++;
+  for (RequestList::iterator it = requests_.begin(); it != requests_.end();
+       ++it) {
+    DCHECK(!it->IsThisRequest(request_id, event_handler));
   }
+
+  requests_.push_back(Request(event_handler, request_id, next_ipc_id_));
+  Send(new MediaStreamHostMsg_EnumerateDevices(routing_id(),
+                                               next_ipc_id_++,
+                                               type,
+                                               security_origin));
 }
 
 void MediaStreamDispatcher::StopEnumerateDevices(
@@ -136,32 +128,13 @@ void MediaStreamDispatcher::StopEnumerateDevices(
   DCHECK(main_loop_->BelongsToCurrentThread());
   DVLOG(1) << "MediaStreamDispatcher::StopEnumerateDevices("
            << request_id << ")";
-
-  // Remove the request.
-  RemoveEnumerationRequest(
-      request_id, event_handler, &audio_enumeration_state_);
-  RemoveEnumerationRequest(
-      request_id, event_handler, &video_enumeration_state_);
-}
-
-void MediaStreamDispatcher::RemoveEnumerationRequest(
-    int request_id,
-    const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
-    EnumerationState* state) {
-  EnumerationRequestList* requests = &state->requests;
-  for (EnumerationRequestList::iterator it = requests->begin();
-       it != requests->end(); ++it) {
+  for (RequestList::iterator it = requests_.begin(); it != requests_.end();
+       ++it) {
     if (it->IsThisRequest(request_id, event_handler)) {
-      requests->erase(it);
-      if (requests->empty() && state->cached_devices) {
-        // No more request and has a label, try to stop the label
-        // and invalidate the state.
-        Send(new MediaStreamHostMsg_StopGeneratedStream(
-            routing_id(), state->cached_devices->label));
-        state->ipc_id = -1;
-        state->cached_devices.reset();
-      }
-      return;
+      Send(new MediaStreamHostMsg_CancelEnumerateDevices(routing_id(),
+                                                         it->ipc_request));
+      requests_.erase(it);
+      break;
     }
   }
 }
@@ -191,10 +164,16 @@ void MediaStreamDispatcher::CancelOpenDevice(
 
 void MediaStreamDispatcher::CloseDevice(const std::string& label) {
   DCHECK(main_loop_->BelongsToCurrentThread());
+  DCHECK(!label.empty());
   DVLOG(1) << "MediaStreamDispatcher::CloseDevice"
            << ", {label = " << label << "}";
 
-  StopStream(label);
+  LabelStreamMap::iterator it = label_stream_map_.find(label);
+  if (it == label_stream_map_.end())
+    return;
+  label_stream_map_.erase(it);
+
+  Send(new MediaStreamHostMsg_CloseDevice(routing_id(), label));
 }
 
 bool MediaStreamDispatcher::Send(IPC::Message* message) {
@@ -213,12 +192,10 @@ bool MediaStreamDispatcher::OnMessageReceived(const IPC::Message& message) {
                         OnStreamGenerated)
     IPC_MESSAGE_HANDLER(MediaStreamMsg_StreamGenerationFailed,
                         OnStreamGenerationFailed)
-    IPC_MESSAGE_HANDLER(MediaStreamMsg_StopGeneratedStream,
-                        OnStopGeneratedStream)
+    IPC_MESSAGE_HANDLER(MediaStreamMsg_DeviceStopped,
+                        OnDeviceStopped)
     IPC_MESSAGE_HANDLER(MediaStreamMsg_DevicesEnumerated,
                         OnDevicesEnumerated)
-    IPC_MESSAGE_HANDLER(MediaStreamMsg_DevicesEnumerationFailed,
-                        OnDevicesEnumerationFailed)
     IPC_MESSAGE_HANDLER(MediaStreamMsg_DeviceOpened,
                         OnDeviceOpened)
     IPC_MESSAGE_HANDLER(MediaStreamMsg_DeviceOpenFailed,
@@ -273,67 +250,43 @@ void MediaStreamDispatcher::OnStreamGenerationFailed(int request_id) {
   }
 }
 
-void MediaStreamDispatcher::OnStopGeneratedStream(const std::string& label) {
+void MediaStreamDispatcher::OnDeviceStopped(
+    const std::string& label,
+    const StreamDeviceInfo& device_info) {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
-    return;
+  DVLOG(1) << "MediaStreamDispatcher::OnDeviceStopped("
+           << "{label = " << label << "})"
+           << ", {device_id = " << device_info.device.id << "})";
 
-  if (it->second.handler.get()) {
-    it->second.handler->OnStopGeneratedStream(label);
-    DVLOG(1) << "MediaStreamDispatcher::OnStopGeneratedStream("
-             << label << ")\n";
+  LabelStreamMap::iterator it = label_stream_map_.find(label);
+  if (it == label_stream_map_.end()) {
+    // This can happen if a user happen stop a the device from JS at the same
+    // time as the underlying media device is unplugged from the system.
+    return;
   }
-  label_stream_map_.erase(it);
+  Stream* stream = &it->second;
+  if (IsAudioMediaType(device_info.device.type))
+    RemoveStreamDeviceFromArray(device_info, &stream->audio_array);
+  else
+    RemoveStreamDeviceFromArray(device_info, &stream->video_array);
+
+  if (stream->handler.get())
+    stream->handler->OnDeviceStopped(label, device_info);
+
+  if (stream->audio_array.empty() && stream->video_array.empty())
+    label_stream_map_.erase(it);
 }
 
 void MediaStreamDispatcher::OnDevicesEnumerated(
     int request_id,
-    const std::string& label,
     const StreamDeviceInfoArray& device_array) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DCHECK_GE(request_id, 0);
 
-  EnumerationState* state;
-  if (request_id == audio_enumeration_state_.ipc_id) {
-    state = &audio_enumeration_state_;
-  } else if (request_id == video_enumeration_state_.ipc_id) {
-    state = &video_enumeration_state_;
-  } else {
-    // This could happen when requester has stopped enumeration while some
-    // enumerated response is on the way. Have to stop the |label| because
-    // this might be the first enumerated device list is received. This also
-    // lead to same label being stopped multiple times.
-    Send(new MediaStreamHostMsg_StopGeneratedStream(routing_id(), label));
-    return;
-  }
-
-  DCHECK(!label.empty());
-  state->cached_devices.reset(new EnumerationState::CachedDevices(
-      label, device_array));
-
-  for (EnumerationRequestList::iterator it = state->requests.begin();
-       it != state->requests.end(); ++it) {
-    if (it->handler.get()) {
+  for (RequestList::iterator it = requests_.begin(); it != requests_.end();
+       ++it) {
+    if (it->ipc_request == request_id && it->handler.get()) {
       it->handler->OnDevicesEnumerated(it->request_id, device_array);
-      DVLOG(1) << "MediaStreamDispatcher::OnDevicesEnumerated("
-               << it->request_id << ")";
-    }
-  }
-}
-
-void MediaStreamDispatcher::OnDevicesEnumerationFailed(int request_id) {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-  for (RequestList::iterator it = requests_.begin();
-       it != requests_.end(); ++it) {
-    Request& request = *it;
-    if (request.ipc_request == request_id) {
-      if (request.handler.get()) {
-        request.handler->OnDevicesEnumerationFailed(request.request_id);
-        DVLOG(1) << "MediaStreamDispatcher::OnDevicesEnumerationFailed("
-                 << request.request_id << ")\n";
-      }
-      requests_.erase(it);
       break;
     }
   }
@@ -389,10 +342,10 @@ void MediaStreamDispatcher::OnDeviceOpenFailed(int request_id) {
 int MediaStreamDispatcher::audio_session_id(const std::string& label,
                                             int index) {
   LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
+  if (it == label_stream_map_.end() ||
+      it->second.audio_array.size() <= static_cast<size_t>(index)) {
     return StreamDeviceInfo::kNoId;
-
-  DCHECK_GT(it->second.audio_array.size(), static_cast<size_t>(index));
+  }
   return it->second.audio_array[index].session_id;
 }
 
@@ -403,10 +356,10 @@ bool MediaStreamDispatcher::IsStream(const std::string& label) {
 int MediaStreamDispatcher::video_session_id(const std::string& label,
                                             int index) {
   LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
+  if (it == label_stream_map_.end() ||
+      it->second.video_array.size() <= static_cast<size_t>(index)) {
     return StreamDeviceInfo::kNoId;
-
-  DCHECK_GT(it->second.video_array.size(), static_cast<size_t>(index));
+  }
   return it->second.video_array[index].session_id;
 }
 

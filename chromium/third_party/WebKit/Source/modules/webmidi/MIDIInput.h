@@ -31,23 +31,23 @@
 #ifndef MIDIInput_h
 #define MIDIInput_h
 
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "modules/webmidi/MIDIPort.h"
 
 namespace WebCore {
 
 class MIDIAccess;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class MIDIInput : public MIDIPort {
 public:
-    static PassRefPtr<MIDIInput> create(MIDIAccess*, ScriptExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
+    static PassRefPtr<MIDIInput> create(MIDIAccess*, ExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
     virtual ~MIDIInput() { }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(midimessage);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForMIDIInput; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIInput; }
 
     // |timeStamp| is a DOMHighResTimeStamp in the time coordinate system of performance.now().
     void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
@@ -55,7 +55,7 @@ public:
     MIDIAccess* midiAccess() const { return m_access; }
 
 private:
-    MIDIInput(MIDIAccess*, ScriptExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
+    MIDIInput(MIDIAccess*, ExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
 
     MIDIAccess* m_access;
 };

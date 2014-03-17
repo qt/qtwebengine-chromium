@@ -23,10 +23,11 @@ class QuicHttpStreamPeer;
 // non-owning pointer to a QuicReliableClientStream which it uses to
 // send and receive data.
 class NET_EXPORT_PRIVATE QuicHttpStream :
+      public QuicClientSession::Observer,
       public QuicReliableClientStream::Delegate,
       public HttpStream {
  public:
-  explicit QuicHttpStream(const base::WeakPtr<QuicClientSession> session);
+  explicit QuicHttpStream(const base::WeakPtr<QuicClientSession>& session);
 
   virtual ~QuicHttpStream();
 
@@ -51,6 +52,7 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual bool IsConnectionReused() const OVERRIDE;
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -61,12 +63,14 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // QuicReliableClientStream::Delegate implementation
-  virtual int OnSendData() OVERRIDE;
-  virtual int OnSendDataComplete(int status, bool* eof) OVERRIDE;
   virtual int OnDataReceived(const char* data, int length) OVERRIDE;
   virtual void OnClose(QuicErrorCode error) OVERRIDE;
   virtual void OnError(int error) OVERRIDE;
   virtual bool HasSendHeadersComplete() OVERRIDE;
+
+  // QuicClientSession::Observer implementation
+  virtual void OnCryptoHandshakeConfirmed() OVERRIDE;
+  virtual void OnSessionClosed(int error) OVERRIDE;
 
  private:
   friend class test::QuicHttpStreamPeer;
@@ -102,7 +106,9 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
 
   State next_state_;
 
-  const base::WeakPtr<QuicClientSession> session_;
+  base::WeakPtr<QuicClientSession> session_;
+  int session_error_;  // Error code from the connection shutdown.
+  bool was_handshake_confirmed_;  // True if the crypto handshake succeeded.
   QuicClientSession::StreamRequest stream_request_;
   QuicReliableClientStream* stream_;  // Non-owning.
 
@@ -123,6 +129,9 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   // Once all buffered data has been returned, this will be used as the final
   // response.
   int response_status_;
+
+  // Serialized request headers.
+  SpdyHeaderBlock request_headers_;
 
   bool response_headers_received_;
 

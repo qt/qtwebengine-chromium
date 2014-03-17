@@ -42,6 +42,9 @@ static const int kTextHorizontalPadding = 2;
 // How much children are indented from their parent.
 static const int kIndent = 20;
 
+// static
+const char TreeView::kViewClassName[] = "TreeView";
+
 namespace {
 
 // Returns the color id for the background of selected text. |has_focus|
@@ -77,7 +80,7 @@ TreeView::TreeView()
       root_shown_(true),
       has_custom_icons_(false),
       row_height_(font_.GetHeight() + kTextVerticalPadding * 2) {
-  set_focusable(true);
+  SetFocusable(true);
   closed_icon_ = *ui::ResourceBundle::GetSharedInstance().GetImageNamed(
       (base::i18n::IsRTL() ? IDR_FOLDER_CLOSED_RTL
                            : IDR_FOLDER_CLOSED)).ToImageSkia();
@@ -238,6 +241,12 @@ void TreeView::SetSelectedNode(TreeModelNode* model_node) {
   // remove explicitly resetting selected_node_ before invoking this.
   if (controller_ && (changed || was_empty_selection))
     controller_->OnTreeViewSelectionChanged(this);
+
+  if (changed) {
+    // TODO(dmazzoni): Decide if EVENT_SELECTION_CHANGED is a better choice for
+    // sub-item selection event.
+    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS, true);
+  }
 }
 
 TreeModelNode* TreeView::GetSelectedNode() {
@@ -381,7 +390,7 @@ void TreeView::ShowContextMenu(const gfx::Point& p,
     // Only invoke View's implementation (which notifies the
     // ContextMenuController) if over a node.
     gfx::Point local_point(p);
-    ConvertPointToTarget(NULL, this, &local_point);
+    ConvertPointFromScreen(this, &local_point);
     int row = (local_point.y() - kVerticalInset) / row_height_;
     int depth = 0;
     InternalNode* node = GetNodeByRow(row, &depth);
@@ -397,6 +406,16 @@ void TreeView::ShowContextMenu(const gfx::Point& p,
 void TreeView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_OUTLINE;
   state->state = ui::AccessibilityTypes::STATE_READONLY;
+  if (!selected_node_)
+    return;
+
+  // Get selected item info.
+  state->role = ui::AccessibilityTypes::ROLE_OUTLINEITEM;
+  state->name = selected_node_->model_node()->GetTitle();
+}
+
+const char* TreeView::GetClassName() const {
+  return kViewClassName;
 }
 
 void TreeView::TreeNodesAdded(TreeModel* model,

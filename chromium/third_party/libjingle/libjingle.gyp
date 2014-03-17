@@ -274,6 +274,7 @@
         '<(libjingle_source)/talk/base/checks.h',
         '<(libjingle_source)/talk/base/common.cc',
         '<(libjingle_source)/talk/base/common.h',
+        '<(libjingle_source)/talk/base/compile_assert.h',
         '<(libjingle_source)/talk/base/cpumonitor.cc',
         '<(libjingle_source)/talk/base/cpumonitor.h',
         '<(libjingle_source)/talk/base/crc32.cc',
@@ -316,6 +317,7 @@
         '<(libjingle_source)/talk/base/messagehandler.h',
         '<(libjingle_source)/talk/base/messagequeue.cc',
         '<(libjingle_source)/talk/base/messagequeue.h',
+        '<(libjingle_source)/talk/base/move.h',
         '<(libjingle_source)/talk/base/nethelpers.cc',
         '<(libjingle_source)/talk/base/nethelpers.h',
         '<(libjingle_source)/talk/base/network.cc',
@@ -383,6 +385,7 @@
         '<(libjingle_source)/talk/base/taskparent.h',
         '<(libjingle_source)/talk/base/taskrunner.cc',
         '<(libjingle_source)/talk/base/taskrunner.h',
+        '<(libjingle_source)/talk/base/template_util.h',
         '<(libjingle_source)/talk/base/thread.cc',
         '<(libjingle_source)/talk/base/thread.h',
         '<(libjingle_source)/talk/base/timeutils.cc',
@@ -730,6 +733,8 @@
             '<(libjingle_source)/talk/media/devices/dummydevicemanager.h',
             '<(libjingle_source)/talk/media/devices/filevideocapturer.cc',
             '<(libjingle_source)/talk/media/devices/filevideocapturer.h',
+            '<(libjingle_source)/talk/media/sctp/sctputils.cc',
+            '<(libjingle_source)/talk/media/sctp/sctputils.h',
             '<(libjingle_source)/talk/media/webrtc/webrtccommon.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.h',
@@ -784,8 +789,8 @@
                 'overrides/allocator_shim/allocator_stub.h',
               ],
             }],
-            # TODO(mallinath) - Enable SCTP for Android and iOS platforms.
-            ['OS!="android" and OS!="ios"', {
+            # TODO(mallinath) - Enable SCTP for iOS.
+            ['OS!="ios"', {
               'defines': [
                 'HAVE_SCTP',
               ],

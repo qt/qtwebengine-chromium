@@ -56,30 +56,30 @@ const StylePropertySet* HTMLTableSectionElement::additionalPresentationAttribute
 
 // these functions are rather slow, since we need to get the row at
 // the index... but they aren't used during usual HTML parsing anyway
-PassRefPtr<HTMLElement> HTMLTableSectionElement::insertRow(int index, ExceptionState& es)
+PassRefPtr<HTMLElement> HTMLTableSectionElement::insertRow(int index, ExceptionState& exceptionState)
 {
     RefPtr<HTMLTableRowElement> row;
     RefPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
     if (index < -1 || index > numRows)
-        es.throwDOMException(IndexSizeError); // per the DOM
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError); // per the DOM
     else {
-        row = HTMLTableRowElement::create(trTag, document());
+        row = HTMLTableRowElement::create(document());
         if (numRows == index || index == -1)
-            appendChild(row, es);
+            appendChild(row, exceptionState);
         else {
             Node* n;
             if (index < 1)
                 n = firstChild();
             else
                 n = children->item(index);
-            insertBefore(row, n, es);
+            insertBefore(row, n, exceptionState);
         }
     }
     return row.release();
 }
 
-void HTMLTableSectionElement::deleteRow(int index, ExceptionState& es)
+void HTMLTableSectionElement::deleteRow(int index, ExceptionState& exceptionState)
 {
     RefPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
@@ -87,9 +87,9 @@ void HTMLTableSectionElement::deleteRow(int index, ExceptionState& es)
         index = numRows - 1;
     if (index >= 0 && index < numRows) {
         RefPtr<Node> row = children->item(index);
-        HTMLElement::removeChild(row.get(), es);
+        HTMLElement::removeChild(row.get(), exceptionState);
     } else {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
     }
 }
 
@@ -106,42 +106,42 @@ int HTMLTableSectionElement::numRows() const
     return rows;
 }
 
-String HTMLTableSectionElement::align() const
+const AtomicString& HTMLTableSectionElement::align() const
 {
     return getAttribute(alignAttr);
 }
 
-void HTMLTableSectionElement::setAlign(const String &value)
+void HTMLTableSectionElement::setAlign(const AtomicString& value)
 {
     setAttribute(alignAttr, value);
 }
 
-String HTMLTableSectionElement::ch() const
+const AtomicString& HTMLTableSectionElement::ch() const
 {
     return getAttribute(charAttr);
 }
 
-void HTMLTableSectionElement::setCh(const String &value)
+void HTMLTableSectionElement::setCh(const AtomicString& value)
 {
     setAttribute(charAttr, value);
 }
 
-String HTMLTableSectionElement::chOff() const
+const AtomicString& HTMLTableSectionElement::chOff() const
 {
     return getAttribute(charoffAttr);
 }
 
-void HTMLTableSectionElement::setChOff(const String &value)
+void HTMLTableSectionElement::setChOff(const AtomicString& value)
 {
     setAttribute(charoffAttr, value);
 }
 
-String HTMLTableSectionElement::vAlign() const
+const AtomicString& HTMLTableSectionElement::vAlign() const
 {
     return getAttribute(valignAttr);
 }
 
-void HTMLTableSectionElement::setVAlign(const String &value)
+void HTMLTableSectionElement::setVAlign(const AtomicString& value)
 {
     setAttribute(valignAttr, value);
 }

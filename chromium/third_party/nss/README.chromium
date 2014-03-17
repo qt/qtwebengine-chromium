@@ -1,13 +1,13 @@
 Name: Network Security Services (NSS)
 Short Name: nss
 URL: http://www.mozilla.org/projects/security/pki/nss/
-Version: 3.15
+Version: 3.15.3
 License: MPL 2
 License File: nss/COPYING
 Security Critical: yes
 
 Description:
-NSS 3.15 with NSPR 4.9.5 Beta 2
+NSS 3.15.3 with NSPR 4.10.2
 
 This copy of NSS has been customized for Chromium.  NSPR is also put here
 rather than in a separate directory to emphasize the fact that Chromium is
@@ -21,8 +21,8 @@ Linux.
 
 The source code was checked out from the mozilla.org CVS or hg repository using
 the nspr-checkout.sh and nss-checkout.sh scripts in the scripts directory.
-The current source code was checked out with the hg tag -u NSS_3_15_RTM
-and CVS tag -r NSPR_4_9_5_BETA2.
+The current source code was checked out with the hg tag NSS_3_15_3_RTM
+and the hg tag NSPR_4_10_2_RTM.
 
 Local Modifications:
 
@@ -43,6 +43,9 @@ We made the following local changes to NSPR.
   to use PR_GetHostByName.  Removing _PR_INET6_PROBE will prevent it from
   creating an IPv6 socket to probe if IPv6 is there.
   DO NOT upstream this patch.
+- patches/nspr-disable-optimization-2013.patch Disable optimizations on VS2013
+  in prdtoa.c. The compiler bug is fixed upstream and this can be removed on
+  next compiler update.
 
 We made the following local changes to NSS.
 - patches/nss-static.patch: to build NSS as static libraries and omit
@@ -66,6 +69,6 @@ We made the following local changes to NSS.
   (https://bugzilla.mozilla.org/show_bug.cgi?id=668397).
 - patches/nss-urandom-abort.patch: call abort() if NSS cannot read from
   /dev/urandom.  See Chromium issue 244661 (http://crbug.com/244661).
-- patches/nss-secoid-mistake.patch: revert a change to lib/util/secoid.c
-  made by mistake.  See NSS bug 877798
-  (https://bugzilla.mozilla.org/show_bug.cgi?id=877798).
+- patches/nss-chacha20-poly1305.patch: Support ChaCha20+Poly1305 cipher
+  suites.  See NSS bug 917571
+  (https://bugzilla.mozilla.org/show_bug.cgi?id=917571).

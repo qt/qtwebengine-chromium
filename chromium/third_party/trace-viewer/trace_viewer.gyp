@@ -4,11 +4,8 @@
 
 {
   'variables': {
-    'tracing_template_files': [
-      'src/about_tracing.html.template',
-      'src/about_tracing.js.template',
-    ],
     'tracing_html_files': [
+      'src/about_tracing/profiling_view.html',
       'src/tracing/record_selection_dialog.html',
       'src/tracing/timeline_view.html',
       'src/tracing/analysis/cpu_slice_view.html',
@@ -21,8 +18,7 @@
     ],
     'tracing_css_files': [
       'src/base/unittest.css',
-      'src/about_tracing/tracing_controller.css',
-      'src/about_tracing/profiling_view.css',
+      'src/about_tracing.css',
       'src/ui/info_bar.css',
       'src/ui/list_view.css',
       'src/ui/tool_button.css',
@@ -31,6 +27,7 @@
       'src/ui/drag_handle.css',
       'src/ui/trace_viewer.css',
       'src/ui/quad_stack_view.css',
+      'src/ui/sortable_table.css',
       'src/system_stats/system_stats_snapshot_view.css',
       'src/system_stats/system_stats_instance_track.css',
       'src/tcmalloc/tcmalloc_instance_view.css',
@@ -93,8 +90,10 @@
       'src/base/event_target.js',
       'src/base/iteration_helpers.js',
       'src/base/interval_tree.js',
+      'src/about_tracing.js',
+      'src/about_tracing/begin_recording.js',
+      'src/about_tracing/mock_request_handler.js',
       'src/about_tracing/profiling_view.js',
-      'src/about_tracing/tracing_controller.js',
       'src/ui.js',
       'src/ui/container_that_decorates_its_children.js',
       'src/ui/info_bar.js',
@@ -109,6 +108,7 @@
       'src/ui/mouse_tracker.js',
       'src/ui/quad_stack_view.js',
       'src/ui/dom_helpers.js',
+      'src/ui/sortable_table.js',
       'src/system_stats/system_stats_snapshot.js',
       'src/system_stats/system_stats_snapshot_view.js',
       'src/system_stats/system_stats_instance_track.js',
@@ -239,6 +239,7 @@
       'src/cc/layer_tree_impl.js',
       'src/cc/raster_task_slice_view.js',
       'src/cc/picture_debugger.js',
+      'src/cc/render_pass.js',
       'src/cc/layer_tree_host_impl_view.js',
       'src/cc/tile_coverage_rect.js',
       'src/cc/tile_view.js',
@@ -257,7 +258,6 @@
       'src/images/ui-states.png',
     ],
     'tracing_files': [
-      '<@(tracing_template_files)',
       '<@(tracing_html_files)',
       '<@(tracing_css_files)',
       '<@(tracing_js_files)',

@@ -65,6 +65,19 @@
         ['target_arch == "x64"', {
           'sources': [ '<@(openssl_x86_64_sources)' ],
           'sources!': [ '<@(openssl_x86_64_source_excludes)' ],
+          'conditions': [
+            ['OS != "android"', {
+              # Because rc4-x86_64.S has a problem,
+              # We use the C rc4 source instead of the ASM source.
+              # This hurts performance, but it's not a problem
+              # because no production code uses openssl on x86-64.
+              'sources/': [
+                ['exclude', 'openssl/crypto/rc4/asm/rc4-x86_64\\.S' ],
+                ['include', 'openssl/crypto/rc4/rc4_enc\\.c' ],
+                ['include', 'openssl/crypto/rc4/rc4_skey\\.c' ],
+              ],
+            }]
+          ],
           'defines': [ '<@(openssl_x86_64_defines)' ],
           'defines!': [ 'OPENSSL_NO_ASM' ],
           'variables': {

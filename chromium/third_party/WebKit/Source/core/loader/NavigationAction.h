@@ -29,11 +29,11 @@
 #ifndef NavigationAction_h
 #define NavigationAction_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "weborigin/KURL.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -46,13 +46,14 @@ namespace WebCore {
         const ResourceRequest& resourceRequest() const { return m_resourceRequest; }
         NavigationType type() const { return m_type; }
         Event* event() const { return m_event.get(); }
-
-        bool specifiesNavigationPolicy(NavigationPolicy*) const;
+        NavigationPolicy policy() const { return m_policy; }
+        bool shouldOpenInNewWindow() const { return m_policy != NavigationPolicyCurrentTab; }
 
     private:
         ResourceRequest m_resourceRequest;
         NavigationType m_type;
         RefPtr<Event> m_event;
+        NavigationPolicy m_policy;
     };
 
 }

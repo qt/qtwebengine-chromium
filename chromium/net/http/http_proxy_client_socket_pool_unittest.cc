@@ -41,7 +41,7 @@ enum HttpProxyType {
 struct HttpProxyClientSocketPoolTestParams {
   HttpProxyClientSocketPoolTestParams()
       : proxy_type(HTTP),
-        protocol(kProtoSPDY2) {}
+        protocol(kProtoSPDY3) {}
 
   HttpProxyClientSocketPoolTestParams(
       HttpProxyType proxy_type,
@@ -77,6 +77,7 @@ class HttpProxyClientSocketPoolTest
                          session_deps_.cert_verifier.get(),
                          NULL /* server_bound_cert_store */,
                          NULL /* transport_security_state */,
+                         NULL /* cert_transparency_verifier */,
                          std::string() /* ssl_session_cache_shard */,
                          session_deps_.deterministic_socket_factory.get(),
                          &transport_socket_pool_,
@@ -238,9 +239,9 @@ INSTANTIATE_TEST_CASE_P(
     HttpProxyClientSocketPoolTests,
     HttpProxyClientSocketPoolTest,
     ::testing::Values(
-        HttpProxyClientSocketPoolTestParams(HTTP, kProtoSPDY2),
-        HttpProxyClientSocketPoolTestParams(HTTPS, kProtoSPDY2),
-        HttpProxyClientSocketPoolTestParams(SPDY, kProtoSPDY2),
+        HttpProxyClientSocketPoolTestParams(HTTP, kProtoDeprecatedSPDY2),
+        HttpProxyClientSocketPoolTestParams(HTTPS, kProtoDeprecatedSPDY2),
+        HttpProxyClientSocketPoolTestParams(SPDY, kProtoDeprecatedSPDY2),
         HttpProxyClientSocketPoolTestParams(HTTP, kProtoSPDY3),
         HttpProxyClientSocketPoolTestParams(HTTPS, kProtoSPDY3),
         HttpProxyClientSocketPoolTestParams(SPDY, kProtoSPDY3),

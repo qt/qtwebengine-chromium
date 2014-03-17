@@ -7,13 +7,13 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "vp9/common/vp9_convolve.h"
 
 #include <assert.h>
 
 #include "./vpx_config.h"
 #include "./vp9_rtcd.h"
 #include "vp9/common/vp9_common.h"
+#include "vp9/common/vp9_convolve.h"
 #include "vp9/common/vp9_filter.h"
 #include "vpx/vpx_integer.h"
 #include "vpx_ports/mem.h"
@@ -282,7 +282,7 @@ void vp9_convolve_copy_c(const uint8_t *src, ptrdiff_t src_stride,
   int r;
 
   for (r = h; r > 0; --r) {
-    memcpy(dst, src, w);
+    vpx_memcpy(dst, src, w);
     src += src_stride;
     dst += dst_stride;
   }

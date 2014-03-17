@@ -33,17 +33,23 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/GenericEventQueue.h"
-#include "core/platform/Logging.h"
-#include "core/platform/graphics/SourceBufferPrivate.h"
+#include "core/events/Event.h"
+#include "core/events/GenericEventQueue.h"
+#include "core/html/TimeRanges.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
+#include "platform/Logging.h"
+#include "platform/TraceEvent.h"
+#include "public/platform/WebMediaSource.h"
+#include "public/platform/WebSourceBuffer.h"
 #include "wtf/text/WTFString.h"
+
+using blink::WebMediaSource;
+using blink::WebSourceBuffer;
 
 namespace WebCore {
 
-MediaSourceBase::MediaSourceBase(ScriptExecutionContext* context)
+MediaSourceBase::MediaSourceBase(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_readyState(closedKeyword())
     , m_asyncEventQueue(GenericEventQueue::create(this))
@@ -73,12 +79,13 @@ const AtomicString& MediaSourceBase::endedKeyword()
     return ended;
 }
 
-void MediaSourceBase::setPrivateAndOpen(PassOwnPtr<MediaSourcePrivate> mediaSourcePrivate)
+void MediaSourceBase::setWebMediaSourceAndOpen(PassOwnPtr<WebMediaSource> webMediaSource)
 {
-    ASSERT(mediaSourcePrivate);
-    ASSERT(!m_private);
+    TRACE_EVENT_ASYNC_END0("media", "MediaSourceBase::attachToElement", this);
+    ASSERT(webMediaSource);
+    ASSERT(!m_webMediaSource);
     ASSERT(m_attachedElement);
-    m_private = mediaSourcePrivate;
+    m_webMediaSource = webMediaSource;
     setReadyState(openKeyword());
 }
 
@@ -94,7 +101,7 @@ void MediaSourceBase::removedFromRegistry()
 
 double MediaSourceBase::duration() const
 {
-    return isClosed() ? std::numeric_limits<float>::quiet_NaN() : m_private->duration();
+    return isClosed() ? std::numeric_limits<float>::quiet_NaN() : m_webMediaSource->duration();
 }
 
 PassRefPtr<TimeRanges> MediaSourceBase::buffered() const
@@ -141,21 +148,21 @@ PassRefPtr<TimeRanges> MediaSourceBase::buffered() const
     return intersectionRanges.release();
 }
 
-void MediaSourceBase::setDuration(double duration, ExceptionState& es)
+void MediaSourceBase::setDuration(double duration, ExceptionState& exceptionState)
 {
     if (duration < 0.0 || std::isnan(duration)) {
-        es.throwDOMException(InvalidAccessError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     // Synchronously process duration change algorithm to enforce any required
     // seek is started prior to returning.
     m_attachedElement->durationChanged(duration);
-    m_private->setDuration(duration);
+    m_webMediaSource->setDuration(duration);
 }
 
 
@@ -164,10 +171,10 @@ void MediaSourceBase::setReadyState(const AtomicString& state)
     ASSERT(state == openKeyword() || state == closedKeyword() || state == endedKeyword());
 
     AtomicString oldState = readyState();
-    LOG(Media, "MediaSourceBase::setReadyState() %p : %s -> %s", this, oldState.string().ascii().data(), state.string().ascii().data());
+    WTF_LOG(Media, "MediaSourceBase::setReadyState() %p : %s -> %s", this, oldState.string().ascii().data(), state.string().ascii().data());
 
     if (state == closedKeyword()) {
-        m_private.clear();
+        m_webMediaSource.clear();
         m_attachedElement = 0;
     }
 
@@ -179,7 +186,7 @@ void MediaSourceBase::setReadyState(const AtomicString& state)
     onReadyStateChange(oldState, state);
 }
 
-void MediaSourceBase::endOfStream(const AtomicString& error, ExceptionState& es)
+void MediaSourceBase::endOfStream(const AtomicString& error, ExceptionState& exceptionState)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, network, ("network", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, decode, ("decode", AtomicString::ConstructFromLiteral));
@@ -188,26 +195,26 @@ void MediaSourceBase::endOfStream(const AtomicString& error, ExceptionState& es)
     // 1. If the readyState attribute is not in the "open" state then throw an
     // InvalidStateError exception and abort these steps.
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
-    MediaSourcePrivate::EndOfStreamStatus eosStatus = MediaSourcePrivate::EosNoError;
+    WebMediaSource::EndOfStreamStatus eosStatus = WebMediaSource::EndOfStreamStatusNoError;
 
     if (error.isNull() || error.isEmpty()) {
-        eosStatus = MediaSourcePrivate::EosNoError;
+        eosStatus = WebMediaSource::EndOfStreamStatusNoError;
     } else if (error == network) {
-        eosStatus = MediaSourcePrivate::EosNetworkError;
+        eosStatus = WebMediaSource::EndOfStreamStatusNetworkError;
     } else if (error == decode) {
-        eosStatus = MediaSourcePrivate::EosDecodeError;
+        eosStatus = WebMediaSource::EndOfStreamStatusDecodeError;
     } else {
-        es.throwDOMException(InvalidAccessError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
     // 2. Change the readyState attribute value to "ended".
     setReadyState(endedKeyword());
-    m_private->markEndOfStream(eosStatus);
+    m_webMediaSource->markEndOfStream(eosStatus);
 }
 
 bool MediaSourceBase::isOpen() const
@@ -232,6 +239,7 @@ bool MediaSourceBase::attachToElement(HTMLMediaElement* element)
 
     ASSERT(isClosed());
 
+    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourceBase::attachToElement", this);
     m_attachedElement = element;
     return true;
 }
@@ -242,12 +250,12 @@ void MediaSourceBase::openIfInEndedState()
         return;
 
     setReadyState(openKeyword());
-    m_private->unmarkEndOfStream();
+    m_webMediaSource->unmarkEndOfStream();
 }
 
 bool MediaSourceBase::hasPendingActivity() const
 {
-    return m_private || m_asyncEventQueue->hasPendingEvents()
+    return m_webMediaSource || m_asyncEventQueue->hasPendingEvents()
         || ActiveDOMObject::hasPendingActivity();
 }
 
@@ -256,28 +264,29 @@ void MediaSourceBase::stop()
     m_asyncEventQueue->close();
     if (!isClosed())
         setReadyState(closedKeyword());
-    m_private.clear();
+    m_webMediaSource.clear();
 }
 
-PassOwnPtr<SourceBufferPrivate> MediaSourceBase::createSourceBufferPrivate(const String& type, const MediaSourcePrivate::CodecsArray& codecs, ExceptionState& es)
+PassOwnPtr<WebSourceBuffer> MediaSourceBase::createWebSourceBuffer(const String& type, const Vector<String>& codecs, ExceptionState& exceptionState)
 {
-    OwnPtr<SourceBufferPrivate> sourceBufferPrivate;
-    switch (m_private->addSourceBuffer(type, codecs, &sourceBufferPrivate)) {
-    case MediaSourcePrivate::Ok: {
-        return sourceBufferPrivate.release();
-    }
-    case MediaSourcePrivate::NotSupported:
+    WebSourceBuffer* webSourceBuffer = 0;
+    switch (m_webMediaSource->addSourceBuffer(type, codecs, &webSourceBuffer)) {
+    case WebMediaSource::AddStatusOk:
+        return adoptPtr(webSourceBuffer);
+    case WebMediaSource::AddStatusNotSupported:
+        ASSERT(!webSourceBuffer);
         // 2.2 https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-MediaSource-addSourceBuffer-SourceBuffer-DOMString-type
         // Step 2: If type contains a MIME type ... that is not supported with the types
         // specified for the other SourceBuffer objects in sourceBuffers, then throw
         // a NotSupportedError exception and abort these steps.
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
         return nullptr;
-    case MediaSourcePrivate::ReachedIdLimit:
+    case WebMediaSource::AddStatusReachedIdLimit:
+        ASSERT(!webSourceBuffer);
         // 2.2 https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-MediaSource-addSourceBuffer-SourceBuffer-DOMString-type
         // Step 3: If the user agent can't handle any more SourceBuffer objects then throw
         // a QuotaExceededError exception and abort these steps.
-        es.throwDOMException(QuotaExceededError);
+        exceptionState.throwUninformativeAndGenericDOMException(QuotaExceededError);
         return nullptr;
     }
 
@@ -295,19 +304,9 @@ void MediaSourceBase::scheduleEvent(const AtomicString& eventName)
     m_asyncEventQueue->enqueueEvent(event.release());
 }
 
-ScriptExecutionContext* MediaSourceBase::scriptExecutionContext() const
+ExecutionContext* MediaSourceBase::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
-}
-
-EventTargetData* MediaSourceBase::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* MediaSourceBase::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return ActiveDOMObject::executionContext();
 }
 
 URLRegistry& MediaSourceBase::registry() const

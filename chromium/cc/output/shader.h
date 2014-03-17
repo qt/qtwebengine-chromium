@@ -16,14 +16,27 @@ class Point;
 class Size;
 }
 
-namespace WebKit { class WebGraphicsContext3D; }
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
+}
 
 namespace cc {
 
 enum TexCoordPrecision {
-  TexCoordPrecisionNA,
-  TexCoordPrecisionMedium,
-  TexCoordPrecisionHigh,
+  TexCoordPrecisionNA = 0,
+  TexCoordPrecisionMedium = 1,
+  TexCoordPrecisionHigh = 2,
+  NumTexCoordPrecisions = 3
+};
+
+enum SamplerType {
+  SamplerTypeNA = 0,
+  SamplerType2D = 1,
+  SamplerType2DRect = 2,
+  SamplerTypeExternalOES = 3,
+  NumSamplerTypes = 4
 };
 
 // Note: The highp_threshold_cache must be provided by the caller to make
@@ -31,13 +44,13 @@ enum TexCoordPrecision {
 // The caller must make sure to clear highp_threshold_cache to 0, so it can be
 // reinitialized, if a new or different context is used.
 CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
-    WebKit::WebGraphicsContext3D* context,
+    gpu::gles2::GLES2Interface* context,
     int *highp_threshold_cache,
     int highp_threshold_min,
     gfx::Point max_coordinate);
 
 CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
-    WebKit::WebGraphicsContext3D* context,
+    gpu::gles2::GLES2Interface* context,
     int *highp_threshold_cache,
     int highp_threshold_min,
     gfx::Size max_size);
@@ -46,9 +59,8 @@ class VertexShaderPosTex {
  public:
   VertexShaderPosTex();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -64,9 +76,8 @@ class VertexShaderPosTexYUVStretch {
  public:
   VertexShaderPosTexYUVStretch();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -84,9 +95,8 @@ class VertexShaderPos {
  public:
   VertexShaderPos();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -100,9 +110,8 @@ class VertexShaderPos {
 
 class VertexShaderPosTexIdentity {
  public:
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index) {}
   std::string GetShaderString() const;
 };
@@ -111,9 +120,8 @@ class VertexShaderPosTexTransform {
  public:
   VertexShaderPosTexTransform();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -133,9 +141,8 @@ class VertexShaderQuad {
  public:
   VertexShaderQuad();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
            unsigned program,
-           bool using_bind_uniform,
            int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -155,9 +162,8 @@ class VertexShaderQuadAA {
  public:
   VertexShaderQuadAA();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
            unsigned program,
-           bool using_bind_uniform,
            int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -180,9 +186,8 @@ class VertexShaderQuadTexTransformAA {
  public:
   VertexShaderQuadTexTransformAA();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
            unsigned program,
-           bool using_bind_uniform,
            int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -206,9 +211,8 @@ class VertexShaderTile {
  public:
   VertexShaderTile();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -232,9 +236,8 @@ class VertexShaderTileAA {
  public:
   VertexShaderTileAA();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -260,9 +263,8 @@ class VertexShaderVideoTransform {
  public:
   VertexShaderVideoTransform();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   std::string GetShaderString() const;
 
@@ -280,9 +282,8 @@ class FragmentTexAlphaBinding {
  public:
   FragmentTexAlphaBinding();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int fragment_tex_transform_location() const { return -1; }
@@ -299,10 +300,9 @@ class FragmentTexColorMatrixAlphaBinding {
  public:
     FragmentTexColorMatrixAlphaBinding();
 
-    void Init(WebKit::WebGraphicsContext3D* context,
+    void Init(gpu::gles2::GLES2Interface* context,
               unsigned program,
-              bool usingBindUniform,
-              int* baseUniformIndex);
+              int* base_uniform_index);
     int alpha_location() const { return alpha_location_; }
     int color_matrix_location() const { return color_matrix_location_; }
     int color_offset_location() const { return color_offset_location_; }
@@ -320,9 +320,8 @@ class FragmentTexOpaqueBinding {
  public:
   FragmentTexOpaqueBinding();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return -1; }
   int fragment_tex_transform_location() const { return -1; }
@@ -339,9 +338,8 @@ class FragmentTexBackgroundBinding {
  public:
   FragmentTexBackgroundBinding();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int background_color_location() const { return background_color_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -355,89 +353,78 @@ class FragmentTexBackgroundBinding {
 
 class FragmentShaderRGBATexVaryingAlpha : public FragmentTexOpaqueBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexPremultiplyAlpha : public FragmentTexOpaqueBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderTexBackgroundVaryingAlpha
     : public FragmentTexBackgroundBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderTexBackgroundPremultiplyAlpha
     : public FragmentTexBackgroundBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexAlpha : public FragmentTexAlphaBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexColorMatrixAlpha
     : public FragmentTexColorMatrixAlphaBinding {
  public:
-    std::string GetShaderString(TexCoordPrecision precision) const;
-};
-
-class FragmentShaderRGBATexRectVaryingAlpha : public FragmentTexOpaqueBinding {
- public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+    std::string GetShaderString(
+        TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexOpaque : public FragmentTexOpaqueBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATex : public FragmentTexOpaqueBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 // Swizzles the red and blue component of sampled texel with alpha.
 class FragmentShaderRGBATexSwizzleAlpha : public FragmentTexAlphaBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 // Swizzles the red and blue component of sampled texel without alpha.
 class FragmentShaderRGBATexSwizzleOpaque : public FragmentTexOpaqueBinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
-};
-
-// Fragment shader for external textures.
-class FragmentShaderOESImageExternal : public FragmentTexAlphaBinding {
- public:
-  FragmentShaderOESImageExternal();
-
-  std::string GetShaderString(TexCoordPrecision precision) const;
-  void Init(WebKit::WebGraphicsContext3D* context,
-            unsigned program,
-            bool using_bind_uniform,
-            int* base_uniform_index);
- private:
-  int sampler_location_;
-
-  DISALLOW_COPY_AND_ASSIGN(FragmentShaderOESImageExternal);
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexAlphaAA {
  public:
   FragmentShaderRGBATexAlphaAA();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -453,9 +440,8 @@ class FragmentTexClampAlphaAABinding {
  public:
   FragmentTexClampAlphaAABinding();
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -474,24 +460,26 @@ class FragmentTexClampAlphaAABinding {
 class FragmentShaderRGBATexClampAlphaAA
     : public FragmentTexClampAlphaAABinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 // Swizzles the red and blue component of sampled texel.
 class FragmentShaderRGBATexClampSwizzleAlphaAA
     : public FragmentTexClampAlphaAABinding {
  public:
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 };
 
 class FragmentShaderRGBATexAlphaMask {
  public:
   FragmentShaderRGBATexAlphaMask();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -516,11 +504,11 @@ class FragmentShaderRGBATexAlphaMask {
 class FragmentShaderRGBATexAlphaMaskAA {
  public:
   FragmentShaderRGBATexAlphaMaskAA();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -545,11 +533,11 @@ class FragmentShaderRGBATexAlphaMaskAA {
 class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
  public:
   FragmentShaderRGBATexAlphaMaskColorMatrixAA();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -576,11 +564,11 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
 class FragmentShaderRGBATexAlphaColorMatrixAA {
  public:
   FragmentShaderRGBATexAlphaColorMatrixAA();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -597,11 +585,11 @@ class FragmentShaderRGBATexAlphaColorMatrixAA {
 class FragmentShaderRGBATexAlphaMaskColorMatrix {
  public:
   FragmentShaderRGBATexAlphaMaskColorMatrix();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -628,11 +616,11 @@ class FragmentShaderRGBATexAlphaMaskColorMatrix {
 class FragmentShaderYUVVideo {
  public:
   FragmentShaderYUVVideo();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int y_texture_location() const { return y_texture_location_; }
   int u_texture_location() const { return u_texture_location_; }
@@ -656,11 +644,11 @@ class FragmentShaderYUVVideo {
 class FragmentShaderYUVAVideo {
  public:
   FragmentShaderYUVAVideo();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
 
   int y_texture_location() const { return y_texture_location_; }
@@ -686,11 +674,11 @@ class FragmentShaderYUVAVideo {
 class FragmentShaderColor {
  public:
   FragmentShaderColor();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int color_location() const { return color_location_; }
 
@@ -703,11 +691,11 @@ class FragmentShaderColor {
 class FragmentShaderColorAA {
  public:
   FragmentShaderColorAA();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int color_location() const { return color_location_; }
 
@@ -720,11 +708,11 @@ class FragmentShaderColorAA {
 class FragmentShaderCheckerboard {
  public:
   FragmentShaderCheckerboard();
-  std::string GetShaderString(TexCoordPrecision precision) const;
+  std::string GetShaderString(
+      TexCoordPrecision precision, SamplerType sampler) const;
 
-  void Init(WebKit::WebGraphicsContext3D* context,
+  void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
-            bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int tex_transform_location() const { return tex_transform_location_; }

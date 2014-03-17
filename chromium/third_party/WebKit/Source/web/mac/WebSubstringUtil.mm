@@ -1,11 +1,11 @@
 /*
  * Copyright (C) 2005, 2007, 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2011 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -41,19 +41,20 @@
 #include "core/dom/Node.h"
 #include "core/dom/Range.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/PlainTextRange.h"
 #include "core/editing/TextIterator.h"
 #include "core/html/HTMLElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/mac/ColorMac.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/fonts/Font.h"
+#include "platform/mac/ColorMac.h"
 #include "public/platform/WebRect.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFrame, size_t location, size_t length)
 {
@@ -61,7 +62,9 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFr
     if (frame->view()->needsLayout())
         frame->view()->layout();
 
-    RefPtr<Range> range(TextIterator::rangeFromLocationAndLength(frame->selection().rootEditableElementOrDocumentElement(), location, length));
+    Element* editable = frame->selection().rootEditableElementOrDocumentElement();
+    ASSERT(editable);
+    RefPtr<Range> range(PlainTextRange(location, location + length).createRange(*editable));
     if (!range)
         return nil;
 
@@ -112,4 +115,4 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFr
     return [string autorelease];
 }
 
-} // namespace WebKit
+} // namespace blink

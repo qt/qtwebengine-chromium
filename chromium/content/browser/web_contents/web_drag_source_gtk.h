@@ -39,7 +39,7 @@ class CONTENT_EXPORT WebDragSourceGtk :
   // Starts a drag for the WebContents this WebDragSourceGtk was created for.
   // Returns false if the drag could not be started.
   bool StartDragging(const DropData& drop_data,
-                     WebKit::WebDragOperationsMask allowed_ops,
+                     blink::WebDragOperationsMask allowed_ops,
                      GdkEventButton* last_mouse_down,
                      const SkBitmap& image,
                      const gfx::Vector2d& image_offset);
@@ -92,7 +92,7 @@ class CONTENT_EXPORT WebDragSourceGtk :
   GdkDragContext* drag_context_;
 
   // The file mime type for a drag-out download.
-  string16 wide_download_mime_type_;
+  base::string16 wide_download_mime_type_;
 
   // The file name to be saved to for a drag-out download.
   base::FilePath download_file_name_;
