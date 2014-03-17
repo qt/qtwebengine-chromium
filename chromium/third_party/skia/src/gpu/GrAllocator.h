@@ -39,6 +39,14 @@ public:
         SkDEBUGCODE(if (!fOwnFirstBlock) {*((char*)initialBlock+fBlockSize-1)='a';} );
     }
 
+    void setInitialBlock(void* initialBlock) {
+        SkASSERT(0 == fCount);
+        SkASSERT(1 == fBlocks.count());
+        SkASSERT(NULL == fBlocks.back());
+        fOwnFirstBlock = false;
+        fBlocks.back() = initialBlock;
+    }
+
     /**
      * Adds an item and returns pointer to it.
      *
@@ -223,8 +231,8 @@ public:
     }
 
 protected:
-    GrTAllocator(int itemsPerBlock, void* initialBlock)
-        : fAllocator(sizeof(T), itemsPerBlock, initialBlock) {
+    void setInitialBlock(void* initialBlock) {
+        fAllocator.setInitialBlock(initialBlock);
     }
 
 private:
@@ -236,8 +244,10 @@ template <int N, typename T> class GrSTAllocator : public GrTAllocator<T> {
 private:
     typedef GrTAllocator<T> INHERITED;
 
+
 public:
-    GrSTAllocator() : INHERITED(N, fStorage.get()) {
+    GrSTAllocator() : INHERITED(N) {
+        this->setInitialBlock(fStorage.get());
     }
 
 private:
