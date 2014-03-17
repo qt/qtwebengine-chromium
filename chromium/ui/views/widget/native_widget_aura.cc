@@ -52,7 +52,7 @@
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
 #endif
 
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(TOOLKIT_QT)
 #include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
 #endif
 
@@ -671,7 +671,7 @@ void NativeWidgetAura::SetVisibilityChangedAnimationsEnabled(bool value) {
 }
 
 ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(TOOLKIT_QT)
   return DesktopRootWindowHost::GetNativeTheme(window_);
 #else
   return ui::NativeThemeAura::instance();
