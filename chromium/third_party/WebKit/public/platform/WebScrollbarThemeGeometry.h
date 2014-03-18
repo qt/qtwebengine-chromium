@@ -28,11 +28,11 @@
 
 #include "WebRect.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebScrollbar;
 
-class WebScrollbarThemeGeometry {
+class BLINK_PLATFORM_EXPORT WebScrollbarThemeGeometry {
 public:
     virtual ~WebScrollbarThemeGeometry() { }
 
@@ -55,6 +55,6 @@ public:
     virtual void splitTrack(WebScrollbar*, const WebRect& track, WebRect& startTrack, WebRect& thumb, WebRect& endTrack) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

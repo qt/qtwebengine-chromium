@@ -26,8 +26,8 @@
 #define RTCStatsResponse_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/mediastream/RTCStatsResponseBase.h"
 #include "modules/mediastream/RTCStatsReport.h"
+#include "platform/mediastream/RTCStatsResponseBase.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"

@@ -9,17 +9,17 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "grit/blink_resources.h"
+#include "grit/webkit_resources.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 
 
-using WebKit::WebCursorInfo;
-using WebKit::WebSize;
+using blink::WebCursorInfo;
+using blink::WebSize;
 
 // Declare symbols that are part of the 10.7 SDK.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -136,39 +136,6 @@ NSCursor* GetCoreCursorWithFallback(CrCoreCursorType type,
   }
 
   return LoadCursor(resource_id, hotspot_x, hotspot_y);
-}
-
-// TODO(avi): When Skia becomes default, fold this function into the remaining
-// caller, InitFromCursor().
-CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
-                                       const gfx::Size& custom_size) {
-  // If the data is missing, leave the backing transparent.
-  void* data = NULL;
-  if (!custom_data.empty()) {
-    // This is safe since we're not going to draw into the context we're
-    // creating.
-    data = const_cast<char*>(&custom_data[0]);
-  }
-
-  // If the size is empty, use a 1x1 transparent image.
-  gfx::Size size = custom_size;
-  if (size.IsEmpty()) {
-    size.SetSize(1, 1);
-    data = NULL;
-  }
-
-  base::ScopedCFTypeRef<CGColorSpaceRef> cg_color(
-      CGColorSpaceCreateDeviceRGB());
-  // The settings here match SetCustomData() below; keep in sync.
-  base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
-      data,
-      size.width(),
-      size.height(),
-      8,
-      size.width() * 4,
-      cg_color.get(),
-      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big));
-  return CGBitmapContextCreateImage(context.get());
 }
 
 NSCursor* CreateCustomCursor(const std::vector<char>& custom_data,

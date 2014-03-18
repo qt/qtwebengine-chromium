@@ -93,6 +93,7 @@
             'src/restricted_token.cc',
             'src/restricted_token.h',
             'src/sandbox_factory.h',
+            'src/sandbox_globals.cc',
             'src/sandbox_nt_types.h',
             'src/sandbox_nt_util.cc',
             'src/sandbox_nt_util.h',
@@ -336,7 +337,6 @@
             'target_arch': 'x64',
           },
           'dependencies': [
-            '../testing/gtest.gyp:gtest',
             '../base/base.gyp:base_nacl_win64',
             '../base/base.gyp:base_static_win64',
           ],

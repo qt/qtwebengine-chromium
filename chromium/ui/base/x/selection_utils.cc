@@ -10,8 +10,8 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/clipboard/clipboard.h"
-#include "ui/base/x/x11_atom_cache.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_atom_cache.h"
 
 namespace ui {
 
@@ -30,9 +30,9 @@ const char* kSelectionDataAtoms[] = {
 
 std::vector< ::Atom> GetTextAtomsFrom(const X11AtomCache* atom_cache) {
   std::vector< ::Atom> atoms;
+  atoms.push_back(atom_cache->GetAtom(kUtf8String));
   atoms.push_back(atom_cache->GetAtom(kString));
   atoms.push_back(atom_cache->GetAtom(kText));
-  atoms.push_back(atom_cache->GetAtom(kUtf8String));
   return atoms;
 }
 
@@ -43,18 +43,15 @@ std::vector< ::Atom> GetURLAtomsFrom(const X11AtomCache* atom_cache) {
   return atoms;
 }
 
-void GetAtomIntersection(const std::vector< ::Atom>& one,
-                         const std::vector< ::Atom>& two,
+void GetAtomIntersection(const std::vector< ::Atom>& desired,
+                         const std::vector< ::Atom>& offered,
                          std::vector< ::Atom>* output) {
-  for (std::vector< ::Atom>::const_iterator it = one.begin(); it != one.end();
-       ++it) {
-    for (std::vector< ::Atom>::const_iterator jt = two.begin(); jt != two.end();
-         ++jt) {
-      if (*it == *jt) {
-        output->push_back(*it);
-        break;
-      }
-    }
+  for (std::vector< ::Atom>::const_iterator it = desired.begin();
+       it != desired.end(); ++it) {
+    std::vector< ::Atom>::const_iterator jt =
+      std::find(offered.begin(), offered.end(), *it);
+    if (jt != offered.end())
+      output->push_back(*it);
   }
 }
 

@@ -14,6 +14,7 @@ base.require('base.raf');
 base.require('base.settings');
 base.require('cc.constants');
 base.require('cc.layer_tree_quad_stack_view');
+base.require('cc.picture');
 base.require('tracing.analysis.util');
 base.require('ui.drag_handle');
 
@@ -54,6 +55,14 @@ base.exportTo('cc', function() {
       return this.layerTreeQuadStackView_.layerTreeImpl = newValue;
     },
 
+    set whichTree(newValue) {
+      return this.layerTreeQuadStackView_.whichTree = newValue;
+    },
+
+    set isRenderPassQuads(newValue) {
+      return this.layerTreeQuadStackView_.isRenderPassQuads = newValue;
+    },
+
     get selection() {
       return this.layerTreeQuadStackView_.selection;
     },
@@ -62,12 +71,23 @@ base.exportTo('cc', function() {
       this.layerTreeQuadStackView_.selection = newValue;
     },
 
+    regenerateContent: function() {
+      this.layerTreeQuadStackView_.regenerateContent();
+    },
+
     layerTreeQuadStackViewSelectionChanged_: function() {
       var selection = this.layerTreeQuadStackView_.selection;
       if (selection) {
         this.dragBar_.style.display = '';
         this.analysisEl_.style.display = '';
         this.analysisEl_.textContent = '';
+
+        var layer = selection.layer;
+        if (layer && layer.args && layer.args.pictures) {
+          this.analysisEl_.appendChild(
+              this.createPictureBtn_(layer.args.pictures));
+        }
+
         var analysis = selection.createAnalysis();
         this.analysisEl_.appendChild(analysis);
       } else {
@@ -79,8 +99,27 @@ base.exportTo('cc', function() {
         this.layerTreeQuadStackView_.style.height =
             window.getComputedStyle(this).height;
       }
+    },
+
+    createPictureBtn_: function(pictures) {
+      if (!(pictures instanceof Array))
+        pictures = [pictures];
+
+      var link = new tracing.analysis.AnalysisLink();
+      link.innerText = 'View in Picture Debugger';
+      link.selectionGenerator = function() {
+        var layeredPicture = new cc.LayeredPicture(pictures);
+        var snapshot = new cc.PictureSnapshot(layeredPicture);
+        snapshot.picture = layeredPicture;
+
+        var selection = new tracing.Selection();
+        selection.push(snapshot);
+        return selection;
+      };
+      return link;
     }
   };
+
   return {
     LayerView: LayerView
   };

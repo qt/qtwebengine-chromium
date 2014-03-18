@@ -36,13 +36,13 @@
 
 namespace WebCore {
 
-WebStorageQuotaCallbacksImpl::WebStorageQuotaCallbacksImpl(PassRefPtr<StorageUsageCallback> usageCallback, PassRefPtr<StorageErrorCallback> errorCallback)
+WebStorageQuotaCallbacksImpl::WebStorageQuotaCallbacksImpl(PassOwnPtr<StorageUsageCallback> usageCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
     : m_usageCallback(usageCallback)
     , m_errorCallback(errorCallback)
 {
 }
 
-WebStorageQuotaCallbacksImpl::WebStorageQuotaCallbacksImpl(PassRefPtr<StorageQuotaCallback> quotaCallback, PassRefPtr<StorageErrorCallback> errorCallback)
+WebStorageQuotaCallbacksImpl::WebStorageQuotaCallbacksImpl(PassOwnPtr<StorageQuotaCallback> quotaCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
     : m_quotaCallback(quotaCallback)
     , m_errorCallback(errorCallback)
 {
@@ -66,7 +66,7 @@ void WebStorageQuotaCallbacksImpl::didGrantStorageQuota(unsigned long long grant
         m_quotaCallback->handleEvent(grantedQuotaInBytes);
 }
 
-void WebStorageQuotaCallbacksImpl::didFail(WebKit::WebStorageQuotaError error)
+void WebStorageQuotaCallbacksImpl::didFail(blink::WebStorageQuotaError error)
 {
     OwnPtr<WebStorageQuotaCallbacksImpl> deleter = adoptPtr(this);
     if (m_errorCallback)

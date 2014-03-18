@@ -120,8 +120,8 @@ class TrayBubbleBorder : public BubbleBorder {
     const int x = position_relative_to.x() +
         position_relative_to.width() / 2 - border_size.width() / 2;
     // Position the bubble on top of the anchor.
-    const int y = position_relative_to.y() - border_size.height()
-        + insets.height() - kBubbleSpacing;
+    const int y = position_relative_to.y() - border_size.height() +
+        insets.height() - kBubbleSpacing;
     return gfx::Rect(x, y, border_size.width(), border_size.height());
   }
 
@@ -325,9 +325,10 @@ TrayBubbleView::TrayBubbleView(gfx::NativeView parent_window,
       mouse_actively_entered_(false) {
   set_parent_window(parent_window);
   set_notify_enter_exit_on_child(true);
+  set_move_with_anchor(true);
   set_close_on_deactivate(init_params.close_on_deactivate);
   set_margins(gfx::Insets());
-  bubble_border_ = new TrayBubbleBorder(this, anchor_view(), params_);
+  bubble_border_ = new TrayBubbleBorder(this, GetAnchorView(), params_);
   if (get_use_acceleration_when_possible()) {
     SetPaintToLayer(true);
     SetFillsBoundsOpaquely(true);

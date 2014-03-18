@@ -8,12 +8,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/animation/animation_id_provider.h"
+#include "cc/output/begin_frame_args.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/gfx/animation/animation_container.h"
+#include "ui/gfx/frame_time.h"
 
 #define SAFE_INVOKE_VOID(function, running_anim, ...) \
     if (running_anim.is_sequence_alive()) \
@@ -53,6 +55,7 @@ gfx::AnimationContainer* GetAnimationContainer() {
 LayerAnimator::LayerAnimator(base::TimeDelta transition_duration)
     : delegate_(NULL),
       preemption_strategy_(IMMEDIATELY_SET_NEW_TARGET),
+      is_transition_duration_locked_(false),
       transition_duration_(transition_duration),
       tween_type_(gfx::Tween::LINEAR),
       is_started_(false),
@@ -116,6 +119,10 @@ ANIMATED_PROPERTY(float, BRIGHTNESS, Brightness, float, brightness);
 ANIMATED_PROPERTY(float, GRAYSCALE, Grayscale, float, grayscale);
 ANIMATED_PROPERTY(SkColor, COLOR, Color, SkColor, color);
 
+base::TimeDelta LayerAnimator::GetTransitionDuration() const {
+  return transition_duration_;
+}
+
 void LayerAnimator::SetDelegate(LayerAnimationDelegate* delegate) {
   delegate_ = delegate;
 }
@@ -177,7 +184,7 @@ void LayerAnimator::StartTogether(
     if (GetAnimationContainer()->is_running())
       last_step_time_ = GetAnimationContainer()->last_tick_time();
     else
-      last_step_time_ = base::TimeTicks::Now();
+      last_step_time_ = gfx::FrameTime::Now();
   }
 
   // Collect all the affected properties.
@@ -768,7 +775,7 @@ bool LayerAnimator::StartSequenceImmediately(LayerAnimationSequence* sequence) {
   else if (GetAnimationContainer()->is_running())
     start_time = GetAnimationContainer()->last_tick_time();
   else
-    start_time = base::TimeTicks::Now();
+    start_time = gfx::FrameTime::Now();
 
   if (!sequence->animation_group_id())
     sequence->set_animation_group_id(cc::AnimationIdProvider::NextGroupId());
@@ -808,8 +815,10 @@ void LayerAnimator::OnScheduled(LayerAnimationSequence* sequence) {
   sequence->OnScheduled();
 }
 
-base::TimeDelta LayerAnimator::GetTransitionDuration() const {
-  return transition_duration_;
+void LayerAnimator::SetTransitionDuration(base::TimeDelta duration) {
+  if (is_transition_duration_locked_)
+    return;
+  transition_duration_ = duration;
 }
 
 void LayerAnimator::ClearAnimationsInternal() {

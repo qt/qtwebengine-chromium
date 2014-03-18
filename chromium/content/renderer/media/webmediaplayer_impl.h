@@ -29,6 +29,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "cc/layers/video_frame_provider.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
@@ -37,15 +38,15 @@
 #include "media/base/text_track.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/web/WebAudioSourceProvider.h"
-#include "third_party/WebKit/public/web/WebMediaPlayer.h"
-#include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "url/gurl.h"
 
 class RenderAudioSourceProvider;
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
@@ -55,7 +56,6 @@ class MessageLoopProxy;
 
 namespace media {
 class ChunkDemuxer;
-class FFmpegDemuxer;
 class GpuVideoAcceleratorFactories;
 class MediaLog;
 }
@@ -72,23 +72,25 @@ class WebMediaPlayerParams;
 class WebTextTrackImpl;
 
 class WebMediaPlayerImpl
-    : public WebKit::WebMediaPlayer,
+    : public blink::WebMediaPlayer,
       public cc::VideoFrameProvider,
-      public base::MessageLoop::DestructionObserver,
+      public content::RenderViewObserver,
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
-  //
+  // |render_view| is passed only for the purpose of registering |this| as an
+  // observer of it.
   // |delegate| may be null.
   WebMediaPlayerImpl(
-      WebKit::WebFrame* frame,
-      WebKit::WebMediaPlayerClient* client,
+      content::RenderView* render_view,
+      blink::WebFrame* frame,
+      blink::WebMediaPlayerClient* client,
       base::WeakPtr<WebMediaPlayerDelegate> delegate,
       const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
   virtual void load(LoadType load_type,
-                    const WebKit::WebURL& url,
+                    const blink::WebURL& url,
                     CORSMode cors_mode) OVERRIDE;
 
   // Playback controls.
@@ -99,13 +101,13 @@ class WebMediaPlayerImpl
   virtual void seek(double seconds);
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
-  virtual void setPreload(WebKit::WebMediaPlayer::Preload preload);
-  virtual const WebKit::WebTimeRanges& buffered();
+  virtual void setPreload(blink::WebMediaPlayer::Preload preload);
+  virtual const blink::WebTimeRanges& buffered();
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
-  virtual void paint(WebKit::WebCanvas* canvas,
-                     const WebKit::WebRect& rect,
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect,
                      unsigned char alpha);
 
   // True if the loaded media has a playable video/audio track.
@@ -113,7 +115,7 @@ class WebMediaPlayerImpl
   virtual bool hasAudio() const;
 
   // Dimensions of the video.
-  virtual WebKit::WebSize naturalSize() const;
+  virtual blink::WebSize naturalSize() const;
 
   // Getters of playback state.
   virtual bool paused() const;
@@ -124,8 +126,8 @@ class WebMediaPlayerImpl
   // Internal states of loading and network.
   // TODO(hclam): Ask the pipeline about the state rather than having reading
   // them from members which would cause race conditions.
-  virtual WebKit::WebMediaPlayer::NetworkState networkState() const;
-  virtual WebKit::WebMediaPlayer::ReadyState readyState() const;
+  virtual blink::WebMediaPlayer::NetworkState networkState() const;
+  virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
   virtual bool didLoadingProgress() const;
 
@@ -147,7 +149,7 @@ class WebMediaPlayerImpl
       OVERRIDE;
 
   virtual bool copyVideoTextureToPlatformTexture(
-      WebKit::WebGraphicsContext3D* web_graphics_context,
+      blink::WebGraphicsContext3D* web_graphics_context,
       unsigned int texture,
       unsigned int level,
       unsigned int internal_format,
@@ -155,29 +157,26 @@ class WebMediaPlayerImpl
       bool premultiply_alpha,
       bool flip_y);
 
-  virtual WebKit::WebAudioSourceProvider* audioSourceProvider();
+  virtual blink::WebAudioSourceProvider* audioSourceProvider();
 
   virtual MediaKeyException generateKeyRequest(
-      const WebKit::WebString& key_system,
+      const blink::WebString& key_system,
       const unsigned char* init_data,
       unsigned init_data_length);
 
-  virtual MediaKeyException addKey(const WebKit::WebString& key_system,
+  virtual MediaKeyException addKey(const blink::WebString& key_system,
                                    const unsigned char* key,
                                    unsigned key_length,
                                    const unsigned char* init_data,
                                    unsigned init_data_length,
-                                   const WebKit::WebString& session_id);
+                                   const blink::WebString& session_id);
 
   virtual MediaKeyException cancelKeyRequest(
-      const WebKit::WebString& key_system,
-      const WebKit::WebString& session_id);
+      const blink::WebString& key_system,
+      const blink::WebString& session_id);
 
-  // As we are closing the tab or even the browser, |main_loop_| is destroyed
-  // even before this object gets destructed, so we need to know when
-  // |main_loop_| is being destroyed and we can stop posting repaint task
-  // to it.
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  // content::RenderViewObserver implementation.
+  virtual void OnDestruct() OVERRIDE;
 
   void Repaint();
 
@@ -195,18 +194,16 @@ class WebMediaPlayerImpl
                     const std::vector<uint8>& message,
                     const std::string& default_url);
   void OnNeedKey(const std::string& type,
-                 const std::string& session_id,
                  const std::vector<uint8>& init_data);
-  scoped_ptr<media::TextTrack> OnTextTrack(media::TextKind kind,
-                                           const std::string& label,
-                                           const std::string& language);
+  void OnAddTextTrack(const media::TextTrackConfig& config,
+                      const media::AddTextTrackDoneCB& done_cb);
   void SetOpaque(bool);
 
  private:
   // Called after |defer_load_cb_| has decided to allow the load. If
   // |defer_load_cb_| is null this is called immediately.
   void DoLoad(LoadType load_type,
-              const WebKit::WebURL& url,
+              const blink::WebURL& url,
               CORSMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
@@ -220,14 +217,14 @@ class WebMediaPlayerImpl
 
   // Helpers that set the network/ready state and notifies the client if
   // they've changed.
-  void SetNetworkState(WebKit::WebMediaPlayer::NetworkState state);
-  void SetReadyState(WebKit::WebMediaPlayer::ReadyState state);
+  void SetNetworkState(blink::WebMediaPlayer::NetworkState state);
+  void SetReadyState(blink::WebMediaPlayer::ReadyState state);
 
   // Destroy resources held.
   void Destroy();
 
   // Getter method to |client_|.
-  WebKit::WebMediaPlayerClient* GetClient();
+  blink::WebMediaPlayerClient* GetClient();
 
   // Lets V8 know that player uses extra resources not managed by V8.
   void IncrementExternallyAllocatedMemory();
@@ -235,18 +232,18 @@ class WebMediaPlayerImpl
   // Actually do the work for generateKeyRequest/addKey so they can easily
   // report results to UMA.
   MediaKeyException GenerateKeyRequestInternal(
-      const WebKit::WebString& key_system,
+      const blink::WebString& key_system,
       const unsigned char* init_data,
       unsigned init_data_length);
-  MediaKeyException AddKeyInternal(const WebKit::WebString& key_system,
+  MediaKeyException AddKeyInternal(const blink::WebString& key_system,
                                    const unsigned char* key,
                                    unsigned key_length,
                                    const unsigned char* init_data,
                                    unsigned init_data_length,
-                                   const WebKit::WebString& session_id);
+                                   const blink::WebString& session_id);
   MediaKeyException CancelKeyRequestInternal(
-      const WebKit::WebString& key_system,
-      const WebKit::WebString& session_id);
+      const blink::WebString& key_system,
+      const blink::WebString& session_id);
 
   // Gets the duration value reported by the pipeline.
   double GetPipelineDuration() const;
@@ -254,18 +251,24 @@ class WebMediaPlayerImpl
   // Notifies WebKit of the duration change.
   void OnDurationChange();
 
-  // Called by VideoRendererBase on its internal thread with the new frame to be
+  // Called by VideoRendererImpl on its internal thread with the new frame to be
   // painted.
   void FrameReady(const scoped_refptr<media::VideoFrame>& frame);
 
-  WebKit::WebFrame* frame_;
+  // Called when a paint or a new frame arrives to indicate that we are
+  // no longer waiting for |current_frame_| to be painted.
+  // |painting_frame| is set to true if |current_frame_| is being painted.
+  // False indicates |current_frame_| is being replaced with a new frame.
+  void DoneWaitingForPaint(bool painting_frame);
+
+  blink::WebFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
-  WebKit::WebMediaPlayer::NetworkState network_state_;
-  WebKit::WebMediaPlayer::ReadyState ready_state_;
+  blink::WebMediaPlayer::NetworkState network_state_;
+  blink::WebMediaPlayer::ReadyState ready_state_;
 
   // Keep a list of buffered time ranges.
-  WebKit::WebTimeRanges buffered_;
+  blink::WebTimeRanges buffered_;
 
   // Message loops for posting tasks on Chrome's main thread. Also used
   // for DCHECKs so methods calls won't execute in the wrong thread.
@@ -276,7 +279,7 @@ class WebMediaPlayerImpl
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
-  WebKit::WebString current_key_system_;
+  blink::WebString current_key_system_;
 
   // The LoadType passed in the |load_type| parameter of the load() call.
   LoadType load_type_;
@@ -303,7 +306,7 @@ class WebMediaPlayerImpl
   bool pending_seek_;
   double pending_seek_seconds_;
 
-  WebKit::WebMediaPlayerClient* client_;
+  blink::WebMediaPlayerClient* client_;
 
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
@@ -347,12 +350,15 @@ class WebMediaPlayerImpl
 
   // Video frame rendering members.
   //
-  // |lock_| protects |current_frame_| since new frames arrive on the video
+  // |lock_| protects |current_frame_|, |current_frame_painted_|, and
+  // |frames_dropped_before_paint_| since new frames arrive on the video
   // rendering thread, yet are accessed for rendering on either the main thread
   // or compositing thread depending on whether accelerated compositing is used.
-  base::Lock lock_;
+  mutable base::Lock lock_;
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
   scoped_refptr<media::VideoFrame> current_frame_;
+  bool current_frame_painted_;
+  uint32 frames_dropped_before_paint_;
   bool pending_repaint_;
   bool pending_size_change_;
 

@@ -33,7 +33,6 @@ SpdySessionPool::SpdySessionPool(
     const base::WeakPtr<HttpServerProperties>& http_server_properties,
     bool force_single_domain,
     bool enable_ip_pooling,
-    bool enable_credential_frames,
     bool enable_compression,
     bool enable_ping_based_connection_checking,
     NextProto default_protocol,
@@ -49,25 +48,21 @@ SpdySessionPool::SpdySessionPool(
       enable_sending_initial_data_(true),
       force_single_domain_(force_single_domain),
       enable_ip_pooling_(enable_ip_pooling),
-      enable_credential_frames_(enable_credential_frames),
       enable_compression_(enable_compression),
       enable_ping_based_connection_checking_(
           enable_ping_based_connection_checking),
       // TODO(akalin): Force callers to have a valid value of
-      // |default_protocol_|. Or at least make the default be
-      // kProtoSPDY3.
+      // |default_protocol_|.
       default_protocol_(
           (default_protocol == kProtoUnknown) ?
-          kProtoSPDY2 : default_protocol),
+          kProtoSPDY3 : default_protocol),
       stream_initial_recv_window_size_(stream_initial_recv_window_size),
       initial_max_concurrent_streams_(initial_max_concurrent_streams),
       max_concurrent_streams_limit_(max_concurrent_streams_limit),
       time_func_(time_func),
       trusted_spdy_proxy_(
           HostPortPair::FromString(trusted_spdy_proxy)) {
-  // TODO(akalin): Change this to kProtoSPDYMinimumVersion once we
-  // stop supporting SPDY/1.
-  DCHECK(default_protocol_ >= kProtoSPDY2 &&
+  DCHECK(default_protocol_ >= kProtoSPDYMinimumVersion &&
          default_protocol_ <= kProtoSPDYMaximumVersion);
   NetworkChangeNotifier::AddIPAddressObserver(this);
   if (ssl_config_service_.get())
@@ -91,9 +86,7 @@ net::Error SpdySessionPool::CreateAvailableSessionFromSocket(
     int certificate_error_code,
     base::WeakPtr<SpdySession>* available_session,
     bool is_secure) {
-  // TODO(akalin): Change this to kProtoSPDYMinimumVersion once we
-  // stop supporting SPDY/1.
-  DCHECK_GE(default_protocol_, kProtoSPDY2);
+  DCHECK_GE(default_protocol_, kProtoSPDYMinimumVersion);
   DCHECK_LE(default_protocol_, kProtoSPDYMaximumVersion);
 
   UMA_HISTOGRAM_ENUMERATION(
@@ -104,7 +97,6 @@ net::Error SpdySessionPool::CreateAvailableSessionFromSocket(
                       http_server_properties_,
                       verify_domain_authentication_,
                       enable_sending_initial_data_,
-                      enable_credential_frames_,
                       enable_compression_,
                       enable_ping_based_connection_checking_,
                       default_protocol_,
@@ -295,15 +287,15 @@ void SpdySessionPool::OnSSLConfigChanged() {
 }
 
 void SpdySessionPool::OnCertAdded(const X509Certificate* cert) {
-  CloseCurrentSessions(ERR_NETWORK_CHANGED);
+  CloseCurrentSessions(ERR_CERT_DATABASE_CHANGED);
 }
 
-void SpdySessionPool::OnCertTrustChanged(const X509Certificate* cert) {
+void SpdySessionPool::OnCACertChanged(const X509Certificate* cert) {
   // Per wtc, we actually only need to CloseCurrentSessions when trust is
-  // reduced. CloseCurrentSessions now because OnCertTrustChanged does not
+  // reduced. CloseCurrentSessions now because OnCACertChanged does not
   // tell us this.
-  // See comments in ClientSocketPoolManager::OnCertTrustChanged.
-  CloseCurrentSessions(ERR_NETWORK_CHANGED);
+  // See comments in ClientSocketPoolManager::OnCACertChanged.
+  CloseCurrentSessions(ERR_CERT_DATABASE_CHANGED);
 }
 
 bool SpdySessionPool::IsSessionAvailable(

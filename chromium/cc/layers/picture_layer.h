@@ -7,6 +7,7 @@
 
 #include "cc/base/invalidation_region.h"
 #include "cc/debug/devtools_instrumentation.h"
+#include "cc/debug/micro_benchmark_controller.h"
 #include "cc/layers/layer.h"
 #include "cc/resources/picture_pile.h"
 #include "cc/trees/occlusion_tracker.h"
@@ -36,6 +37,10 @@ class CC_EXPORT PictureLayer : public Layer {
   virtual bool SupportsLCDText() const OVERRIDE;
   virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
 
+  virtual void RunMicroBenchmark(MicroBenchmark* benchmark) OVERRIDE;
+
+  ContentLayerClient* client() { return client_; }
+
  protected:
   explicit PictureLayer(ContentLayerClient* client);
   virtual ~PictureLayer();
@@ -49,7 +54,10 @@ class CC_EXPORT PictureLayer : public Layer {
   InvalidationRegion pending_invalidation_;
   // Invalidation from the last time update was called.
   Region pile_invalidation_;
+  gfx::Rect last_updated_visible_content_rect_;
   bool is_mask_;
+
+  int update_source_frame_number_;
 
   DISALLOW_COPY_AND_ASSIGN(PictureLayer);
 };

@@ -129,24 +129,29 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   if (request_info.extra_data) {
     RequestExtraData* extra_data =
         static_cast<RequestExtraData*>(request_info.extra_data);
+    request_.render_frame_id = extra_data->render_frame_id();
     request_.is_main_frame = extra_data->is_main_frame();
     request_.frame_id = extra_data->frame_id();
     request_.parent_is_main_frame = extra_data->parent_is_main_frame();
     request_.parent_frame_id = extra_data->parent_frame_id();
     request_.allow_download = extra_data->allow_download();
     request_.transition_type = extra_data->transition_type();
+    request_.should_replace_current_entry =
+        extra_data->should_replace_current_entry();
     request_.transferred_request_child_id =
         extra_data->transferred_request_child_id();
     request_.transferred_request_request_id =
         extra_data->transferred_request_request_id();
     frame_origin_ = extra_data->frame_origin();
   } else {
+    request_.render_frame_id = MSG_ROUTING_NONE;
     request_.is_main_frame = false;
     request_.frame_id = -1;
     request_.parent_is_main_frame = false;
     request_.parent_frame_id = -1;
     request_.allow_download = true;
     request_.transition_type = PAGE_TRANSITION_LINK;
+    request_.should_replace_current_entry = false;
     request_.transferred_request_child_id = -1;
     request_.transferred_request_request_id = -1;
   }
@@ -338,6 +343,7 @@ void ResourceDispatcher::OnUploadProgress(int request_id, int64 position,
 
 void ResourceDispatcher::OnReceivedResponse(
     int request_id, const ResourceResponseHead& response_head) {
+  TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedResponse");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
@@ -376,6 +382,7 @@ void ResourceDispatcher::OnSetDataBuffer(int request_id,
                                          base::SharedMemoryHandle shm_handle,
                                          int shm_size,
                                          base::ProcessId renderer_pid) {
+  TRACE_EVENT0("loader", "ResourceDispatcher::OnSetDataBuffer");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
@@ -406,6 +413,8 @@ void ResourceDispatcher::OnReceivedData(int request_id,
                                         int data_offset,
                                         int data_length,
                                         int encoded_data_length) {
+  TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedData");
+  DCHECK_GT(data_length, 0);
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (request_info && data_length > 0) {
     CHECK(base::SharedMemory::IsHandleValid(request_info->buffer->handle()));
@@ -467,6 +476,7 @@ void ResourceDispatcher::OnReceivedRedirect(
     int request_id,
     const GURL& new_url,
     const ResourceResponseHead& response_head) {
+  TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedRedirect");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
@@ -513,6 +523,7 @@ void ResourceDispatcher::OnRequestComplete(
     bool was_ignored_by_handler,
     const std::string& security_info,
     const base::TimeTicks& browser_completion_time) {
+  TRACE_EVENT0("loader", "ResourceDispatcher::OnRequestComplete");
   SiteIsolationPolicy::OnRequestComplete(request_id);
 
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);

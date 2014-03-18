@@ -12,10 +12,21 @@
         ],
       },
     }],
-    ['OS=="android" or OS=="mac"', {
+    ['OS=="android" or OS=="mac" or OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/content_resources.pak',
+        ],
+      },
+    }],
+    ['OS=="linux" or OS=="mac" or OS=="win"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/content_unittests<(EXECUTABLE_SUFFIX)',
+        ],
+        'isolate_dependency_untracked': [
+          '../tools/swarming_client/',
         ],
       },
     }],
@@ -24,48 +35,42 @@
         'command': [
           '../testing/xvfb.py',
           '<(PRODUCT_DIR)',
-          '../tools/swarm_client/googletest/run_test_cases.py',
           '<(PRODUCT_DIR)/content_unittests<(EXECUTABLE_SUFFIX)',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
         ],
         'isolate_dependency_tracked': [
+          '../testing/xvfb.py',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
-        ],
-        'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/test_data/',
-        ],
-      },
-    }],
-    ['OS=="linux" or OS=="mac" or OS=="win"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/content_unittests<(EXECUTABLE_SUFFIX)',
-        ],
-        'isolate_dependency_untracked': [
-          '../tools/swarm_client/',
+          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
     ['OS=="mac"', {
       'variables': {
+        'command': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/content_unittests<(EXECUTABLE_SUFFIX)',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
+        ],
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/ffmpegsumo.so',
         ],
       },
     }],
-    ['OS=="mac" or OS=="win"', {
+    ['OS=="win"', {
       'variables': {
         'command': [
           '../testing/test_env.py',
-          '../tools/swarm_client/googletest/run_test_cases.py',
           '<(PRODUCT_DIR)/content_unittests<(EXECUTABLE_SUFFIX)',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
         ],
-      },
-    }],
-    ['OS=="win"', {
-      'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
           '<(PRODUCT_DIR)/icudt.dll',
+          '<(PRODUCT_DIR)/ui_test.pak',
         ],
       },
     }],

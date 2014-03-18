@@ -100,11 +100,14 @@ void StringToWorkarounds(
 
 FeatureInfo::FeatureFlags::FeatureFlags()
     : chromium_framebuffer_multisample(false),
+      use_core_framebuffer_multisample(false),
       multisampled_render_to_texture(false),
       use_img_for_multisampled_render_to_texture(false),
       oes_standard_derivatives(false),
       oes_egl_image_external(false),
       oes_depth24(false),
+      oes_compressed_etc1_rgb8_texture(false),
+      packed_depth24_stencil8(false),
       npot_ok(false),
       enable_texture_float_linear(false),
       enable_texture_half_float_linear(false),
@@ -117,12 +120,19 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       use_arb_occlusion_query2_for_occlusion_query_boolean(false),
       use_arb_occlusion_query_for_occlusion_query_boolean(false),
       native_vertex_array_object(false),
+      ext_texture_format_bgra8888(false),
       enable_shader_name_hashing(false),
       enable_samplers(false),
       ext_draw_buffers(false),
       ext_frag_depth(false),
       use_async_readpixels(false),
-      map_buffer_range(false) {
+      map_buffer_range(false),
+      ext_discard_framebuffer(false),
+      angle_depth_texture(false),
+      is_angle(false),
+      is_swiftshader(false),
+      angle_texture_usage(false),
+      ext_texture_storage(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds() :
@@ -149,6 +159,9 @@ void FeatureInfo::InitializeBasicState(const CommandLine& command_line) {
   }
   feature_flags_.enable_shader_name_hashing =
       !command_line.HasSwitch(switches::kDisableShaderNameHashing);
+
+  feature_flags_.is_swiftshader =
+      (command_line.GetSwitchValueASCII(switches::kUseGL) == "swiftshader");
 
   static const GLenum kAlphaTypes[] = {
       GL_UNSIGNED_BYTE,
@@ -204,20 +217,32 @@ void FeatureInfo::InitializeFeatures() {
 
   bool npot_ok = false;
 
+  const char* renderer_str =
+      reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+  if (renderer_str) {
+    feature_flags_.is_angle = StartsWithASCII(renderer_str, "ANGLE", true);
+  }
+
+  bool is_es3 = false;
+  const char* version_str =
+      reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  if (version_str) {
+    std::string lstr(StringToLowerASCII(std::string(version_str)));
+    is_es3 = (lstr.substr(0, 12) == "opengl es 3.");
+  }
+
   AddExtensionString("GL_ANGLE_translated_shader_source");
   AddExtensionString("GL_CHROMIUM_async_pixel_transfers");
   AddExtensionString("GL_CHROMIUM_bind_uniform_location");
   AddExtensionString("GL_CHROMIUM_command_buffer_query");
   AddExtensionString("GL_CHROMIUM_command_buffer_latency_query");
   AddExtensionString("GL_CHROMIUM_copy_texture");
-  AddExtensionString("GL_CHROMIUM_discard_backbuffer");
   AddExtensionString("GL_CHROMIUM_get_error_query");
   AddExtensionString("GL_CHROMIUM_lose_context");
   AddExtensionString("GL_CHROMIUM_pixel_transfer_buffer_object");
   AddExtensionString("GL_CHROMIUM_rate_limit_offscreen_context");
   AddExtensionString("GL_CHROMIUM_resize");
   AddExtensionString("GL_CHROMIUM_resource_safe");
-  AddExtensionString("GL_CHROMIUM_set_visibility");
   AddExtensionString("GL_CHROMIUM_strict_attribs");
   AddExtensionString("GL_CHROMIUM_stream_texture");
   AddExtensionString("GL_CHROMIUM_texture_mailbox");
@@ -311,8 +336,10 @@ void FeatureInfo::InitializeFeatures() {
   if (!workarounds_.disable_depth_texture &&
       (extensions.Contains("GL_ARB_depth_texture") ||
        extensions.Contains("GL_OES_depth_texture") ||
-       extensions.Contains("GL_ANGLE_depth_texture"))) {
+       extensions.Contains("GL_ANGLE_depth_texture") || is_es3)) {
     enable_depth_texture = true;
+    feature_flags_.angle_depth_texture =
+        extensions.Contains("GL_ANGLE_depth_texture");
   }
 
   if (enable_depth_texture) {
@@ -327,11 +354,12 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (extensions.Contains("GL_EXT_packed_depth_stencil") ||
-      extensions.Contains("GL_OES_packed_depth_stencil")) {
+      extensions.Contains("GL_OES_packed_depth_stencil") || is_es3) {
     AddExtensionString("GL_OES_packed_depth_stencil");
+    feature_flags_.packed_depth24_stencil8 = true;
     if (enable_depth_texture) {
-      texture_format_validators_[GL_DEPTH_STENCIL].AddValue(
-          GL_UNSIGNED_INT_24_8);
+      texture_format_validators_[GL_DEPTH_STENCIL]
+          .AddValue(GL_UNSIGNED_INT_24_8);
       validators_.texture_internal_format.AddValue(GL_DEPTH_STENCIL);
       validators_.texture_format.AddValue(GL_DEPTH_STENCIL);
       validators_.pixel_type.AddValue(GL_UNSIGNED_INT_24_8);
@@ -360,6 +388,8 @@ void FeatureInfo::InitializeFeatures() {
 
   bool enable_texture_format_bgra8888 = false;
   bool enable_read_format_bgra = false;
+  bool enable_render_buffer_bgra = false;
+
   // Check if we should allow GL_EXT_texture_format_BGRA8888
   if (extensions.Contains("GL_EXT_texture_format_BGRA8888") ||
       extensions.Contains("GL_APPLE_texture_format_BGRA8888") ||
@@ -368,8 +398,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (extensions.Contains("GL_EXT_bgra")) {
-    enable_texture_format_bgra8888 = true;
-    enable_read_format_bgra = true;
+    enable_render_buffer_bgra = true;
   }
 
   if (extensions.Contains("GL_EXT_read_format_bgra") ||
@@ -378,6 +407,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (enable_texture_format_bgra8888) {
+    feature_flags_.ext_texture_format_bgra8888 = true;
     AddExtensionString("GL_EXT_texture_format_BGRA8888");
     texture_format_validators_[GL_BGRA_EXT].AddValue(GL_UNSIGNED_BYTE);
     validators_.texture_internal_format.AddValue(GL_BGRA_EXT);
@@ -387,6 +417,11 @@ void FeatureInfo::InitializeFeatures() {
   if (enable_read_format_bgra) {
     AddExtensionString("GL_EXT_read_format_bgra");
     validators_.read_pixel_format.AddValue(GL_BGRA_EXT);
+  }
+
+  if (enable_render_buffer_bgra) {
+    AddExtensionString("GL_CHROMIUM_renderbuffer_format_BGRA8888");
+    validators_.render_buffer_format.AddValue(GL_BGRA8_EXT);
   }
 
   if (extensions.Contains("GL_OES_rgb8_rgba8") || gfx::HasDesktopGLFeatures()) {
@@ -463,13 +498,15 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   // Check for multisample support
-  if (!disallowed_features_.multisampling) {
+  if (!disallowed_features_.multisampling &&
+      !workarounds_.disable_framebuffer_multisample) {
     bool ext_has_multisample =
-        extensions.Contains("GL_EXT_framebuffer_multisample");
-    if (!workarounds_.disable_angle_framebuffer_multisample) {
+        extensions.Contains("GL_EXT_framebuffer_multisample") || is_es3;
+    if (feature_flags_.is_angle) {
       ext_has_multisample |=
-         extensions.Contains("GL_ANGLE_framebuffer_multisample");
+          extensions.Contains("GL_ANGLE_framebuffer_multisample");
     }
+    feature_flags_.use_core_framebuffer_multisample = is_es3;
     if (ext_has_multisample) {
       feature_flags_.chromium_framebuffer_multisample = true;
       validators_.frame_buffer_target.AddValue(GL_READ_FRAMEBUFFER_EXT);
@@ -496,7 +533,8 @@ void FeatureInfo::InitializeFeatures() {
     }
   }
 
-  if (extensions.Contains("GL_OES_depth24") || gfx::HasDesktopGLFeatures()) {
+  if (extensions.Contains("GL_OES_depth24") || gfx::HasDesktopGLFeatures() ||
+      is_es3) {
     AddExtensionString("GL_OES_depth24");
     feature_flags_.oes_depth24 = true;
     validators_.render_buffer_format.AddValue(GL_DEPTH_COMPONENT24);
@@ -522,6 +560,7 @@ void FeatureInfo::InitializeFeatures() {
 
   if (extensions.Contains("GL_OES_compressed_ETC1_RGB8_texture")) {
     AddExtensionString("GL_OES_compressed_ETC1_RGB8_texture");
+    feature_flags_.oes_compressed_etc1_rgb8_texture = true;
     validators_.compressed_texture_format.AddValue(GL_ETC1_RGB8_OES);
   }
 
@@ -565,11 +604,13 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (extensions.Contains("GL_ANGLE_texture_usage")) {
+    feature_flags_.angle_texture_usage = true;
     AddExtensionString("GL_ANGLE_texture_usage");
     validators_.texture_parameter.AddValue(GL_TEXTURE_USAGE_ANGLE);
   }
 
   if (extensions.Contains("GL_EXT_texture_storage")) {
+    feature_flags_.ext_texture_storage = true;
     AddExtensionString("GL_EXT_texture_storage");
     validators_.texture_parameter.AddValue(GL_TEXTURE_IMMUTABLE_FORMAT_EXT);
     if (enable_texture_format_bgra8888)
@@ -653,16 +694,6 @@ void FeatureInfo::InitializeFeatures() {
     feature_flags_.ext_frag_depth = true;
   }
 
-  if (!disallowed_features_.swap_buffer_complete_callback)
-    AddExtensionString("GL_CHROMIUM_swapbuffers_complete_callback");
-
-  bool is_es3 = false;
-  const char* str = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-  if (str) {
-    std::string lstr(StringToLowerASCII(std::string(str)));
-    is_es3 = (lstr.substr(0, 12) == "opengl es 3.");
-  }
-
   bool ui_gl_fence_works = extensions.Contains("GL_NV_fence") ||
                            extensions.Contains("GL_ARB_sync") ||
                            extensions.Contains("EGL_KHR_fence_sync");
@@ -691,6 +722,7 @@ void FeatureInfo::InitializeFeatures() {
       !workarounds_.disable_ext_discard_framebuffer) {
     // DiscardFramebufferEXT is automatically bound to InvalidateFramebuffer.
     AddExtensionString("GL_EXT_discard_framebuffer");
+    feature_flags_.ext_discard_framebuffer = true;
   }
 }
 

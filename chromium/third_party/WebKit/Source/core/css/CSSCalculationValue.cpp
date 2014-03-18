@@ -35,7 +35,6 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
 static const int maxExpressionDepth = 100;
@@ -136,7 +135,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitTypes type)
     return false;
 }
 
-static String buildCssText(const String& expression)
+static String buildCSSText(const String& expression)
 {
     StringBuilder result;
     result.append("calc");
@@ -149,9 +148,9 @@ static String buildCssText(const String& expression)
     return result.toString();
 }
 
-String CSSCalcValue::customCssText() const
+String CSSCalcValue::customCSSText() const
 {
-    return buildCssText(m_expression->customCssText());
+    return buildCSSText(m_expression->customCSSText());
 }
 
 bool CSSCalcValue::equals(const CSSCalcValue& other) const
@@ -161,7 +160,7 @@ bool CSSCalcValue::equals(const CSSCalcValue& other) const
 
 String CSSCalcValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
 {
-    return buildCssText(m_expression->serializeResolvingVariables(variables));
+    return buildCSSText(m_expression->serializeResolvingVariables(variables));
 }
 
 bool CSSCalcValue::hasVariableReference() const
@@ -179,9 +178,9 @@ double CSSCalcValue::doubleValue() const
     return clampToPermittedRange(m_expression->doubleValue());
 }
 
-double CSSCalcValue::computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+double CSSCalcValue::computeLengthPx(const CSSToLengthConversionData& conversionData) const
 {
-    return clampToPermittedRange(m_expression->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize));
+    return clampToPermittedRange(m_expression->computeLengthPx(conversionData));
 }
 
 CSSCalcExpressionNode::~CSSCalcExpressionNode()
@@ -209,7 +208,7 @@ public:
         return !m_value->getDoubleValue();
     }
 
-    virtual String customCssText() const
+    virtual String customCSSText() const
     {
         return m_value->cssText();
     }
@@ -224,18 +223,18 @@ public:
         return m_value->isVariableName();
     }
 
-    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const RenderStyle* style, const RenderStyle* rootStyle, double zoom) const
+    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const CSSToLengthConversionData& conversionData) const
     {
         switch (m_category) {
         case CalcNumber:
             return adoptPtr(new CalcExpressionNumber(m_value->getFloatValue()));
         case CalcLength:
-            return adoptPtr(new CalcExpressionNumber(m_value->computeLength<float>(style, rootStyle, zoom)));
+            return adoptPtr(new CalcExpressionLength(Length(m_value->computeLength<float>(conversionData), WebCore::Fixed)));
         case CalcPercent:
         case CalcPercentLength: {
             CSSPrimitiveValue* primitiveValue = m_value.get();
             return adoptPtr(new CalcExpressionLength(primitiveValue
-                ? primitiveValue->convertToLength<FixedFloatConversion | PercentConversion | FractionConversion>(style, rootStyle, zoom)
+                ? primitiveValue->convertToLength<FixedConversion | PercentConversion>(conversionData)
                 : Length(Undefined)));
         }
         // Only types that could be part of a Length expression can be converted
@@ -256,11 +255,11 @@ public:
         return 0;
     }
 
-    virtual double computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+    virtual double computeLengthPx(const CSSToLengthConversionData& conversionData) const
     {
         switch (m_category) {
         case CalcLength:
-            return m_value->computeLength<double>(currentStyle, rootStyle, multiplier, computingFontSize);
+            return m_value->computeLength<double>(conversionData);
         case CalcPercent:
         case CalcNumber:
             return m_value->getDoubleValue();
@@ -421,12 +420,12 @@ public:
         return !doubleValue();
     }
 
-    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const RenderStyle* style, const RenderStyle* rootStyle, double zoom) const
+    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const CSSToLengthConversionData& conversionData) const
     {
-        OwnPtr<CalcExpressionNode> left(m_leftSide->toCalcValue(style, rootStyle, zoom));
+        OwnPtr<CalcExpressionNode> left(m_leftSide->toCalcValue(conversionData));
         if (!left)
             return nullptr;
-        OwnPtr<CalcExpressionNode> right(m_rightSide->toCalcValue(style, rootStyle, zoom));
+        OwnPtr<CalcExpressionNode> right(m_rightSide->toCalcValue(conversionData));
         if (!right)
             return nullptr;
         return adoptPtr(new CalcExpressionBinaryOperation(left.release(), right.release(), m_operator));
@@ -437,14 +436,14 @@ public:
         return evaluate(m_leftSide->doubleValue(), m_rightSide->doubleValue());
     }
 
-    virtual double computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+    virtual double computeLengthPx(const CSSToLengthConversionData& conversionData) const
     {
-        const double leftValue = m_leftSide->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize);
-        const double rightValue = m_rightSide->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize);
+        const double leftValue = m_leftSide->computeLengthPx(conversionData);
+        const double rightValue = m_rightSide->computeLengthPx(conversionData);
         return evaluate(leftValue, rightValue);
     }
 
-    static String buildCssText(const String& leftExpression, const String& rightExpression, CalcOperator op)
+    static String buildCSSText(const String& leftExpression, const String& rightExpression, CalcOperator op)
     {
         StringBuilder result;
         result.append('(');
@@ -458,14 +457,14 @@ public:
         return result.toString();
     }
 
-    virtual String customCssText() const
+    virtual String customCSSText() const
     {
-        return buildCssText(m_leftSide->customCssText(), m_rightSide->customCssText(), m_operator);
+        return buildCSSText(m_leftSide->customCSSText(), m_rightSide->customCSSText(), m_operator);
     }
 
     virtual String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
     {
-        return buildCssText(m_leftSide->serializeResolvingVariables(variables), m_rightSide->serializeResolvingVariables(variables), m_operator);
+        return buildCSSText(m_leftSide->serializeResolvingVariables(variables), m_rightSide->serializeResolvingVariables(variables), m_operator);
     }
 
     virtual bool hasVariableReference() const
@@ -611,8 +610,7 @@ private:
         if (!value || !value->isPrimitiveValue())
             return false;
 
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
-        result->value = CSSCalcPrimitiveValue::create(primitiveValue, parserValue->isInt);
+        result->value = CSSCalcPrimitiveValue::create(toCSSPrimitiveValue(value.get()), parserValue->isInt);
 
         ++*index;
         return true;
@@ -707,7 +705,7 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(PassRefPtr<
     return CSSCalcBinaryOperation::create(leftSide, rightSide, op);
 }
 
-PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const CalcExpressionNode* node, const RenderStyle* style)
+PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const CalcExpressionNode* node, float zoom)
 {
     switch (node->type()) {
     case CalcExpressionNodeNumber: {
@@ -715,10 +713,10 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const CalcE
         return createExpressionNode(CSSPrimitiveValue::create(value, CSSPrimitiveValue::CSS_NUMBER), value == trunc(value));
     }
     case CalcExpressionNodeLength:
-        return createExpressionNode(toCalcExpressionLength(node)->length(), style);
+        return createExpressionNode(toCalcExpressionLength(node)->length(), zoom);
     case CalcExpressionNodeBinaryOperation: {
         const CalcExpressionBinaryOperation* binaryNode = toCalcExpressionBinaryOperation(node);
-        return createExpressionNode(createExpressionNode(binaryNode->leftSide(), style), createExpressionNode(binaryNode->rightSide(), style), binaryNode->getOperator());
+        return createExpressionNode(createExpressionNode(binaryNode->leftSide(), zoom), createExpressionNode(binaryNode->rightSide(), zoom), binaryNode->getOperator());
     }
     case CalcExpressionNodeBlendLength: {
         // FIXME(crbug.com/269320): Create a CSSCalcExpressionNode equivalent of CalcExpressionBlendLength.
@@ -727,11 +725,11 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const CalcE
         const bool isInteger = !progress || (progress == 1);
         return createExpressionNode(
             createExpressionNode(
-                createExpressionNode(blendNode->from(), style),
+                createExpressionNode(blendNode->from(), zoom),
                 createExpressionNode(CSSPrimitiveValue::create(1 - progress, CSSPrimitiveValue::CSS_NUMBER), isInteger),
                 CalcMultiply),
             createExpressionNode(
-                createExpressionNode(blendNode->to(), style),
+                createExpressionNode(blendNode->to(), zoom),
                 createExpressionNode(CSSPrimitiveValue::create(progress, CSSPrimitiveValue::CSS_NUMBER), isInteger),
                 CalcMultiply),
             CalcAdd);
@@ -744,7 +742,7 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const CalcE
     return 0;
 }
 
-PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Length& length, const RenderStyle* style)
+PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Length& length, float zoom)
 {
     switch (length.type()) {
     case Percent:
@@ -753,9 +751,9 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Lengt
     case ViewportPercentageMin:
     case ViewportPercentageMax:
     case Fixed:
-        return createExpressionNode(CSSPrimitiveValue::create(length, style), length.value() == trunc(length.value()));
+        return createExpressionNode(CSSPrimitiveValue::create(length, zoom), length.value() == trunc(length.value()));
     case Calculated:
-        return createExpressionNode(length.calculationValue()->expression(), style);
+        return createExpressionNode(length.calculationValue()->expression(), zoom);
     case Auto:
     case Intrinsic:
     case MinIntrinsic:
@@ -764,7 +762,6 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Lengt
     case FillAvailable:
     case FitContent:
     case ExtendToZoom:
-    case Relative:
     case Undefined:
         ASSERT_NOT_REACHED();
         return 0;
@@ -773,7 +770,7 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Lengt
     return 0;
 }
 
-PassRefPtr<CSSCalcValue> CSSCalcValue::create(CSSParserString name, CSSParserValueList* parserValueList, CalculationPermittedValueRange range)
+PassRefPtr<CSSCalcValue> CSSCalcValue::create(CSSParserString name, CSSParserValueList* parserValueList, ValueRange range)
 {
     CSSCalcExpressionNodeParser parser;
     RefPtr<CSSCalcExpressionNode> expression;
@@ -785,7 +782,7 @@ PassRefPtr<CSSCalcValue> CSSCalcValue::create(CSSParserString name, CSSParserVal
     return expression ? adoptRef(new CSSCalcValue(expression, range)) : 0;
 }
 
-PassRefPtr<CSSCalcValue> CSSCalcValue::create(PassRefPtr<CSSCalcExpressionNode> expression, CalculationPermittedValueRange range)
+PassRefPtr<CSSCalcValue> CSSCalcValue::create(PassRefPtr<CSSCalcExpressionNode> expression, ValueRange range)
 {
     return adoptRef(new CSSCalcValue(expression, range));
 }

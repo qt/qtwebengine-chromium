@@ -31,7 +31,6 @@
 #include "config.h"
 #include "modules/quota/WorkerNavigatorStorageQuota.h"
 
-#include "core/page/WorkerNavigator.h"
 #include "modules/quota/StorageQuota.h"
 
 namespace WebCore {

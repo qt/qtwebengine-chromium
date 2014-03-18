@@ -16,8 +16,10 @@
 #include "content/public/browser/android/compositor.h"
 #include "content/public/browser/android/content_view_layer_renderer.h"
 #include "jni/ContentViewRenderView_jni.h"
+#include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/size.h"
 
+#include <android/bitmap.h>
 #include <android/native_window_jni.h>
 
 using base::android::ScopedJavaLocalRef;
@@ -29,8 +31,11 @@ bool ContentViewRenderView::RegisterContentViewRenderView(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-ContentViewRenderView::ContentViewRenderView(JNIEnv* env, jobject obj)
-    : buffers_swapped_during_composite_(false) {
+ContentViewRenderView::ContentViewRenderView(JNIEnv* env,
+                                             jobject obj,
+                                             gfx::NativeWindow root_window)
+    : buffers_swapped_during_composite_(false),
+      root_window_(root_window) {
   java_obj_.Reset(env, obj);
 }
 
@@ -38,10 +43,12 @@ ContentViewRenderView::~ContentViewRenderView() {
 }
 
 // static
-static jint Init(JNIEnv* env, jobject obj) {
+static jlong Init(JNIEnv* env, jobject obj, jlong native_root_window) {
+  gfx::NativeWindow root_window =
+      reinterpret_cast<gfx::NativeWindow>(native_root_window);
   ContentViewRenderView* content_view_render_view =
-      new ContentViewRenderView(env, obj);
-  return reinterpret_cast<jint>(content_view_render_view);
+      new ContentViewRenderView(env, obj, root_window);
+  return reinterpret_cast<intptr_t>(content_view_render_view);
 }
 
 void ContentViewRenderView::Destroy(JNIEnv* env, jobject obj) {
@@ -83,6 +90,15 @@ jboolean ContentViewRenderView::Composite(JNIEnv* env, jobject obj) {
   return buffers_swapped_during_composite_;
 }
 
+jboolean ContentViewRenderView::CompositeToBitmap(JNIEnv* env, jobject obj,
+                                                  jobject java_bitmap) {
+  gfx::JavaBitmap bitmap(java_bitmap);
+  if (!compositor_ || bitmap.format() != ANDROID_BITMAP_FORMAT_RGBA_8888)
+    return false;
+  return compositor_->CompositeAndReadback(bitmap.pixels(),
+                                           gfx::Rect(bitmap.size()));
+}
+
 void ContentViewRenderView::ScheduleComposite() {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_ContentViewRenderView_requestRender(env, java_obj_.obj());
@@ -99,7 +115,7 @@ void ContentViewRenderView::OnSwapBuffersCompleted() {
 
 void ContentViewRenderView::InitCompositor() {
   if (!compositor_)
-    compositor_.reset(Compositor::Create(this));
+    compositor_.reset(Compositor::Create(this, root_window_));
 }
 
 }  // namespace content

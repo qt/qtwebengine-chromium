@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Thu Aug 29 17:42:12 2013. */
+/* From private/ppb_nacl_private.idl modified Fri Nov 29 09:11:40 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -40,6 +40,17 @@ typedef enum {
    */
   PP_NACL_MANIFEST_MISSING_ARCH = 0
 } PP_NaClError;
+
+/** Event types that NaCl may use when reporting load progress or errors. */
+typedef enum {
+  PP_NACL_EVENT_LOADSTART,
+  PP_NACL_EVENT_PROGRESS,
+  PP_NACL_EVENT_ERROR,
+  PP_NACL_EVENT_ABORT,
+  PP_NACL_EVENT_LOAD,
+  PP_NACL_EVENT_LOADEND,
+  PP_NACL_EVENT_CRASH
+} PP_NaClEventType;
 /**
  * @}
  */
@@ -106,13 +117,6 @@ struct PPB_NaCl_Private_1_0 {
                                    PP_FileHandle* target_handle,
                                    uint32_t desired_access,
                                    uint32_t options);
-  /* Check if PNaCl is installed and attempt to install if necessary.
-   * Callback is called when the check is done and PNaCl is already installed,
-   * or after an on-demand install is attempted. Called back with PP_OK if
-   * PNaCl is available. Called back with an error otherwise.
-   */
-  int32_t (*EnsurePnaclInstalled)(PP_Instance instance,
-                                  struct PP_CompletionCallback callback);
   /* Returns a read-only file descriptor of a file rooted in the Pnacl
    * component directory, or an invalid handle on failure.
    */
@@ -156,12 +160,6 @@ struct PPB_NaCl_Private_1_0 {
    * the plugin.)
    */
   void (*ReportTranslationFinished)(PP_Instance instance, PP_Bool success);
-  /* Return true if we are off the record.
-   */
-  PP_Bool (*IsOffTheRecord)(void);
-  /* Return true if PNaCl is turned on.
-   */
-  PP_Bool (*IsPnaclEnabled)(void);
   /* Display a UI message to the user. */
   PP_ExternalPluginResult (*ReportNaClError)(PP_Instance instance,
                                              PP_NaClError message_id);
@@ -173,6 +171,21 @@ struct PPB_NaCl_Private_1_0 {
                                       const char* file_url,
                                       uint64_t* file_token_lo,
                                       uint64_t* file_token_hi);
+  /* Dispatch a progress event on the DOM element where the given instance is
+   * embedded.
+   */
+  void (*DispatchEvent)(PP_Instance instance,
+                        PP_NaClEventType event_type,
+                        struct PP_Var resource_url,
+                        PP_Bool length_is_computable,
+                        uint64_t loaded_bytes,
+                        uint64_t total_bytes);
+  /* Sets a read-only property on the <embed> DOM element that corresponds to
+   * the given instance.
+   */
+  void (*SetReadOnlyProperty)(PP_Instance instance,
+                              struct PP_Var key,
+                              struct PP_Var value);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

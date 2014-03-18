@@ -32,8 +32,8 @@
 #define WebPluginContainerImpl_h
 
 #include "WebPluginContainer.h"
-#include "core/platform/Widget.h"
 #include "core/plugins/PluginView.h"
+#include "platform/Widget.h"
 
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -56,7 +56,7 @@ class WheelEvent;
 class Widget;
 }
 
-namespace WebKit {
+namespace blink {
 
 struct WebPrintParams;
 
@@ -77,6 +77,7 @@ public:
     virtual NPObject* scriptableObject() OVERRIDE;
     virtual bool getFormValue(String&) OVERRIDE;
     virtual bool supportsKeyboardFocus() const OVERRIDE;
+    virtual bool supportsInputMethod() const OVERRIDE;
     virtual bool canProcessDrag() const OVERRIDE;
     virtual bool wantsWheelEvents() OVERRIDE;
 
@@ -90,7 +91,7 @@ public:
     virtual void handleEvent(WebCore::Event*);
     virtual void frameRectsChanged();
     virtual void setParentVisible(bool);
-    virtual void setParent(WebCore::ScrollView*);
+    virtual void setParent(WebCore::Widget*);
     virtual void widgetPositionsUpdated();
     virtual void clipRectChanged() OVERRIDE;
     virtual bool isPluginContainer() const { return true; }
@@ -216,6 +217,6 @@ inline WebPluginContainerImpl* toPluginContainerImpl(WebPluginContainer* contain
 // This will catch anyone doing an unnecessary cast.
 void toPluginContainerImpl(const WebPluginContainerImpl*);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

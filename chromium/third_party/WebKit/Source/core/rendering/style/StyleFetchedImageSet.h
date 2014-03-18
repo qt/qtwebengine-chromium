@@ -28,8 +28,8 @@
 
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/graphics/LayoutSize.h"
 #include "core/rendering/style/StyleImage.h"
+#include "platform/geometry/LayoutSize.h"
 
 namespace WebCore {
 
@@ -79,6 +79,8 @@ private:
     float m_imageScaleFactor;
     CSSImageSetValue* m_imageSetValue; // Not retained; it owns us.
 };
+
+DEFINE_STYLE_IMAGE_TYPE_CASTS(StyleFetchedImageSet, isImageResourceSet());
 
 } // namespace WebCore
 

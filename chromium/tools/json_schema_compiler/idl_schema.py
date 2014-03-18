@@ -100,14 +100,14 @@ class Callspec(object):
     return_type = None
     if self.node.GetProperty('TYPEREF') not in ('void', None):
       return_type = Typeref(self.node.GetProperty('TYPEREF'),
-                            self.node,
+                            self.node.parent,
                             {'name': self.node.GetName()}).process(callbacks)
       # The IDL parser doesn't allow specifying return types as optional.
       # Instead we infer any object return values to be optional.
       # TODO(asargent): fix the IDL parser to support optional return types.
       if return_type.get('type') == 'object' or '$ref' in return_type:
         return_type['optional'] = True
-    for node in self.node.children:
+    for node in self.node.GetChildren():
       parameter = Param(node).process(callbacks)
       if parameter['name'] in self.comment:
         parameter['description'] = self.comment[parameter['name']]
@@ -139,7 +139,7 @@ class Dictionary(object):
 
   def process(self, callbacks):
     properties = OrderedDict()
-    for node in self.node.children:
+    for node in self.node.GetChildren():
       if node.cls == 'Member':
         k, v = Member(node).process(callbacks)
         properties[k] = v
@@ -181,7 +181,7 @@ class Member(object):
           option_name))
     is_function = False
     parameter_comments = OrderedDict()
-    for node in self.node.children:
+    for node in self.node.GetChildren():
       if node.cls == 'Comment':
         (parent_comment, parameter_comments) = ProcessComment(node.GetName())
         properties['description'] = parent_comment
@@ -223,7 +223,7 @@ class Typeref(object):
     properties = self.additional_properties
     result = properties
 
-    if self.parent.GetProperty('OPTIONAL', False):
+    if self.parent.GetProperty('OPTIONAL'):
       properties['optional'] = True
 
     # The IDL parser denotes array types by adding a child 'Array' node onto
@@ -290,9 +290,15 @@ class Enum(object):
 
   def process(self, callbacks):
     enum = []
-    for node in self.node.children:
+    for node in self.node.GetChildren():
       if node.cls == 'EnumItem':
-        enum.append(node.GetName())
+        enum_value = {'name': node.GetName()}
+        for child in node.GetChildren():
+          if child.cls == 'Comment':
+            enum_value['description'] = ProcessComment(child.GetName())[0]
+          else:
+            raise ValueError('Did not process %s %s' % (child.cls, child))
+        enum.append(enum_value)
       elif node.cls == 'Comment':
         self.description = ProcessComment(node.GetName())[0]
       else:
@@ -313,10 +319,18 @@ class Namespace(object):
   dictionary that the JSON schema compiler expects to see.
   '''
 
-  def __init__(self, namespace_node, description, nodoc=False, internal=False):
+  def __init__(self,
+               namespace_node,
+               description,
+               nodoc=False,
+               internal=False,
+               platforms=None,
+               compiler_options=None):
     self.namespace = namespace_node
     self.nodoc = nodoc
     self.internal = internal
+    self.platforms = platforms
+    self.compiler_options = compiler_options
     self.events = []
     self.functions = []
     self.types = []
@@ -324,7 +338,7 @@ class Namespace(object):
     self.description = description
 
   def process(self):
-    for node in self.namespace.children:
+    for node in self.namespace.GetChildren():
       if node.cls == 'Dictionary':
         self.types.append(Dictionary(node).process(self.callbacks))
       elif node.cls == 'Callback':
@@ -338,17 +352,23 @@ class Namespace(object):
         self.types.append(Enum(node).process(self.callbacks))
       else:
         sys.exit('Did not process %s %s' % (node.cls, node))
+    if self.compiler_options is not None:
+      compiler_options = self.compiler_options
+    else:
+      compiler_options = {}
     return {'namespace': self.namespace.GetName(),
             'description': self.description,
             'nodoc': self.nodoc,
             'types': self.types,
             'functions': self.functions,
             'internal': self.internal,
-            'events': self.events}
+            'events': self.events,
+            'platforms': self.platforms,
+            'compiler_options': compiler_options}
 
   def process_interface(self, node):
     members = []
-    for member in node.children:
+    for member in node.GetChildren():
       if member.cls == 'Member':
         name, properties = Member(member).process(self.callbacks)
         members.append(properties)
@@ -369,6 +389,8 @@ class IDLSchema(object):
     nodoc = False
     internal = False
     description = None
+    platforms = None
+    compiler_options = None
     for node in self.idl:
       if node.cls == 'Namespace':
         if not description:
@@ -376,10 +398,14 @@ class IDLSchema(object):
           print('%s must have a namespace-level comment. This will '
                            'appear on the API summary page.' % node.GetName())
           description = ''
-        namespace = Namespace(node, description, nodoc, internal)
+        namespace = Namespace(node, description, nodoc, internal,
+                              platforms=platforms,
+                              compiler_options=compiler_options)
         namespaces.append(namespace.process())
         nodoc = False
         internal = False
+        platforms = None
+        compiler_options = None
       elif node.cls == 'Copyright':
         continue
       elif node.cls == 'Comment':
@@ -389,6 +415,10 @@ class IDLSchema(object):
           nodoc = bool(node.value)
         elif node.name == 'internal':
           internal = bool(node.value)
+        elif node.name == 'platforms':
+          platforms = list(node.value)
+        elif node.name == 'implemented_in':
+          compiler_options = {'implemented_in': node.value}
         else:
           continue
       else:

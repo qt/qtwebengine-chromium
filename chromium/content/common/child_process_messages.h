@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 IPC_ENUM_TRAITS(tracked_objects::ThreadData::Status)
 
@@ -52,6 +53,16 @@ IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ProcessDataSnapshot)
   IPC_STRUCT_TRAITS_MEMBER(tasks)
   IPC_STRUCT_TRAITS_MEMBER(descendants)
   IPC_STRUCT_TRAITS_MEMBER(process_id)
+IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS(gfx::GpuMemoryBufferType)
+
+IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferHandle)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(handle)
+#if defined(OS_MACOSX)
+  IPC_STRUCT_TRAITS_MEMBER(io_surface_id)
+#endif
 IPC_STRUCT_TRAITS_END()
 
 #undef IPC_MESSAGE_EXPORT
@@ -138,3 +149,10 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ChildProcessHostMsg_SyncAllocateSharedMemory,
 IPC_MESSAGE_CONTROL1(ChildProcessHostMsg_TcmallocStats,
                      std::string /* output */)
 #endif
+
+// Asks the browser to create a gpu memory buffer.
+IPC_SYNC_MESSAGE_CONTROL3_1(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
+                            uint32 /* width */,
+                            uint32 /* height */,
+                            uint32 /* internalformat */,
+                            gfx::GpuMemoryBufferHandle)

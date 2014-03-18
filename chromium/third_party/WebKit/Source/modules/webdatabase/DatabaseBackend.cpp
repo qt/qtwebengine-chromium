@@ -26,10 +26,10 @@
 #include "config.h"
 #include "modules/webdatabase/DatabaseBackend.h"
 
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/ChangeVersionData.h"
 #include "modules/webdatabase/ChangeVersionWrapper.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
+#include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "modules/webdatabase/DatabaseThread.h"
 #include "modules/webdatabase/DatabaseTracker.h"
@@ -40,7 +40,7 @@
 
 namespace WebCore {
 
-DatabaseBackend::DatabaseBackend(PassRefPtr<DatabaseBackendContext> databaseContext, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
+DatabaseBackend::DatabaseBackend(PassRefPtr<DatabaseContext> databaseContext, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
     : DatabaseBackendBase(databaseContext, name, expectedVersion, displayName, estimatedSize, DatabaseType::Async)
     , m_transactionInProgress(false)
     , m_isTransactionQueueEnabled(true)
@@ -56,7 +56,7 @@ bool DatabaseBackend::openAndVerifyVersion(bool setVersionInNewDatabase, Databas
     DatabaseTracker::tracker().prepareToOpenDatabase(this);
     bool success = false;
     OwnPtr<DatabaseOpenTask> task = DatabaseOpenTask::create(this, setVersionInNewDatabase, &synchronizer, error, errorMessage, success);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
+    databaseContext()->databaseThread()->scheduleTask(task.release());
     synchronizer.waitForTaskCompletion();
 
     return success;
@@ -77,7 +77,7 @@ bool DatabaseBackend::performOpenAndVerify(bool setVersionInNewDatabase, Databas
 void DatabaseBackend::close()
 {
     ASSERT(databaseContext()->databaseThread());
-    ASSERT(currentThread() == databaseContext()->databaseThread()->getThreadID());
+    ASSERT(databaseContext()->databaseThread()->isDatabaseThread());
 
     {
         MutexLocker locker(m_transactionInProgressMutex);
@@ -96,16 +96,7 @@ void DatabaseBackend::close()
     }
 
     closeDatabase();
-
-    // DatabaseThread keeps databases alive by referencing them in its
-    // m_openDatabaseSet. DatabaseThread::recordDatabaseClose() will remove
-    // this database from that set (which effectively deref's it). We hold on
-    // to it with a local pointer here for a liitle longer, so that we can
-    // unschedule any DatabaseTasks that refer to it before the database gets
-    // deleted.
-    RefPtr<DatabaseBackend> protect = this;
     databaseContext()->databaseThread()->recordDatabaseClosed(this);
-    databaseContext()->databaseThread()->unscheduleDatabaseTasks(this);
 }
 
 PassRefPtr<SQLTransactionBackend> DatabaseBackend::runTransaction(PassRefPtr<SQLTransaction> transaction,
@@ -144,7 +135,7 @@ void DatabaseBackend::scheduleTransaction()
 
     if (transaction && databaseContext()->databaseThread()) {
         OwnPtr<DatabaseTransactionTask> task = DatabaseTransactionTask::create(transaction);
-        LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for transaction %p\n", task.get(), task->transaction());
+        WTF_LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for transaction %p\n", task.get(), task->transaction());
         m_transactionInProgress = true;
         databaseContext()->databaseThread()->scheduleTask(task.release());
     } else
@@ -157,7 +148,7 @@ void DatabaseBackend::scheduleTransactionStep(SQLTransactionBackend* transaction
         return;
 
     OwnPtr<DatabaseTransactionTask> task = DatabaseTransactionTask::create(transaction);
-    LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for the transaction step\n", task.get());
+    WTF_LOG(StorageAPI, "Scheduling DatabaseTransactionTask %p for the transaction step\n", task.get());
     databaseContext()->databaseThread()->scheduleTask(task.release());
 }
 

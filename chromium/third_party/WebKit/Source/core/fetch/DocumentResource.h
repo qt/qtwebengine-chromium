@@ -34,6 +34,8 @@ class Document;
 
 class DocumentResource : public Resource {
 public:
+    typedef ResourceClient ClientType;
+
     DocumentResource(const ResourceRequest&, Type);
     virtual ~DocumentResource();
 
@@ -47,8 +49,11 @@ private:
     PassRefPtr<Document> createDocument(const KURL&);
 
     RefPtr<Document> m_document;
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
 };
+
+DEFINE_TYPE_CASTS(DocumentResource, Resource, resource, resource->type() == Resource::SVGDocument, resource.type() == Resource::SVGDocument); \
+inline DocumentResource* toDocumentResource(const ResourcePtr<Resource>& ptr) { return toDocumentResource(ptr.get()); }
 
 class DocumentResourceClient : public ResourceClient {
 public:

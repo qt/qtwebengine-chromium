@@ -14,8 +14,8 @@
 #import <Foundation/Foundation.h>
 #include <IOKit/hid/IOHIDKeys.h>
 
-using WebKit::WebGamepad;
-using WebKit::WebGamepads;
+using blink::WebGamepad;
+using blink::WebGamepads;
 
 namespace content {
 
@@ -41,7 +41,6 @@ const uint32_t kJoystickUsageNumber = 0x04;
 const uint32_t kGameUsageNumber = 0x05;
 const uint32_t kMultiAxisUsageNumber = 0x08;
 const uint32_t kAxisMinimumUsageNumber = 0x30;
-const uint32_t kAxisMaximumUsageNumber = 0x35;
 
 }  // namespace
 
@@ -267,7 +266,7 @@ void GamepadPlatformDataFetcherMac::DeviceAdd(IOHIDDeviceRef device) {
   const size_t kOutputLengthBytes = sizeof(data_.items[slot].id);
   memset(&data_.items[slot].id, 0, kOutputLengthBytes);
   [as16 getBytes:data_.items[slot].id
-          length:kOutputLengthBytes - sizeof(WebKit::WebUChar)];
+          length:kOutputLengthBytes - sizeof(blink::WebUChar)];
 
   base::ScopedCFTypeRef<CFArrayRef> elements(
       IOHIDDeviceCopyMatchingElements(device, NULL, kIOHIDOptionsTypeNone));
@@ -360,7 +359,7 @@ void GamepadPlatformDataFetcherMac::XboxDeviceAdd(XboxController* device) {
   const size_t kOutputLengthBytes = sizeof(data_.items[slot].id);
   memset(&data_.items[slot].id, 0, kOutputLengthBytes);
   [as16 getBytes:data_.items[slot].id
-          length:kOutputLengthBytes - sizeof(WebKit::WebUChar)];
+          length:kOutputLengthBytes - sizeof(blink::WebUChar)];
 
   associated_[slot].is_xbox = true;
   associated_[slot].xbox.device = device;

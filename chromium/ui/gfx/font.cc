@@ -54,6 +54,10 @@ int Font::GetBaseline() const {
   return platform_font_->GetBaseline();
 }
 
+int Font::GetCapHeight() const {
+  return platform_font_->GetCapHeight();
+}
+
 int Font::GetAverageCharacterWidth() const {
   return platform_font_->GetAverageCharacterWidth();
 }
@@ -72,6 +76,10 @@ int Font::GetStyle() const {
 
 std::string Font::GetFontName() const {
   return platform_font_->GetFontName();
+}
+
+std::string Font::GetActualFontNameForTesting() const {
+  return platform_font_->GetActualFontNameForTesting();
 }
 
 int Font::GetFontSize() const {

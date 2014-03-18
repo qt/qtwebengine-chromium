@@ -47,7 +47,9 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_view_host.h"
 #include "media/audio/audio_io.h"
+#include "media/audio/audio_logging.h"
 #include "media/audio/audio_output_controller.h"
 #include "media/audio/simple_sources.h"
 
@@ -72,6 +74,11 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
                     MediaInternals* media_internals,
                     MediaStreamManager* media_stream_manager);
 
+  // Calls |callback| with the list of AudioOutputControllers for this object.
+  void GetOutputControllers(
+      int render_view_id,
+      const RenderViewHost::GetAudioOutputControllersCallback& callback) const;
+
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
@@ -83,6 +90,7 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   friend class BrowserThread;
   friend class base::DeleteHelper<AudioRendererHost>;
   friend class MockAudioRendererHost;
+  friend class TestAudioRendererHost;
   FRIEND_TEST_ALL_PREFIXES(AudioRendererHostTest, CreateMockStream);
   FRIEND_TEST_ALL_PREFIXES(AudioRendererHostTest, MockStreamDataConversation);
 
@@ -124,6 +132,9 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // NotifyStreamCreated message to the peer.
   void DoCompleteCreation(int stream_id);
 
+  RenderViewHost::AudioOutputControllerList DoGetOutputControllers(
+      int render_view_id) const;
+
   // Propagate measured power level of the audio signal to MediaObserver.
   void DoNotifyAudioPowerLevel(int stream_id, float power_dbfs, bool clipped);
 
@@ -146,7 +157,7 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
 
   media::AudioManager* const audio_manager_;
   AudioMirroringManager* const mirroring_manager_;
-  MediaInternals* const media_internals_;
+  scoped_ptr<media::AudioLog> audio_log_;
 
   // Used to access to AudioInputDeviceManager.
   MediaStreamManager* media_stream_manager_;

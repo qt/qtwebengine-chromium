@@ -18,7 +18,16 @@ class PlatformFont;
 
 // Font provides a wrapper around an underlying font. Copy and assignment
 // operators are explicitly allowed, and cheap.
-class UI_EXPORT Font {
+//
+// Figure of font metrics:
+//   +--------+-------------------+------------------+
+//   |        |                   | internal leading |
+//   |        | ascent (baseline) +------------------+
+//   | height |                   | cap height       |
+//   |        |-------------------+------------------+
+//   |        | descent (height - baseline)          |
+//   +--------+--------------------------------------+
+class GFX_EXPORT Font {
  public:
   // The following constants indicate the font style.
   enum FontStyle {
@@ -69,6 +78,9 @@ class UI_EXPORT Font {
   // Returns the baseline, or ascent, of the font.
   int GetBaseline() const;
 
+  // Returns the cap height of the font.
+  int GetCapHeight() const;
+
   // Returns the average character width for the font.
   int GetAverageCharacterWidth() const;
 
@@ -84,8 +96,11 @@ class UI_EXPORT Font {
   // Returns the style of the font.
   int GetStyle() const;
 
-  // Returns the font name in UTF-8.
+  // Returns the specified font name in UTF-8.
   std::string GetFontName() const;
+
+  // Returns the actually used font name in UTF-8.
+  std::string GetActualFontNameForTesting() const;
 
   // Returns the font size in pixels.
   int GetFontSize() const;

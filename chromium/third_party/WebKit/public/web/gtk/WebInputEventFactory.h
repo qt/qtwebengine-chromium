@@ -39,7 +39,7 @@ typedef struct _GdkEventCrossing GdkEventCrossing;
 typedef struct _GdkEventScroll GdkEventScroll;
 typedef struct _GdkEventKey GdkEventKey;
 
-namespace WebKit {
+namespace blink {
 
 class WebKeyboardEvent;
 class WebMouseEvent;
@@ -47,14 +47,15 @@ class WebMouseWheelEvent;
 
 class WebInputEventFactory {
 public:
-    WEBKIT_EXPORT static WebKeyboardEvent keyboardEvent(const GdkEventKey*);
-    WEBKIT_EXPORT static WebKeyboardEvent keyboardEvent(wchar_t character, int state, double timeStampSeconds);
-    WEBKIT_EXPORT static WebMouseEvent mouseEvent(const GdkEventButton*);
-    WEBKIT_EXPORT static WebMouseEvent mouseEvent(const GdkEventMotion*);
-    WEBKIT_EXPORT static WebMouseEvent mouseEvent(const GdkEventCrossing*);
-    WEBKIT_EXPORT static WebMouseWheelEvent mouseWheelEvent(const GdkEventScroll*);
+    BLINK_EXPORT static WebKeyboardEvent keyboardEvent(const GdkEventKey*);
+    BLINK_EXPORT static WebKeyboardEvent keyboardEvent(wchar_t character, int state, double timeStampSeconds);
+    BLINK_EXPORT static WebMouseEvent mouseEvent(const GdkEventButton*);
+    BLINK_EXPORT static WebMouseEvent mouseEvent(const GdkEventMotion*);
+    BLINK_EXPORT static WebMouseEvent mouseEvent(const GdkEventCrossing*);
+    BLINK_EXPORT static WebMouseWheelEvent mouseWheelEvent(const GdkEventScroll*);
+    BLINK_EXPORT static bool isSystemKeyEvent(const WebKeyboardEvent&);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

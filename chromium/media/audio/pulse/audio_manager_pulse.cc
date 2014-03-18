@@ -10,9 +10,8 @@
 #include "base/logging.h"
 #include "base/nix/xdg_util.h"
 #include "base/stl_util.h"
+#include "media/audio/alsa/audio_manager_alsa.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/audio_util.h"
-#include "media/audio/linux/audio_manager_linux.h"
 #include "media/audio/pulse/pulse_input.h"
 #include "media/audio/pulse/pulse_output.h"
 #include "media/audio/pulse/pulse_unified.h"
@@ -39,8 +38,8 @@ static const base::FilePath::CharType kPulseLib[] =
     FILE_PATH_LITERAL("libpulse.so.0");
 
 // static
-AudioManager* AudioManagerPulse::Create() {
-  scoped_ptr<AudioManagerPulse> ret(new AudioManagerPulse());
+AudioManager* AudioManagerPulse::Create(AudioLogFactory* audio_log_factory) {
+  scoped_ptr<AudioManagerPulse> ret(new AudioManagerPulse(audio_log_factory));
   if (ret->Init())
     return ret.release();
 
@@ -48,8 +47,9 @@ AudioManager* AudioManagerPulse::Create() {
   return NULL;
 }
 
-AudioManagerPulse::AudioManagerPulse()
-    : input_mainloop_(NULL),
+AudioManagerPulse::AudioManagerPulse(AudioLogFactory* audio_log_factory)
+    : AudioManagerBase(audio_log_factory),
+      input_mainloop_(NULL),
       input_context_(NULL),
       devices_(NULL),
       native_input_sample_rate_(0) {
@@ -78,7 +78,7 @@ bool AudioManagerPulse::HasAudioInputDevices() {
 }
 
 void AudioManagerPulse::ShowAudioInputSettings() {
-  AudioManagerLinux::ShowLinuxAudioInputSettings();
+  AudioManagerAlsa::ShowLinuxAudioInputSettings();
 }
 
 void AudioManagerPulse::GetAudioDeviceNames(
@@ -181,7 +181,7 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioOutputStream* AudioManagerPulse::MakeOutputStream(

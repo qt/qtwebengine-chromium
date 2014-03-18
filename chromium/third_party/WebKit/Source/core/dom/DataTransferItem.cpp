@@ -31,10 +31,69 @@
 #include "config.h"
 #include "core/dom/DataTransferItem.h"
 
+#include "bindings/v8/V8Binding.h"
+#include "core/dom/Clipboard.h"
+#include "core/dom/StringCallback.h"
+#include "core/platform/chromium/ChromiumDataObjectItem.h"
+#include "wtf/StdLibExtras.h"
+
 namespace WebCore {
 
-const char DataTransferItem::kindString[] = "string";
-const char DataTransferItem::kindFile[] = "file";
+PassRefPtr<DataTransferItem> DataTransferItem::create(PassRefPtr<Clipboard> clipboard, PassRefPtr<ChromiumDataObjectItem> item)
+{
+    return adoptRef(new DataTransferItem(clipboard, item));
+}
+
+DataTransferItem::~DataTransferItem()
+{
+}
+
+String DataTransferItem::kind() const
+{
+    DEFINE_STATIC_LOCAL(const String, kindString, ("string"));
+    DEFINE_STATIC_LOCAL(const String, kindFile, ("file"));
+    if (!m_clipboard->canReadTypes())
+        return String();
+    switch (m_item->kind()) {
+    case ChromiumDataObjectItem::StringKind:
+        return kindString;
+    case ChromiumDataObjectItem::FileKind:
+        return kindFile;
+    }
+    ASSERT_NOT_REACHED();
+    return String();
+}
+
+String DataTransferItem::type() const
+{
+    if (!m_clipboard->canReadTypes())
+        return String();
+    return m_item->type();
+}
+
+void DataTransferItem::getAsString(ExecutionContext* context, PassOwnPtr<StringCallback> callback) const
+{
+    if (!m_clipboard->canReadData())
+        return;
+
+    m_item->getAsString(callback, context);
+}
+
+PassRefPtr<Blob> DataTransferItem::getAsFile() const
+{
+    if (!m_clipboard->canReadData())
+        return 0;
+
+    return m_item->getAsFile();
+}
+
+DataTransferItem::DataTransferItem(PassRefPtr<Clipboard> clipboard, PassRefPtr<ChromiumDataObjectItem> item)
+    : m_clipboard(clipboard)
+    , m_item(item)
+{
+    ScriptWrappable::init(this);
+}
+
 
 } // namespace WebCore
 

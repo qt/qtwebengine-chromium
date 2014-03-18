@@ -29,10 +29,10 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -41,8 +41,8 @@
 #include "core/html/HTMLVideoElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
-#include "core/platform/chromium/KeyboardCodes.h"
+#include "core/frame/Frame.h"
+#include "platform/KeyboardCodes.h"
 
 namespace WebCore {
 
@@ -63,7 +63,7 @@ private:
     {
     }
 
-    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) OVERRIDE;
 
     void createDocumentStructure();
 
@@ -78,7 +78,7 @@ void MediaDocumentParser::createDocumentStructure()
     document()->appendChild(rootElement);
 
     if (document()->frame())
-        document()->frame()->loader()->dispatchDocumentElementAvailable();
+        document()->frame()->loader().dispatchDocumentElementAvailable();
 
     RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*document());
     RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*document());
@@ -108,14 +108,13 @@ void MediaDocumentParser::createDocumentStructure()
     m_didBuildDocumentStructure = true;
 }
 
-size_t MediaDocumentParser::appendBytes(const char*, size_t)
+void MediaDocumentParser::appendBytes(const char*, size_t)
 {
     if (m_didBuildDocumentStructure)
-        return 0;
+        return;
 
     createDocumentStructure();
     finish();
-    return 0;
 }
 
 MediaDocument::MediaDocument(const DocumentInit& initializer)
@@ -134,7 +133,7 @@ static inline HTMLVideoElement* descendentVideoElement(Node* root)
 {
     ASSERT(root);
 
-    for (Node* node = root; node; node = NodeTraversal::next(node, root)) {
+    for (Node* node = root; node; node = NodeTraversal::next(*node, root)) {
         if (isHTMLVideoElement(node))
             return toHTMLVideoElement(node);
     }
@@ -148,7 +147,7 @@ void MediaDocument::defaultEventHandler(Event* event)
     if (!targetNode)
         return;
 
-    if (event->type() == eventNames().keydownEvent && event->isKeyboardEvent()) {
+    if (event->type() == EventTypeNames::keydown && event->isKeyboardEvent()) {
         HTMLVideoElement* video = descendentVideoElement(targetNode);
         if (!video)
             return;

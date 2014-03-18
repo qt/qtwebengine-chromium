@@ -5,6 +5,7 @@
 #include "content/renderer/gpu/mailbox_output_surface.h"
 
 #include "base/logging.h"
+#include "cc/base/util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/gl_frame_data.h"
@@ -53,7 +54,7 @@ MailboxOutputSurface::~MailboxOutputSurface() {
 void MailboxOutputSurface::EnsureBackbuffer() {
   is_backbuffer_discarded_ = false;
 
-  WebKit::WebGraphicsContext3D* context3d = context_provider_->Context3d();
+  blink::WebGraphicsContext3D* context3d = context_provider_->Context3d();
 
   if (!current_backing_.texture_id) {
     // Find a texture of matching size to recycle.
@@ -86,12 +87,12 @@ void MailboxOutputSurface::EnsureBackbuffer() {
       context3d->texImage2D(
           GL_TEXTURE_2D,
           0,
-          ResourceProvider::GetGLInternalFormat(format_),
+          GLInternalFormat(format_),
           surface_size_.width(),
           surface_size_.height(),
           0,
-          ResourceProvider::GetGLDataFormat(format_),
-          ResourceProvider::GetGLDataType(format_),
+          GLDataFormat(format_),
+          GLDataType(format_),
           NULL);
       context3d->genMailboxCHROMIUM(current_backing_.mailbox.name);
       context3d->produceTextureCHROMIUM(
@@ -103,7 +104,7 @@ void MailboxOutputSurface::EnsureBackbuffer() {
 void MailboxOutputSurface::DiscardBackbuffer() {
   is_backbuffer_discarded_ = true;
 
-  WebKit::WebGraphicsContext3D* context3d = context_provider_->Context3d();
+  blink::WebGraphicsContext3D* context3d = context_provider_->Context3d();
 
   if (current_backing_.texture_id) {
     context3d->deleteTexture(current_backing_.texture_id);
@@ -137,7 +138,7 @@ void MailboxOutputSurface::BindFramebuffer() {
   EnsureBackbuffer();
   DCHECK(current_backing_.texture_id);
 
-  WebKit::WebGraphicsContext3D* context3d = context_provider_->Context3d();
+  blink::WebGraphicsContext3D* context3d = context_provider_->Context3d();
 
   if (!fbo_)
     fbo_ = context3d->createFramebuffer();

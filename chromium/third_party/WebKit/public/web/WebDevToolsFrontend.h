@@ -33,7 +33,7 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebDevToolsFrontendClient;
 class WebString;
@@ -43,7 +43,7 @@ class WebView;
 // direct and delegate Apis to the host.
 class WebDevToolsFrontend {
 public:
-    WEBKIT_EXPORT static WebDevToolsFrontend* create(WebView* view,
+    BLINK_EXPORT static WebDevToolsFrontend* create(WebView* view,
                                                      WebDevToolsFrontendClient* client,
                                                      const WebString& applicationLocale);
 
@@ -52,6 +52,6 @@ public:
     virtual void dispatchOnInspectorFrontend(const WebString&) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

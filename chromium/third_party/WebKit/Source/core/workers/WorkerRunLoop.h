@@ -31,7 +31,9 @@
 #ifndef WorkerRunLoop_h
 #define WorkerRunLoop_h
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
+#include "wtf/Functional.h"
 #include "wtf/MessageQueue.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -59,29 +61,20 @@ namespace WebCore {
         bool terminated() const { return m_messageQueue.killed(); }
 
         // Returns true if the loop is still alive, false if it has been terminated.
-        bool postTask(PassOwnPtr<ScriptExecutionContext::Task>);
-        void postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task>);
+        bool postTask(PassOwnPtr<ExecutionContextTask>);
+        bool postTask(const Closure&);
+
+        void postTaskAndTerminate(PassOwnPtr<ExecutionContextTask>);
+
         // Returns true if the loop is still alive, false if it has been terminated.
-        bool postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task>, const String& mode);
+        bool postTaskForMode(PassOwnPtr<ExecutionContextTask>, const String& mode);
+        bool postTaskForMode(const Closure&, const String& mode);
 
         unsigned long createUniqueId() { return ++m_uniqueId; }
 
         static String defaultMode();
 
-        class Task {
-            WTF_MAKE_NONCOPYABLE(Task); WTF_MAKE_FAST_ALLOCATED;
-        public:
-            static PassOwnPtr<Task> create(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode);
-            ~Task() { }
-            const String& mode() const { return m_mode; }
-            void performTask(const WorkerRunLoop&, ScriptExecutionContext*);
-
-        private:
-            Task(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode);
-
-            OwnPtr<ScriptExecutionContext::Task> m_task;
-            String m_mode;
-        };
+        class Task;
 
     private:
         friend class RunLoopSetup;

@@ -23,7 +23,6 @@
 #include "core/svg/SVGPaint.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -63,19 +62,19 @@ void SVGPaint::setUri(const String&)
     // The setters are the most problematic part so we remove the support for those first.
 }
 
-void SVGPaint::setPaint(unsigned short, const String&, const String&, const String&, ExceptionState& es)
+void SVGPaint::setPaint(unsigned short, const String&, const String&, const String&, ExceptionState& exceptionState)
 {
-    es.throwDOMException(NoModificationAllowedError);
+    exceptionState.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
 }
 
-String SVGPaint::customCssText() const
+String SVGPaint::customCSSText() const
 {
     switch (m_paintType) {
     case SVG_PAINTTYPE_UNKNOWN:
     case SVG_PAINTTYPE_RGBCOLOR:
     case SVG_PAINTTYPE_RGBCOLOR_ICCCOLOR:
     case SVG_PAINTTYPE_CURRENTCOLOR:
-        return SVGColor::customCssText();
+        return SVGColor::customCSSText();
     case SVG_PAINTTYPE_NONE:
         return "none";
     case SVG_PAINTTYPE_URI_NONE:
@@ -83,7 +82,7 @@ String SVGPaint::customCssText() const
     case SVG_PAINTTYPE_URI_CURRENTCOLOR:
     case SVG_PAINTTYPE_URI_RGBCOLOR:
     case SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR: {
-        String color = SVGColor::customCssText();
+        String color = SVGColor::customCSSText();
         if (color.isEmpty())
             return m_uri;
         return "url(" + m_uri + ") " + color;

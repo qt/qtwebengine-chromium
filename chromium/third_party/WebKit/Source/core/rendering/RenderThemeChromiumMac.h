@@ -95,10 +95,8 @@ protected:
     virtual bool supportsSelectionForegroundColors() const OVERRIDE { return false; }
 
     virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustTextFieldStyle(RenderStyle*, Element*) const;
 
     virtual bool paintTextArea(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustTextAreaStyle(RenderStyle*, Element*) const;
 
     virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&);
     virtual void adjustMenuListStyle(RenderStyle*, Element*) const;
@@ -106,7 +104,6 @@ protected:
     virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
     virtual void adjustMenuListButtonStyle(RenderStyle*, Element*) const;
 
-    virtual void adjustProgressBarStyle(RenderStyle*, Element*) const;
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
@@ -128,7 +125,7 @@ protected:
     virtual bool supportsClosedCaptioning() const { return true; }
 
 private:
-    virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const OVERRIDE;
+    virtual String fileListNameForWidth(Locale&, const FileList*, const Font&, int width) const OVERRIDE;
 
     IntRect inflateRect(const IntRect&, const IntSize&, const int* margins, float zoomLevel = 1.0f) const;
 
@@ -186,7 +183,6 @@ protected:
     virtual bool paintMediaVolumeSliderContainer(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool usesMediaControlStatusDisplay() { return false; }
     virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return true; }
     virtual bool usesVerticalVolumeSlider() const { return false; }
     virtual String formatMediaControlsTime(float time) const;

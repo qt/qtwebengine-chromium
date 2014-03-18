@@ -26,7 +26,7 @@
 #ifndef DeviceMotionEvent_h
 #define DeviceMotionEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 
 namespace WebCore {
 
@@ -67,6 +67,12 @@ private:
     RefPtr<DeviceAcceleration> m_accelerationIncludingGravity;
     RefPtr<DeviceRotationRate> m_rotationRate;
 };
+
+inline DeviceMotionEvent* toDeviceMotionEvent(Event* event)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!event || event->interfaceName() == EventNames::DeviceMotionEvent);
+    return static_cast<DeviceMotionEvent*>(event);
+}
 
 } // namespace WebCore
 

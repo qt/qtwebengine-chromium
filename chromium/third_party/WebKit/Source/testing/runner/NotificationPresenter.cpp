@@ -35,12 +35,11 @@
 #include "public/platform/WebURL.h"
 #include "public/testing/WebTestDelegate.h"
 #include "public/web/WebKit.h"
-#include "public/web/WebNotification.h"
 #include "public/web/WebNotificationPermissionCallback.h"
 #include "public/web/WebSecurityOrigin.h"
 #include <url/gurl.h>
 
-using namespace WebKit;
+using namespace blink;
 using namespace std;
 
 namespace WebTestRunner {
@@ -141,7 +140,7 @@ void NotificationPresenter::cancel(const WebNotification& notification)
     m_activeNotifications.erase(id);
 }
 
-void NotificationPresenter::objectDestroyed(const WebKit::WebNotification& notification)
+void NotificationPresenter::objectDestroyed(const blink::WebNotification& notification)
 {
     WebString identifier = identifierForNotification(notification);
     string id(identifier.utf8());

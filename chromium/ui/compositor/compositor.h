@@ -13,14 +13,13 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d.h"
-#include "ui/gl/gl_share_group.h"
 
 class SkBitmap;
 
@@ -29,39 +28,25 @@ class MessageLoopProxy;
 class RunLoop;
 }
 
+namespace blink {
+class WebGraphicsContext3D;
+}
+
 namespace cc {
 class ContextProvider;
 class Layer;
 class LayerTreeDebugState;
 class LayerTreeHost;
-class TestContextProvider;
 }
 
 namespace gfx {
-class GLContext;
-class GLSurface;
-class GLShareGroup;
-class Point;
 class Rect;
 class Size;
-}
-
-namespace WebKit {
-class WebGraphicsContext3D;
-}
-
-namespace webkit {
-namespace gpu {
-class ContextProviderInProcess;
-class WebGraphicsContext3DInProcessCommandBufferImpl;
-}
 }
 
 namespace ui {
 
 class Compositor;
-class CompositorObserver;
-class ContextProviderFromContextFactory;
 class Layer;
 class PostedSwapQueue;
 class Reflector;
@@ -86,7 +71,7 @@ class COMPOSITOR_EXPORT ContextFactory {
   // per-compositor data (e.g. a shared context), that needs to be cleaned up
   // by calling RemoveCompositor when the compositor gets destroyed.
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
-      Compositor* compositor) = 0;
+      Compositor* compositor, bool software_fallback) = 0;
 
   // Creates a reflector that copies the content of the |mirrored_compositor|
   // onto |mirroing_layer|.
@@ -96,10 +81,18 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Removes the reflector, which stops the mirroring.
   virtual void RemoveReflector(scoped_refptr<Reflector> reflector) = 0;
 
+  // Returns a reference to the offscreen context provider used by the
+  // compositor. This provider is bound and used on whichever thread the
+  // compositor is rendering from.
   virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() = 0;
+      OffscreenCompositorContextProvider() = 0;
+
+  // Return a reference to a shared offscreen context provider usable from the
+  // main thread. This may be the same as OffscreenCompositorContextProvider()
+  // depending on the compositor's threading configuration. This provider will
+  // be bound to the main thread.
   virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() = 0;
+      SharedMainThreadContextProvider() = 0;
 
   // Destroys per-compositor data.
   virtual void RemoveCompositor(Compositor* compositor) = 0;
@@ -107,68 +100,6 @@ class COMPOSITOR_EXPORT ContextFactory {
   // When true, the factory uses test contexts that do not do real GL
   // operations.
   virtual bool DoesCreateTestContexts() = 0;
-};
-
-// The default factory that creates in-process contexts.
-class COMPOSITOR_EXPORT DefaultContextFactory : public ContextFactory {
- public:
-  DefaultContextFactory();
-  virtual ~DefaultContextFactory();
-
-  // ContextFactory implementation
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
-      Compositor* compositor) OVERRIDE;
-
-  virtual scoped_refptr<Reflector> CreateReflector(
-      Compositor* compositor,
-      Layer* layer) OVERRIDE;
-  virtual void RemoveReflector(scoped_refptr<Reflector> reflector) OVERRIDE;
-
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
-  virtual void RemoveCompositor(Compositor* compositor) OVERRIDE;
-  virtual bool DoesCreateTestContexts() OVERRIDE;
-
-  bool Initialize();
-
- private:
-  scoped_refptr<webkit::gpu::ContextProviderInProcess>
-      offscreen_contexts_main_thread_;
-  scoped_refptr<webkit::gpu::ContextProviderInProcess>
-      offscreen_contexts_compositor_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(DefaultContextFactory);
-};
-
-// The factory that creates test contexts.
-class COMPOSITOR_EXPORT TestContextFactory : public ContextFactory {
- public:
-  TestContextFactory();
-  virtual ~TestContextFactory();
-
-  // ContextFactory implementation
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
-      Compositor* compositor) OVERRIDE;
-
-  virtual scoped_refptr<Reflector> CreateReflector(
-      Compositor* mirrored_compositor,
-      Layer* mirroring_layer) OVERRIDE;
-  virtual void RemoveReflector(scoped_refptr<Reflector> reflector) OVERRIDE;
-
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
-  virtual void RemoveCompositor(Compositor* compositor) OVERRIDE;
-  virtual bool DoesCreateTestContexts() OVERRIDE;
-
- private:
-  scoped_refptr<cc::TestContextProvider> offscreen_contexts_main_thread_;
-  scoped_refptr<cc::TestContextProvider> offscreen_contexts_compositor_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestContextFactory);
 };
 
 // Texture provide an abstraction over the external texture that can be passed
@@ -182,7 +113,6 @@ class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
   float device_scale_factor() const { return device_scale_factor_; }
 
   virtual unsigned int PrepareTexture() = 0;
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() = 0;
 
   // Replaces the texture with the texture from the specified mailbox.
   virtual void Consume(const std::string& mailbox_name,
@@ -203,16 +133,6 @@ class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
   float device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(Texture);
-};
-
-// An interface to allow the compositor to communicate with its owner.
-class COMPOSITOR_EXPORT CompositorDelegate {
- public:
-  // Requests the owner to schedule a redraw of the layer tree.
-  virtual void ScheduleDraw() = 0;
-
- protected:
-  virtual ~CompositorDelegate() {}
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -243,7 +163,7 @@ class COMPOSITOR_EXPORT CompositorLock
 // This is only to be used for test. It allows execution of other tasks on
 // the current message loop before the current task finishs (there is a
 // potential for re-entrancy).
-class COMPOSITOR_EXPORT DrawWaiterForTest : public ui::CompositorObserver {
+class COMPOSITOR_EXPORT DrawWaiterForTest : public CompositorObserver {
  public:
   // Waits for a draw to be issued by the compositor. If the test times out
   // here, there may be a logic error in the compositor code causing it
@@ -284,19 +204,11 @@ class COMPOSITOR_EXPORT DrawWaiterForTest : public ui::CompositorObserver {
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient),
       public base::SupportsWeakPtr<Compositor> {
  public:
-  Compositor(CompositorDelegate* delegate,
-             gfx::AcceleratedWidget widget);
+  explicit Compositor(gfx::AcceleratedWidget widget);
   virtual ~Compositor();
-
-  // Set up the compositor ContextFactory for a test environment. Unit tests
-  // that do not have a full content environment need to call this before
-  // initializing the Compositor.
-  // Some tests expect pixel output, and they should pass false for
-  // |allow_test_contexts|. Most unit tests should pass true. Once this has been
-  // called, the Initialize() and Terminate() methods should be used as normal.
-  static void InitializeContextFactoryForTests(bool allow_test_contexts);
 
   static void Initialize();
   static bool WasInitializedWithThread();
@@ -336,7 +248,7 @@ class COMPOSITOR_EXPORT Compositor
   // from changes to layer properties.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
 
-  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
+  void SetLatencyInfo(const LatencyInfo& latency_info);
 
   // Reads the region |bounds_in_pixel| of the contents of the last rendered
   // frame into the given bitmap.
@@ -382,8 +294,8 @@ class COMPOSITOR_EXPORT Compositor
                                base::TimeDelta interval);
 
   // LayerTreeHostClient implementation.
-  virtual void WillBeginFrame() OVERRIDE {}
-  virtual void DidBeginFrame() OVERRIDE {}
+  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
+  virtual void DidBeginMainFrame() OVERRIDE {}
   virtual void Animate(double frame_begin_time) OVERRIDE {}
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
@@ -395,11 +307,14 @@ class COMPOSITOR_EXPORT Compositor
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProvider() OVERRIDE;
+
+  // cc::LayerTreeHostSingleThreadClient implementation.
   virtual void ScheduleComposite() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+  virtual void ScheduleAnimation() OVERRIDE;
+  virtual void DidPostSwapBuffers() OVERRIDE;
+  virtual void DidAbortSwapBuffers() OVERRIDE;
 
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }
@@ -422,7 +337,6 @@ class COMPOSITOR_EXPORT Compositor
   // Notifies the compositor that compositing is complete.
   void NotifyEnd();
 
-  CompositorDelegate* delegate_;
   gfx::Size size_;
 
   // The root of the Layer tree drawn by this compositor.
@@ -449,6 +363,15 @@ class COMPOSITOR_EXPORT Compositor
   bool disable_schedule_composite_;
 
   CompositorLock* compositor_lock_;
+
+  // Prevent more than one draw from being scheduled.
+  bool defer_draw_scheduling_;
+
+  // Used to prevent Draw()s while a composite is in progress.
+  bool waiting_on_compositing_end_;
+  bool draw_on_compositing_end_;
+
+  base::WeakPtrFactory<Compositor> schedule_draw_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Compositor);
 };

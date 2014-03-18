@@ -10,7 +10,10 @@ import re
 
 GIT_HOST = 'https://chromium.googlesource.com/'
 
-BLINK_TRUNK = 'http://src.chromium.org/blink/trunk'
+BLINK_TRUNK_RE = re.compile(
+    '^https?://src.chromium.org/blink/trunk$')
+BLINK_TRUNK_PUBLIC_RE = re.compile(
+    '^https?://src.chromium.org/blink/trunk/public$')
 
 # Used by deps2git.ConvertDepsToGit() as overrides for SVN DEPS.  Each entry
 # maps a DEPS path to a DEPS variable identifying the Git hash for its
@@ -25,14 +28,14 @@ def SvnUrlToGitUrl(path, svn_url):
   """Convert a chromium SVN URL to a chromium Git URL."""
 
   match = re.match(
-      '(http://src.chromium.org/svn|svn://svn.chromium.org/chrome)(/.*)',
+      '(https?://src.chromium.org/svn|svn://svn.chromium.org/chrome)(/.*)',
       svn_url)
   if match:
     svn_url = match.group(2)
 
   # A few special cases.
-  if (svn_url ==
-      'http://sctp-refimpl.googlecode.com/svn/trunk/KERN/usrsctp/usrsctplib'):
+  if re.match('^https?://sctp-refimpl.googlecode.com/svn/' +
+              'trunk/KERN/usrsctp/usrsctplib$', svn_url):
     return (path, GIT_HOST + 'external/usrsctplib.git', GIT_HOST)
 
   if svn_url == '/trunk/deps/page_cycler/acid3':
@@ -69,33 +72,48 @@ def SvnUrlToGitUrl(path, svn_url):
   if svn_url == '/trunk/deps/cdm':
     return (path, GIT_HOST + 'chromium/cdm.git', GIT_HOST)
 
-  if svn_url == 'http://webrtc.googlecode.com/svn/stable/webrtc':
+  if re.match('^https?://webrtc.googlecode.com/svn/stable/webrtc$', svn_url):
     return (path, GIT_HOST + 'external/webrtc/stable/webrtc.git', GIT_HOST)
 
-  if svn_url == 'http://webrtc.googlecode.com/svn/stable/talk':
+  if re.match('^https?://webrtc.googlecode.com/svn/stable/talk$', svn_url):
     return (path, GIT_HOST + 'external/webrtc/stable/talk.git', GIT_HOST)
 
-  if svn_url == 'http://webrtc.googlecode.com/svn/stable/src':
+  if re.match('^https?://webrtc.googlecode.com/svn/stable/src$', svn_url):
     return (path, GIT_HOST + 'external/webrtc/stable/src.git', GIT_HOST)
 
-  if svn_url == 'http://webrtc.googlecode.com/svn/deps/third_party/openmax':
+  if re.match('^https?://webrtc.googlecode.com/svn/deps/third_party/openmax$',
+              svn_url):
     return (path, GIT_HOST + 'external/webrtc/deps/third_party/openmax.git',
             GIT_HOST)
 
   if svn_url in ('http://selenium.googlecode.com/svn/trunk/py/test',
+                 'https://selenium.googlecode.com/svn/trunk/py/test',
                  '/trunk/deps/reference_builds/chrome'):
     # Those can't be git svn cloned. Skipping for now.
     return
 
   # Projects on sourceforge using trunk
-  match = re.match('http?://(.*).svn.sourceforge.net/svnroot/(.*)/trunk(.*)',
+  match = re.match('^https?://svn.code.sf.net/p/(.*)/code/trunk(.*)',
+                   svn_url)
+  if match:
+    repo = '%s%s.git' % (match.group(1), match.group(2))
+    return (path, GIT_HOST + 'external/%s' % repo, GIT_HOST)
+
+  # Fallback for old sourceforge URL.
+  match = re.match('^https?://(.*).svn.sourceforge.net/svnroot/(.*)/trunk(.*)',
                    svn_url)
   if match:
     repo = '%s%s.git' % (match.group(2), match.group(3))
     return (path, GIT_HOST + 'external/%s' % repo, GIT_HOST)
 
+  # Subdirectories of libaddressinput
+  if re.match('^https?://libaddressinput.googlecode.com/svn/trunk', svn_url):
+    if 'libaddressinput' in path:
+      path = path[:path.index('libaddressinput')] + 'libaddressinput/src'
+    return (path, GIT_HOST + 'external/libaddressinput.git', GIT_HOST)
+
   # Projects on googlecode.com using trunk.
-  match = re.match('http?://(.*).googlecode.com/svn/trunk(.*)', svn_url)
+  match = re.match('^https?://(.*).googlecode.com/svn/trunk(.*)', svn_url)
   if match:
     repo = '%s%s.git' % (match.group(1), match.group(2))
     return (path, GIT_HOST + 'external/%s' % repo, GIT_HOST)
@@ -107,7 +125,7 @@ def SvnUrlToGitUrl(path, svn_url):
   #   svn/branches/<branch_name>/<optional_sub_path>
   # This layout can't really be enforced, though it appears to apply to most
   # repos. Outliers will have to be special-cased.
-  match = re.match('http://(.*).googlecode.com/svn/branches/([^/]+)(.*)',
+  match = re.match('^https?://(.*).googlecode.com/svn/branches/([^/]+)(.*)',
                    svn_url)
   if match:
     repo = '%s%s.git' % (match.group(1), match.group(3))
@@ -115,7 +133,8 @@ def SvnUrlToGitUrl(path, svn_url):
     return (path, GIT_HOST + 'external/%s' % repo, branch_name, GIT_HOST)
 
   # Projects that are subdirectories of the native_client repository.
-  match = re.match('http://src.chromium.org/native_client/trunk/(.*)', svn_url)
+  match = re.match('^https?://src.chromium.org/native_client/trunk/(.*)',
+                   svn_url)
   if match:
     repo = '%s.git' % match.group(1)
     return (path, GIT_HOST + 'native_client/%s' % repo, GIT_HOST)
@@ -127,11 +146,11 @@ def SvnUrlToGitUrl(path, svn_url):
     return (path, GIT_HOST + 'chromium/%s' % repo, GIT_HOST)
 
   # Public-header-only blink directory for iOS.
-  if svn_url == (BLINK_TRUNK + '/public'):
+  if BLINK_TRUNK_PUBLIC_RE.match(svn_url):
     return (path, GIT_HOST + 'chromium/blink-public.git', GIT_HOST)
 
   # Main blink directory.
-  if svn_url == BLINK_TRUNK:
+  if BLINK_TRUNK_RE.match(svn_url):
     return (path, GIT_HOST + 'chromium/blink.git', GIT_HOST)
 
   # Minimal header-only webkit directories for iOS.
@@ -149,9 +168,6 @@ def SvnUrlToGitUrl(path, svn_url):
   # Ignore all webkit directories (other than the above), since we fetch the
   # whole thing directly for all but iOS.
   if svn_url == '/trunk/deps/third_party/WebKit':
-    return
-
-  if svn_url.startswith(BLINK_TRUNK):
     return
 
   # blink

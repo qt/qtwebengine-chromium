@@ -36,7 +36,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 BackForwardClientImpl::BackForwardClientImpl(WebViewImpl* webView)
     : m_webView(webView)
@@ -45,13 +45,6 @@ BackForwardClientImpl::BackForwardClientImpl(WebViewImpl* webView)
 
 BackForwardClientImpl::~BackForwardClientImpl()
 {
-}
-
-void BackForwardClientImpl::didAddItem()
-{
-    // If WebCore adds a new HistoryItem, it means this is a new navigation (ie,
-    // not a reload or back/forward).
-    m_webView->observeNewNavigation();
 }
 
 int BackForwardClientImpl::backListCount()
@@ -70,4 +63,12 @@ int BackForwardClientImpl::forwardListCount()
     return m_webView->client()->historyForwardListCount();
 }
 
-} // namespace WebKit
+int BackForwardClientImpl::backForwardListCount()
+{
+    if (!m_webView->client())
+        return 0;
+    return backListCount() + 1 + forwardListCount();
+}
+
+
+} // namespace blink

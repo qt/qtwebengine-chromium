@@ -25,7 +25,6 @@
 
 #include "core/svg/SVGRadialGradientElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
 #include "core/svg/RadialGradientAttributes.h"
 #include "core/svg/SVGElementInstance.h"
@@ -51,8 +50,8 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGRadialGradientElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGradientElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& tagName, Document& document)
-    : SVGGradientElement(tagName, document)
+inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
+    : SVGGradientElement(SVGNames::radialGradientTag, document)
     , m_cx(LengthModeWidth, "50%")
     , m_cy(LengthModeHeight, "50%")
     , m_r(LengthModeOther, "50%")
@@ -61,14 +60,13 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& t
     , m_fr(LengthModeOther, "0%")
 {
     // Spec: If the cx/cy/r/fr attribute is not specified, the effect is as if a value of "50%" were specified.
-    ASSERT(hasTagName(SVGNames::radialGradientTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGRadialGradientElement();
 }
 
-PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(Document& document)
 {
-    return adoptRef(new SVGRadialGradientElement(tagName, document));
+    return adoptRef(new SVGRadialGradientElement(document));
 }
 
 bool SVGRadialGradientElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -120,8 +118,9 @@ void SVGRadialGradientElement::svgAttributeChanged(const QualifiedName& attrName
 
     updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 RenderObject* SVGRadialGradientElement::createRenderer(RenderStyle*)

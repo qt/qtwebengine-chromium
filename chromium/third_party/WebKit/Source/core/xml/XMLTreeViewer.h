@@ -33,10 +33,9 @@ namespace WebCore {
 
 class Document;
 
-class XMLTreeViewer {
+class XMLTreeViewer FINAL {
 public:
     explicit XMLTreeViewer(Document*);
-    virtual ~XMLTreeViewer() {};
 
     void transformDocumentToTreeView();
 

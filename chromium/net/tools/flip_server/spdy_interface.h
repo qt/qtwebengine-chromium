@@ -12,8 +12,8 @@
 #include "base/compiler_specific.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
-#include "net/tools/flip_server/balsa_headers.h"
-#include "net/tools/flip_server/balsa_visitor_interface.h"
+#include "net/tools/balsa/balsa_headers.h"
+#include "net/tools/balsa/balsa_visitor_interface.h"
 #include "net/tools/flip_server/output_ordering.h"
 #include "net/tools/flip_server/sm_connection.h"
 #include "net/tools/flip_server/sm_interface.h"
@@ -23,14 +23,14 @@ namespace net {
 class FlipAcceptor;
 class MemoryCache;
 
-class SpdySM : public BufferedSpdyFramerVisitorInterface,
-               public SMInterface {
+class SpdySM : public BufferedSpdyFramerVisitorInterface, public SMInterface {
  public:
   SpdySM(SMConnection* connection,
          SMInterface* sm_http_interface,
          EpollServer* epoll_server,
          MemoryCache* memory_cache,
-         FlipAcceptor* acceptor);
+         FlipAcceptor* acceptor,
+         SpdyMajorVersion spdy_version);
   virtual ~SpdySM();
 
   virtual void InitSMInterface(SMInterface* sm_http_interface,
@@ -80,6 +80,11 @@ class SpdySM : public BufferedSpdyFramerVisitorInterface,
   virtual void OnHeaders(SpdyStreamId stream_id,
                          bool fin,
                          const SpdyHeaderBlock& headers) OVERRIDE;
+
+  // Called when data frame header is received.
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) OVERRIDE {}
 
   // Called when data is received.
   // |stream_id| The stream receiving data.
@@ -149,8 +154,11 @@ class SpdySM : public BufferedSpdyFramerVisitorInterface,
                                const BalsaHeaders& headers) OVERRIDE;
   virtual size_t SendSynReply(uint32 stream_id,
                               const BalsaHeaders& headers) OVERRIDE;
-  virtual void SendDataFrame(uint32 stream_id, const char* data, int64 len,
-                             uint32 flags, bool compress) OVERRIDE;
+  virtual void SendDataFrame(uint32 stream_id,
+                             const char* data,
+                             int64 len,
+                             uint32 flags,
+                             bool compress) OVERRIDE;
   BufferedSpdyFramer* spdy_framer() { return buffered_spdy_framer_; }
 
   const OutputOrdering& output_ordering() const {
@@ -161,6 +169,9 @@ class SpdySM : public BufferedSpdyFramerVisitorInterface,
   static void set_forward_ip_header(const std::string& value) {
     forward_ip_header_ = value;
   }
+  SpdyMajorVersion spdy_version() const {
+    return buffered_spdy_framer_->protocol_version();
+  }
 
  private:
   void SendEOFImpl(uint32 stream_id);
@@ -169,8 +180,11 @@ class SpdySM : public BufferedSpdyFramerVisitorInterface,
   void CopyHeaders(SpdyHeaderBlock& dest, const BalsaHeaders& headers);
   size_t SendSynStreamImpl(uint32 stream_id, const BalsaHeaders& headers);
   size_t SendSynReplyImpl(uint32 stream_id, const BalsaHeaders& headers);
-  void SendDataFrameImpl(uint32 stream_id, const char* data, int64 len,
-                         SpdyDataFlags flags, bool compress);
+  void SendDataFrameImpl(uint32 stream_id,
+                         const char* data,
+                         int64 len,
+                         SpdyDataFlags flags,
+                         bool compress);
   void EnqueueDataFrame(DataFrame* df);
   virtual void GetOutput() OVERRIDE;
 

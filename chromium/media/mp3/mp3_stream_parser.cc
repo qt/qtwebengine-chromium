@@ -10,6 +10,7 @@
 #include "media/base/bit_reader.h"
 #include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "net/http/http_util.h"
 
@@ -96,7 +97,6 @@ static const int kSampleRateMap[4][4] = {
 };
 
 // Frame header field constants.
-static const int kVersion1 = 3;
 static const int kVersion2 = 2;
 static const int kVersionReserved = 1;
 static const int kVersion2_5 = 0;
@@ -120,7 +120,6 @@ void MP3StreamParser::Init(const InitCB& init_cb,
                            const NewBuffersCB& new_buffers_cb,
                            const NewTextBuffersCB& text_cb,
                            const NeedKeyCB& need_key_cb,
-                           const AddTextTrackCB& add_text_track_cb,
                            const NewMediaSegmentCB& new_segment_cb,
                            const base::Closure& end_of_segment_cb,
                            const LogCB& log_cb) {
@@ -164,7 +163,7 @@ bool MP3StreamParser::Parse(const uint8* buf, int size) {
     int data_size;
     queue_.Peek(&data, &data_size);
 
-    if (size < 4)
+    if (data_size < 4)
       break;
 
     uint32 start_code = data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3];
@@ -411,7 +410,7 @@ int MP3StreamParser::ParseMP3Frame(const uint8* data,
     timestamp_helper_->SetBaseTimestamp(base_timestamp);
 
     VideoDecoderConfig video_config;
-    bool success = config_cb_.Run(config_, video_config);
+    bool success = config_cb_.Run(config_, video_config, TextTrackConfigMap());
 
     if (!init_cb_.is_null())
       base::ResetAndReturn(&init_cb_).Run(success, kInfiniteDuration());

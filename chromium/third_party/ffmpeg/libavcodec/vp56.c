@@ -303,7 +303,7 @@ static void vp56_add_predictors_dc(VP56Context *s, VP56Frame ref_frame)
 }
 
 static void vp56_deblock_filter(VP56Context *s, uint8_t *yuv,
-                                int stride, int dx, int dy)
+                                ptrdiff_t stride, int dx, int dy)
 {
     int t = ff_vp56_filter_threshold[s->quantizer];
     if (dx)  s->vp56dsp.edge_filter_hor(yuv +         10-dx , stride, t);
@@ -311,7 +311,7 @@ static void vp56_deblock_filter(VP56Context *s, uint8_t *yuv,
 }
 
 static void vp56_mc(VP56Context *s, int b, int plane, uint8_t *src,
-                    int stride, int x, int y)
+                    ptrdiff_t stride, int x, int y)
 {
     uint8_t *dst = s->frames[VP56_FRAME_CURRENT]->data[plane] + s->block_offset[b];
     uint8_t *src_block;
@@ -340,10 +340,11 @@ static void vp56_mc(VP56Context *s, int b, int plane, uint8_t *src,
     if (x<0 || x+12>=s->plane_width[plane] ||
         y<0 || y+12>=s->plane_height[plane]) {
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
-                            src + s->block_offset[b] + (dy-2)*stride + (dx-2),
-                            stride, 12, 12, x, y,
-                            s->plane_width[plane],
-                            s->plane_height[plane]);
+                                 src + s->block_offset[b] + (dy-2)*stride + (dx-2),
+                                 stride, stride,
+                                 12, 12, x, y,
+                                 s->plane_width[plane],
+                                 s->plane_height[plane]);
         src_block = s->edge_emu_buffer;
         src_offset = 2 + 2*stride;
     } else if (deblock_filtering) {
@@ -470,18 +471,20 @@ static int vp56_size_changed(VP56Context *s)
     s->mb_height = (avctx->coded_height+15) / 16;
 
     if (s->mb_width > 1000 || s->mb_height > 1000) {
-        avcodec_set_dimensions(avctx, 0, 0);
+        ff_set_dimensions(avctx, 0, 0);
         av_log(avctx, AV_LOG_ERROR, "picture too big\n");
         return -1;
     }
 
-    s->above_blocks = av_realloc(s->above_blocks,
-                                 (4*s->mb_width+6) * sizeof(*s->above_blocks));
-    s->macroblocks = av_realloc(s->macroblocks,
-                                s->mb_width*s->mb_height*sizeof(*s->macroblocks));
+    av_reallocp_array(&s->above_blocks, 4*s->mb_width+6,
+                      sizeof(*s->above_blocks));
+    av_reallocp_array(&s->macroblocks, s->mb_width*s->mb_height,
+                      sizeof(*s->macroblocks));
     av_free(s->edge_emu_buffer_alloc);
     s->edge_emu_buffer_alloc = av_malloc(16*stride);
     s->edge_emu_buffer = s->edge_emu_buffer_alloc;
+    if (!s->above_blocks || !s->macroblocks || !s->edge_emu_buffer_alloc)
+        return AVERROR(ENOMEM);
     if (s->flip < 0)
         s->edge_emu_buffer += 15 * stride;
 
@@ -528,7 +531,7 @@ int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (ff_get_buffer(avctx, p, AV_GET_BUFFER_FLAG_REF) < 0)
         return -1;
 
-    if (s->has_alpha) {
+    if (avctx->pix_fmt == AV_PIX_FMT_YUVA420P) {
         av_frame_unref(s->alpha_context->frames[VP56_FRAME_CURRENT]);
         if ((ret = av_frame_ref(s->alpha_context->frames[VP56_FRAME_CURRENT], p)) < 0) {
             av_frame_unref(p);
@@ -543,7 +546,7 @@ int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         }
     }
 
-    if (s->has_alpha) {
+    if (avctx->pix_fmt == AV_PIX_FMT_YUVA420P) {
         int bak_w = avctx->width;
         int bak_h = avctx->height;
         int bak_cw = avctx->coded_width;
@@ -565,7 +568,7 @@ int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         }
     }
 
-    avctx->execute2(avctx, ff_vp56_decode_mbs, 0, 0, s->has_alpha + 1);
+    avctx->execute2(avctx, ff_vp56_decode_mbs, 0, 0, (avctx->pix_fmt == AV_PIX_FMT_YUVA420P) + 1);
 
     if ((res = av_frame_ref(data, p)) < 0)
         return res;
@@ -582,7 +585,8 @@ static int ff_vp56_decode_mbs(AVCodecContext *avctx, void *data,
     VP56Context *s = is_alpha ? s0->alpha_context : s0;
     AVFrame *const p = s->frames[VP56_FRAME_CURRENT];
     int mb_row, mb_col, mb_row_flip, mb_offset = 0;
-    int block, y, uv, stride_y, stride_uv;
+    int block, y, uv;
+    ptrdiff_t stride_y, stride_uv;
     int res;
 
     if (p->key_frame) {
@@ -688,6 +692,7 @@ av_cold int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
 
     s->avctx = avctx;
     avctx->pix_fmt = has_alpha ? AV_PIX_FMT_YUVA420P : AV_PIX_FMT_YUV420P;
+    if (avctx->skip_alpha) avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     ff_h264chroma_init(&s->h264chroma, 8);
     ff_hpeldsp_init(&s->hdsp, avctx->flags);

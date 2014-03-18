@@ -71,7 +71,7 @@ int SkReducedQuarticRoots(const double t4, const double t3, const double t2, con
         return num;
     }
     if (oneHint) {
-        SkASSERT(approximately_zero(t4 + t3 + t2 + t1 + t0));  // 1 is one root
+        SkASSERT(approximately_zero_double(t4 + t3 + t2 + t1 + t0));  // 1 is one root
         // note that -C == A + B + D + E
         int num = SkDCubic::RootsReal(t4, t4 + t3, -(t1 + t0), -t0, roots);
         for (int i = 0; i < num; ++i) {
@@ -152,7 +152,7 @@ int SkQuarticRootsReal(int firstCubicRoot, const double A, const double B, const
     // eliminate duplicates
     for (int i = 0; i < num - 1; ++i) {
         for (int j = i + 1; j < num; ) {
-            if (AlmostEqualUlps(s[i], s[j])) {
+            if (AlmostDequalUlps(s[i], s[j])) {
                 if (j < --num) {
                     s[j] = s[num];
                 }

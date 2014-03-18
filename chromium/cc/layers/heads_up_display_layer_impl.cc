@@ -12,6 +12,7 @@
 #include "cc/debug/debug_rect_history.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/debug/paint_time_counter.h"
+#include "cc/debug/traced_value.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
@@ -85,13 +86,15 @@ bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
     return false;
 
   if (!hud_resource_)
-    hud_resource_ = ScopedResource::create(resource_provider);
+    hud_resource_ = ScopedResource::Create(resource_provider);
 
   // TODO(danakj): The HUD could swap between two textures instead of creating a
   // texture every frame in ubercompositor.
   if (hud_resource_->size() != content_bounds() ||
-      resource_provider->InUseByConsumer(hud_resource_->id()))
+      (hud_resource_->id() &&
+       resource_provider->InUseByConsumer(hud_resource_->id()))) {
     hud_resource_->Free();
+  }
 
   if (!hud_resource_->id()) {
     hud_resource_->Allocate(content_bounds(),
@@ -132,8 +135,9 @@ void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
 }
 
 void HeadsUpDisplayLayerImpl::UpdateHudTexture(
+    DrawMode draw_mode,
     ResourceProvider* resource_provider) {
-  if (!hud_resource_->id())
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE || !hud_resource_->id())
     return;
 
   SkISize canvas_size;
@@ -144,6 +148,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
 
   if (canvas_size.width() != content_bounds().width() ||
       canvas_size.width() != content_bounds().height() || !hud_canvas_) {
+    TRACE_EVENT0("cc", "ResizeHudCanvas");
     bool opaque = false;
     hud_canvas_ = make_scoped_ptr(skia::CreateBitmapCanvas(
         content_bounds().width(), content_bounds().height(), opaque));
@@ -151,14 +156,18 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
 
   UpdateHudContents();
 
-  hud_canvas_->clear(SkColorSetARGB(0, 0, 0, 0));
-  hud_canvas_->save();
-  hud_canvas_->scale(contents_scale_x(), contents_scale_y());
+  {
+    TRACE_EVENT0("cc", "DrawHudContents");
+    hud_canvas_->clear(SkColorSetARGB(0, 0, 0, 0));
+    hud_canvas_->save();
+    hud_canvas_->scale(contents_scale_x(), contents_scale_y());
 
-  DrawHudContents(hud_canvas_.get());
+    DrawHudContents(hud_canvas_.get());
 
-  hud_canvas_->restore();
+    hud_canvas_->restore();
+  }
 
+  TRACE_EVENT0("cc", "UploadHudTexture");
   const SkBitmap* bitmap = &hud_canvas_->getDevice()->accessBitmap(false);
   SkAutoLockPixels locker(*bitmap);
 
@@ -642,6 +651,12 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
         fill_color = DebugColors::NonFastScrollableRectFillColor();
         stroke_width = DebugColors::NonFastScrollableRectBorderWidth();
         label_text = "repaints on scroll";
+        break;
+      case ANIMATION_BOUNDS_RECT_TYPE:
+        stroke_color = DebugColors::LayerAnimationBoundsBorderColor();
+        fill_color = DebugColors::LayerAnimationBoundsFillColor();
+        stroke_width = DebugColors::LayerAnimationBoundsBorderWidth();
+        label_text = "animation bounds";
         break;
     }
 

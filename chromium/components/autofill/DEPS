@@ -8,4 +8,5 @@ include_rules = [
   # the ability to use the content layer as appropriate.
   "-components/autofill/content",
   "-content/public/common",
+  "-ipc",
 ]

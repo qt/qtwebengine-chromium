@@ -15,6 +15,7 @@
 #include "content/common/content_export.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
+#include "content/public/common/page_transition_types.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/base/window_open_disposition.h"
@@ -46,6 +47,7 @@ class Size;
 namespace content {
 
 class BrowserContext;
+class FrameTree;
 class PageState;
 class RenderViewHost;
 class RenderViewHostDelegateView;
@@ -77,7 +79,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
  public:
   // RendererManagerment -------------------------------------------------------
   // Functions for managing switching of Renderers. For WebContents, this is
-  // implemented by the RenderViewHostManager.
+  // implemented by the RenderFrameHostManager.
 
   class CONTENT_EXPORT RendererManagement {
    public:
@@ -93,10 +95,17 @@ class CONTENT_EXPORT RenderViewHostDelegate {
         const base::TimeTicks& proceed_time) = 0;
 
     // The |pending_render_view_host| is ready to commit a page.  The delegate
-    // should ensure that the old RenderViewHost runs its unload handler first.
+    // should ensure that the old RenderViewHost runs its unload handler first
+    // and determine whether a RenderViewHost transfer is needed.
     virtual void OnCrossSiteResponse(
         RenderViewHost* pending_render_view_host,
-        const GlobalRequestID& global_request_id) = 0;
+        const GlobalRequestID& global_request_id,
+        bool is_transfer,
+        const std::vector<GURL>& transfer_url_chain,
+        const Referrer& referrer,
+        PageTransition page_transition,
+        int64 frame_id,
+        bool should_replace_current_entry) = 0;
 
    protected:
     virtual ~RendererManagement() {}
@@ -142,14 +151,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // RenderView is going to be destroyed
   virtual void RenderViewDeleted(RenderViewHost* render_view_host) {}
 
-  // The RenderView started a provisional load for a given frame.
-  virtual void DidStartProvisionalLoadForFrame(
-      RenderViewHost* render_view_host,
-      int64 frame_id,
-      int64 parent_frame_id,
-      bool main_frame,
-      const GURL& url) {}
-
   // The RenderView processed a redirect during a provisional load.
   //
   // TODO(creis): Remove this method and have the pre-rendering code listen to
@@ -186,7 +187,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The page's title was changed and should be updated.
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
-                           const string16& title,
+                           const base::string16& title,
                            base::i18n::TextDirection title_direction) {}
 
   // The page's encoding was changed and should be updated.
@@ -249,9 +250,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                               bool user_gesture) {}
 
   // The page wants to transfer the request to a new renderer.
+  // |redirect_chain| contains any redirect URLs (excluding |url|) that happened
+  // before the transfer.
   virtual void RequestTransferURL(
       const GURL& url,
+      const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
+      PageTransition page_transition,
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& old_request_id,
@@ -268,23 +273,23 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // A javascript message, confirmation or prompt should be shown.
   virtual void RunJavaScriptMessage(RenderViewHost* rvh,
-                                    const string16& message,
-                                    const string16& default_prompt,
+                                    const base::string16& message,
+                                    const base::string16& default_prompt,
                                     const GURL& frame_url,
                                     JavaScriptMessageType type,
                                     IPC::Message* reply_msg,
                                     bool* did_suppress_message) {}
 
   virtual void RunBeforeUnloadConfirm(RenderViewHost* rvh,
-                                      const string16& message,
+                                      const base::string16& message,
                                       bool is_reload,
                                       IPC::Message* reply_msg) {}
 
   // A message was added to to the console.
   virtual bool AddMessageToConsole(int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id);
+                                   const base::string16& source_id);
 
   // Return a dummy RendererPreferences object that will be used by the renderer
   // associated with the owning RenderViewHost.
@@ -369,8 +374,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void LostMouseLock() {}
 
   // The page is trying to open a new page (e.g. a popup window). The window
-  // should be created associated with the given route, but it should not be
-  // shown yet. That should happen in response to ShowCreatedWindow.
+  // should be created associated with the given |route_id| in process
+  // |render_process_id|, but it should not be shown yet. That should happen in
+  // response to ShowCreatedWindow.
   // |params.window_container_type| describes the type of RenderViewHost
   // container that is requested -- in particular, the window.open call may
   // have specified 'background' and 'persistent' in the feature string.
@@ -381,21 +387,24 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // Note: this is not called "CreateWindow" because that will clash with
   // the Windows function which is actually a #define.
   virtual void CreateNewWindow(
+      int render_process_id,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) {}
 
   // The page is trying to open a new widget (e.g. a select popup). The
-  // widget should be created associated with the given route, but it should
-  // not be shown yet. That should happen in response to ShowCreatedWidget.
+  // widget should be created associated with the given |route_id| in the
+  // process |render_process_id|, but it should not be shown yet. That should
+  // happen in response to ShowCreatedWidget.
   // |popup_type| indicates if the widget is a popup and what kind of popup it
   // is (select, autofill...).
-  virtual void CreateNewWidget(int route_id,
-                               WebKit::WebPopupType popup_type) {}
+  virtual void CreateNewWidget(int render_process_id,
+                               int route_id,
+                               blink::WebPopupType popup_type) {}
 
   // Creates a full screen RenderWidget. Similar to above.
-  virtual void CreateNewFullscreenWidget(int route_id) {}
+  virtual void CreateNewFullscreenWidget(int render_process_id, int route_id) {}
 
   // Show a previously created page with the specified disposition and bounds.
   // The window is identified by the route_id passed to CreateNewWindow.
@@ -430,6 +439,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // create the SessionStorageNamespace on the fly.
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance);
+
+  // Returns the FrameTree the render view should use. Guaranteed to be constant
+  // for the lifetime of the render view.
+  //
+  // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
+  // created by the RenderViewHost.
+  virtual FrameTree* GetFrameTree();
 
  protected:
   virtual ~RenderViewHostDelegate() {}

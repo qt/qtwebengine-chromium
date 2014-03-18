@@ -38,10 +38,10 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
 
-using WebKit::WebDragOperationsMask;
-using WebKit::WebDragOperationCopy;
-using WebKit::WebDragOperationLink;
-using WebKit::WebDragOperationMove;
+using blink::WebDragOperationsMask;
+using blink::WebDragOperationCopy;
+using blink::WebDragOperationLink;
+using blink::WebDragOperationMove;
 
 namespace content {
 namespace {
@@ -227,7 +227,7 @@ void WebContentsDragWin::PrepareDragForDownload(
     const GURL& page_url,
     const std::string& page_encoding) {
   // Parse the download metadata.
-  string16 mime_type;
+  base::string16 mime_type;
   base::FilePath file_name;
   GURL download_url;
   if (!ParseDownloadMetadata(drop_data.download_metadata,
@@ -247,8 +247,8 @@ void WebContentsDragWin::PrepareDragForDownload(
                             UTF16ToUTF8(mime_type),
                             default_name);
   base::FilePath temp_dir_path;
-  if (!file_util::CreateNewTempDirectory(
-          FILE_PATH_LITERAL("chrome_drag"), &temp_dir_path))
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("chrome_drag"),
+                                    &temp_dir_path))
     return;
   base::FilePath download_path =
       temp_dir_path.Append(generated_download_file_name);
@@ -284,7 +284,7 @@ void WebContentsDragWin::PrepareDragForFileContents(
   // Images without ALT text will only have a file extension so we need to
   // synthesize one from the provided extension and URL.
   if (file_name.BaseName().RemoveExtension().empty()) {
-    const string16 extension = file_name.Extension();
+    const base::string16 extension = file_name.Extension();
     // Retrieve the name from the URL.
     file_name = base::FilePath(
         net::GetSuggestedFilename(drop_data.url, "", "", "", "", ""));

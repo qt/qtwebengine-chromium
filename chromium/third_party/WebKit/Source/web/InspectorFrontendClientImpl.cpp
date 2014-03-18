@@ -37,16 +37,15 @@
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorFrontendHost.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/NotImplemented.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebString.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 InspectorFrontendClientImpl::InspectorFrontendClientImpl(Page* frontendPage, WebDevToolsFrontendClient* client, WebDevToolsFrontendImpl* frontend)
     : m_frontendPage(frontendPage)
@@ -63,8 +62,9 @@ InspectorFrontendClientImpl::~InspectorFrontendClientImpl()
 
 void InspectorFrontendClientImpl::windowObjectCleared()
 {
-    v8::HandleScope handleScope(v8::Isolate::GetCurrent());
-    v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script()->currentWorldContext() : v8::Local<v8::Context>();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script().currentWorldContext() : v8::Local<v8::Context>();
     v8::Context::Scope contextScope(frameContext);
 
     if (m_frontendHost)
@@ -73,37 +73,47 @@ void InspectorFrontendClientImpl::windowObjectCleared()
     v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), v8::Handle<v8::Object>(), frameContext->GetIsolate());
     v8::Handle<v8::Object> global = frameContext->Global();
 
-    global->Set(v8::String::New("InspectorFrontendHost"), frontendHostObj);
+    global->Set(v8::String::NewFromUtf8(isolate, "InspectorFrontendHost"), frontendHostObj);
 
-    ScriptController* scriptController = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script() : 0;
+    ScriptController* scriptController = m_frontendPage->mainFrame() ? &m_frontendPage->mainFrame()->script() : 0;
     if (scriptController) {
         String installLegacyOverrides =
-            "(function(host, legacyMethodNames) {"
-            "    function dispatch(methodName) {"
+            "" // Support for legacy front-ends (<M31). Do not add items here.
+            "(function(host, methodNames) {"
+            "    var callId = 0;"
+            "    function dispatch(methodName)"
+            "    {"
             "        var argsArray = Array.prototype.slice.call(arguments, 1);"
-            "        var message = {'method': methodName};"
+            "        var message = {\"method\": methodName, \"id\": ++callId};"
             "        if (argsArray.length)"
             "            message.params = argsArray;"
             "        this.sendMessageToEmbedder(JSON.stringify(message));"
             "    };"
-            "    legacyMethodNames.forEach(function(methodName) {"
-            "        host[methodName] = dispatch.bind(host, methodName);"
-            "    });"
+            "    methodNames.forEach(function(methodName) { host[methodName] = dispatch.bind(host, methodName); });"
             "})(InspectorFrontendHost,"
-            "    ['moveWindowBy',"
-            "     'bringToFront',"
-            "     'requestSetDockSide',"
-            "     'openInNewTab',"
-            "     'save',"
+            "    ['addFileSystem',"
             "     'append',"
-            "     'requestFileSystems',"
+            "     'bringToFront',"
             "     'indexPath',"
-            "     'stopIndexing',"
+            "     'moveWindowBy',"
+            "     'openInNewTab',"
+            "     'removeFileSystem',"
+            "     'requestFileSystems',"
+            "     'requestSetDockSide',"
+            "     'save',"
             "     'searchInPath',"
-            "     'addFileSystem',"
-            "     'removeFileSystem']);";
-
-        scriptController->executeScriptInMainWorld(ScriptSourceCode(installLegacyOverrides));
+            "     'stopIndexing']);"
+            ""
+            "" // Support for legacy front-ends (<M28). Do not add items here.
+            "InspectorFrontendHost.canInspectWorkers = function() { return true; };"
+            "InspectorFrontendHost.canSaveAs = function() { return true; };"
+            "InspectorFrontendHost.canSave = function() { return true; };"
+            "InspectorFrontendHost.supportsFileSystems = function() { return true; };"
+            "InspectorFrontendHost.loaded = function() {};"
+            "InspectorFrontendHost.hiddenPanels = function() { return ""; };"
+            "InspectorFrontendHost.localizedStringsURL = function() { return ""; };"
+            "InspectorFrontendHost.close = function(url) { };";
+        scriptController->executeScriptInMainWorld(installLegacyOverrides, ScriptController::ExecuteScriptWhenScriptsDisabled);
     }
 }
 
@@ -127,4 +137,4 @@ bool InspectorFrontendClientImpl::isUnderTest()
     return m_client->isUnderTest();
 }
 
-} // namespace WebKit
+} // namespace blink

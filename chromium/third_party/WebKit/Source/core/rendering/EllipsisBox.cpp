@@ -20,16 +20,16 @@
 #include "config.h"
 #include "core/rendering/EllipsisBox.h"
 
-#include "core/platform/graphics/DrawLooper.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/TextRun.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RootInlineBox.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/rendering/style/ShadowList.h"
+#include "platform/fonts/Font.h"
+#include "platform/graphics/DrawLooper.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/text/TextRun.h"
 
 namespace WebCore {
 
@@ -37,14 +37,25 @@ void EllipsisBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, La
 {
     GraphicsContext* context = paintInfo.context;
     RenderStyle* style = m_renderer->style(isFirstLineStyle());
+
+    const Font& font = style->font();
+    FloatPoint boxOrigin = locationIncludingFlipping();
+    LayoutPoint adjustedPaintOffset = paintOffset;
+    if (!isHorizontal())
+        adjustedPaintOffset.move(0, -virtualLogicalHeight());
+    boxOrigin.move(adjustedPaintOffset.x(), adjustedPaintOffset.y());
+    FloatRect boxRect(boxOrigin, LayoutSize(logicalWidth(), virtualLogicalHeight()));
+    GraphicsContextStateSaver stateSaver(*context);
+    if (!isHorizontal())
+        context->concatCTM(InlineTextBox::rotation(boxRect, InlineTextBox::Clockwise));
+    FloatPoint textOrigin = FloatPoint(boxOrigin.x(), boxOrigin.y() + font.fontMetrics().ascent());
+
     Color styleTextColor = m_renderer->resolveColor(style, CSSPropertyWebkitTextFillColor);
     if (styleTextColor != context->fillColor())
         context->setFillColor(styleTextColor);
 
-    Color textColor = styleTextColor;
-    const Font& font = style->font();
     if (selectionState() != RenderObject::SelectionNone) {
-        paintSelection(context, paintOffset, style, font);
+        paintSelection(context, boxOrigin, style, font);
 
         // Select the correct color for painting the text.
         Color foreground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionForegroundColor();
@@ -53,27 +64,24 @@ void EllipsisBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, La
     }
 
     // Text shadows are disabled when printing. http://crbug.com/258321
-    const ShadowData* shadow = context->printing() ? 0 : style->textShadow();
-    bool hasShadow = shadow;
+    const ShadowList* shadowList = context->printing() ? 0 : style->textShadow();
+    bool hasShadow = shadowList;
     if (hasShadow) {
         DrawLooper drawLooper;
-        do {
-            int shadowX = isHorizontal() ? shadow->x() : shadow->y();
-            int shadowY = isHorizontal() ? shadow->y() : -shadow->x();
+        for (size_t i = shadowList->shadows().size(); i--; ) {
+            const ShadowData& shadow = shadowList->shadows()[i];
+            int shadowX = isHorizontal() ? shadow.x() : shadow.y();
+            int shadowY = isHorizontal() ? shadow.y() : -shadow.x();
             FloatSize offset(shadowX, shadowY);
-            drawLooper.addShadow(offset, shadow->blur(), m_renderer->resolveColor(shadow->color()),
+            drawLooper.addShadow(offset, shadow.blur(), m_renderer->resolveColor(shadow.color()),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowIgnoresAlpha);
-        } while ((shadow = shadow->next()));
+        }
         drawLooper.addUnmodifiedContent();
         context->setDrawLooper(drawLooper);
     }
 
     // FIXME: Why is this always LTR? Fix by passing correct text run flags below.
-    FloatPoint boxOrigin(paintOffset);
-    boxOrigin.move(x(), y());
-    FloatRect boxRect(boxOrigin, LayoutSize(logicalWidth(), logicalHeight()));
-    FloatPoint textOrigin(boxOrigin.x(), boxOrigin.y() + style->fontMetrics().ascent());
-    TextRun textRun = RenderBlock::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion);
+    TextRun textRun = RenderBlockFlow::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion);
     TextRunPaintInfo textRunPaintInfo(textRun);
     textRunPaintInfo.bounds = boxRect;
     context->drawText(font, textRunPaintInfo, textOrigin);
@@ -124,10 +132,10 @@ IntRect EllipsisBox::selectionRect()
     RenderStyle* style = m_renderer->style(isFirstLineStyle());
     const Font& font = style->font();
     // FIXME: Why is this always LTR? Fix by passing correct text run flags below.
-    return enclosingIntRect(font.selectionRectForText(RenderBlock::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion), IntPoint(x(), y() + root()->selectionTopAdjustedForPrecedingBlock()), root()->selectionHeightAdjustedForPrecedingBlock()));
+    return enclosingIntRect(font.selectionRectForText(RenderBlockFlow::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion), IntPoint(logicalLeft(), logicalTop() + root()->selectionTopAdjustedForPrecedingBlock()), root()->selectionHeightAdjustedForPrecedingBlock()));
 }
 
-void EllipsisBox::paintSelection(GraphicsContext* context, const LayoutPoint& paintOffset, RenderStyle* style, const Font& font)
+void EllipsisBox::paintSelection(GraphicsContext* context, const FloatPoint& boxOrigin, RenderStyle* style, const Font& font)
 {
     Color textColor = m_renderer->resolveColor(style, CSSPropertyColor);
     Color c = m_renderer->selectionBackgroundColor();
@@ -140,13 +148,16 @@ void EllipsisBox::paintSelection(GraphicsContext* context, const LayoutPoint& pa
         c = Color(0xff - c.red(), 0xff - c.green(), 0xff - c.blue());
 
     GraphicsContextStateSaver stateSaver(*context);
+    LayoutUnit selectionBottom = root()->selectionBottom();
     LayoutUnit top = root()->selectionTop();
     LayoutUnit h = root()->selectionHeight();
-    FloatRect clipRect(x() + paintOffset.x(), top + paintOffset.y(), m_logicalWidth, h);
+    const int deltaY = roundToInt(renderer()->style()->isFlippedLinesWritingMode() ? selectionBottom - logicalBottom() : logicalTop() - top);
+    const FloatPoint localOrigin(boxOrigin.x(), boxOrigin.y() - deltaY);
+    FloatRect clipRect(localOrigin, FloatSize(m_logicalWidth, h));
     alignSelectionRectToDevicePixels(clipRect);
     context->clip(clipRect);
     // FIXME: Why is this always LTR? Fix by passing correct text run flags below.
-    context->drawHighlightForText(font, RenderBlock::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion), roundedIntPoint(LayoutPoint(x() + paintOffset.x(), y() + paintOffset.y() + top)), h, c);
+    context->drawHighlightForText(font, RenderBlockFlow::constructTextRun(renderer(), font, m_str, style, TextRun::AllowTrailingExpansion), localOrigin, h, c);
 }
 
 bool EllipsisBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
@@ -164,7 +175,9 @@ bool EllipsisBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
         }
     }
 
-    LayoutRect boundsRect(adjustedLocation, LayoutSize(m_logicalWidth, m_height));
+    FloatPoint boxOrigin = locationIncludingFlipping();
+    boxOrigin.moveBy(accumulatedOffset);
+    FloatRect boundsRect(boxOrigin, size());
     if (visibleToHitTestRequest(request) && boundsRect.intersects(HitTestLocation::rectForPoint(locationInContainer.point(), 0, 0, 0, 0))) {
         renderer()->updateHitTestResult(result, locationInContainer.point() - toLayoutSize(adjustedLocation));
         if (!result.addNodeToRectBasedTestResult(renderer()->node(), request, locationInContainer, boundsRect))

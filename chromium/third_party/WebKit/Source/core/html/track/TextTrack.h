@@ -33,15 +33,14 @@
 
 namespace WebCore {
 
+class Document;
 class ExceptionState;
 class HTMLMediaElement;
 class TextTrack;
 class TextTrackCue;
 class TextTrackCueList;
-#if ENABLE(WEBVTT_REGIONS)
-class TextTrackRegion;
-class TextTrackRegionList;
-#endif
+class VTTRegion;
+class VTTRegionList;
 
 class TextTrackClient {
 public:
@@ -56,16 +55,16 @@ public:
 
 class TextTrack : public TrackBase, public ScriptWrappable {
 public:
-    static PassRefPtr<TextTrack> create(ScriptExecutionContext* context, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
+    static PassRefPtr<TextTrack> create(Document& document, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
     {
-        return adoptRef(new TextTrack(context, client, kind, label, language, AddTrack));
+        return adoptRef(new TextTrack(document, client, kind, label, language, emptyAtom, AddTrack));
     }
     virtual ~TextTrack();
 
     void setMediaElement(HTMLMediaElement* element) { m_mediaElement = element; }
     HTMLMediaElement* mediaElement() { return m_mediaElement; }
 
-    AtomicString kind() const { return m_kind; }
+    const AtomicString& kind() const { return m_kind; }
     void setKind(const AtomicString&);
 
     static const AtomicString& subtitlesKeyword();
@@ -81,12 +80,15 @@ public:
     AtomicString language() const { return m_language; }
     void setLanguage(const AtomicString& language) { m_language = language; }
 
+    AtomicString id() const { return m_id; }
+    void setId(const AtomicString& id) { m_id = id; }
+
     static const AtomicString& disabledKeyword();
     static const AtomicString& hiddenKeyword();
     static const AtomicString& showingKeyword();
 
     AtomicString mode() const { return m_mode; }
-    virtual void setMode(const AtomicString&);
+    void setMode(const AtomicString&);
 
     enum ReadinessState { NotLoaded = 0, Loading = 1, Loaded = 2, FailedToLoad = 3 };
     ReadinessState readinessState() const { return m_readinessState; }
@@ -100,13 +102,10 @@ public:
 
     void addCue(PassRefPtr<TextTrackCue>);
     void removeCue(TextTrackCue*, ExceptionState&);
-    bool hasCue(TextTrackCue*);
 
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* regions();
-    void addRegion(PassRefPtr<TextTrackRegion>);
-    void removeRegion(TextTrackRegion*, ExceptionState&);
-#endif
+    VTTRegionList* regions();
+    void addRegion(PassRefPtr<VTTRegion>);
+    void removeRegion(VTTRegion*, ExceptionState&);
 
     void cueWillChange(TextTrackCue*);
     void cueDidChange(TextTrackCue*);
@@ -115,12 +114,6 @@ public:
 
     enum TextTrackType { TrackElement, AddTrack, InBand };
     TextTrackType trackType() const { return m_trackType; }
-
-    virtual bool isClosedCaptions() const { return false; }
-
-    virtual bool containsOnlyForcedSubtitles() const { return false; }
-    virtual bool isMainProgramContent() const;
-    virtual bool isEasyToRead() const { return false; }
 
     int trackIndex();
     void invalidateTrackIndex();
@@ -136,27 +129,31 @@ public:
 
     void removeAllCues();
 
+    Document& document() const { return *m_document; }
+
+    // EventTarget methods
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+
 protected:
-    TextTrack(ScriptExecutionContext*, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType);
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* regionList();
-#endif
+    TextTrack(Document&, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
 
     RefPtr<TextTrackCueList> m_cues;
 
 private:
-
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* ensureTextTrackRegionList();
-    RefPtr<TextTrackRegionList> m_regions;
-#endif
+    VTTRegionList* ensureVTTRegionList();
+    RefPtr<VTTRegionList> m_regions;
 
     TextTrackCueList* ensureTextTrackCueList();
+
+    // FIXME: Remove this pointer and get the Document from m_client
+    Document* m_document;
 
     HTMLMediaElement* m_mediaElement;
     AtomicString m_kind;
     AtomicString m_label;
     AtomicString m_language;
+    AtomicString m_id;
     AtomicString m_mode;
     TextTrackClient* m_client;
     TextTrackType m_trackType;

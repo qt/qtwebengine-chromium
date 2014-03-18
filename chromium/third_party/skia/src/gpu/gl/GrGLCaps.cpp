@@ -11,8 +11,6 @@
 #include "SkTSearch.h"
 #include "SkTSort.h"
 
-SK_DEFINE_INST_COUNT(GrGLCaps)
-
 GrGLCaps::GrGLCaps() {
     this->reset();
 }
@@ -48,6 +46,7 @@ void GrGLCaps::reset() {
     fIsCoreProfile = false;
     fFixedFunctionSupport = false;
     fDiscardFBSupport = false;
+    fFullClearIsFree = false;
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) : GrDrawTargetCaps() {
@@ -84,6 +83,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fIsCoreProfile = caps.fIsCoreProfile;
     fFixedFunctionSupport = caps.fFixedFunctionSupport;
     fDiscardFBSupport = caps.fDiscardFBSupport;
+    fFullClearIsFree = caps.fFullClearIsFree;
 
     return *this;
 }
@@ -224,6 +224,10 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
 
     fDiscardFBSupport = ctxInfo.hasExtension("GL_EXT_discard_framebuffer");
 
+    if (kARM_GrGLVendor == ctxInfo.vendor() || kImagination_GrGLVendor == ctxInfo.vendor()) {
+        fFullClearIsFree = true;
+    }
+
     if (kDesktop_GrGLBinding == binding) {
         fVertexArrayObjectSupport = version >= GR_GL_VER(3, 0) ||
                                     ctxInfo.hasExtension("GL_ARB_vertex_array_object");
@@ -302,20 +306,14 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     // attachment, hence this min:
     fMaxRenderTargetSize = GrMin(fMaxTextureSize, fMaxRenderTargetSize);
 
-    fPathStencilingSupport = GR_GL_USE_NV_PATH_RENDERING &&
-                             ctxInfo.hasExtension("GL_NV_path_rendering");
+    fPathRenderingSupport = GR_GL_USE_NV_PATH_RENDERING &&
+                            ctxInfo.hasExtension("GL_NV_path_rendering");
 
     fDstReadInShaderSupport = kNone_FBFetchType != fFBFetchType;
 
-#if 0
-    // This has to be temporarily disabled. On Android it causes the texture
-    // usage to become front loaded and the OS kills the process. It can
-    // be re-enabled once the more dynamic (ref-driven) cache clearing
-    // system is in place.
-    fReuseScratchTextures = kARM_GrGLVendor != ctxInfo.vendor();
-#else
-    fReuseScratchTextures = true;
-#endif
+    // Disable scratch texture reuse on Mali and Adreno devices
+    fReuseScratchTextures = kARM_GrGLVendor != ctxInfo.vendor() &&
+                            kQualcomm_GrGLVendor != ctxInfo.vendor();
 
     // Enable supported shader-related caps
     if (kDesktop_GrGLBinding == binding) {
@@ -333,6 +331,94 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxSampleCount);
     } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxSampleCount);
+    }
+
+    this->initConfigRenderableTable(ctxInfo);
+}
+
+void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
+
+    // OpenGL < 3.0
+    //  no support for render targets unless the GL_ARB_framebuffer_object
+    //  extension is supported (in which case we get ALPHA, RED, RG, RGB,
+    //  RGBA (ALPHA8, RGBA4, RGBA8) for OpenGL > 1.1). Note that we
+    //  probably don't get R8 in this case.
+
+    // OpenGL 3.0
+    //  base color renderable: ALPHA, RED, RG, RGB, and RGBA
+    //  sized derivatives: ALPHA8, R8, RGBA4, RGBA8
+
+    // >= OpenGL 3.1
+    //  base color renderable: RED, RG, RGB, and RGBA
+    //  sized derivatives: R8, RGBA4, RGBA8
+    //  if the GL_ARB_compatibility extension is supported then we get back
+    //  support for GL_ALPHA and ALPHA8
+
+    // GL_EXT_bgra adds BGRA render targets to any version
+
+    // ES 2.0
+    //  color renderable: RGBA4, RGB5_A1, RGB565
+    //  GL_EXT_texture_rg adds support for R8 as a color render target
+    //  GL_OES_rgb8_rgba8 and/or GL_ARM_rgba8 adds support for RGBA8
+    //  GL_EXT_texture_format_BGRA8888 and/or GL_APPLE_texture_format_BGRA8888 added BGRA support
+
+    // ES 3.0
+    // Same as ES 2.0 except R8 and RGBA8 are supported without extensions (the functions called
+    // below already account for this).
+
+    enum {
+        kNo_MSAA = 0,
+        kYes_MSAA = 1,
+    };
+
+    if (kDesktop_GrGLBinding == ctxInfo.binding()) {
+        // Post 3.0 we will get R8
+        // Prior to 3.0 we will get ALPHA8 (with GL_ARB_framebuffer_object)
+        if (ctxInfo.version() >= GR_GL_VER(3,0) ||
+            ctxInfo.hasExtension("GL_ARB_framebuffer_object")) {
+            fConfigRenderSupport[kAlpha_8_GrPixelConfig][kNo_MSAA] = true;
+            fConfigRenderSupport[kAlpha_8_GrPixelConfig][kYes_MSAA] = true;
+        }
+    } else {
+        // On ES we can only hope for R8
+        fConfigRenderSupport[kAlpha_8_GrPixelConfig][kNo_MSAA] = fTextureRedSupport;
+        fConfigRenderSupport[kAlpha_8_GrPixelConfig][kYes_MSAA] = fTextureRedSupport;
+    }
+
+    if (kDesktop_GrGLBinding != ctxInfo.binding()) {
+        // only available in ES
+        fConfigRenderSupport[kRGB_565_GrPixelConfig][kNo_MSAA] = true;
+        fConfigRenderSupport[kRGB_565_GrPixelConfig][kYes_MSAA] = true;
+    }
+
+    // we no longer support 444 as a render target
+    fConfigRenderSupport[kRGBA_4444_GrPixelConfig][kNo_MSAA]  = false;
+    fConfigRenderSupport[kRGBA_4444_GrPixelConfig][kYes_MSAA]  = false;
+
+    if (this->fRGBA8RenderbufferSupport) {
+        fConfigRenderSupport[kRGBA_8888_GrPixelConfig][kNo_MSAA]  = true;
+        fConfigRenderSupport[kRGBA_8888_GrPixelConfig][kYes_MSAA]  = true;
+    }
+
+    if (this->fBGRAFormatSupport) {
+        fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kNo_MSAA]  = true;
+        // The GL_EXT_texture_format_BGRA8888 extension does not add BGRA to the list of
+        // configs that are color-renderable and can be passed to glRenderBufferStorageMultisample.
+        // Chromium may have an extension to allow BGRA renderbuffers to work on desktop platforms.
+        if (ctxInfo.extensions().has("GL_CHROMIUM_renderbuffer_format_BGRA8888")) {
+            fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kYes_MSAA] = true;
+        } else {
+            fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kYes_MSAA] =
+                !fBGRAIsInternalFormat || !this->usesMSAARenderBuffers();
+        }
+    }
+
+    // If we don't support MSAA then undo any places above where we set a config as renderable with
+    // msaa.
+    if (kNone_MSFBOType == fMSFBOType) {
+        for (int i = 0; i < kGrPixelConfigCnt; ++i) {
+            fConfigRenderSupport[i][kYes_MSAA] = false;
+        }
     }
 }
 
@@ -498,13 +584,13 @@ bool GrGLCaps::isColorConfigAndStencilFormatVerified(
     return false;
 }
 
-void GrGLCaps::print() const {
+SkString GrGLCaps::dump() const {
 
-    INHERITED::print();
+    SkString r = INHERITED::dump();
 
-    GrPrintf("--- GL-Specific ---\n");
+    r.appendf("--- GL-Specific ---\n");
     for (int i = 0; i < fStencilFormats.count(); ++i) {
-        GrPrintf("Stencil Format %d, stencil bits: %02d, total bits: %02d\n",
+        r.appendf("Stencil Format %d, stencil bits: %02d, total bits: %02d\n",
                  i,
                  fStencilFormats[i].fStencilBits,
                  fStencilFormats[i].fTotalBits);
@@ -539,34 +625,36 @@ void GrGLCaps::print() const {
     GR_STATIC_ASSERT(GR_ARRAY_COUNT(kFBFetchTypeStr) == kLast_FBFetchType + 1);
 
 
-    GrPrintf("Core Profile: %s\n", (fIsCoreProfile ? "YES" : "NO"));
-    GrPrintf("Fixed Function Support: %s\n", (fFixedFunctionSupport ? "YES" : "NO"));
-    GrPrintf("MSAA Type: %s\n", kMSFBOExtStr[fMSFBOType]);
-    GrPrintf("FB Fetch Type: %s\n", kFBFetchTypeStr[fFBFetchType]);
-    GrPrintf("Max FS Uniform Vectors: %d\n", fMaxFragmentUniformVectors);
-    GrPrintf("Max FS Texture Units: %d\n", fMaxFragmentTextureUnits);
+    r.appendf("Core Profile: %s\n", (fIsCoreProfile ? "YES" : "NO"));
+    r.appendf("Fixed Function Support: %s\n", (fFixedFunctionSupport ? "YES" : "NO"));
+    r.appendf("MSAA Type: %s\n", kMSFBOExtStr[fMSFBOType]);
+    r.appendf("FB Fetch Type: %s\n", kFBFetchTypeStr[fFBFetchType]);
+    r.appendf("Max FS Uniform Vectors: %d\n", fMaxFragmentUniformVectors);
+    r.appendf("Max FS Texture Units: %d\n", fMaxFragmentTextureUnits);
     if (fFixedFunctionSupport) {
-        GrPrintf("Max Fixed Function Texture Coords: %d\n", fMaxFixedFunctionTextureCoords);
+        r.appendf("Max Fixed Function Texture Coords: %d\n", fMaxFixedFunctionTextureCoords);
     }
-    GrPrintf("Max Vertex Attributes: %d\n", fMaxVertexAttributes);
-    GrPrintf("Support RGBA8 Render Buffer: %s\n", (fRGBA8RenderbufferSupport ? "YES": "NO"));
-    GrPrintf("BGRA support: %s\n", (fBGRAFormatSupport ? "YES": "NO"));
-    GrPrintf("BGRA is an internal format: %s\n", (fBGRAIsInternalFormat ? "YES": "NO"));
-    GrPrintf("Support texture swizzle: %s\n", (fTextureSwizzleSupport ? "YES": "NO"));
-    GrPrintf("Unpack Row length support: %s\n", (fUnpackRowLengthSupport ? "YES": "NO"));
-    GrPrintf("Unpack Flip Y support: %s\n", (fUnpackFlipYSupport ? "YES": "NO"));
-    GrPrintf("Pack Row length support: %s\n", (fPackRowLengthSupport ? "YES": "NO"));
-    GrPrintf("Pack Flip Y support: %s\n", (fPackFlipYSupport ? "YES": "NO"));
+    r.appendf("Max Vertex Attributes: %d\n", fMaxVertexAttributes);
+    r.appendf("Support RGBA8 Render Buffer: %s\n", (fRGBA8RenderbufferSupport ? "YES": "NO"));
+    r.appendf("BGRA support: %s\n", (fBGRAFormatSupport ? "YES": "NO"));
+    r.appendf("BGRA is an internal format: %s\n", (fBGRAIsInternalFormat ? "YES": "NO"));
+    r.appendf("Support texture swizzle: %s\n", (fTextureSwizzleSupport ? "YES": "NO"));
+    r.appendf("Unpack Row length support: %s\n", (fUnpackRowLengthSupport ? "YES": "NO"));
+    r.appendf("Unpack Flip Y support: %s\n", (fUnpackFlipYSupport ? "YES": "NO"));
+    r.appendf("Pack Row length support: %s\n", (fPackRowLengthSupport ? "YES": "NO"));
+    r.appendf("Pack Flip Y support: %s\n", (fPackFlipYSupport ? "YES": "NO"));
 
-    GrPrintf("Texture Usage support: %s\n", (fTextureUsageSupport ? "YES": "NO"));
-    GrPrintf("Texture Storage support: %s\n", (fTexStorageSupport ? "YES": "NO"));
-    GrPrintf("GL_R support: %s\n", (fTextureRedSupport ? "YES": "NO"));
-    GrPrintf("GL_ARB_imaging support: %s\n", (fImagingSupport ? "YES": "NO"));
-    GrPrintf("Two Format Limit: %s\n", (fTwoFormatLimit ? "YES": "NO"));
-    GrPrintf("Fragment coord conventions support: %s\n",
+    r.appendf("Texture Usage support: %s\n", (fTextureUsageSupport ? "YES": "NO"));
+    r.appendf("Texture Storage support: %s\n", (fTexStorageSupport ? "YES": "NO"));
+    r.appendf("GL_R support: %s\n", (fTextureRedSupport ? "YES": "NO"));
+    r.appendf("GL_ARB_imaging support: %s\n", (fImagingSupport ? "YES": "NO"));
+    r.appendf("Two Format Limit: %s\n", (fTwoFormatLimit ? "YES": "NO"));
+    r.appendf("Fragment coord conventions support: %s\n",
              (fFragCoordsConventionSupport ? "YES": "NO"));
-    GrPrintf("Vertex array object support: %s\n", (fVertexArrayObjectSupport ? "YES": "NO"));
-    GrPrintf("Use non-VBO for dynamic data: %s\n",
+    r.appendf("Vertex array object support: %s\n", (fVertexArrayObjectSupport ? "YES": "NO"));
+    r.appendf("Use non-VBO for dynamic data: %s\n",
              (fUseNonVBOVertexAndIndexDynamicData ? "YES" : "NO"));
-    GrPrintf("Discard FrameBuffer support: %s\n", (fDiscardFBSupport ? "YES" : "NO"));
+    r.appendf("Discard FrameBuffer support: %s\n", (fDiscardFBSupport ? "YES" : "NO"));
+    r.appendf("Full screen clear is free: %s\n", (fFullClearIsFree ? "YES" : "NO"));
+    return r;
 }

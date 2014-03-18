@@ -26,8 +26,7 @@
 #ifndef WebGLObject_h
 #define WebGLObject_h
 
-#include "core/platform/graphics/GraphicsContext3D.h"
-
+#include "platform/graphics/GraphicsContext3D.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {

@@ -72,7 +72,7 @@ void SplitTextNodeCommand::doUnapply()
     if (!m_text1 || !m_text1->rendererIsEditable())
         return;
 
-    ASSERT(&m_text1->document() == &document());
+    ASSERT(m_text1->document() == document());
 
     String prefixText = m_text1->data();
 
@@ -96,11 +96,11 @@ void SplitTextNodeCommand::doReapply()
 
 void SplitTextNodeCommand::insertText1AndTrimText2()
 {
-    TrackExceptionState es;
-    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), exceptionState);
+    if (exceptionState.hadException())
         return;
-    m_text2->deleteData(0, m_offset, es, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
+    m_text2->deleteData(0, m_offset, exceptionState, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 }
 
 } // namespace WebCore

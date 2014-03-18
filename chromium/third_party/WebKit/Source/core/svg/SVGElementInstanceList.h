@@ -28,10 +28,9 @@ namespace WebCore {
 
 class SVGElementInstance;
 
-class SVGElementInstanceList : public RefCounted<SVGElementInstanceList>, public ScriptWrappable {
+class SVGElementInstanceList FINAL : public RefCounted<SVGElementInstanceList>, public ScriptWrappable {
 public:
     static PassRefPtr<SVGElementInstanceList> create(PassRefPtr<SVGElementInstance> root) { return adoptRef(new SVGElementInstanceList(root)); }
-    virtual ~SVGElementInstanceList();
 
     unsigned length() const;
     SVGElementInstance* item(unsigned index);

@@ -29,7 +29,8 @@ RichNotificationData::RichNotificationData()
       never_timeout(false),
       timestamp(base::Time::Now()),
       progress(0),
-      should_make_spoken_feedback_for_popup_updates(true) {}
+      should_make_spoken_feedback_for_popup_updates(true),
+      clickable(true) {}
 
 RichNotificationData::RichNotificationData(const RichNotificationData& other)
     : priority(other.priority),
@@ -42,7 +43,8 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
       progress(other.progress),
       buttons(other.buttons),
       should_make_spoken_feedback_for_popup_updates(
-          other.should_make_spoken_feedback_for_popup_updates) {}
+          other.should_make_spoken_feedback_for_popup_updates),
+      clickable(other.clickable) {}
 
 RichNotificationData::~RichNotificationData() {}
 
@@ -104,9 +106,13 @@ Notification& Notification::operator=(const Notification& other) {
 
 Notification::~Notification() {}
 
+bool Notification::IsRead() const {
+  return is_read_ || optional_fields_.priority == MIN_PRIORITY;
+}
+
 void Notification::CopyState(Notification* base) {
   shown_as_popup_ = base->shown_as_popup();
-  is_read_ = base->is_read();
+  is_read_ = base->is_read_;
   is_expanded_ = base->is_expanded();
   if (!delegate_.get())
     delegate_ = base->delegate();
@@ -130,7 +136,7 @@ scoped_ptr<Notification> Notification::CreateSystemNotification(
     const base::string16& title,
     const base::string16& message,
     const gfx::Image& icon,
-    int system_component_id,
+    const std::string& system_component_id,
     const base::Closure& click_callback) {
   scoped_ptr<Notification> notification(
       new Notification(
@@ -140,7 +146,7 @@ scoped_ptr<Notification> Notification::CreateSystemNotification(
           message,
           icon,
           base::string16()  /* display_source */,
-          NotifierId(system_component_id),
+          NotifierId(NotifierId::SYSTEM_COMPONENT, system_component_id),
           RichNotificationData(),
           new HandleNotificationClickedDelegate(click_callback)));
   notification->SetSystemPriority();

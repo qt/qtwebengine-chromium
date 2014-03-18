@@ -37,22 +37,21 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLFieldSetElement::HTMLFieldSetElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLFormControlElement(tagName, document, form)
+inline HTMLFieldSetElement::HTMLFieldSetElement(Document& document, HTMLFormElement* form)
+    : HTMLFormControlElement(fieldsetTag, document, form)
     , m_documentVersion(0)
 {
-    ASSERT(hasTagName(fieldsetTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLFieldSetElement(tagName, document, form));
+    return adoptRef(new HTMLFieldSetElement(document, form));
 }
 
-void HTMLFieldSetElement::invalidateDisabledStateUnder(Element* base)
+void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
 {
-    for (Element* element = ElementTraversal::firstWithin(base); element; element = ElementTraversal::next(element, base)) {
+    for (Element* element = ElementTraversal::firstWithin(base); element; element = ElementTraversal::next(*element, &base)) {
         if (element->isFormControlElement())
             toHTMLFormControlElement(element)->ancestorDisabledStateWasChanged();
     }
@@ -62,15 +61,15 @@ void HTMLFieldSetElement::disabledAttributeChanged()
 {
     // This element must be updated before the style of nodes in its subtree gets recalculated.
     HTMLFormControlElement::disabledAttributeChanged();
-    invalidateDisabledStateUnder(this);
+    invalidateDisabledStateUnder(*this);
 }
 
 void HTMLFieldSetElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     HTMLFormControlElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    for (Element* element = ElementTraversal::firstWithin(this); element; element = ElementTraversal::nextSkippingChildren(element, this)) {
+    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::nextSkippingChildren(*element, this)) {
         if (element->hasTagName(legendTag))
-            invalidateDisabledStateUnder(element);
+            invalidateDisabledStateUnder(*element);
     }
 }
 
@@ -92,7 +91,7 @@ RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const
 {
-    for (Element* child = ElementTraversal::firstWithin(this); child; child = ElementTraversal::nextSkippingChildren(child, this)) {
+    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSkippingChildren(*child, this)) {
         if (child->hasTagName(legendTag))
             return toHTMLLegendElement(child);
     }
@@ -114,7 +113,7 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
 
     m_associatedElements.clear();
 
-    for (Element* element = ElementTraversal::firstWithin(this); element; element = ElementTraversal::next(element, this)) {
+    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
         if (element->hasTagName(objectTag)) {
             m_associatedElements.append(toHTMLObjectElement(element));
             continue;

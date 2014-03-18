@@ -20,20 +20,19 @@
 
 // Introduced in DOM Level 2:
 [
-    GenerateIsReachable=ownerNode
+    GenerateVisitDOMWrapper=ownerNode,
 ] interface CSSStyleSheet : StyleSheet {
     readonly attribute CSSRule          ownerRule;
     readonly attribute CSSRuleList      cssRules;
 
-    [RaisesException] unsigned long insertRule(DOMString rule, unsigned long index);
+    [RaisesException] unsigned long insertRule(DOMString rule, optional unsigned long index);
     [RaisesException] void deleteRule(unsigned long index);
 
     // IE Extensions
-    readonly attribute CSSRuleList      rules;
+    [MeasureAs=CSSStyleSheetRules] readonly attribute CSSRuleList rules;
 
-    [RaisesException] long addRule([Default=Undefined] optional DOMString selector,
-                 [Default=Undefined] optional DOMString style,
-                 optional unsigned long index);
-    [RaisesException] void removeRule([Default=Undefined] optional unsigned long index);
+    [RaisesException, MeasureAs=CSSStyleSheetAddRule] long addRule([Default=Undefined] optional DOMString selector,
+                                                                   [Default=Undefined] optional DOMString style,
+                                                                   optional unsigned long index);
+    [RaisesException, MeasureAs=CSSStyleSheetRemoveRule] void removeRule([Default=Undefined] optional unsigned long index);
 };
-

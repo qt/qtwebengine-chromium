@@ -18,6 +18,11 @@ def getParams(schema, name):
   return function['parameters']
 
 
+def getReturns(schema, name):
+  function = getFunction(schema, name)
+  return function['returns']
+
+
 def getType(schema, id):
   for item in schema['types']:
     if item['id'] == id:
@@ -77,7 +82,9 @@ class IdlSchemaTest(unittest.TestCase):
 
   def testEnum(self):
     schema = self.idl_basics
-    expected = {'enum': ['name1', 'name2'], 'description': 'Enum description',
+    expected = {'enum': [{'name': 'name1', 'description': 'comment1'},
+                         {'name': 'name2'}],
+                'description': 'Enum description',
                 'type': 'string', 'id': 'EnumType'}
     self.assertEquals(expected, getType(schema, expected['id']))
 
@@ -107,6 +114,60 @@ class IdlSchemaTest(unittest.TestCase):
     self.assertEquals('idl_basics', idl_basics['namespace'])
     self.assertTrue(idl_basics['internal'])
     self.assertFalse(idl_basics['nodoc'])
+
+  def testReturnTypes(self):
+    schema = self.idl_basics
+    self.assertEquals({'name': 'function19', 'type': 'integer'},
+                      getReturns(schema, 'function19'))
+    self.assertEquals({'name': 'function20', '$ref': 'MyType1',
+                       'optional': True},
+                      getReturns(schema, 'function20'))
+    self.assertEquals({'name': 'function21', 'type': 'array',
+                       'items': {'$ref': 'MyType1'}},
+                      getReturns(schema, 'function21'))
+    self.assertEquals({'name': 'function22', '$ref': 'EnumType',
+                       'optional': True},
+                      getReturns(schema, 'function22'))
+    self.assertEquals({'name': 'function23', 'type': 'array',
+                       'items': {'$ref': 'EnumType'}},
+                      getReturns(schema, 'function23'))
+
+  def testChromeOSPlatformsNamespace(self):
+    schema = idl_schema.Load('test/idl_namespace_chromeos.idl')[0]
+    self.assertEquals('idl_namespace_chromeos', schema['namespace'])
+    expected = ['chromeos']
+    self.assertEquals(expected, schema['platforms'])
+
+  def testAllPlatformsNamespace(self):
+    schema = idl_schema.Load('test/idl_namespace_all_platforms.idl')[0]
+    self.assertEquals('idl_namespace_all_platforms', schema['namespace'])
+    expected = ['chromeos', 'chromeos_touch', 'linux', 'mac', 'win']
+    self.assertEquals(expected, schema['platforms'])
+
+  def testNonSpecificPlatformsNamespace(self):
+    schema = idl_schema.Load('test/idl_namespace_non_specific_platforms.idl')[0]
+    self.assertEquals('idl_namespace_non_specific_platforms',
+                      schema['namespace'])
+    expected = None
+    self.assertEquals(expected, schema['platforms'])
+
+  def testSpecificImplementNamespace(self):
+    schema = idl_schema.Load('test/idl_namespace_specific_implement.idl')[0]
+    self.assertEquals('idl_namespace_specific_implement',
+                      schema['namespace'])
+    expected = 'idl_namespace_specific_implement.idl'
+    self.assertEquals(expected, schema['compiler_options']['implemented_in'])
+
+  def testSpecificImplementOnChromeOSNamespace(self):
+    schema = idl_schema.Load(
+        'test/idl_namespace_specific_implement_chromeos.idl')[0]
+    self.assertEquals('idl_namespace_specific_implement_chromeos',
+                      schema['namespace'])
+    expected_implemented_path = 'idl_namespace_specific_implement_chromeos.idl'
+    expected_platform = ['chromeos']
+    self.assertEquals(expected_implemented_path,
+                      schema['compiler_options']['implemented_in'])
+    self.assertEquals(expected_platform, schema['platforms'])
 
   def testCallbackComment(self):
     schema = self.idl_basics
@@ -143,10 +204,12 @@ class IdlSchemaTest(unittest.TestCase):
     schema = idl_schema.Load('test/idl_reserved_words.idl')[0]
 
     foo_type = getType(schema, 'Foo')
-    self.assertEquals(['float', 'DOMString'], foo_type['enum'])
+    self.assertEquals([{'name': 'float'}, {'name': 'DOMString'}],
+                      foo_type['enum'])
 
     enum_type = getType(schema, 'enum')
-    self.assertEquals(['callback', 'namespace'], enum_type['enum'])
+    self.assertEquals([{'name': 'callback'}, {'name': 'namespace'}],
+                      enum_type['enum'])
 
     dictionary = getType(schema, 'dictionary')
     self.assertEquals('integer', dictionary['properties']['long']['type'])

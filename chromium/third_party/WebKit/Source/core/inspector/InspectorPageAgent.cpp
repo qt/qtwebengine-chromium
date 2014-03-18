@@ -32,13 +32,14 @@
 #include "core/inspector/InspectorPageAgent.h"
 
 #include "HTMLNames.h"
-#include "InspectorFrontend.h"
+#include "UserAgentStyleSheets.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
+#include "bindings/v8/ScriptRegexp.h"
+#include "core/css/StyleSheetContents.h"
+#include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/DOMImplementation.h"
-#include "core/dom/DeviceOrientationController.h"
 #include "core/dom/Document.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ImageResource.h"
@@ -61,16 +62,18 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
-#include "core/page/Settings.h"
-#include "core/platform/Cookie.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/text/RegularExpression.h"
+#include "core/frame/Settings.h"
+#include "modules/device_orientation/DeviceOrientationController.h"
+#include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/geolocation/GeolocationController.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/Cookie.h"
+#include "platform/JSONValues.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Vector.h"
@@ -85,9 +88,12 @@ static const char pageAgentScriptExecutionDisabled[] = "pageAgentScriptExecution
 static const char pageAgentScriptsToEvaluateOnLoad[] = "pageAgentScriptsToEvaluateOnLoad";
 static const char pageAgentScreenWidthOverride[] = "pageAgentScreenWidthOverride";
 static const char pageAgentScreenHeightOverride[] = "pageAgentScreenHeightOverride";
-static const char pageAgentFontScaleFactorOverride[] = "pageAgentFontScaleFactorOverride";
+static const char pageAgentDeviceScaleFactorOverride[] = "pageAgentDeviceScaleFactorOverride";
+static const char pageAgentEmulateViewport[] = "pageAgentEmulateViewport";
 static const char pageAgentFitWindow[] = "pageAgentFitWindow";
+static const char fontScaleFactor[] = "fontScaleFactor";
 static const char pageAgentShowFPSCounter[] = "pageAgentShowFPSCounter";
+static const char pageAgentTextAutosizingOverride[] = "pageAgentTextAutosizingOverride";
 static const char pageAgentContinuousPaintingEnabled[] = "pageAgentContinuousPaintingEnabled";
 static const char pageAgentShowPaintRects[] = "pageAgentShowPaintRects";
 static const char pageAgentShowDebugBorders[] = "pageAgentShowDebugBorders";
@@ -96,7 +102,6 @@ static const char touchEventEmulationEnabled[] = "touchEventEmulationEnabled";
 static const char pageAgentEmulatedMedia[] = "pageAgentEmulatedMedia";
 static const char showSizeOnResize[] = "showSizeOnResize";
 static const char showGridOnResize[] = "showGridOnResize";
-static const char forceCompositingMode[] = "forceCompositingMode";
 }
 
 namespace {
@@ -128,6 +133,9 @@ static bool prepareResourceBuffer(Resource* cachedResource, bool* hasZeroSize)
     if (!cachedResource)
         return false;
 
+    if (cachedResource->dataBufferingPolicy() == DoNotBufferData)
+        return false;
+
     // Zero-sized resources don't have data at all -- so fake the empty buffer, instead of indicating error by returning 0.
     if (!cachedResource->encodedSize()) {
         *hasZeroSize = true;
@@ -154,14 +162,14 @@ static bool hasTextContent(Resource* cachedResource)
     return type == InspectorPageAgent::DocumentResource || type == InspectorPageAgent::StylesheetResource || type == InspectorPageAgent::ScriptResource || type == InspectorPageAgent::XHRResource;
 }
 
-static PassRefPtr<TextResourceDecoder> createXHRTextDecoder(const String& mimeType, const String& textEncodingName)
+static PassOwnPtr<TextResourceDecoder> createXHRTextDecoder(const String& mimeType, const String& textEncodingName)
 {
     if (!textEncodingName.isEmpty())
         return TextResourceDecoder::create("text/plain", textEncodingName);
     if (DOMImplementation::isXMLMIMEType(mimeType.lower())) {
-        RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
+        OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
         decoder->useLenientXMLDecoding();
-        return decoder;
+        return decoder.release();
     }
     if (equalIgnoringCase(mimeType, "text/html"))
         return TextResourceDecoder::create("text/html", "UTF-8");
@@ -194,10 +202,10 @@ bool InspectorPageAgent::cachedResourceContent(Resource* cachedResource, String*
     if (cachedResource) {
         switch (cachedResource->type()) {
         case Resource::CSSStyleSheet:
-            *result = static_cast<CSSStyleSheetResource*>(cachedResource)->sheetText(false);
+            *result = toCSSStyleSheetResource(cachedResource)->sheetText(false);
             return true;
         case Resource::Script:
-            *result = static_cast<WebCore::ScriptResource*>(cachedResource)->script();
+            *result = toScriptResource(cachedResource)->script();
             return true;
         case Resource::MainResource:
             return false;
@@ -205,7 +213,7 @@ bool InspectorPageAgent::cachedResourceContent(Resource* cachedResource, String*
             SharedBuffer* buffer = cachedResource->resourceBuffer();
             if (!buffer)
                 return false;
-            RefPtr<TextResourceDecoder> decoder = createXHRTextDecoder(cachedResource->response().mimeType(), cachedResource->response().textEncodingName());
+            OwnPtr<TextResourceDecoder> decoder = createXHRTextDecoder(cachedResource->response().mimeType(), cachedResource->response().textEncodingName());
             String content = decoder->decode(buffer->data(), buffer->size());
             *result = content + decoder->flush();
             return true;
@@ -317,10 +325,10 @@ InspectorPageAgent::InspectorPageAgent(InstrumentingAgents* instrumentingAgents,
     , m_overlay(overlay)
     , m_lastScriptIdentifier(0)
     , m_enabled(false)
-    , m_isFirstLayoutAfterOnLoad(false)
     , m_geolocationOverridden(false)
     , m_ignoreScriptsEnabledNotification(false)
-    , m_didForceCompositingMode(false)
+    , m_deviceMetricsOverridden(false)
+    , m_emulateViewportEnabled(false)
 {
 }
 
@@ -344,8 +352,6 @@ void InspectorPageAgent::restore()
         enable(&error);
         bool scriptExecutionDisabled = m_state->getBoolean(PageAgentState::pageAgentScriptExecutionDisabled);
         setScriptExecutionDisabled(0, scriptExecutionDisabled);
-        if (m_state->getBoolean(PageAgentState::forceCompositingMode))
-            setForceCompositingMode(0, true);
         bool showPaintRects = m_state->getBoolean(PageAgentState::pageAgentShowPaintRects);
         setShowPaintRects(0, showPaintRects);
         bool showDebugBorders = m_state->getBoolean(PageAgentState::pageAgentShowDebugBorders);
@@ -361,9 +367,10 @@ void InspectorPageAgent::restore()
 
         int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
         int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
-        double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride);
+        double currentDeviceScaleFactor = m_state->getDouble(PageAgentState::pageAgentDeviceScaleFactorOverride);
+        bool currentEmulateViewport = m_state->getBoolean(PageAgentState::pageAgentEmulateViewport);
         bool currentFitWindow = m_state->getBoolean(PageAgentState::pageAgentFitWindow);
-        updateViewMetrics(currentWidth, currentHeight, currentFontScaleFactor, currentFitWindow);
+        updateViewMetrics(currentWidth, currentHeight, currentDeviceScaleFactor, currentEmulateViewport, currentFitWindow);
         updateTouchEventEmulationInPage(m_state->getBoolean(PageAgentState::touchEventEmulationEnabled));
     }
 }
@@ -388,6 +395,7 @@ void InspectorPageAgent::disable(ErrorString*)
     m_state->remove(PageAgentState::pageAgentScriptsToEvaluateOnLoad);
     m_overlay->hide();
     m_instrumentingAgents->setInspectorPageAgent(0);
+    m_deviceMetricsOverridden = false;
 
     setShowPaintRects(0, false);
     setShowDebugBorders(0, false);
@@ -396,18 +404,19 @@ void InspectorPageAgent::disable(ErrorString*)
     setContinuousPaintingEnabled(0, false);
     setShowScrollBottleneckRects(0, false);
     setShowViewportSizeOnResize(0, false, 0);
-    if (m_didForceCompositingMode)
-        setForceCompositingMode(0, false);
 
-    if (!deviceMetricsChanged(0, 0, 1, false))
+    if (!deviceMetricsChanged(0, 0, 1, false, false, 1, false))
         return;
 
     // When disabling the agent, reset the override values if necessary.
-    updateViewMetrics(0, 0, 1, false);
+    updateViewMetrics(0, 0, 1, false, false);
     m_state->setLong(PageAgentState::pageAgentScreenWidthOverride, 0);
     m_state->setLong(PageAgentState::pageAgentScreenHeightOverride, 0);
-    m_state->setDouble(PageAgentState::pageAgentFontScaleFactorOverride, 1);
+    m_state->setDouble(PageAgentState::pageAgentDeviceScaleFactorOverride, 1);
+    m_state->setBoolean(PageAgentState::pageAgentEmulateViewport, false);
     m_state->setBoolean(PageAgentState::pageAgentFitWindow, false);
+    m_state->setDouble(PageAgentState::fontScaleFactor, 1);
+    m_state->setBoolean(PageAgentState::pageAgentTextAutosizingOverride, false);
 }
 
 void InspectorPageAgent::addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* identifier)
@@ -442,15 +451,15 @@ void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCa
 {
     m_pendingScriptToEvaluateOnLoadOnce = optionalScriptToEvaluateOnLoad ? *optionalScriptToEvaluateOnLoad : "";
     m_pendingScriptPreprocessor = optionalScriptPreprocessor ? *optionalScriptPreprocessor : "";
-    m_page->mainFrame()->loader()->reload(optionalIgnoreCache && *optionalIgnoreCache ? EndToEndReload : NormalReload);
+    m_page->mainFrame()->loader().reload(optionalIgnoreCache && *optionalIgnoreCache ? EndToEndReload : NormalReload);
 }
 
 void InspectorPageAgent::navigate(ErrorString*, const String& url)
 {
     UserGestureIndicator indicator(DefinitelyProcessingNewUserGesture);
     Frame* frame = m_page->mainFrame();
-    FrameLoadRequest request(frame->document()->securityOrigin(), ResourceRequest(frame->document()->completeURL(url)));
-    frame->loader()->load(request);
+    FrameLoadRequest request(frame->document(), ResourceRequest(frame->document()->completeURL(url)));
+    frame->loader().load(request);
 }
 
 void InspectorPageAgent::getNavigationHistory(ErrorString*, int*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::NavigationEntry> >&)
@@ -498,12 +507,12 @@ static Vector<Resource*> cachedResourcesForFrame(Frame* frame)
         switch (cachedResource->type()) {
         case Resource::Image:
             // Skip images that were not auto loaded (images disabled in the user agent).
-            if (static_cast<ImageResource*>(cachedResource)->stillNeedsLoad())
+            if (toImageResource(cachedResource)->stillNeedsLoad())
                 continue;
             break;
         case Resource::Font:
             // Skip fonts that were referenced in CSS but never used/downloaded.
-            if (static_cast<FontResource*>(cachedResource)->stillNeedsLoad())
+            if (toFontResource(cachedResource)->stillNeedsLoad())
                 continue;
             break;
         default:
@@ -521,7 +530,7 @@ static Vector<KURL> allResourcesURLsForFrame(Frame* frame)
 {
     Vector<KURL> result;
 
-    result.append(urlWithoutFragment(frame->loader()->documentLoader()->url()));
+    result.append(urlWithoutFragment(frame->loader().documentLoader()->url()));
 
     Vector<Resource*> allResources = cachedResourcesForFrame(frame);
     for (Vector<Resource*>::const_iterator it = allResources.begin(); it != allResources.end(); ++it)
@@ -530,11 +539,11 @@ static Vector<KURL> allResourcesURLsForFrame(Frame* frame)
     return result;
 }
 
-void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::Cookie> >& cookies, WTF::String* cookiesString)
+void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::Cookie> >& cookies)
 {
     ListHashSet<Cookie> rawCookiesList;
 
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext(mainFrame())) {
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext(mainFrame())) {
         Document* document = frame->document();
         Vector<KURL> allURLs = allResourcesURLsForFrame(frame);
         for (Vector<KURL>::const_iterator it = allURLs.begin(); it != allURLs.end(); ++it) {
@@ -548,15 +557,13 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
         }
     }
 
-    // FIXME: Remove "cookiesString" output.
     cookies = buildArrayForCookies(rawCookiesList);
-    *cookiesString = "";
 }
 
 void InspectorPageAgent::deleteCookie(ErrorString*, const String& cookieName, const String& url)
 {
     KURL parsedURL(ParsedURLString, url);
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext(m_page->mainFrame()))
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext(m_page->mainFrame()))
         WebCore::deleteCookie(frame->document(), parsedURL, cookieName);
 }
 
@@ -596,7 +603,7 @@ void InspectorPageAgent::searchInResource(ErrorString*, const String& frameId, c
     Frame* frame = frameForId(frameId);
     KURL kurl(ParsedURLString, url);
 
-    FrameLoader* frameLoader = frame ? frame->loader() : 0;
+    FrameLoader* frameLoader = frame ? &frame->loader() : 0;
     DocumentLoader* loader = frameLoader ? frameLoader->documentLoader() : 0;
     if (!loader)
         return;
@@ -613,39 +620,6 @@ void InspectorPageAgent::searchInResource(ErrorString*, const String& frameId, c
     results = ContentSearchUtils::searchInTextByLines(content, query, caseSensitive, isRegex);
 }
 
-static PassRefPtr<TypeBuilder::Page::SearchResult> buildObjectForSearchResult(const String& frameId, const String& url, int matchesCount)
-{
-    return TypeBuilder::Page::SearchResult::create()
-        .setUrl(url)
-        .setFrameId(frameId)
-        .setMatchesCount(matchesCount)
-        .release();
-}
-
-void InspectorPageAgent::searchInResources(ErrorString*, const String& text, const bool* const optionalCaseSensitive, const bool* const optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchResult> >& results)
-{
-    RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchResult> > searchResults = TypeBuilder::Array<TypeBuilder::Page::SearchResult>::create();
-
-    bool isRegex = optionalIsRegex ? *optionalIsRegex : false;
-    bool caseSensitive = optionalCaseSensitive ? *optionalCaseSensitive : false;
-    OwnPtr<RegularExpression> regex = ContentSearchUtils::createSearchRegex(text, caseSensitive, isRegex);
-
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext(m_page->mainFrame())) {
-        String content;
-        Vector<Resource*> allResources = cachedResourcesForFrame(frame);
-        for (Vector<Resource*>::const_iterator it = allResources.begin(); it != allResources.end(); ++it) {
-            Resource* cachedResource = *it;
-            if (textContentForResource(cachedResource, &content)) {
-                int matchesCount = ContentSearchUtils::countRegularExpressionMatches(regex.get(), content);
-                if (matchesCount)
-                    searchResults->addItem(buildObjectForSearchResult(frameId(frame), urlWithoutFragment(cachedResource->url()).string(), matchesCount));
-            }
-        }
-    }
-
-    results = searchResults;
-}
-
 void InspectorPageAgent::setDocumentContent(ErrorString* errorString, const String& frameId, const String& html)
 {
     Frame* frame = assertFrame(errorString, frameId);
@@ -660,9 +634,12 @@ void InspectorPageAgent::setDocumentContent(ErrorString* errorString, const Stri
     DOMPatchSupport::patchDocument(*document, html);
 }
 
-void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int width, int height, double fontScaleFactor, bool fitWindow)
+void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int width, int height, double deviceScaleFactor, bool emulateViewport, bool fitWindow, const bool* optionalTextAutosizing, const double* optionalFontScaleFactor)
 {
     const static long maxDimension = 10000000;
+
+    bool textAutosizing = optionalTextAutosizing ? *optionalTextAutosizing : false;
+    double fontScaleFactor = optionalFontScaleFactor ? *optionalFontScaleFactor : 1;
 
     if (width < 0 || height < 0 || width > maxDimension || height > maxDimension) {
         *errorString = "Width and height values must be positive, not greater than " + String::number(maxDimension);
@@ -674,31 +651,50 @@ void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int 
         return;
     }
 
+    if (deviceScaleFactor <= 0) {
+        *errorString = "deviceScaleFactor must be positive";
+        return;
+    }
+
     if (fontScaleFactor <= 0) {
         *errorString = "fontScaleFactor must be positive";
         return;
     }
 
-    if (!deviceMetricsChanged(width, height, fontScaleFactor, fitWindow))
+    Settings& settings = m_page->settings();
+    if (width && height && !settings.acceleratedCompositingEnabled()) {
+        if (errorString)
+            *errorString = "Compositing mode is not supported";
         return;
+    }
+
+    if (!deviceMetricsChanged(width, height, deviceScaleFactor, emulateViewport, fitWindow, fontScaleFactor, textAutosizing))
+        return;
+
 
     m_state->setLong(PageAgentState::pageAgentScreenWidthOverride, width);
     m_state->setLong(PageAgentState::pageAgentScreenHeightOverride, height);
-    m_state->setDouble(PageAgentState::pageAgentFontScaleFactorOverride, fontScaleFactor);
+    m_state->setDouble(PageAgentState::pageAgentDeviceScaleFactorOverride, deviceScaleFactor);
+    m_state->setBoolean(PageAgentState::pageAgentEmulateViewport, emulateViewport);
     m_state->setBoolean(PageAgentState::pageAgentFitWindow, fitWindow);
+    m_state->setDouble(PageAgentState::fontScaleFactor, fontScaleFactor);
+    m_state->setBoolean(PageAgentState::pageAgentTextAutosizingOverride, textAutosizing);
 
-    updateViewMetrics(width, height, fontScaleFactor, fitWindow);
+    updateViewMetrics(width, height, deviceScaleFactor, emulateViewport, fitWindow);
 }
 
-bool InspectorPageAgent::deviceMetricsChanged(int width, int height, double fontScaleFactor, bool fitWindow)
+bool InspectorPageAgent::deviceMetricsChanged(int width, int height, double deviceScaleFactor, bool emulateViewport, bool fitWindow, double fontScaleFactor, bool textAutosizing)
 {
     // These two always fit an int.
     int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
     int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
-    double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride, 1);
+    double currentDeviceScaleFactor = m_state->getDouble(PageAgentState::pageAgentDeviceScaleFactorOverride, 1);
+    bool currentEmulateViewport = m_state->getBoolean(PageAgentState::pageAgentEmulateViewport);
     bool currentFitWindow = m_state->getBoolean(PageAgentState::pageAgentFitWindow);
+    double currentFontScaleFactor = m_state->getDouble(PageAgentState::fontScaleFactor, 1);
+    bool currentTextAutosizing = m_state->getBoolean(PageAgentState::pageAgentTextAutosizingOverride);
 
-    return width != currentWidth || height != currentHeight || fontScaleFactor != currentFontScaleFactor || fitWindow != currentFitWindow;
+    return width != currentWidth || height != currentHeight || deviceScaleFactor != currentDeviceScaleFactor || emulateViewport != currentEmulateViewport || fitWindow != currentFitWindow || fontScaleFactor != currentFontScaleFactor || textAutosizing != currentTextAutosizing;
 }
 
 void InspectorPageAgent::setShowPaintRects(ErrorString*, bool show)
@@ -710,31 +706,36 @@ void InspectorPageAgent::setShowPaintRects(ErrorString*, bool show)
         mainFrame()->view()->invalidate();
 }
 
-void InspectorPageAgent::setShowDebugBorders(ErrorString*, bool show)
+void InspectorPageAgent::setShowDebugBorders(ErrorString* errorString, bool show)
 {
     m_state->setBoolean(PageAgentState::pageAgentShowDebugBorders, show);
+    if (show && !forceCompositingMode(errorString))
+        return;
     m_client->setShowDebugBorders(show);
 }
 
-void InspectorPageAgent::setShowFPSCounter(ErrorString*, bool show)
+void InspectorPageAgent::setShowFPSCounter(ErrorString* errorString, bool show)
 {
+    // FIXME: allow metrics override, fps counter and continuous painting at the same time: crbug.com/299837.
     m_state->setBoolean(PageAgentState::pageAgentShowFPSCounter, show);
-    m_client->setShowFPSCounter(show);
-
-    updateOverridesTopOffset();
+    if (show && !forceCompositingMode(errorString))
+        return;
+    m_client->setShowFPSCounter(show && !m_deviceMetricsOverridden);
 }
 
-void InspectorPageAgent::setContinuousPaintingEnabled(ErrorString*, bool enabled)
+void InspectorPageAgent::setContinuousPaintingEnabled(ErrorString* errorString, bool enabled)
 {
     m_state->setBoolean(PageAgentState::pageAgentContinuousPaintingEnabled, enabled);
-    m_client->setContinuousPaintingEnabled(enabled);
-
-    updateOverridesTopOffset();
+    if (enabled && !forceCompositingMode(errorString))
+        return;
+    m_client->setContinuousPaintingEnabled(enabled && !m_deviceMetricsOverridden);
 }
 
-void InspectorPageAgent::setShowScrollBottleneckRects(ErrorString*, bool show)
+void InspectorPageAgent::setShowScrollBottleneckRects(ErrorString* errorString, bool show)
 {
     m_state->setBoolean(PageAgentState::pageAgentShowScrollBottleneckRects, show);
+    if (show && !forceCompositingMode(errorString))
+        return;
     m_client->setShowScrollBottleneckRects(show);
 }
 
@@ -744,7 +745,7 @@ void InspectorPageAgent::getScriptExecutionStatus(ErrorString*, PageCommandHandl
     bool disabledInSettings = false;
     Frame* frame = mainFrame();
     if (frame) {
-        disabledByScriptController = !frame->script()->canExecuteScripts(NotAboutToExecuteScript);
+        disabledByScriptController = !frame->script().canExecuteScripts(NotAboutToExecuteScript);
         if (frame->settings())
             disabledInSettings = !frame->settings()->isScriptEnabled();
     }
@@ -791,38 +792,32 @@ void InspectorPageAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWor
         for (JSONObject::const_iterator it = scripts->begin(); it != end; ++it) {
             String scriptText;
             if (it->value->asString(&scriptText))
-                frame->script()->executeScript(scriptText);
+                frame->script().executeScriptInMainWorld(scriptText);
         }
     }
     if (!m_scriptToEvaluateOnLoadOnce.isEmpty())
-        frame->script()->executeScript(m_scriptToEvaluateOnLoadOnce);
+        frame->script().executeScriptInMainWorld(m_scriptToEvaluateOnLoadOnce);
 }
 
 void InspectorPageAgent::domContentLoadedEventFired(Frame* frame)
 {
-    if (frame->page()->mainFrame() != frame)
+    if (!frame->isMainFrame())
         return;
-
-    m_isFirstLayoutAfterOnLoad = true;
     m_frontend->domContentEventFired(currentTime());
-    if (m_state->getBoolean(PageAgentState::forceCompositingMode))
-        setForceCompositingMode(0, true);
 }
 
 void InspectorPageAgent::loadEventFired(Frame* frame)
 {
-    if (frame->page()->mainFrame() != frame)
+    if (!frame->isMainFrame())
         return;
     m_frontend->loadEventFired(currentTime());
 }
 
-void InspectorPageAgent::childDocumentOpened(Document* document)
-{
-    m_frontend->frameNavigated(buildObjectForFrame(document->frame()));
-}
-
 void InspectorPageAgent::didCommitLoad(Frame*, DocumentLoader* loader)
 {
+    // FIXME: If "frame" is always guarenteed to be in the same Page as loader->frame()
+    // then all we need to check here is loader->frame()->isMainFrame()
+    // and we don't need "frame" at all.
     if (loader->frame() == m_page->mainFrame()) {
         m_scriptToEvaluateOnLoadOnce = m_pendingScriptToEvaluateOnLoadOnce;
         m_scriptPreprocessorSource = m_pendingScriptPreprocessor;
@@ -834,7 +829,7 @@ void InspectorPageAgent::didCommitLoad(Frame*, DocumentLoader* loader)
 
 void InspectorPageAgent::frameAttachedToParent(Frame* frame)
 {
-    m_frontend->frameAttached(frameId(frame));
+    m_frontend->frameAttached(frameId(frame), frameId(frame->tree().parent()));
 }
 
 void InspectorPageAgent::frameDetachedFromParent(Frame* frame)
@@ -889,7 +884,7 @@ String InspectorPageAgent::loaderId(DocumentLoader* loader)
 
 Frame* InspectorPageAgent::findFrameWithSecurityOrigin(const String& originRawString)
 {
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         RefPtr<SecurityOrigin> documentOrigin = frame->document()->securityOrigin();
         if (documentOrigin->toRawString() == originRawString)
             return frame;
@@ -905,19 +900,19 @@ Frame* InspectorPageAgent::assertFrame(ErrorString* errorString, const String& f
     return frame;
 }
 
-String InspectorPageAgent::resourceSourceMapURL(const String& url)
+const AtomicString& InspectorPageAgent::resourceSourceMapURL(const String& url)
 {
-    DEFINE_STATIC_LOCAL(String, sourceMapHttpHeader, ("SourceMap"));
-    DEFINE_STATIC_LOCAL(String, deprecatedSourceMapHttpHeader, ("X-SourceMap"));
+    DEFINE_STATIC_LOCAL(const AtomicString, sourceMapHttpHeader, ("SourceMap", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, deprecatedSourceMapHttpHeader, ("X-SourceMap", AtomicString::ConstructFromLiteral));
     if (url.isEmpty())
-        return String();
+        return nullAtom;
     Frame* frame = mainFrame();
     if (!frame)
-        return String();
+        return nullAtom;
     Resource* resource = cachedResource(frame, KURL(ParsedURLString, url));
     if (!resource)
-        return String();
-    String deprecatedHeaderSourceMapURL = resource->response().httpHeaderField(deprecatedSourceMapHttpHeader);
+        return nullAtom;
+    const AtomicString& deprecatedHeaderSourceMapURL = resource->response().httpHeaderField(deprecatedSourceMapHttpHeader);
     if (!deprecatedHeaderSourceMapURL.isEmpty()) {
         // FIXME: add deprecated console message here.
         return deprecatedHeaderSourceMapURL;
@@ -925,11 +920,15 @@ String InspectorPageAgent::resourceSourceMapURL(const String& url)
     return resource->response().httpHeaderField(sourceMapHttpHeader);
 }
 
+bool InspectorPageAgent::deviceMetricsOverrideEnabled()
+{
+    return m_enabled && m_deviceMetricsOverridden;
+}
+
 // static
 DocumentLoader* InspectorPageAgent::assertDocumentLoader(ErrorString* errorString, Frame* frame)
 {
-    FrameLoader* frameLoader = frame->loader();
-    DocumentLoader* documentLoader = frameLoader ? frameLoader->documentLoader() : 0;
+    DocumentLoader* documentLoader = frame->loader().documentLoader();
     if (!documentLoader)
         *errorString = "No documentLoader for given frame found";
     return documentLoader;
@@ -972,35 +971,7 @@ void InspectorPageAgent::didRunJavaScriptDialog()
     m_frontend->javascriptDialogClosed();
 }
 
-void InspectorPageAgent::applyScreenWidthOverride(long* width)
-{
-    long widthOverride = m_state->getLong(PageAgentState::pageAgentScreenWidthOverride);
-    if (widthOverride)
-        *width = widthOverride;
-}
-
-bool InspectorPageAgent::shouldApplyScreenWidthOverride()
-{
-    long width = 0;
-    applyScreenWidthOverride(&width);
-    return !!width;
-}
-
-void InspectorPageAgent::applyScreenHeightOverride(long* height)
-{
-    long heightOverride = m_state->getLong(PageAgentState::pageAgentScreenHeightOverride);
-    if (heightOverride)
-        *height = heightOverride;
-}
-
-bool InspectorPageAgent::shouldApplyScreenHeightOverride()
-{
-    long height = 0;
-    applyScreenHeightOverride(&height);
-    return !!height;
-}
-
-void InspectorPageAgent::didPaint(RenderObject*, GraphicsContext* context, const LayoutRect& rect)
+void InspectorPageAgent::didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext* context, const LayoutRect& rect)
 {
     if (!m_enabled || m_client->overridesShowPaintRects() || !m_state->getBoolean(PageAgentState::pageAgentShowPaintRects))
         return;
@@ -1019,20 +990,8 @@ void InspectorPageAgent::didPaint(RenderObject*, GraphicsContext* context, const
 
 void InspectorPageAgent::didLayout(RenderObject*)
 {
-    bool isFirstLayout = m_isFirstLayoutAfterOnLoad;
-    if (isFirstLayout)
-        m_isFirstLayoutAfterOnLoad = false;
-
     if (!m_enabled)
         return;
-
-    if (isFirstLayout) {
-        int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
-        int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
-
-        if (currentWidth && currentHeight)
-            m_client->autoZoomPageToFitWidth();
-    }
     m_overlay->update();
 }
 
@@ -1046,6 +1005,7 @@ void InspectorPageAgent::didResizeMainFrame()
 {
     if (m_enabled && m_state->getBoolean(PageAgentState::showSizeOnResize))
         m_overlay->showAndHideViewSize(m_state->getBoolean(PageAgentState::showGridOnResize));
+    m_frontend->frameResized();
 }
 
 void InspectorPageAgent::didRecalculateStyle()
@@ -1066,14 +1026,14 @@ PassRefPtr<TypeBuilder::Page::Frame> InspectorPageAgent::buildObjectForFrame(Fra
 {
     RefPtr<TypeBuilder::Page::Frame> frameObject = TypeBuilder::Page::Frame::create()
         .setId(frameId(frame))
-        .setLoaderId(loaderId(frame->loader()->documentLoader()))
+        .setLoaderId(loaderId(frame->loader().documentLoader()))
         .setUrl(urlWithoutFragment(frame->document()->url()).string())
-        .setMimeType(frame->loader()->documentLoader()->responseMIMEType())
+        .setMimeType(frame->loader().documentLoader()->responseMIMEType())
         .setSecurityOrigin(frame->document()->securityOrigin()->toRawString());
-    if (frame->tree()->parent())
-        frameObject->setParentId(frameId(frame->tree()->parent()));
+    if (frame->tree().parent())
+        frameObject->setParentId(frameId(frame->tree().parent()));
     if (frame->ownerElement()) {
-        String name = frame->ownerElement()->getNameAttribute();
+        AtomicString name = frame->ownerElement()->getNameAttribute();
         if (name.isEmpty())
             name = frame->ownerElement()->getAttribute(HTMLNames::idAttr);
         frameObject->setName(name);
@@ -1106,7 +1066,7 @@ PassRefPtr<TypeBuilder::Page::FrameResourceTree> InspectorPageAgent::buildObject
     }
 
     RefPtr<TypeBuilder::Array<TypeBuilder::Page::FrameResourceTree> > childrenArray;
-    for (Frame* child = frame->tree()->firstChild(); child; child = child->tree()->nextSibling()) {
+    for (Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (!childrenArray) {
             childrenArray = TypeBuilder::Array<TypeBuilder::Page::FrameResourceTree>::create();
             result->setChildFrames(childrenArray);
@@ -1116,15 +1076,25 @@ PassRefPtr<TypeBuilder::Page::FrameResourceTree> InspectorPageAgent::buildObject
     return result;
 }
 
-void InspectorPageAgent::updateViewMetrics(int width, int height, double fontScaleFactor, bool fitWindow)
+void InspectorPageAgent::updateViewMetrics(int width, int height, double deviceScaleFactor, bool emulateViewport, bool fitWindow)
 {
-    m_client->overrideDeviceMetrics(width, height, static_cast<float>(fontScaleFactor), fitWindow);
+    if (width && height && !m_page->settings().acceleratedCompositingEnabled())
+        return;
+
+    m_deviceMetricsOverridden = width && height;
+    m_emulateViewportEnabled = emulateViewport;
+    m_client->overrideDeviceMetrics(width, height, static_cast<float>(deviceScaleFactor), emulateViewport, fitWindow);
 
     Document* document = mainFrame()->document();
-    if (document)
+    if (document) {
         document->styleResolverChanged(RecalcStyleImmediately);
+        document->mediaQueryAffectingValueChanged();
+    }
     InspectorInstrumentation::mediaQueryResultChanged(document);
-    m_overlay->setOverride(InspectorOverlay::DeviceMetricsOverride, width && height);
+
+    // FIXME: allow metrics override, fps counter and continuous painting at the same time: crbug.com/299837.
+    m_client->setShowFPSCounter(m_state->getBoolean(PageAgentState::pageAgentShowFPSCounter) && !m_deviceMetricsOverridden);
+    m_client->setContinuousPaintingEnabled(m_state->getBoolean(PageAgentState::pageAgentContinuousPaintingEnabled) && !m_deviceMetricsOverridden);
 }
 
 void InspectorPageAgent::updateTouchEventEmulationInPage(bool enabled)
@@ -1132,19 +1102,6 @@ void InspectorPageAgent::updateTouchEventEmulationInPage(bool enabled)
     m_state->setBoolean(PageAgentState::touchEventEmulationEnabled, enabled);
     if (mainFrame() && mainFrame()->settings())
         mainFrame()->settings()->setTouchEventEmulationEnabled(enabled);
-    m_overlay->setOverride(InspectorOverlay::TouchOverride, enabled);
-}
-
-void InspectorPageAgent::updateOverridesTopOffset()
-{
-    static const int continousPaintingGraphHeight = 92;
-    static const int fpsGraphHeight = 73;
-    int topOffset = 0;
-    if (m_state->getBoolean(PageAgentState::pageAgentContinuousPaintingEnabled))
-        topOffset = continousPaintingGraphHeight;
-    else if (m_state->getBoolean(PageAgentState::pageAgentShowFPSCounter))
-        topOffset = fpsGraphHeight;
-    m_overlay->setOverridesTopOffset(topOffset);
 }
 
 void InspectorPageAgent::setGeolocationOverride(ErrorString* error, const double* latitude, const double* longitude, const double* accuracy)
@@ -1166,7 +1123,6 @@ void InspectorPageAgent::setGeolocationOverride(ErrorString* error, const double
         m_geolocationPosition.clear();
 
     controller->positionChanged(0); // Kick location update.
-    m_overlay->setOverride(InspectorOverlay::GeolocationOverride, true);
 }
 
 void InspectorPageAgent::clearGeolocationOverride(ErrorString*)
@@ -1179,7 +1135,6 @@ void InspectorPageAgent::clearGeolocationOverride(ErrorString*)
     GeolocationController* controller = GeolocationController::from(m_page);
     if (controller && m_platformGeolocationPosition.get())
         controller->positionChanged(m_platformGeolocationPosition.get());
-    m_overlay->setOverride(InspectorOverlay::GeolocationOverride, false);
 }
 
 GeolocationPosition* InspectorPageAgent::overrideGeolocationPosition(GeolocationPosition* position)
@@ -1194,31 +1149,32 @@ GeolocationPosition* InspectorPageAgent::overrideGeolocationPosition(Geolocation
 
 void InspectorPageAgent::setDeviceOrientationOverride(ErrorString* error, double alpha, double beta, double gamma)
 {
-    DeviceOrientationController* controller = DeviceOrientationController::from(m_page);
+    DeviceOrientationController* controller = DeviceOrientationController::from(mainFrame()->document());
     if (!controller) {
         *error = "Internal error: unable to override device orientation";
         return;
     }
 
-    ErrorString clearError;
-    clearDeviceOrientationOverride(&clearError);
-
-    m_deviceOrientation = DeviceOrientationData::create(true, alpha, true, beta, true, gamma);
-    controller->didChangeDeviceOrientation(m_deviceOrientation.get());
-    m_overlay->setOverride(InspectorOverlay::DeviceOrientationOverride, true);
+    controller->didChangeDeviceOrientation(DeviceOrientationData::create(true, alpha, true, beta, true, gamma).get());
 }
 
-void InspectorPageAgent::clearDeviceOrientationOverride(ErrorString*)
+void InspectorPageAgent::clearDeviceOrientationOverride(ErrorString* error)
 {
-    m_deviceOrientation.clear();
-    m_overlay->setOverride(InspectorOverlay::DeviceOrientationOverride, false);
+    setDeviceOrientationOverride(error, 0, 0, 0);
 }
 
-DeviceOrientationData* InspectorPageAgent::overrideDeviceOrientation(DeviceOrientationData* deviceOrientation)
+bool InspectorPageAgent::overrideTextAutosizing(bool textAutosizing)
 {
-    if (m_deviceOrientation)
-        deviceOrientation = m_deviceOrientation.get();
-    return deviceOrientation;
+    if (!m_deviceMetricsOverridden)
+        return textAutosizing;
+    return m_state->getBoolean(PageAgentState::pageAgentTextAutosizingOverride);
+}
+
+float InspectorPageAgent::overrideFontScaleFactor(float fontScaleFactor)
+{
+    if (!m_deviceMetricsOverridden)
+        return fontScaleFactor;
+    return static_cast<float>(m_state->getDouble(PageAgentState::fontScaleFactor));
 }
 
 void InspectorPageAgent::setTouchEmulationEnabled(ErrorString*, bool enabled)
@@ -1239,10 +1195,23 @@ void InspectorPageAgent::setEmulatedMedia(ErrorString*, const String& media)
     if (m_page->mainFrame())
         document = m_page->mainFrame()->document();
     if (document) {
+        document->mediaQueryAffectingValueChanged();
         document->styleResolverChanged(RecalcStyleImmediately);
         document->updateLayout();
     }
-    m_overlay->setOverride(InspectorOverlay::CSSMediaOverride, !media.isEmpty());
+}
+
+bool InspectorPageAgent::applyViewportStyleOverride(StyleResolver* resolver)
+{
+    if (!m_deviceMetricsOverridden || !m_emulateViewportEnabled)
+        return false;
+
+    RefPtr<StyleSheetContents> styleSheet = StyleSheetContents::create(CSSParserContext(UASheetMode));
+    styleSheet->parseString(String(viewportAndroidUserAgentStyleSheet, sizeof(viewportAndroidUserAgentStyleSheet)));
+    OwnPtr<RuleSet> ruleSet = RuleSet::create();
+    ruleSet->addRulesFromSheet(styleSheet.get(), MediaQueryEvaluator("screen"));
+    resolver->viewportStyleResolver()->collectViewportRules(ruleSet.get(), ViewportStyleResolver::UserAgentOrigin);
+    return true;
 }
 
 void InspectorPageAgent::applyEmulatedMedia(String* media)
@@ -1252,26 +1221,29 @@ void InspectorPageAgent::applyEmulatedMedia(String* media)
         *media = emulatedMedia;
 }
 
-void InspectorPageAgent::setForceCompositingMode(ErrorString* errorString, bool force)
+bool InspectorPageAgent::forceCompositingMode(ErrorString* errorString)
 {
     Settings& settings = m_page->settings();
-    if (force && !settings.acceleratedCompositingEnabled()) {
+    if (!settings.acceleratedCompositingEnabled()) {
         if (errorString)
             *errorString = "Compositing mode is not supported";
-        return;
+        return false;
     }
-    m_state->setBoolean(PageAgentState::forceCompositingMode, force);
-    if (settings.forceCompositingMode() == force)
-        return;
-    m_didForceCompositingMode = force;
-    settings.setForceCompositingMode(force);
+    if (settings.forceCompositingMode())
+        return true;
+    settings.setForceCompositingMode(true);
     Frame* mainFrame = m_page->mainFrame();
-    if (!mainFrame)
-        return;
-    mainFrame->view()->updateCompositingLayersAfterStyleChange();
+    if (mainFrame)
+        mainFrame->view()->updateCompositingLayersAfterStyleChange();
+    return true;
 }
 
-void InspectorPageAgent::captureScreenshot(ErrorString*, const String*, const int*, const int*, const int*, String*, double*, double*, RefPtr<TypeBuilder::DOM::Rect>&)
+void InspectorPageAgent::captureScreenshot(ErrorString*, const String*, const int*, const int*, const int*, String*, RefPtr<TypeBuilder::Page::ScreencastFrameMetadata>&)
+{
+    // Handled on the browser level.
+}
+
+void InspectorPageAgent::canScreencast(ErrorString*, bool*)
 {
     // Handled on the browser level.
 }
@@ -1287,6 +1259,11 @@ void InspectorPageAgent::stopScreencast(ErrorString*)
 }
 
 void InspectorPageAgent::handleJavaScriptDialog(ErrorString* errorString, bool accept, const String* promptText)
+{
+    // Handled on the browser level.
+}
+
+void InspectorPageAgent::queryUsageAndQuota(WebCore::ErrorString*, const WTF::String&, WTF::RefPtr<WebCore::TypeBuilder::Page::Quota>&, WTF::RefPtr<WebCore::TypeBuilder::Page::Usage>&)
 {
     // Handled on the browser level.
 }

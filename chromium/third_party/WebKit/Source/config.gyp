@@ -43,8 +43,11 @@
         '..',
       ],
       'msvs_disabled_warnings': [
-        4138, 4244, 4291, 4305, 4344, 4355, 4521, 4099,
+        4305, 4324, 4714, 4800, 4996,
       ],
+      'variables': {
+        'chromium_code': 1,
+      },
       'conditions': [
         ['OS=="win" and component=="shared_library"', {
           'defines': [
@@ -52,8 +55,27 @@
           ],
         }],
         ['OS=="win"', {
-          'defines': [
-            '__PRETTY_FUNCTION__=__FUNCTION__',
+          'sources/': [
+            ['exclude', 'Posix\\.cpp$'],
+          ],
+        },{ # OS!="win"
+          'sources/': [
+            ['exclude', 'Win\\.cpp$'],
+          ],
+        }],
+        ['OS!="mac"', {
+          'sources/': [
+            ['exclude', 'Mac\\.mm$'],
+          ],
+        }],
+        ['<(toolkit_uses_gtk) != 1', {
+            'sources/': [
+              ['exclude', 'Gtk\\.cpp$']
+            ]
+        }],
+        ['OS!="android"', {
+          'sources/': [
+            ['exclude', 'Android\\.cpp$'],
           ],
         }],
         ['OS!="win" and remove_webcore_debug_symbols==1', {

@@ -25,9 +25,9 @@
 #ifndef SVGRenderingContext_h
 #define SVGRenderingContext_h
 
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
+#include "platform/graphics/ImageBuffer.h"
 
 namespace WebCore {
 
@@ -76,14 +76,10 @@ public:
     void prepareToRenderSVGContent(RenderObject*, PaintInfo&, NeedsGraphicsContextSave = DontSaveGraphicsContext);
     bool isRenderingPrepared() const { return m_renderingFlags & RenderingPrepared; }
 
-    // Patterns need a different float-to-integer coordinate mapping.
-    static bool createImageBufferForPattern(const FloatRect& absoluteTargetRect, const FloatRect& clampedAbsoluteTargetRect, OwnPtr<ImageBuffer>&, RenderingMode);
-
     static void renderSubtree(GraphicsContext*, RenderObject*, const AffineTransform&);
 
     static float calculateScreenFontSizeScalingFactor(const RenderObject*);
     static void calculateTransformationToOutermostCoordinateSystem(const RenderObject*, AffineTransform& absoluteTransform);
-    static IntSize clampedAbsoluteSize(const IntSize&);
     static FloatRect clampedAbsoluteTargetRect(const FloatRect& absoluteTargetRect);
     static void clear2DRotation(AffineTransform&);
 

@@ -28,16 +28,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
  
- .tabbed-pane {
-    -webkit-flex-direction: column;
-    display: -webkit-flex;
-    height: 100%;
+.tabbed-pane {
+    flex: auto;
 }
 
 .tabbed-pane-content {
-    -webkit-flex: 1;
     position: relative;
     overflow: auto;
+    flex: auto;
+    display: flex;
 }
 
 .tabbed-pane-content.has-no-tabs {
@@ -45,7 +44,7 @@
 }
 
 .tabbed-pane-header {
-    height: 23px;
+    flex: 0 0 23px;
     border-bottom: 1px solid rgb(163, 163, 163);
     overflow: hidden;
     width: 100%;
@@ -71,6 +70,7 @@
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
+    cursor: default;
 }
 
 .tabbed-pane-header-tab.measuring {
@@ -78,9 +78,13 @@
 }
 
 .tabbed-pane-header-tab.selected {
-    background-color: white;
     border: 1px solid rgb(163, 163, 163);
     border-bottom: none;
+}
+
+.tabbed-pane-header-tab.selected {
+    background: white;
+    border-top-color: #bbb;
 }
 
 .tabbed-pane-header-tab .close-button-gray {
@@ -101,8 +105,8 @@
     float: left;
     position: relative;
     vertical-align: bottom;
-    top: 1px;
     padding-left: 3px;
+    line-height: 20px;
 }
 
 .tabbed-pane-header-tabs-drop-down-container.measuring {
@@ -136,4 +140,5 @@ select.tabbed-pane-header-tabs-drop-down-select {
     margin: 0;
     font-size: 75%;
     -webkit-appearance: none;
+    width: 20px;
 }

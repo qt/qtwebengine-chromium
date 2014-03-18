@@ -4,7 +4,6 @@
 
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 
-#include "base/command_line.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -13,11 +12,10 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/user_metrics.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/escape.h"
-#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace content {
 
@@ -43,7 +41,8 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
     int instance_id,
     const BrowserPluginHostMsg_Attach_Params& params,
     scoped_ptr<base::DictionaryValue> extra_params) {
-  SiteInstance* guest_site_instance = NULL;
+  RenderProcessHost* embedder_process_host =
+      embedder_site_instance->GetProcess();
   // Validate that the partition id coming from the renderer is valid UTF-8,
   // since we depend on this in other parts of the code, such as FilePath
   // creation. If the validation fails, treat it as a bad message and kill the
@@ -51,50 +50,44 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
   if (!IsStringUTF8(params.storage_partition_id)) {
     content::RecordAction(UserMetricsAction("BadMessageTerminate_BPGM"));
     base::KillProcess(
-        embedder_site_instance->GetProcess()->GetHandle(),
+        embedder_process_host->GetHandle(),
         content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
     return NULL;
   }
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess)) {
-    // When --site-per-process is specified, the behavior of BrowserPlugin
-    // as <webview> is broken and we use it for rendering out-of-process
-    // iframes instead. We use the src URL sent by the renderer to find the
-    // right process in which to place this instance.
-    // Note: Since BrowserPlugin doesn't support cross-process navigation,
-    // the instance will stay in the initially assigned process, regardless
-    // of the site it is navigated to.
-    // TODO(nasko): Fix this, and such that cross-process navigations are
-    // supported.
-    guest_site_instance =
-        embedder_site_instance->GetRelatedSiteInstance(GURL(params.src));
-  } else {
-    const std::string& host = embedder_site_instance->GetSiteURL().host();
+  // We usually require BrowserPlugins to be hosted by a storage isolated
+  // extension. We treat WebUI pages as a special case if they host the
+  // BrowserPlugin in a component extension iframe. In that case, we use the
+  // iframe's URL to determine the extension.
+  const GURL& embedder_site_url = embedder_site_instance->GetSiteURL();
+  GURL validated_frame_url(params.embedder_frame_url);
+  RenderViewHost::FilterURL(
+      embedder_process_host, false, &validated_frame_url);
+  const std::string& host = content::HasWebUIScheme(embedder_site_url) ?
+       validated_frame_url.host() : embedder_site_url.host();
 
-    std::string url_encoded_partition = net::EscapeQueryParamValue(
-        params.storage_partition_id, false);
-    // The SiteInstance of a given webview tag is based on the fact that it's
-    // a guest process in addition to which platform application the tag
-    // belongs to and what storage partition is in use, rather than the URL
-    // that the tag is being navigated to.
-    GURL guest_site(
-        base::StringPrintf("%s://%s/%s?%s", chrome::kGuestScheme,
-                            host.c_str(),
-                            params.persist_storage ? "persist" : "",
-                            url_encoded_partition.c_str()));
+  std::string url_encoded_partition = net::EscapeQueryParamValue(
+      params.storage_partition_id, false);
+  // The SiteInstance of a given webview tag is based on the fact that it's
+  // a guest process in addition to which platform application the tag
+  // belongs to and what storage partition is in use, rather than the URL
+  // that the tag is being navigated to.
+  GURL guest_site(base::StringPrintf("%s://%s/%s?%s",
+                                     kGuestScheme,
+                                     host.c_str(),
+                                     params.persist_storage ? "persist" : "",
+                                     url_encoded_partition.c_str()));
 
-    // If we already have a webview tag in the same app using the same storage
-    // partition, we should use the same SiteInstance so the existing tag and
-    // the new tag can script each other.
-    guest_site_instance = GetGuestSiteInstance(guest_site);
-    if (!guest_site_instance) {
-      // Create the SiteInstance in a new BrowsingInstance, which will ensure
-      // that webview tags are also not allowed to send messages across
-      // different partitions.
-      guest_site_instance = SiteInstance::CreateForURL(
-          embedder_site_instance->GetBrowserContext(), guest_site);
-    }
+  // If we already have a webview tag in the same app using the same storage
+  // partition, we should use the same SiteInstance so the existing tag and
+  // the new tag can script each other.
+  SiteInstance* guest_site_instance = GetGuestSiteInstance(guest_site);
+  if (!guest_site_instance) {
+    // Create the SiteInstance in a new BrowsingInstance, which will ensure
+    // that webview tags are also not allowed to send messages across
+    // different partitions.
+    guest_site_instance = SiteInstance::CreateForURL(
+        embedder_site_instance->GetBrowserContext(), guest_site);
   }
 
   return WebContentsImpl::CreateGuest(
@@ -233,40 +226,17 @@ void BrowserPluginGuestManager::OnUnhandledSwapBuffersACK(
                                                sync_point);
 }
 
-void BrowserPluginGuestManager::DidSendScreenRects(
-    WebContentsImpl* embedder_web_contents) {
-  // TODO(lazyboy): Generalize iterating over guest instances and performing
-  // actions on the guests.
+bool BrowserPluginGuestManager::ForEachGuest(
+    WebContentsImpl* embedder_web_contents, const GuestCallback& callback) {
   for (GuestInstanceMap::iterator it =
            guest_web_contents_by_instance_id_.begin();
-               it != guest_web_contents_by_instance_id_.end(); ++it) {
+       it != guest_web_contents_by_instance_id_.end(); ++it) {
     BrowserPluginGuest* guest = it->second->GetBrowserPluginGuest();
-    if (embedder_web_contents == guest->embedder_web_contents()) {
-      static_cast<RenderViewHostImpl*>(
-          guest->GetWebContents()->GetRenderViewHost())->SendScreenRects();
-    }
-  }
-}
+    if (embedder_web_contents != guest->embedder_web_contents())
+      continue;
 
-bool BrowserPluginGuestManager::UnlockMouseIfNecessary(
-    WebContentsImpl* embedder_web_contents,
-    const NativeWebKeyboardEvent& event) {
-  if ((event.type != WebKit::WebInputEvent::RawKeyDown) ||
-      (event.windowsKeyCode != ui::VKEY_ESCAPE) ||
-      (event.modifiers & WebKit::WebInputEvent::InputModifiers)) {
-    return false;
-  }
-
-  // TODO(lazyboy): Generalize iterating over guest instances and performing
-  // actions on the guests.
-  for (GuestInstanceMap::iterator it =
-           guest_web_contents_by_instance_id_.begin();
-               it != guest_web_contents_by_instance_id_.end(); ++it) {
-    BrowserPluginGuest* guest = it->second->GetBrowserPluginGuest();
-    if (embedder_web_contents == guest->embedder_web_contents()) {
-      if (guest->UnlockMouseIfNecessary(event))
-        return true;
-    }
+    if (callback.Run(guest))
+      return true;
   }
   return false;
 }

@@ -123,7 +123,7 @@ bool CreateTargetFolder(const base::FilePath& path, RankCrashes action,
   if (base::PathExists(*full_path))
     return false;
 
-  return file_util::CreateDirectory(*full_path);
+  return base::CreateDirectory(*full_path);
 }
 
 // Makes sure that any pending task is processed.
@@ -268,7 +268,7 @@ int LoadOperations(const base::FilePath& path, RankCrashes action,
   // Work with a tiny index table (16 entries).
   disk_cache::BackendImpl* cache = new disk_cache::BackendImpl(
       path, 0xf, cache_thread->message_loop_proxy().get(), NULL);
-  if (!cache || !cache->SetMaxSize(0x100000))
+  if (!cache->SetMaxSize(0x100000))
     return GENERIC;
 
   // No experiments and use a simple LRU.

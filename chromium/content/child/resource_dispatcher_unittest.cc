@@ -173,11 +173,11 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     request_info.request_type = ResourceType::SUB_RESOURCE;
     request_info.appcache_host_id = appcache::kNoHostId;
     request_info.routing_id = 0;
-    RequestExtraData extra_data(WebKit::WebReferrerPolicyDefault,
-                                WebKit::WebString(),
-                                false, true, 0, GURL(),
+    RequestExtraData extra_data(blink::WebReferrerPolicyDefault,
+                                blink::WebString(),
+                                false, MSG_ROUTING_NONE, true, 0, GURL(),
                                 false, -1, true,
-                                PAGE_TRANSITION_LINK, -1, -1);
+                                PAGE_TRANSITION_LINK, false, -1, -1);
     request_info.extra_data = &extra_data;
 
     return dispatcher_->CreateBridge(request_info);

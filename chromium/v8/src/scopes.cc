@@ -35,8 +35,6 @@
 #include "messages.h"
 #include "scopeinfo.h"
 
-#include "allocation-inl.h"
-
 namespace v8 {
 namespace internal {
 
@@ -437,8 +435,8 @@ Variable* Scope::LookupFunctionVar(Handle<String> name,
         this, name, mode, true /* is valid LHS */,
         Variable::NORMAL, kCreatedInitialized);
     VariableProxy* proxy = factory->NewVariableProxy(var);
-    VariableDeclaration* declaration =
-        factory->NewVariableDeclaration(proxy, mode, this);
+    VariableDeclaration* declaration = factory->NewVariableDeclaration(
+        proxy, mode, this, RelocInfo::kNoPosition);
     DeclareFunctionVar(declaration);
     var->AllocateTo(Variable::CONTEXT, index);
     return var;
@@ -1302,7 +1300,7 @@ void Scope::AllocateParameterLocals() {
 
 void Scope::AllocateNonParameterLocal(Variable* var) {
   ASSERT(var->scope() == this);
-  ASSERT(!var->IsVariable(isolate_->factory()->result_string()) ||
+  ASSERT(!var->IsVariable(isolate_->factory()->dot_result_string()) ||
          !var->IsStackLocal());
   if (var->IsUnallocated() && MustAllocate(var)) {
     if (MustAllocateInContext(var)) {

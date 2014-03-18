@@ -81,6 +81,12 @@ static PRInt32 ssl3_ClientSendSigAlgsXtn(sslSocket *ss, PRBool append,
                                          PRUint32 maxBytes);
 static SECStatus ssl3_ServerHandleSigAlgsXtn(sslSocket *ss, PRUint16 ex_type,
                                              SECItem *data);
+static PRInt32 ssl3_ClientSendSignedCertTimestampXtn(sslSocket *ss,
+						     PRBool append,
+						     PRUint32 maxBytes);
+static SECStatus ssl3_ClientHandleSignedCertTimestampXtn(sslSocket *ss,
+							 PRUint16 ex_type,
+							 SECItem *data);
 
 /*
  * Write bytes.  Using this function means the SECItem structure
@@ -259,6 +265,8 @@ static const ssl3HelloExtensionHandler serverHelloHandlersTLS[] = {
     { ssl_use_srtp_xtn,           &ssl3_HandleUseSRTPXtn },
     { ssl_channel_id_xtn,         &ssl3_ClientHandleChannelIDXtn },
     { ssl_cert_status_xtn,        &ssl3_ClientHandleStatusRequestXtn },
+    { ssl_signed_certificate_timestamp_xtn,
+      &ssl3_ClientHandleSignedCertTimestampXtn },
     { -1, NULL }
 };
 
@@ -287,7 +295,9 @@ ssl3HelloExtensionSender clientHelloSendersTLS[SSL_MAX_EXTENSIONS] = {
     { ssl_use_srtp_xtn,               &ssl3_SendUseSRTPXtn },
     { ssl_channel_id_xtn,             &ssl3_ClientSendChannelIDXtn },
     { ssl_cert_status_xtn,            &ssl3_ClientSendStatusRequestXtn },
-    { ssl_signature_algorithms_xtn,   &ssl3_ClientSendSigAlgsXtn }
+    { ssl_signature_algorithms_xtn,   &ssl3_ClientSendSigAlgsXtn },
+    { ssl_signed_certificate_timestamp_xtn,
+      &ssl3_ClientSendSignedCertTimestampXtn }
     /* any extra entries will appear as { 0, NULL }    */
 };
 
@@ -809,6 +819,15 @@ ssl3_ClientSendChannelIDXtn(sslSocket * ss, PRBool append,
 
     if (maxBytes < extension_length) {
 	PORT_Assert(0);
+	return 0;
+    }
+
+    if (ss->sec.ci.sid->cached != never_cached &&
+        ss->sec.ci.sid->u.ssl3.originalHandshakeHash.len == 0) {
+        /* We can't do ChannelID on a connection if we're resuming and didn't
+         * do ChannelID on the original connection: without ChannelID on the
+         * original connection we didn't record the handshake hashes needed for
+         * the signature. */
 	return 0;
     }
 
@@ -2296,4 +2315,119 @@ ssl3_ClientSendSigAlgsXtn(sslSocket * ss, PRBool append, PRUint32 maxBytes)
 
 loser:
     return -1;
+}
+
+unsigned int
+ssl3_CalculatePaddingExtensionLength(unsigned int clientHelloLength)
+{
+    unsigned int recordLength = 1 /* handshake message type */ +
+				3 /* handshake message length */ +
+				clientHelloLength;
+    unsigned int extensionLength;
+
+    if (recordLength < 256 || recordLength >= 512) {
+	return 0;
+    }
+
+     extensionLength = 512 - recordLength;
+     /* Extensions take at least four bytes to encode. */
+     if (extensionLength < 4) {
+	 extensionLength = 4;
+     }
+
+     return extensionLength;
+}
+
+/* ssl3_AppendPaddingExtension possibly adds an extension which ensures that a
+ * ClientHello record is either < 256 bytes or is >= 512 bytes. This ensures
+ * that we don't trigger bugs in F5 products. */
+PRInt32
+ssl3_AppendPaddingExtension(sslSocket *ss, unsigned int extensionLen,
+			    PRUint32 maxBytes)
+{
+    unsigned int paddingLen = extensionLen - 4;
+    unsigned char padding[256];
+
+    if (extensionLen == 0) {
+	return 0;
+    }
+
+    if (extensionLen < 4 ||
+	extensionLen > maxBytes ||
+	paddingLen > sizeof(padding)) {
+	PORT_Assert(0);
+	return -1;
+    }
+
+    if (SECSuccess != ssl3_AppendHandshakeNumber(ss, ssl_padding_xtn, 2))
+	return -1;
+    if (SECSuccess != ssl3_AppendHandshakeNumber(ss, paddingLen, 2))
+	return -1;
+    memset(padding, 0, paddingLen);
+    if (SECSuccess != ssl3_AppendHandshake(ss, padding, paddingLen))
+	return -1;
+
+    return extensionLen;
+}
+
+/* ssl3_ClientSendSignedCertTimestampXtn sends the signed_certificate_timestamp
+ * extension for TLS ClientHellos. */
+static PRInt32
+ssl3_ClientSendSignedCertTimestampXtn(sslSocket *ss, PRBool append,
+				      PRUint32 maxBytes)
+{
+    PRInt32 extension_length = 2 /* extension_type */ +
+	    2 /* length(extension_data) */;
+
+    /* Only send the extension if processing is enabled. */
+    if (!ss->opt.enableSignedCertTimestamps)
+	return 0;
+
+    if (append && maxBytes >= extension_length) {
+	SECStatus rv;
+	/* extension_type */
+	rv = ssl3_AppendHandshakeNumber(ss,
+					ssl_signed_certificate_timestamp_xtn,
+					2);
+	if (rv != SECSuccess)
+	    goto loser;
+	/* zero length */
+	rv = ssl3_AppendHandshakeNumber(ss, 0, 2);
+	if (rv != SECSuccess)
+	    goto loser;
+	ss->xtnData.advertised[ss->xtnData.numAdvertised++] =
+		ssl_signed_certificate_timestamp_xtn;
+    } else if (maxBytes < extension_length) {
+	PORT_Assert(0);
+	return 0;
+    }
+
+    return extension_length;
+loser:
+    return -1;
+}
+
+static SECStatus
+ssl3_ClientHandleSignedCertTimestampXtn(sslSocket *ss, PRUint16 ex_type,
+					SECItem *data)
+{
+    /* We do not yet know whether we'll be resuming a session or creating
+     * a new one, so we keep a pointer to the data in the TLSExtensionData
+     * structure. This pointer is only valid in the scope of
+     * ssl3_HandleServerHello, and, if not resuming a session, the data is
+     * copied once a new session structure has been set up.
+     * All parsing is currently left to the application and we accept
+     * everything, including empty data.
+     */
+    SECItem *scts = &ss->xtnData.signedCertTimestamps;
+    PORT_Assert(!scts->data && !scts->len);
+
+    if (!data->len) {
+	/* Empty extension data: RFC 6962 mandates non-empty contents. */
+	return SECFailure;
+    }
+    *scts = *data;
+    /* Keep track of negotiated extensions. */
+    ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
+    return SECSuccess;
 }

@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "base/message_loop/message_loop.h"
-#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor_loader_win.h"
@@ -41,8 +40,7 @@ gfx::Size RootWindowHost::GetNativeScreenSize() {
 }
 
 RootWindowHostWin::RootWindowHostWin(const gfx::Rect& bounds)
-    : delegate_(NULL),
-      fullscreen_(false),
+    : fullscreen_(false),
       has_capture_(false),
       saved_window_style_(0),
       saved_window_ex_style_(0) {
@@ -54,10 +52,6 @@ RootWindowHostWin::RootWindowHostWin(const gfx::Rect& bounds)
 
 RootWindowHostWin::~RootWindowHostWin() {
   DestroyWindow(hwnd());
-}
-
-void RootWindowHostWin::SetDelegate(RootWindowHostDelegate* delegate) {
-  delegate_ = delegate;
 }
 
 RootWindow* RootWindowHostWin::GetRootWindow() {
@@ -141,8 +135,9 @@ void RootWindowHostWin::SetBounds(const gfx::Rect& bounds) {
   // Explicity call OnHostResized when the scale has changed because
   // the window size may not have changed.
   float current_scale = delegate_->GetDeviceScaleFactor();
-  float new_scale = gfx::Screen::GetScreenFor(delegate_->AsRootWindow())->
-      GetDisplayNearestWindow(delegate_->AsRootWindow()).device_scale_factor();
+  float new_scale = gfx::Screen::GetScreenFor(
+      delegate_->AsRootWindow()->window())->GetDisplayNearestWindow(
+          delegate_->AsRootWindow()->window()).device_scale_factor();
   if (current_scale != new_scale)
     delegate_->OnHostResized(bounds.size());
 }
@@ -187,7 +182,7 @@ void RootWindowHostWin::ReleaseCapture() {
 
 bool RootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
   client::CursorClient* cursor_client =
-      client::GetCursorClient(GetRootWindow());
+      client::GetCursorClient(GetRootWindow()->window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -220,10 +215,6 @@ void RootWindowHostWin::OnCursorVisibilityChanged(bool show) {
 
 void RootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
   // Deliberately not implemented.
-}
-
-void RootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
-  NOTIMPLEMENTED();
 }
 
 void RootWindowHostWin::PostNativeEvent(const base::NativeEvent& native_event) {

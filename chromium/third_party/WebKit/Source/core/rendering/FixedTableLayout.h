@@ -21,21 +21,22 @@
 #ifndef FixedTableLayout_h
 #define FixedTableLayout_h
 
-#include "core/platform/Length.h"
 #include "core/rendering/TableLayout.h"
+#include "platform/Length.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
 class RenderTable;
 
-class FixedTableLayout : public TableLayout {
+class FixedTableLayout FINAL : public TableLayout {
 public:
     FixedTableLayout(RenderTable*);
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) OVERRIDE;
     virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const OVERRIDE;
-    virtual void layout();
+    virtual void layout() OVERRIDE;
+    virtual void willChangeTableLayout() OVERRIDE;
 
 private:
     int calcWidthArray();

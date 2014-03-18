@@ -15,6 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkString.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
@@ -182,6 +183,16 @@ int PlatformFontPango::GetBaseline() const {
   return ascent_pixels_;
 }
 
+int PlatformFontPango::GetCapHeight() const {
+  // Return the ascent as an approximation because Pango doesn't support cap
+  // height.
+  // TODO(yukishiino): Come up with a better approximation of cap height, or
+  // support cap height metrics.  Another option is to have a hard-coded table
+  // of cap height for major fonts used in Chromium/Chrome.
+  // See http://crbug.com/249507
+  return ascent_pixels_;
+}
+
 int PlatformFontPango::GetAverageCharacterWidth() const {
   const_cast<PlatformFontPango*>(this)->InitPangoMetrics();
   return SkScalarRound(average_width_pixels_);
@@ -203,6 +214,12 @@ int PlatformFontPango::GetStyle() const {
 
 std::string PlatformFontPango::GetFontName() const {
   return font_family_;
+}
+
+std::string PlatformFontPango::GetActualFontNameForTesting() const {
+  SkString family_name;
+  typeface_->getFamilyName(&family_name);
+  return family_name.c_str();
 }
 
 int PlatformFontPango::GetFontSize() const {
@@ -283,7 +300,7 @@ void PlatformFontPango::InitWithNameAndSize(const std::string& font_name,
   std::string fallback;
 
   skia::RefPtr<SkTypeface> typeface = skia::AdoptRef(
-          SkTypeface::CreateFromName(font_name.c_str(), SkTypeface::kNormal));
+      SkTypeface::CreateFromName(font_name.c_str(), SkTypeface::kNormal));
   if (!typeface) {
     // A non-scalable font such as .pcf is specified. Falls back to a default
     // scalable font.
@@ -380,7 +397,6 @@ void PlatformFontPango::InitPangoMetrics() {
     average_width_pixels_ = std::min(pango_width_pixels, dialog_units_pixels);
   }
 }
-
 
 double PlatformFontPango::GetAverageWidth() const {
   const_cast<PlatformFontPango*>(this)->InitPangoMetrics();

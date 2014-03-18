@@ -43,49 +43,6 @@
 
 using namespace v8;
 
-static const unsigned int kMaxCounters = 256;
-
-// A single counter in a counter collection.
-class Counter {
- public:
-  static const int kMaxNameSize = 64;
-  int32_t* Bind(const char* name) {
-    int i;
-    for (i = 0; i < kMaxNameSize - 1 && name[i]; i++) {
-      name_[i] = name[i];
-    }
-    name_[i] = '\0';
-    return &counter_;
-  }
- private:
-  int32_t counter_;
-  uint8_t name_[kMaxNameSize];
-};
-
-
-// A set of counters and associated information.  An instance of this
-// class is stored directly in the memory-mapped counters file if
-// the --save-counters options is used
-class CounterCollection {
- public:
-  CounterCollection() {
-    magic_number_ = 0xDEADFACE;
-    max_counters_ = kMaxCounters;
-    max_name_size_ = Counter::kMaxNameSize;
-    counters_in_use_ = 0;
-  }
-  Counter* GetNextCounter() {
-    if (counters_in_use_ == kMaxCounters) return NULL;
-    return &counters_[counters_in_use_++];
-  }
- private:
-  uint32_t magic_number_;
-  uint32_t max_counters_;
-  uint32_t max_name_size_;
-  uint32_t counters_in_use_;
-  Counter counters_[kMaxCounters];
-};
-
 
 class Compressor {
  public:
@@ -310,6 +267,7 @@ void DumpException(Handle<Message> message) {
 
 int main(int argc, char** argv) {
   V8::InitializeICU();
+  i::Isolate::SetCrashIfDefaultIsolateInitialized();
 
   // By default, log code create information in the snapshot.
   i::FLAG_log_code = true;
@@ -330,7 +288,10 @@ int main(int argc, char** argv) {
     exit(1);
   }
 #endif
-  Isolate* isolate = Isolate::GetCurrent();
+  i::FLAG_logfile_per_isolate = false;
+
+  Isolate* isolate = v8::Isolate::New();
+  isolate->Enter();
   i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Serializer::Enable(internal_isolate);
   Persistent<Context> context;
@@ -348,7 +309,7 @@ int main(int argc, char** argv) {
     // Capture 100 frames if anything happens.
     V8::SetCaptureStackTraceForUncaughtExceptions(true, 100);
     HandleScope scope(isolate);
-    v8::Context::Scope(v8::Local<v8::Context>::New(isolate, context));
+    v8::Context::Scope cscope(v8::Local<v8::Context>::New(isolate, context));
     const char* name = i::FLAG_extra_code;
     FILE* file = i::OS::FOpen(name, "rb");
     if (file == NULL) {
@@ -371,7 +332,7 @@ int main(int argc, char** argv) {
       i += read;
     }
     fclose(file);
-    Local<String> source = String::New(chars);
+    Local<String> source = String::NewFromUtf8(isolate, chars);
     TryCatch try_catch;
     Local<Script> script = Script::Compile(source);
     if (try_catch.HasCaught()) {
@@ -397,7 +358,7 @@ int main(int argc, char** argv) {
   internal_isolate->heap()->CollectAllGarbage(
       i::Heap::kNoGCFlags, "mksnapshot");
   i::Object* raw_context = *v8::Utils::OpenPersistent(context);
-  context.Dispose();
+  context.Reset();
   CppByteSink sink(argv[1]);
   // This results in a somewhat smaller snapshot, probably because it gets rid
   // of some things that are cached between garbage collections.

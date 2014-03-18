@@ -108,7 +108,9 @@ bool SkOpAngle::operator<(const SkOpAngle& rh) const {  // this/lh: left-hand; r
     }
     // see if either curve can be lengthened before trying the tangent
     if (fSegment->other(fEnd) != rh.fSegment  // tangents not absolutely identical
-            && rh.fSegment->other(rh.fEnd) != fSegment) {  // and not intersecting
+            && rh.fSegment->other(rh.fEnd) != fSegment
+            && y != -DBL_EPSILON
+            && ry != -DBL_EPSILON) {  // and not intersecting
         SkOpAngle longer = *this;
         SkOpAngle rhLonger = rh;
         if ((longer.lengthen(rh) | rhLonger.lengthen(*this))  // lengthen both
@@ -131,6 +133,9 @@ bool SkOpAngle::operator<(const SkOpAngle& rh) const {  // this/lh: left-hand; r
             if (!SkDLine::NearRay(x, y, rx, ry) && x_ry != rx_y) {
                 return COMPARE_RESULT("7 !fComputed && !rh.fComputed", x_ry < rx_y);
             }
+            if (fSide2 == 0 && rh.fSide2 == 0) {
+                return COMPARE_RESULT("7a !fComputed && !rh.fComputed", x_ry < rx_y);
+            }
         } else {
             // if the vector was a result of subdividing a curve, see if it is stable
             bool sloppy1 = x_ry < rx_y;
@@ -142,8 +147,12 @@ bool SkOpAngle::operator<(const SkOpAngle& rh) const {  // this/lh: left-hand; r
             }
         }
     }
-    if (fSide2 * rh.fSide2 == 0) {
-//        SkASSERT(fSide2 + rh.fSide2 != 0); // hitting this assert means coincidence was undetected
+    if (fSide2 * rh.fSide2 == 0) {  // one is zero
+#if DEBUG_ANGLE
+        if (fSide2 == rh.fSide2 && y_ry) {  // both is zero; coincidence was undetected
+            SkDebugf("%s coincidence!\n", __FUNCTION__);
+        }
+#endif
         return COMPARE_RESULT("9a fSide2 * rh.fSide2 == 0 ...", fSide2 < rh.fSide2);
     }
     // at this point, the initial tangent line is nearly coincident
@@ -200,7 +209,10 @@ bool SkOpAngle::operator<(const SkOpAngle& rh) const {  // this/lh: left-hand; r
         return COMPARE_RESULT("roots == 0 || rroots == 0", this < &rh);
     }
     SkASSERT(fSide != 0 && rh.fSide != 0);
-    SkASSERT(fSide * rh.fSide > 0); // both are the same sign
+    if (fSide * rh.fSide < 0) {
+        fUnsortable = true;
+        return COMPARE_RESULT("14 fSide * rh.fSide < 0", this < &rh);
+    }
     SkDPoint lLoc;
     double best = SK_ScalarInfinity;
 #if DEBUG_SORT
@@ -239,7 +251,7 @@ bool SkOpAngle::operator<(const SkOpAngle& rh) const {  // this/lh: left-hand; r
     if (flip) {
         leftLessThanRight = !leftLessThanRight;
     }
-    return COMPARE_RESULT("14 leftLessThanRight", leftLessThanRight);
+    return COMPARE_RESULT("15 leftLessThanRight", leftLessThanRight);
 }
 
 bool SkOpAngle::isHorizontal() const {
@@ -409,8 +421,15 @@ void SkOpAngle::setSpans() {
 
 #ifdef SK_DEBUG
 void SkOpAngle::dump() const {
-    SkDebugf("id=%d (%1.9g,%1.9g) start=%d (%1.9g) end=%d (%1.9g)\n", fSegment->debugID(),
-            fSegment->xAtT(fStart), fSegment->yAtT(fStart), fStart, fSegment->span(fStart).fT,
-            fEnd, fSegment->span(fEnd).fT);
+    const SkOpSpan& spanStart = fSegment->span(fStart);
+    const SkOpSpan& spanEnd = fSegment->span(fEnd);
+    const SkOpSpan& spanMin = fStart < fEnd ? spanStart : spanEnd;
+    SkDebugf("id=%d (%1.9g,%1.9g) start=%d (%1.9g) end=%d (%1.9g) sumWind=",
+            fSegment->debugID(), fSegment->xAtT(fStart), fSegment->yAtT(fStart),
+            fStart, spanStart.fT, fEnd, spanEnd.fT);
+    SkPathOpsDebug::WindingPrintf(spanMin.fWindSum);
+    SkDebugf(" oppWind=");
+    SkPathOpsDebug::WindingPrintf(spanMin.fOppSum),
+    SkDebugf(" done=%d\n", spanMin.fDone);
 }
 #endif

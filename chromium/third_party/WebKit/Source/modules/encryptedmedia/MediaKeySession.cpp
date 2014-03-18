@@ -27,25 +27,25 @@
 #include "modules/encryptedmedia/MediaKeySession.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/GenericEventQueue.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/html/MediaKeyError.h"
-#include "core/platform/graphics/ContentDecryptionModule.h"
 #include "modules/encryptedmedia/MediaKeyMessageEvent.h"
 #include "modules/encryptedmedia/MediaKeys.h"
+#include "platform/drm/ContentDecryptionModule.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaKeySession> MediaKeySession::create(ScriptExecutionContext* context, ContentDecryptionModule* cdm, MediaKeys* keys)
+PassRefPtr<MediaKeySession> MediaKeySession::create(ExecutionContext* context, ContentDecryptionModule* cdm, MediaKeys* keys)
 {
     return adoptRef(new MediaKeySession(context, cdm, keys));
 }
 
-MediaKeySession::MediaKeySession(ScriptExecutionContext* context, ContentDecryptionModule* cdm, MediaKeys* keys)
+MediaKeySession::MediaKeySession(ExecutionContext* context, ContentDecryptionModule* cdm, MediaKeys* keys)
     : ContextLifecycleObserver(context)
-    , m_asyncEventQueue(GenericEventQueue::create(this))
     , m_keySystem(keys->keySystem())
+    , m_asyncEventQueue(GenericEventQueue::create(this))
     , m_session(cdm->createSession(this))
     , m_keys(keys)
     , m_keyRequestTimer(this, &MediaKeySession::keyRequestTimerFired)
@@ -110,14 +110,14 @@ void MediaKeySession::keyRequestTimerFired(Timer<MediaKeySession>*)
     }
 }
 
-void MediaKeySession::update(Uint8Array* key, ExceptionState& es)
+void MediaKeySession::update(Uint8Array* key, ExceptionState& exceptionState)
 {
     // From <http://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#dom-addkey>:
     // The addKey(key) method must run the following steps:
     // 1. If the first or second argument [sic] is null or an empty array, throw an InvalidAccessError.
     // NOTE: the reference to a "second argument" is a spec bug.
     if (!key || !key->length()) {
-        es.throwDOMException(InvalidAccessError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -134,8 +134,6 @@ void MediaKeySession::addKeyTimerFired(Timer<MediaKeySession>*)
 
     while (!m_pendingKeys.isEmpty()) {
         RefPtr<Uint8Array> pendingKey = m_pendingKeys.takeFirst();
-        unsigned short errorCode = 0;
-        unsigned long systemCode = 0;
 
         // NOTE: Continued from step 2. of MediaKeySession::update()
         // 2.1. Let cdm be the cdm loaded in the MediaKeys constructor.
@@ -149,7 +147,7 @@ void MediaKeySession::addKeyTimerFired(Timer<MediaKeySession>*)
 
 void MediaKeySession::keyAdded()
 {
-    RefPtr<Event> event = Event::create(eventNames().webkitkeyaddedEvent);
+    RefPtr<Event> event = Event::create(EventTypeNames::webkitkeyadded);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
@@ -174,7 +172,7 @@ void MediaKeySession::keyError(MediaKeyErrorCode errorCode, unsigned long system
     m_error = MediaKeyError::create(mediaKeyErrorCode, systemCode);
 
     // 3. queue a task to fire a simple event named keyerror at the MediaKeySession object.
-    RefPtr<Event> event = Event::create(eventNames().webkitkeyerrorEvent);
+    RefPtr<Event> event = Event::create(EventTypeNames::webkitkeyerror);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
@@ -188,19 +186,19 @@ void MediaKeySession::keyMessage(const unsigned char* message, size_t messageLen
     init.message = Uint8Array::create(message, messageLength);
     init.destinationURL = destinationURL;
 
-    RefPtr<MediaKeyMessageEvent> event = MediaKeyMessageEvent::create(eventNames().webkitkeymessageEvent, init);
+    RefPtr<MediaKeyMessageEvent> event = MediaKeyMessageEvent::create(EventTypeNames::webkitkeymessage, init);
     event->setTarget(this);
     m_asyncEventQueue->enqueueEvent(event.release());
 }
 
 const AtomicString& MediaKeySession::interfaceName() const
 {
-    return eventNames().interfaceForMediaKeySession;
+    return EventTargetNames::MediaKeySession;
 }
 
-ScriptExecutionContext* MediaKeySession::scriptExecutionContext() const
+ExecutionContext* MediaKeySession::executionContext() const
 {
-    return ContextLifecycleObserver::scriptExecutionContext();
+    return ContextLifecycleObserver::executionContext();
 }
 
 }

@@ -29,8 +29,8 @@
  */
 
 [
-    EnabledAtRuntime=WebMIDI,
-    ConstructorTemplate=Event
+    EventConstructor,
+    RuntimeEnabled=WebMIDI,
 ] interface MIDIConnectionEvent : Event {
     [InitializedByEventConstructor] readonly attribute MIDIPort port;
 };

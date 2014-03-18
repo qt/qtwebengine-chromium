@@ -186,6 +186,10 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
     (*it)->SetExtraOptions(config);
 }
 
+int AudioProcessingImpl::EnableExperimentalNs(bool enable) {
+  return kNoError;
+}
+
 int AudioProcessingImpl::set_sample_rate_hz(int rate) {
   CriticalSectionScoped crit_scoped(crit_);
   if (rate == sample_rate_hz_) {
@@ -536,6 +540,35 @@ int AudioProcessingImpl::StartDebugRecording(
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
 }
 
+int AudioProcessingImpl::StartDebugRecording(FILE* handle) {
+  CriticalSectionScoped crit_scoped(crit_);
+
+  if (handle == NULL) {
+    return kNullPointerError;
+  }
+
+#ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
+  // Stop any ongoing recording.
+  if (debug_file_->Open()) {
+    if (debug_file_->CloseFile() == -1) {
+      return kFileError;
+    }
+  }
+
+  if (debug_file_->OpenFromFileHandle(handle, true, false) == -1) {
+    return kFileError;
+  }
+
+  int err = WriteInitMessage();
+  if (err != kNoError) {
+    return err;
+  }
+  return kNoError;
+#else
+  return kUnsupportedFunctionError;
+#endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
+}
+
 int AudioProcessingImpl::StopDebugRecording() {
   CriticalSectionScoped crit_scoped(crit_);
 
@@ -638,7 +671,7 @@ int AudioProcessingImpl::WriteMessageToDebugFile() {
   if (size <= 0) {
     return kUnspecifiedError;
   }
-#if defined(WEBRTC_BIG_ENDIAN)
+#if defined(WEBRTC_ARCH_BIG_ENDIAN)
   // TODO(ajm): Use little-endian "on the wire". For the moment, we can be
   //            pretty safe in assuming little-endian.
 #endif

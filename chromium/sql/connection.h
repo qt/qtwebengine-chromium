@@ -150,11 +150,16 @@ class SQL_EXPORT Connection {
   // histogram is recorded.
   void AddTaggedHistogram(const std::string& name, size_t sample) const;
 
-  // Run "PRAGMA integrity_check" and post each line of results into
-  // |messages|.  Returns the success of running the statement - per
-  // the SQLite documentation, if no errors are found the call should
-  // succeed, and a single value "ok" should be in messages.
-  bool IntegrityCheck(std::vector<std::string>* messages);
+  // Run "PRAGMA integrity_check" and post each line of
+  // results into |messages|.  Returns the success of running the
+  // statement - per the SQLite documentation, if no errors are found the
+  // call should succeed, and a single value "ok" should be in messages.
+  bool FullIntegrityCheck(std::vector<std::string>* messages);
+
+  // Runs "PRAGMA quick_check" and, unlike the FullIntegrityCheck method,
+  // interprets the results returning true if the the statement executes
+  // without error and results in a single "ok" value.
+  bool QuickIntegrityCheck() WARN_UNUSED_RESULT;
 
   // Initialization ------------------------------------------------------------
 
@@ -394,6 +399,12 @@ class SQL_EXPORT Connection {
   //   SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY 1, 2, 3, 4;
   std::string GetSchema() const;
 
+  // Clients which provide an error_callback don't see the
+  // error-handling at the end of OnSqliteError().  Expose to allow
+  // those clients to work appropriately with ScopedErrorIgnorer in
+  // tests.
+  static bool ShouldIgnoreSqliteError(int error);
+
  private:
   // For recovery module.
   friend class Recovery;
@@ -436,7 +447,6 @@ class SQL_EXPORT Connection {
   // See test/scoped_error_ignorer.h.
   typedef base::Callback<bool(int)> ErrorIgnorerCallback;
   static ErrorIgnorerCallback* current_ignorer_cb_;
-  static bool ShouldIgnore(int error);
   static void SetErrorIgnorer(ErrorIgnorerCallback* ignorer);
   static void ResetErrorIgnorer();
 
@@ -511,9 +521,17 @@ class SQL_EXPORT Connection {
   void StatementRefCreated(StatementRef* ref);
   void StatementRefDeleted(StatementRef* ref);
 
-  // Called by Statement objects when an sqlite function returns an error.
-  // The return value is the error code reflected back to client code.
-  int OnSqliteError(int err, Statement* stmt);
+  // Called when a sqlite function returns an error, which is passed
+  // as |err|.  The return value is the error code to be reflected
+  // back to client code.  |stmt| is non-NULL if the error relates to
+  // an sql::Statement instance.  |sql| is non-NULL if the error
+  // relates to non-statement sql code (Execute, for instance).  Both
+  // can be NULL, but both should never be set.
+  // NOTE(shess): Originally, the return value was intended to allow
+  // error handlers to transparently convert errors into success.
+  // Unfortunately, transactions are not generally restartable, so
+  // this did not work out.
+  int OnSqliteError(int err, Statement* stmt, const char* sql);
 
   // Like |Execute()|, but retries if the database is locked.
   bool ExecuteWithTimeout(const char* sql, base::TimeDelta ms_timeout)
@@ -526,6 +544,10 @@ class SQL_EXPORT Connection {
   // released before close could be called (which should always be the
   // case for const functions).
   scoped_refptr<StatementRef> GetUntrackedStatement(const char* sql) const;
+
+  bool IntegrityCheckHelper(
+      const char* pragma_sql,
+      std::vector<std::string>* messages) WARN_UNUSED_RESULT;
 
   // The actual sqlite database. Will be NULL before Init has been called or if
   // Init resulted in an error.

@@ -19,35 +19,31 @@
  */
 
 [
-    CustomToV8
+    Custom=Wrap,
 ] interface HTMLElement : Element {
-             [Reflect] attribute DOMString title;
-             [Reflect] attribute DOMString lang;
-             attribute boolean             translate;
-             [Reflect] attribute DOMString dir;
+    [Reflect] attribute DOMString title;
+    [Reflect] attribute DOMString lang;
+    attribute boolean translate;
+    [Reflect] attribute DOMString dir;
 
-             [CustomElementCallbacks=Enable] attribute long              tabIndex;
-             [CustomElementCallbacks=Enable] attribute boolean           draggable;
-             [Reflect] attribute DOMString webkitdropzone;
-             [Reflect] attribute boolean hidden;
-             [Reflect] attribute DOMString accessKey;
+    [CustomElementCallbacks] attribute long              tabIndex;
+    [CustomElementCallbacks] attribute boolean           draggable;
+    [Reflect, TreatNullAs=NullString] attribute DOMString webkitdropzone;
+    [Reflect] attribute boolean hidden;
+    [Reflect] attribute DOMString accessKey;
 
     // Extensions
-             [TreatNullAs=NullString, CustomElementCallbacks=Enable, PerWorldBindings, ActivityLog=SetterForIsolatedWorlds, SetterRaisesException] attribute DOMString innerHTML;
-             [TreatNullAs=NullString, CustomElementCallbacks=Enable, SetterRaisesException] attribute DOMString innerText;
-             [TreatNullAs=NullString, CustomElementCallbacks=Enable, SetterRaisesException] attribute DOMString outerHTML;
-             [TreatNullAs=NullString, CustomElementCallbacks=Enable, SetterRaisesException] attribute DOMString outerText;
+    [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, MeasureAs=HTMLElementInnerText] attribute DOMString innerText;
+    [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, MeasureAs=HTMLElementOuterText] attribute DOMString outerText;
 
-    [RaisesException, CustomElementCallbacks=Enable, MeasureAs=InsertAdjacentElement] Element insertAdjacentElement([Default=Undefined] optional DOMString where,
+    [RaisesException, CustomElementCallbacks, MeasureAs=InsertAdjacentElement] Element insertAdjacentElement([Default=Undefined] optional DOMString where,
                                   [Default=Undefined] optional Element element);
-    [CustomElementCallbacks=Enable, RaisesException] void insertAdjacentHTML([Default=Undefined] optional DOMString where,
-                            [Default=Undefined] optional DOMString html);
     [RaisesException, MeasureAs=InsertAdjacentText] void insertAdjacentText([Default=Undefined] optional DOMString where,
                             [Default=Undefined] optional DOMString text);
 
-    [EnabledAtRuntime=IMEAPI] readonly attribute InputMethodContext inputMethodContext;
+    [RuntimeEnabled=IMEAPI] readonly attribute InputMethodContext inputMethodContext;
 
-    [TreatNullAs=NullString, CustomElementCallbacks=Enable, SetterRaisesException] attribute DOMString contentEditable;
+    [CustomElementCallbacks, RaisesException=Setter] attribute DOMString contentEditable;
     readonly attribute boolean isContentEditable;
 
              attribute boolean spellcheck;
@@ -55,3 +51,4 @@
     void click();
 };
 
+HTMLElement implements GlobalEventHandlers;

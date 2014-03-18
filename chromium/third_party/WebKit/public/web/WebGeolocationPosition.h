@@ -29,13 +29,13 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebPrivatePtr.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 #include "wtf/PassRefPtr.h"
 #endif
 
 namespace WebCore { class GeolocationPosition; }
 
-namespace WebKit {
+namespace blink {
 
 class WebGeolocationPosition {
 public:
@@ -47,11 +47,11 @@ public:
     WebGeolocationPosition(const WebGeolocationPosition& other) { assign(other); }
     ~WebGeolocationPosition() { reset(); }
 
-    WEBKIT_EXPORT void assign(double timestamp, double latitude, double longitude, double accuracy, bool providesAltitude, double altitude, bool providesAltitudeAccuracy, double altitudeAccuracy, bool providesHeading, double heading, bool providesSpeed, double speed);
-    WEBKIT_EXPORT void assign(const WebGeolocationPosition&);
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void assign(double timestamp, double latitude, double longitude, double accuracy, bool providesAltitude, double altitude, bool providesAltitudeAccuracy, double altitudeAccuracy, bool providesHeading, double heading, bool providesSpeed, double speed);
+    BLINK_EXPORT void assign(const WebGeolocationPosition&);
+    BLINK_EXPORT void reset();
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebGeolocationPosition(WTF::PassRefPtr<WebCore::GeolocationPosition>);
     WebGeolocationPosition& operator=(WTF::PassRefPtr<WebCore::GeolocationPosition>);
     operator WTF::PassRefPtr<WebCore::GeolocationPosition>() const;
@@ -61,6 +61,6 @@ private:
     WebPrivatePtr<WebCore::GeolocationPosition> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebGeolocationPosition_h

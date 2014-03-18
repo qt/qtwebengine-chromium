@@ -45,15 +45,15 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/loader/archive/MHTMLArchive.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/PageSerializer.h"
-#include "core/platform/SerializedResource.h"
+#include "platform/SerializedResource.h"
+#include "platform/mhtml/MHTMLArchive.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebCString.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringConcatenate.h"
 
@@ -134,13 +134,13 @@ void retrieveResourcesForElement(Element* element,
 }
 
 void retrieveResourcesForFrame(Frame* frame,
-                               const WebKit::WebVector<WebKit::WebCString>& supportedSchemes,
+                               const blink::WebVector<blink::WebCString>& supportedSchemes,
                                Vector<Frame*>* visitedFrames,
                                Vector<Frame*>* framesToVisit,
                                Vector<KURL>* frameURLs,
                                Vector<KURL>* resourceURLs)
 {
-    KURL frameURL = frame->loader()->documentLoader()->request().url();
+    KURL frameURL = frame->loader().documentLoader()->request().url();
 
     // If the frame's URL is invalid, ignore it, it is not retrievable.
     if (!frameURL.isValid())
@@ -179,7 +179,7 @@ void retrieveResourcesForFrame(Frame* frame,
 
 } // namespace
 
-namespace WebKit {
+namespace blink {
 
 void WebPageSerializer::serialize(WebView* view, WebVector<WebPageSerializer::Resource>* resourcesParam)
 {
@@ -298,4 +298,4 @@ WebString WebPageSerializer::generateBaseTagDeclaration(const WebString& baseTar
     return baseString;
 }
 
-} // namespace WebKit
+} // namespace blink

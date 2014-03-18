@@ -298,39 +298,6 @@ bool SetFileBackupExclusion(const FilePath& file_path) {
   return os_err == noErr;
 }
 
-// Converts a NSImage to a CGImageRef.  Normally, the system frameworks can do
-// this fine, especially on 10.6.  On 10.5, however, CGImage cannot handle
-// converting a PDF-backed NSImage into a CGImageRef.  This function will
-// rasterize the PDF into a bitmap CGImage.  The caller is responsible for
-// releasing the return value.
-CGImageRef CopyNSImageToCGImage(NSImage* image) {
-  // This is based loosely on http://www.cocoadev.com/index.pl?CGImageRef .
-  NSSize size = [image size];
-  ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(NULL,  // Allow CG to allocate memory.
-                            size.width,
-                            size.height,
-                            8,  // bitsPerComponent
-                            0,  // bytesPerRow - CG will calculate by default.
-                            [[NSColorSpace genericRGBColorSpace] CGColorSpace],
-                            kCGBitmapByteOrder32Host |
-                                kCGImageAlphaPremultipliedFirst));
-  if (!context.get())
-    return NULL;
-
-  [NSGraphicsContext saveGraphicsState];
-  [NSGraphicsContext setCurrentContext:
-      [NSGraphicsContext graphicsContextWithGraphicsPort:context.get()
-                                                 flipped:NO]];
-  [image drawInRect:NSMakeRect(0,0, size.width, size.height)
-           fromRect:NSZeroRect
-          operation:NSCompositeCopy
-           fraction:1.0];
-  [NSGraphicsContext restoreGraphicsState];
-
-  return CGBitmapContextCreateImage(context);
-}
-
 bool CheckLoginItemStatus(bool* is_hidden) {
   ScopedCFTypeRef<LSSharedFileListItemRef> item(GetLoginItemForApp());
   if (!item.get())
@@ -502,7 +469,7 @@ int MacOSXMinorVersionInternal() {
   // immediate death.
   CHECK(darwin_major_version >= 6);
   int mac_os_x_minor_version = darwin_major_version - 4;
-  DLOG_IF(WARNING, darwin_major_version > 12) << "Assuming Darwin "
+  DLOG_IF(WARNING, darwin_major_version > 13) << "Assuming Darwin "
       << base::IntToString(darwin_major_version) << " is Mac OS X 10."
       << base::IntToString(mac_os_x_minor_version);
 
@@ -520,6 +487,7 @@ enum {
   SNOW_LEOPARD_MINOR_VERSION = 6,
   LION_MINOR_VERSION = 7,
   MOUNTAIN_LION_MINOR_VERSION = 8,
+  MAVERICKS_MINOR_VERSION = 9,
 };
 
 }  // namespace
@@ -533,12 +501,6 @@ bool IsOSSnowLeopard() {
 #if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
 bool IsOSLion() {
   return MacOSXMinorVersion() == LION_MINOR_VERSION;
-}
-#endif
-
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
-bool IsOSLionOrEarlier() {
-  return MacOSXMinorVersion() <= LION_MINOR_VERSION;
 }
 #endif
 
@@ -560,9 +522,21 @@ bool IsOSMountainLionOrLater() {
 }
 #endif
 
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_8)
-bool IsOSLaterThanMountainLion_DontCallThis() {
-  return MacOSXMinorVersion() > MOUNTAIN_LION_MINOR_VERSION;
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSMavericks() {
+  return MacOSXMinorVersion() == MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_9)
+bool IsOSMavericksOrLater() {
+  return MacOSXMinorVersion() >= MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSLaterThanMavericks_DontCallThis() {
+  return MacOSXMinorVersion() > MAVERICKS_MINOR_VERSION;
 }
 #endif
 

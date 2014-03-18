@@ -30,17 +30,26 @@
 
 {
   'includes': [
+    '../build/scripts/scripts.gypi',
     '../build/win/precompile.gypi',
+    '../build/scripts/scripts.gypi',
     '../core/core.gypi',
     '../modules/modules.gypi',
     'bindings.gypi',
   ],
 
   'variables': {
-    'idl_files': [
+    'main_idl_files': [
       '<@(core_idl_files)',
       '<@(modules_idl_files)',
       '<@(svg_idl_files)',
+    ],
+    'support_idl_files': [
+      '<@(webcore_testing_support_idl_files)',
+      '<@(modules_testing_support_idl_files)',
+    ],
+    'generated_support_idl_files': [
+      '<@(generated_webcore_testing_support_idl_files)',
     ],
     'compiler_module_files': [
         'scripts/idl_compiler.py',
@@ -81,6 +90,7 @@
          '<(SHARED_INTERMEDIATE_DIR)/blink/WorkerGlobalScopeConstructors.idl',
          '<(SHARED_INTERMEDIATE_DIR)/blink/SharedWorkerGlobalScopeConstructors.idl',
          '<(SHARED_INTERMEDIATE_DIR)/blink/DedicatedWorkerGlobalScopeConstructors.idl',
+         '<(SHARED_INTERMEDIATE_DIR)/ServiceWorkerGlobalScopeConstructors.idl',
     ],
 
     'conditions': [
@@ -140,15 +150,19 @@
       'variables': {
         # Write sources into a file, so that the action command line won't
         # exceed OS limits.
-        'idl_files_list': '<|(idl_files_list.tmp <@(idl_files))',
+        'main_idl_files_list': '<|(main_idl_files_list.tmp <@(main_idl_files))',
+        'support_idl_files_list': '<|(support_idl_files_list.tmp <@(support_idl_files))',
       },
       'inputs': [
         'scripts/compute_dependencies.py',
-        '<(idl_files_list)',
-        '<!@(cat <(idl_files_list))',
+        '<(main_idl_files_list)',
+        '<@(main_idl_files)',
+        '<(support_idl_files_list)',
+        '<@(support_idl_files)',
        ],
        'outputs': [
          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
+         '<(SHARED_INTERMEDIATE_DIR)/blink/BindingsDerivedSources.txt',
          '<@(generated_global_constructors_idl_files)',
          '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
        ],
@@ -156,10 +170,14 @@
        'action': [
          'python',
          'scripts/compute_dependencies.py',
-         '--idl-files-list',
-         '<(idl_files_list)',
+         '--main-idl-files-list',
+         '<(main_idl_files_list)',
+         '--support-idl-files-list',
+         '<(support_idl_files_list)',
          '--interface-dependencies-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
+         '--bindings-derived-sources-file',
+         '<(SHARED_INTERMEDIATE_DIR)/blink/BindingsDerivedSources.txt',
          '--window-constructors-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/WindowConstructors.idl',
          '--workerglobalscope-constructors-file',
@@ -168,6 +186,8 @@
          '<(SHARED_INTERMEDIATE_DIR)/blink/SharedWorkerGlobalScopeConstructors.idl',
          '--dedicatedworkerglobalscope-constructors-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/DedicatedWorkerGlobalScopeConstructors.idl',
+         '--serviceworkerglobalscope-constructors-file',
+         '<(SHARED_INTERMEDIATE_DIR)/ServiceWorkerGlobalScopeConstructors.idl',
          '--event-names-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
          '<@(write_file_only_if_changed)',
@@ -183,11 +203,13 @@
       'hard_dependency': 1,
       'dependencies': [
         'interface_dependencies',
+        '../config.gyp:config',
         '../core/core_derived_sources.gyp:generate_test_support_idls',
       ],
       'sources': [
-        '<@(idl_files)',
-        '<@(webcore_test_support_idl_files)',
+        '<@(main_idl_files)',
+        '<@(support_idl_files)',
+        '<@(generated_support_idl_files)',
       ],
       'rules': [{
         'rule_name': 'binding',
@@ -198,8 +220,8 @@
           'scripts/code_generator_v8.pm',
           'scripts/idl_parser.pm',
           'scripts/idl_serializer.pm',
-          '../core/scripts/preprocessor.pm',
-          'scripts/IDLAttributes.txt',
+          '../build/scripts/preprocessor.pm',
+          'IDLExtendedAttributes.txt',
           # FIXME: If the dependency structure changes, we rebuild all files,
           # since we're not computing dependencies file-by-file in the build.
           '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
@@ -209,7 +231,7 @@
           #
           # If a new partial interface is added, need to regyp to update these
           # dependencies, as these are computed statically at gyp runtime.
-          '<!@pymod_do_main(list_idl_files_with_partial_interface <@(idl_files))',
+          '<!@pymod_do_main(list_idl_files_with_partial_interface <@(main_idl_files) <@(support_idl_files))',
           # Generated IDLs are all partial interfaces, hence everything
           # potentially depends on them.
           '<@(generated_global_constructors_idl_files)',
@@ -237,19 +259,26 @@
           '<(perl_exe)',
           '-w',
           '-Iscripts',
-          '-I../core/scripts',
+          '-I../build/scripts',
           '-I<(DEPTH)/third_party/JSON/out/lib/perl5',
           'scripts/generate_bindings.pl',
           '--outputDir',
           '<(bindings_output_dir)',
           '--idlAttributesFile',
-          'scripts/IDLAttributes.txt',
+          'IDLExtendedAttributes.txt',
           '<@(generator_include_dirs)',
           '<@(extra_blink_generator_include_dirs)',
           '--interfaceDependenciesFile',
           '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
           '--additionalIdlFiles',
-          '<(webcore_test_support_idl_files)',
+          # Generated IDL files aren't listed in InterfaceDependencies.txt,
+          # b/c they aren't available at GYP run time, so we need to sort them
+          # manually, depending on whether they are (main) interface files,
+          # for which we generate bindings, or dependencies, for which we don't.
+          # generated_support_idl_files are main interfaces, so generate
+          # bindings, but generated_global_constructors_idl_files are all
+          # partial interfaces, so don't (b/c generated by dependents).
+          '<(generated_support_idl_files)',
           '<@(preprocessor)',
           '<@(write_file_only_if_changed)',
           '<(RULE_INPUT_PATH)',
@@ -267,16 +296,16 @@
       'actions': [{
         'action_name': 'derived_sources_all_in_one',
         'inputs': [
-          '../core/scripts/action_derivedsourcesallinone.py',
-          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
+          '../build/scripts/action_derivedsourcesallinone.py',
+          '<(SHARED_INTERMEDIATE_DIR)/blink/BindingsDerivedSources.txt',
         ],
         'outputs': [
           '<@(derived_sources_aggregate_files)',
         ],
         'action': [
           'python',
-          '../core/scripts/action_derivedsourcesallinone.py',
-          '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
+          '../build/scripts/action_derivedsourcesallinone.py',
+          '<(SHARED_INTERMEDIATE_DIR)/blink/BindingsDerivedSources.txt',
           '--',
           '<@(derived_sources_aggregate_files)',
         ],

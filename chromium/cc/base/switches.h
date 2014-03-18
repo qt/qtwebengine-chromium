@@ -24,7 +24,7 @@ CC_EXPORT extern const char kDisableCompositedAntialiasing[];
 CC_EXPORT extern const char kEnableLCDText[];
 CC_EXPORT extern const char kEnableImplSidePainting[];
 CC_EXPORT extern const char kEnableTopControlsPositionCalculation[];
-CC_EXPORT extern const char kForceDirectLayerDrawing[];
+CC_EXPORT extern const char kEnableGPURasterization[];
 CC_EXPORT extern const char kJankInsteadOfCheckerboard[];
 CC_EXPORT extern const char kNumRasterThreads[];
 CC_EXPORT extern const char kTopControlsHeight[];
@@ -32,7 +32,6 @@ CC_EXPORT extern const char kTopControlsHideThreshold[];
 CC_EXPORT extern const char kTraceOverdraw[];
 CC_EXPORT extern const char kTopControlsShowThreshold[];
 CC_EXPORT extern const char kSlowDownRasterScaleFactor[];
-CC_EXPORT extern const char kLowResolutionContentsScaleFactor[];
 CC_EXPORT extern const char kCompositeToMailbox[];
 CC_EXPORT extern const char kMaxTilesForInterestArea[];
 CC_EXPORT extern const char kMaxUnusedResourceMemoryUsagePercentage[];
@@ -42,6 +41,7 @@ CC_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
 CC_EXPORT extern const char kEnableMapImage[];
 CC_EXPORT extern const char kDisableMapImage[];
 CC_EXPORT extern const char kDisable4444Textures[];
+CC_EXPORT extern const char kDisableCompositorTouchHitTesting[];
 
 // Switches for both the renderer and ui compositors.
 CC_EXPORT extern const char kUIDisablePartialSwap[];
@@ -53,6 +53,8 @@ CC_EXPORT extern const char kShowCompositedLayerBorders[];
 CC_EXPORT extern const char kUIShowCompositedLayerBorders[];
 CC_EXPORT extern const char kShowFPSCounter[];
 CC_EXPORT extern const char kUIShowFPSCounter[];
+CC_EXPORT extern const char kShowLayerAnimationBounds[];
+CC_EXPORT extern const char kUIShowLayerAnimationBounds[];
 CC_EXPORT extern const char kShowPropertyChangedRects[];
 CC_EXPORT extern const char kUIShowPropertyChangedRects[];
 CC_EXPORT extern const char kShowSurfaceDamageRects[];
@@ -68,9 +70,11 @@ CC_EXPORT extern const char kUIShowNonOccludingRects[];
 
 // Unit test related.
 CC_EXPORT extern const char kCCLayerTreeTestNoTimeout[];
+CC_EXPORT extern const char kCCRebaselinePixeltests[];
 
 CC_EXPORT bool IsLCDTextEnabled();
 CC_EXPORT bool IsImplSidePaintingEnabled();
+CC_EXPORT bool IsGPURasterizationEnabled();
 CC_EXPORT bool IsMapImageEnabled();
 
 }  // namespace switches

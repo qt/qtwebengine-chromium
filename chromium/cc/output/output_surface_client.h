@@ -31,7 +31,8 @@ class CC_EXPORT OutputSurfaceClient {
       scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
   virtual void ReleaseGL() = 0;
   virtual void SetNeedsRedrawRect(gfx::Rect damage_rect) = 0;
-  virtual void BeginFrame(const BeginFrameArgs& args) = 0;
+  virtual void BeginImplFrame(const BeginFrameArgs& args) = 0;
+  virtual void DidSwapBuffers() = 0;
   virtual void OnSwapBuffersComplete() = 0;
   virtual void ReclaimResources(const CompositorFrameAck* ack) = 0;
   virtual void DidLoseOutputSurface() = 0;
@@ -39,7 +40,6 @@ class CC_EXPORT OutputSurfaceClient {
                                           gfx::Rect viewport,
                                           gfx::Rect clip,
                                           bool valid_for_tile_management) = 0;
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) = 0;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
   // If set, |callback| will be called subsequent to each new tree activation,
   // regardless of the compositor visibility or damage. |callback| must remain

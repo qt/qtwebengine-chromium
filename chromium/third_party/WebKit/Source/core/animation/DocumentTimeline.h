@@ -31,10 +31,11 @@
 #ifndef DocumentTimeline_h
 #define DocumentTimeline_h
 
-#include "core/animation/ActiveAnimations.h"
+#include "core/animation/AnimationEffect.h"
 #include "core/animation/Player.h"
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
+#include "platform/Timer.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -46,35 +47,55 @@ class TimedItem;
 
 // DocumentTimeline is constructed and owned by Document, and tied to its lifecycle.
 class DocumentTimeline : public RefCounted<DocumentTimeline> {
-
 public:
-    static PassRefPtr<DocumentTimeline> create(Document*);
-    void serviceAnimations(double);
-    PassRefPtr<Player> play(TimedItem*);
-    // Called from setReadyState() in Document.cpp to set m_zeroTimeAsPerfTime to
-    // performance.timing.domInteractive.
-    void setZeroTimeAsPerfTime(double);
-    double currentTime() { return m_currentTime; }
+    class PlatformTiming {
+
+    public:
+        // Calls DocumentTimeline's wake() method after duration seconds.
+        virtual void wakeAfter(double duration) = 0;
+        virtual void cancelWake() = 0;
+        virtual void serviceOnNextFrame() = 0;
+        virtual ~PlatformTiming() { }
+
+    };
+
+    static PassRefPtr<DocumentTimeline> create(Document*, PassOwnPtr<PlatformTiming> = nullptr);
+    // Returns whether style recalc was triggered.
+    bool serviceAnimations();
+
+    // Creates a player attached to this timeline, but without a start time.
+    Player* createPlayer(TimedItem*);
+    Player* play(TimedItem*);
+
+    // Called from setReadyState() in Document.cpp to set m_zeroTime to
+    // performance.timing.domInteractive
+    void setZeroTime(double);
+    bool hasStarted() const { return !isNull(m_zeroTime); }
+    double zeroTime() const { return m_zeroTime; }
+    double currentTime();
     void pauseAnimationsForTesting(double);
     size_t numberOfActiveAnimationsForTesting() const;
-    AnimationStack* animationStack(const Element* element) const
-    {
-        if (ActiveAnimations* animations = element->activeAnimations())
-            return animations->defaultStack();
-        return 0;
-    }
+    const Vector<RefPtr<Player> >& players() const { return m_players; }
+
     void addEventToDispatch(EventTarget* target, PassRefPtr<Event> event)
     {
         m_events.append(EventToDispatch(target, event));
     }
 
-private:
-    DocumentTimeline(Document*);
     void dispatchEvents();
-    double m_currentTime;
-    double m_zeroTimeAsPerfTime;
+    void dispatchEventsAsync();
+
+protected:
+    DocumentTimeline(Document*, PassOwnPtr<PlatformTiming>);
+
+private:
+    double m_zeroTime;
     Document* m_document;
+    Timer<DocumentTimeline> m_eventDistpachTimer;
     Vector<RefPtr<Player> > m_players;
+
+    void eventDispatchTimerFired(Timer<DocumentTimeline>*);
+    void wake();
 
     struct EventToDispatch {
         EventToDispatch(EventTarget* target, PassRefPtr<Event> event)
@@ -86,6 +107,33 @@ private:
         RefPtr<Event> event;
     };
     Vector<EventToDispatch> m_events;
+
+    static const double s_minimumDelay;
+
+    OwnPtr<PlatformTiming> m_timing;
+
+    class DocumentTimelineTiming : public PlatformTiming {
+    public:
+        DocumentTimelineTiming(DocumentTimeline* documentTimeline)
+            : m_timeline(documentTimeline)
+            , m_timer(this, &DocumentTimelineTiming::timerFired)
+        {
+            ASSERT(m_timeline);
+        }
+
+        virtual void wakeAfter(double duration) OVERRIDE;
+        virtual void cancelWake() OVERRIDE;
+        virtual void serviceOnNextFrame() OVERRIDE;
+
+        void timerFired(Timer<DocumentTimelineTiming>*) { m_timeline->wake(); }
+
+    private:
+        DocumentTimeline* m_timeline;
+        Timer<DocumentTimelineTiming> m_timer;
+
+    };
+
+    friend class AnimationDocumentTimelineTest;
 };
 
 } // namespace

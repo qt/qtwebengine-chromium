@@ -33,17 +33,17 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 #include "wtf/Assertions.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 
 #pragma pack(push, 1)
 
 class WebDeviceOrientationData {
 public:
-    WEBKIT_EXPORT WebDeviceOrientationData();
+    BLINK_PLATFORM_EXPORT WebDeviceOrientationData();
     ~WebDeviceOrientationData() { }
 
     double alpha;
@@ -60,12 +60,12 @@ public:
     bool allAvailableSensorsAreActive : 1;
 };
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 COMPILE_ASSERT(sizeof(WebDeviceOrientationData) == (3 * sizeof(double) + 1 * sizeof(char)), WebDeviceOrientationData_has_wrong_size);
 #endif
 
 #pragma pack(pop)
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebDeviceOrientationData_h

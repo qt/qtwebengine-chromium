@@ -43,6 +43,7 @@ from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
 from webkitpy.layout_tests.port import Port, Driver, DriverOutput
+from webkitpy.layout_tests.port.base import VirtualTestSuite
 from webkitpy.layout_tests.port.test import add_unit_tests_to_mock_filesystem, TestPort
 
 class PortTest(unittest.TestCase):
@@ -214,14 +215,14 @@ class PortTest(unittest.TestCase):
 
     def test_nonexistant_expectations(self):
         port = self.make_port(port_name='foo')
-        port.expectations_files = lambda: ['/mock-checkout/LayoutTests/platform/exists/TestExpectations', '/mock-checkout/LayoutTests/platform/nonexistant/TestExpectations']
-        port._filesystem.write_text_file('/mock-checkout/LayoutTests/platform/exists/TestExpectations', '')
-        self.assertEqual('\n'.join(port.expectations_dict().keys()), '/mock-checkout/LayoutTests/platform/exists/TestExpectations')
+        port.expectations_files = lambda: ['/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations', '/mock-checkout/third_party/WebKit/LayoutTests/platform/nonexistant/TestExpectations']
+        port._filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations', '')
+        self.assertEqual('\n'.join(port.expectations_dict().keys()), '/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations')
 
     def test_additional_expectations(self):
         port = self.make_port(port_name='foo')
         port.port_name = 'foo'
-        port._filesystem.write_text_file('/mock-checkout/LayoutTests/platform/foo/TestExpectations', '')
+        port._filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/foo/TestExpectations', '')
         port._filesystem.write_text_file(
             '/tmp/additional-expectations-1.txt', 'content1\n')
         port._filesystem.write_text_file(
@@ -231,15 +232,15 @@ class PortTest(unittest.TestCase):
 
         port._options.additional_expectations = [
             '/tmp/additional-expectations-1.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n')
 
         port._options.additional_expectations = [
             '/tmp/nonexistent-file', '/tmp/additional-expectations-1.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n')
 
         port._options.additional_expectations = [
             '/tmp/additional-expectations-1.txt', '/tmp/additional-expectations-2.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n\ncontent2\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n\ncontent2\n')
 
     def test_additional_env_var(self):
         port = self.make_port(options=optparse.Values({'additional_env_var': ['FOO=BAR', 'BAR=FOO']}))
@@ -444,3 +445,23 @@ class KeyCompareTest(unittest.TestCase):
         self.assert_cmp('/ab', '/a/a/b', -1)
         self.assert_cmp('/a/a/b', '/ab', 1)
         self.assert_cmp('/foo-bar/baz', '/foo/baz', -1)
+
+
+class VirtualTestSuiteTest(unittest.TestCase):
+    def test_basic(self):
+        suite = VirtualTestSuite('suite', 'base/foo', ['--args'])
+        self.assertEqual(suite.name, 'virtual/suite/base/foo')
+        self.assertEqual(suite.base, 'base/foo')
+        self.assertEqual(suite.args, ['--args'])
+
+    def test_no_slash(self):
+        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'])
+        self.assertFalse(hasattr(suite, 'name'))
+        self.assertFalse(hasattr(suite, 'base'))
+        self.assertFalse(hasattr(suite, 'args'))
+
+    def test_legacy(self):
+        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'], use_legacy_naming=True)
+        self.assertEqual(suite.name, 'virtual/suite/bar')
+        self.assertEqual(suite.base, 'base/foo')
+        self.assertEqual(suite.args, ['--args'])

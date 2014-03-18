@@ -5,10 +5,10 @@
 #include "cc/resources/video_resource_updater.h"
 
 #include "base/memory/shared_memory.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -26,7 +26,7 @@ class VideoResourceUpdaterTest : public testing::Test {
         FakeOutputSurface::Create3d(context3d.Pass());
     CHECK(output_surface3d_->BindToClient(&client_));
     resource_provider3d_ =
-        ResourceProvider::Create(output_surface3d_.get(), 0, false);
+        ResourceProvider::Create(output_surface3d_.get(), NULL, 0, false, 1);
   }
 
   scoped_refptr<media::VideoFrame> CreateTestYUVVideoFrame() {

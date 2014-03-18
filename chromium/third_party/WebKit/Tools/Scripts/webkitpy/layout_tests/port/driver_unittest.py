@@ -42,7 +42,7 @@ from webkitpy.tool.mocktool import MockOptions
 class DriverTest(unittest.TestCase):
     def make_port(self):
         port = Port(MockSystemHost(), 'test', MockOptions(configuration='Release'))
-        port._config.build_directory = lambda configuration: '/mock-build'
+        port._config.build_directory = lambda configuration: '/mock-checkout/out/' + configuration
         return port
 
     def _assert_wrapper(self, wrapper_string, expected_wrapper):
@@ -82,6 +82,7 @@ class DriverTest(unittest.TestCase):
             "#EOF",
         ])
         content_block = driver._read_block(0)
+        self.assertEqual(content_block.content, '')
         self.assertEqual(content_block.content_type, 'my_type')
         self.assertEqual(content_block.encoding, 'none')
         self.assertEqual(content_block.content_hash, 'foobar')
@@ -125,9 +126,9 @@ class DriverTest(unittest.TestCase):
 
     def test_no_timeout(self):
         port = TestWebKitPort()
-        port._config.build_directory = lambda configuration: '/mock-build'
+        port._config.build_directory = lambda configuration: '/mock-checkout/out/' + configuration
         driver = Driver(port, 0, pixel_tests=True, no_timeout=True)
-        self.assertEqual(driver.cmd_line(True, []), ['/mock-build/content_shell', '--no-timeout', '--dump-render-tree', '-'])
+        self.assertEqual(driver.cmd_line(True, []), ['/mock-checkout/out/Release/content_shell', '--no-timeout', '--dump-render-tree', '-'])
 
     def test_check_for_driver_crash(self):
         port = TestWebKitPort()
@@ -146,7 +147,7 @@ class DriverTest(unittest.TestCase):
             def has_crashed(self):
                 return self.crashed
 
-            def stop(self, timeout):
+            def stop(self, timeout=0.0):
                 pass
 
         def assert_crash(driver, error_line, crashed, name, pid, unresponsive=False):

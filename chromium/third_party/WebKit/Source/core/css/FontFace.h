@@ -32,6 +32,7 @@
 #define FontFace_h
 
 #include "CSSPropertyNames.h"
+#include "bindings/v8/ScriptPromise.h"
 #include "core/css/CSSValue.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -44,6 +45,7 @@ class CSSValueList;
 class Dictionary;
 class Document;
 class ExceptionState;
+class FontFaceReadyPromiseResolver;
 class StylePropertySet;
 class StyleRuleFontFace;
 
@@ -51,12 +53,12 @@ class FontFace : public RefCounted<FontFace> {
 public:
     enum LoadStatus { Unloaded, Loading, Loaded, Error };
 
-    static PassRefPtr<FontFace> create(const String& family, const String& source, const Dictionary&, ExceptionState&);
+    static PassRefPtr<FontFace> create(const AtomicString& family, const String& source, const Dictionary&, ExceptionState&);
     static PassRefPtr<FontFace> create(const StyleRuleFontFace*);
 
     ~FontFace();
 
-    String family() const { return m_family; }
+    const AtomicString& family() const { return m_family; }
     String style() const;
     String weight() const;
     String stretch() const;
@@ -65,7 +67,7 @@ public:
     String featureSettings() const;
 
     // FIXME: Changing these attributes should affect font matching.
-    void setFamily(const String& s, ExceptionState&) { m_family = s; }
+    void setFamily(const AtomicString& s, ExceptionState&) { m_family = s; }
     void setStyle(const String&, ExceptionState&);
     void setWeight(const String&, ExceptionState&);
     void setStretch(const String&, ExceptionState&);
@@ -75,10 +77,14 @@ public:
 
     String status() const;
 
+    void load();
+    ScriptPromise ready(ExecutionContext*);
+
     LoadStatus loadStatus() const { return m_status; }
-    void setLoadStatus(LoadStatus status) { m_status = status; }
+    void setLoadStatus(LoadStatus);
     unsigned traitsMask() const;
     PassRefPtr<CSSFontFace> createCSSFontFace(Document*);
+    void cssFontFaceDestroyed() { m_cssFontFace = 0; }
 
 private:
     FontFace(PassRefPtr<CSSValue> source);
@@ -87,8 +93,9 @@ private:
     bool setPropertyFromStyle(const StylePropertySet*, CSSPropertyID);
     bool setPropertyValue(PassRefPtr<CSSValue>, CSSPropertyID);
     bool setFamilyValue(CSSValueList*);
+    void resolveReadyPromises();
 
-    String m_family;
+    AtomicString m_family;
     RefPtr<CSSValue> m_src;
     RefPtr<CSSValue> m_style;
     RefPtr<CSSValue> m_weight;
@@ -97,6 +104,9 @@ private:
     RefPtr<CSSValue> m_variant;
     RefPtr<CSSValue> m_featureSettings;
     LoadStatus m_status;
+
+    Vector<OwnPtr<FontFaceReadyPromiseResolver> > m_readyResolvers;
+    CSSFontFace* m_cssFontFace;
 };
 
 typedef Vector<RefPtr<FontFace> > FontFaceArray;

@@ -25,8 +25,7 @@ class NET_EXPORT UploadDataStream {
   enum Chunked { CHUNKED };
 
   // Constructs a non-chunked data stream.
-  // |element_readers| is cleared by this ctor.
-  UploadDataStream(ScopedVector<UploadElementReader>* element_readers,
+  UploadDataStream(ScopedVector<UploadElementReader> element_readers,
                    int64 identifier);
 
   // Constructs a chunked data stream.
@@ -95,10 +94,10 @@ class NET_EXPORT UploadDataStream {
   // Adds the given chunk of bytes to be sent with chunked transfer encoding.
   void AppendChunk(const char* bytes, int bytes_len, bool is_last_chunk);
 
- private:
   // Resets this instance to the uninitialized state.
   void Reset();
 
+ private:
   // Runs Init() for all element readers.
   // This method is used to implement Init().
   int InitInternal(int start_index, const CompletionCallback& callback);

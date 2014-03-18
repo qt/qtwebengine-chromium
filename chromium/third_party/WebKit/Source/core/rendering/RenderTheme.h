@@ -23,14 +23,14 @@
 #ifndef RenderTheme_h
 #define RenderTheme_h
 
-#include "core/platform/ScrollTypes.h"
 #if USE(NEW_THEME)
-#include "core/platform/Theme.h"
+#include "platform/Theme.h"
 #else
-#include "core/platform/ThemeTypes.h"
+#include "platform/ThemeTypes.h"
 #endif
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/CachedUAStyle.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -175,19 +175,13 @@ public:
     // Media controls
     virtual bool supportsClosedCaptioning() const { return false; }
     virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return false; }
-    virtual bool usesMediaControlStatusDisplay() { return false; }
-    virtual bool usesMediaControlVolumeSlider() const { return true; }
     virtual bool usesVerticalVolumeSlider() const { return true; }
-    virtual double mediaControlsFadeInDuration() { return 0.1; }
-    virtual double mediaControlsFadeOutDuration() { return 0.3; }
     virtual String formatMediaControlsTime(float time) const;
     virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
     virtual IntSize meterSizeForBounds(const RenderMeter*, const IntRect&) const;
     virtual bool supportsMeter(ControlPart) const;
 
-    // Returns the threshold distance for snapping to a slider tick mark.
-    virtual LayoutUnit sliderTickSnappingThreshold() const;
     // Returns size of one slider tick mark for a horizontal track.
     // For vertical tracks we rotate it and use it. i.e. Width is always length along the track.
     virtual IntSize sliderTickSize() const = 0;
@@ -203,8 +197,7 @@ public:
     virtual bool popsMenuByArrowKeys() const { return false; }
     virtual bool popsMenuBySpaceOrReturn() const { return false; }
 
-    virtual String fileListDefaultLabel(bool multipleFilesAllowed) const;
-    virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const;
+    virtual String fileListNameForWidth(Locale&, const FileList*, const Font&, int width) const;
 
     virtual bool shouldOpenPickerWithF4Key() const;
 
@@ -237,16 +230,13 @@ protected:
 
     virtual void adjustButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual void setButtonSize(RenderStyle*) const { }
 
     virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 #endif
 
-    virtual void adjustTextFieldStyle(RenderStyle*, Element*) const;
     virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
-    virtual void adjustTextAreaStyle(RenderStyle*, Element*) const;
     virtual bool paintTextArea(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
     virtual void adjustMenuListStyle(RenderStyle*, Element*) const;
@@ -255,10 +245,8 @@ protected:
     virtual void adjustMenuListButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
-    virtual void adjustMeterStyle(RenderStyle*, Element*) const;
     virtual bool paintMeter(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual void adjustProgressBarStyle(RenderStyle*, Element*) const;
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
 #if ENABLE(INPUT_SPEECH)
@@ -266,7 +254,6 @@ protected:
     virtual bool paintInputFieldSpeechButton(RenderObject*, const PaintInfo&, const IntRect&);
 #endif
 
-    virtual void adjustSliderTrackStyle(RenderStyle*, Element*) const;
     virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
     virtual void adjustSliderThumbStyle(RenderStyle*, Element*) const;
@@ -284,7 +271,6 @@ protected:
     virtual void adjustSearchFieldResultsDecorationStyle(RenderStyle*, Element*) const;
     virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
-    virtual void adjustMediaControlStyle(RenderStyle*, Element*) const;
     virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaOverlayPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }

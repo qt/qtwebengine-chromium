@@ -14,19 +14,16 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "components/autofill/core/browser/autofill_download_url.h"
+#include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_xml_parser.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/user_prefs/user_prefs.h"
-#include "content/public/browser/browser_context.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlparser.h"
 #include "url/gurl.h"
-
-using content::BrowserContext;
 
 namespace autofill {
 
@@ -69,9 +66,11 @@ struct AutofillDownloadManager::FormRequestData {
   AutofillRequestType request_type;
 };
 
-AutofillDownloadManager::AutofillDownloadManager(BrowserContext* context,
+AutofillDownloadManager::AutofillDownloadManager(AutofillDriver* driver,
+                                                 PrefService* pref_service,
                                                  Observer* observer)
-    : browser_context_(context),
+    : driver_(driver),
+      pref_service_(pref_service),
       observer_(observer),
       max_form_cache_size_(kMaxFormCacheSize),
       next_query_request_(base::Time::Now()),
@@ -80,11 +79,10 @@ AutofillDownloadManager::AutofillDownloadManager(BrowserContext* context,
       negative_upload_rate_(0),
       fetcher_id_for_unittest_(0) {
   DCHECK(observer_);
-  PrefService* preferences = user_prefs::UserPrefs::Get(browser_context_);
   positive_upload_rate_ =
-      preferences->GetDouble(prefs::kAutofillPositiveUploadRate);
+      pref_service_->GetDouble(prefs::kAutofillPositiveUploadRate);
   negative_upload_rate_ =
-      preferences->GetDouble(prefs::kAutofillNegativeUploadRate);
+      pref_service_->GetDouble(prefs::kAutofillNegativeUploadRate);
 }
 
 AutofillDownloadManager::~AutofillDownloadManager() {
@@ -170,8 +168,7 @@ void AutofillDownloadManager::SetPositiveUploadRate(double rate) {
   positive_upload_rate_ = rate;
   DCHECK_GE(rate, 0.0);
   DCHECK_LE(rate, 1.0);
-  PrefService* preferences = user_prefs::UserPrefs::Get(browser_context_);
-  preferences->SetDouble(prefs::kAutofillPositiveUploadRate, rate);
+  pref_service_->SetDouble(prefs::kAutofillPositiveUploadRate, rate);
 }
 
 void AutofillDownloadManager::SetNegativeUploadRate(double rate) {
@@ -180,15 +177,14 @@ void AutofillDownloadManager::SetNegativeUploadRate(double rate) {
   negative_upload_rate_ = rate;
   DCHECK_GE(rate, 0.0);
   DCHECK_LE(rate, 1.0);
-  PrefService* preferences = user_prefs::UserPrefs::Get(browser_context_);
-  preferences->SetDouble(prefs::kAutofillNegativeUploadRate, rate);
+  pref_service_->SetDouble(prefs::kAutofillNegativeUploadRate, rate);
 }
 
 bool AutofillDownloadManager::StartRequest(
     const std::string& form_xml,
     const FormRequestData& request_data) {
   net::URLRequestContextGetter* request_context =
-      browser_context_->GetRequestContext();
+      driver_->GetURLRequestContext();
   DCHECK(request_context);
   GURL request_url;
   if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY)

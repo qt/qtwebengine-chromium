@@ -98,7 +98,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
     first_ids_file = None
     whitelist_filenames = []
     target_platform = None
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:')
+    dep_dir = None
+    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:', ('dep-dir=',))
     for (key, val) in own_opts:
       if key == '-o':
         self.output_directory = val
@@ -117,6 +118,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
         whitelist_filenames.append(val)
       elif key == '-t':
         target_platform = val
+      elif key == '--dep-dir':
+        dep_dir = val
 
     if len(args):
       print 'This tool takes no tool-specific arguments.'
@@ -147,6 +150,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.res.SetOutputLanguage('en')
     self.res.RunGatherers()
     self.Process()
+
+    if dep_dir:
+      self.GenerateDepfile(opts.input, dep_dir)
+
     return 0
 
   def __init__(self, defines=None):
@@ -251,9 +258,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
       self.res.SetDefines(self.defines)
 
       # Make the output directory if it doesn't exist.
-      outdir = os.path.split(output.GetOutputFilename())[0]
-      if not os.path.exists(outdir):
-        os.makedirs(outdir)
+      self.MakeDirectoriesTo(output.GetOutputFilename())
 
       # Write the results to a temporary file and only overwrite the original
       # if the file changed.  This avoids unnecessary rebuilds.
@@ -304,3 +309,49 @@ are exported to translation interchange files (e.g. XMB files), etc.
     if self.res.UberClique().HasMissingTranslations():
       print self.res.UberClique().missing_translations_
       sys.exit(-1)
+
+  def GenerateDepfile(self, input_filename, dep_dir):
+    '''Generate a depfile that contains the imlicit dependencies of the input
+    grd. The depfile will be in the same format as a makefile, and will contain
+    references to files relative to |dep_dir|. It will be put in the same
+    directory as the generated outputs.
+
+    For example, supposing we have three files in a directory src/
+
+    src/
+      blah.grd    <- depends on input{1,2}.xtb
+      input1.xtb
+      input2.xtb
+
+    and we run
+
+      grit -i blah.grd -o ../out/gen --dep-dir ../out
+
+    from the directory src/ we will generate a depfile ../out/gen/blah.grd.d
+    that has the contents
+
+      gen/blah.grd.d: ../src/input1.xtb ../src/input2.xtb
+
+    Note that all paths in the depfile are relative to ../out, the dep-dir.
+    '''
+    depsfile_basename = os.path.basename(input_filename + '.d')
+    depfile = os.path.abspath(
+        os.path.join(self.output_directory, depsfile_basename))
+    dep_dir = os.path.abspath(dep_dir)
+    # The path prefix to prepend to dependencies in the depfile.
+    prefix = os.path.relpath(os.getcwd(), dep_dir)
+    # The path that the depfile refers to itself by.
+    self_ref_depfile = os.path.relpath(depfile, dep_dir)
+    infiles = self.res.GetInputFiles()
+    deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])
+    depfile_contents = self_ref_depfile + ': ' + deps_text
+    self.MakeDirectoriesTo(depfile)
+    outfile = self.fo_create(depfile, 'wb')
+    outfile.writelines(depfile_contents)
+
+  @staticmethod
+  def MakeDirectoriesTo(file):
+    '''Creates directories necessary to contain |file|.'''
+    dir = os.path.split(file)[0]
+    if not os.path.exists(dir):
+      os.makedirs(dir)

@@ -31,7 +31,6 @@
 
 #include "core/rendering/style/StyleCustomFilterProgramCache.h"
 
-#include "core/platform/graphics/filters/custom/CustomFilterProgramInfo.h"
 #include "core/rendering/style/StyleCustomFilterProgram.h"
 
 namespace WebCore {
@@ -77,7 +76,7 @@ void StyleCustomFilterProgramCache::add(StyleCustomFilterProgram* program)
 void StyleCustomFilterProgramCache::remove(StyleCustomFilterProgram* program)
 {
     CacheMap::iterator iter = m_cache.find(programCacheKey(program));
-    ASSERT(iter != m_cache.end());
+    ASSERT_WITH_SECURITY_IMPLICATION(iter != m_cache.end());
     m_cache.remove(iter);
 }
 

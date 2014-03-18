@@ -61,6 +61,8 @@ WebInspector.CodeMirrorUtils = {
             return "javascript-regexp";
         if (tokenType === "js-number" || tokenType === "js-comment" || tokenType === "js-string" || tokenType === "js-keyword")
             return "javascript-" + tokenType.substring("js-".length);
+        if (tokenType === "css-number")
+            return "css-number";
         return null;
     },
 
@@ -85,7 +87,7 @@ WebInspector.CodeMirrorUtils = {
             innerConfig.name = oldModeName;
             var codeMirrorMode = CodeMirror.getMode(config, innerConfig);
             codeMirrorMode.name = modeName;
-            codeMirrorMode.token = tokenOverride.bind(this, codeMirrorMode.token);
+            codeMirrorMode.token = tokenOverride.bind(null, codeMirrorMode.token);
             return codeMirrorMode;
         }
 

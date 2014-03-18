@@ -5,6 +5,7 @@
 #include "net/quic/quic_received_packet_manager.h"
 
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "net/base/linked_hash_map.h"
 
 using std::make_pair;
@@ -13,13 +14,26 @@ using std::min;
 
 namespace net {
 
-QuicReceivedPacketManager::QuicReceivedPacketManager()
+namespace {
+
+// The maximum number of packets to ack immediately after a missing packet for
+// fast retransmission to kick in at the sender.  This limit is created to
+// reduce the number of acks sent that have no benefit for fast retransmission.
+// Set to the number of nacks needed for fast retransmit plus one for protection
+// against an ack loss
+const size_t kMaxPacketsAfterNewMissing = 4;
+
+}
+
+QuicReceivedPacketManager::QuicReceivedPacketManager(
+    CongestionFeedbackType congestion_type)
     : packets_entropy_hash_(0),
       largest_sequence_number_(0),
       peer_largest_observed_packet_(0),
       least_packet_awaited_by_peer_(1),
       peer_least_packet_awaiting_ack_(0),
-      time_largest_observed_(QuicTime::Zero()) {
+      time_largest_observed_(QuicTime::Zero()),
+      receive_algorithm_(ReceiveAlgorithmInterface::Create(congestion_type)) {
   received_info_.largest_observed = 0;
   received_info_.entropy_hash = 0;
 }
@@ -27,7 +41,10 @@ QuicReceivedPacketManager::QuicReceivedPacketManager()
 QuicReceivedPacketManager::~QuicReceivedPacketManager() {}
 
 void QuicReceivedPacketManager::RecordPacketReceived(
-    const QuicPacketHeader& header, QuicTime receipt_time) {
+    QuicByteCount bytes,
+    const QuicPacketHeader& header,
+    QuicTime receipt_time,
+    bool revived) {
   QuicPacketSequenceNumber sequence_number = header.packet_sequence_number;
   DCHECK(IsAwaitingPacket(sequence_number));
 
@@ -47,6 +64,17 @@ void QuicReceivedPacketManager::RecordPacketReceived(
     time_largest_observed_ = receipt_time;
   }
   RecordPacketEntropyHash(sequence_number, header.entropy_hash);
+
+  // Don't update the receive algorithm for revived packets.
+  if (!revived) {
+    receive_algorithm_->RecordIncomingPacket(
+        bytes, sequence_number, receipt_time, revived);
+  }
+}
+
+bool QuicReceivedPacketManager::IsMissing(
+    QuicPacketSequenceNumber sequence_number) {
+  return ContainsKey(received_info_.missing_packets, sequence_number);
 }
 
 bool QuicReceivedPacketManager::IsAwaitingPacket(
@@ -55,26 +83,32 @@ bool QuicReceivedPacketManager::IsAwaitingPacket(
 }
 
 void QuicReceivedPacketManager::UpdateReceivedPacketInfo(
-    ReceivedPacketInfo* received_info, QuicTime approximate_now) {
+    ReceivedPacketInfo* received_info,
+    QuicTime approximate_now) {
   *received_info = received_info_;
   received_info->entropy_hash = EntropyHash(received_info_.largest_observed);
-  if (time_largest_observed_ == QuicTime::Zero()) {
-    // We have not received any new higher sequence numbers since we sent our
-    // last ACK.
-    received_info->delta_time_largest_observed = QuicTime::Delta::Infinite();
-  } else {
-    received_info->delta_time_largest_observed =
-        approximate_now.Subtract(time_largest_observed_);
 
-    time_largest_observed_ = QuicTime::Zero();
+  if (time_largest_observed_ == QuicTime::Zero()) {
+    // We have received no packets.
+    received_info->delta_time_largest_observed = QuicTime::Delta::Infinite();
+    return;
   }
+
+  if (approximate_now < time_largest_observed_) {
+    // Approximate now may well be "in the past".
+    received_info->delta_time_largest_observed = QuicTime::Delta::Zero();
+    return;
+  }
+
+  received_info->delta_time_largest_observed =
+      approximate_now.Subtract(time_largest_observed_);
 }
 
 void QuicReceivedPacketManager::RecordPacketEntropyHash(
     QuicPacketSequenceNumber sequence_number,
     QuicPacketEntropyHash entropy_hash) {
   if (sequence_number < largest_sequence_number_) {
-    DLOG(INFO) << "Ignoring received packet entropy for sequence_number:"
+    DVLOG(1) << "Ignoring received packet entropy for sequence_number:"
                << sequence_number << " less than largest_peer_sequence_number:"
                << largest_sequence_number_;
     return;
@@ -85,6 +119,11 @@ void QuicReceivedPacketManager::RecordPacketEntropyHash(
            << static_cast<int>(packets_entropy_hash_)
            << " updated with sequence number " << sequence_number
            << " entropy hash: " << static_cast<int>(entropy_hash);
+}
+
+bool QuicReceivedPacketManager::GenerateCongestionFeedback(
+    QuicCongestionFeedbackFrame* feedback) {
+  return receive_algorithm_->GenerateCongestionFeedback(feedback);
 }
 
 QuicPacketEntropyHash QuicReceivedPacketManager::EntropyHash(
@@ -98,11 +137,13 @@ QuicPacketEntropyHash QuicReceivedPacketManager::EntropyHash(
   ReceivedEntropyMap::const_iterator it =
       packets_entropy_.upper_bound(sequence_number);
   // When this map is empty we should only query entropy for
-  // |largest_received_sequence_number_|.
+  // received_info_.largest_observed, since no other entropy can be correctly
+  // calculated, because we're not storing the entropy for any prior packets.
   // TODO(rtenneti): add support for LOG_IF_EVERY_N_SEC to chromium.
-  // LOG_IF_EVERY_N_SEC(WARNING, it != packets_entropy_.end(), 10)
-  LOG_IF(WARNING, it != packets_entropy_.end())
-      << "largest_received: " << received_info_.largest_observed
+  // LOG_IF_EVERY_N_SEC(DFATAL, it == packets_entropy_.end(), 10)
+  LOG_IF(DFATAL, it == packets_entropy_.end())
+      << "EntropyHash may be unknown. largest_received: "
+      << received_info_.largest_observed
       << " sequence_number: " << sequence_number;
 
   // TODO(satyamshekhar): Make this O(1).
@@ -118,7 +159,7 @@ void QuicReceivedPacketManager::RecalculateEntropyHash(
     QuicPacketEntropyHash entropy_hash) {
   DCHECK_LE(peer_least_unacked, received_info_.largest_observed);
   if (peer_least_unacked < largest_sequence_number_) {
-    DLOG(INFO) << "Ignoring received peer_least_unacked:" << peer_least_unacked
+    DVLOG(1) << "Ignoring received peer_least_unacked:" << peer_least_unacked
                << " less than largest_peer_sequence_number:"
                << largest_sequence_number_;
     return;
@@ -183,6 +224,16 @@ void QuicReceivedPacketManager::UpdatePacketInformationSentByPeer(
   DCHECK(received_info_.missing_packets.empty() ||
          *received_info_.missing_packets.begin() >=
              peer_least_packet_awaiting_ack_);
+}
+
+bool QuicReceivedPacketManager::HasMissingPackets() {
+  return !received_info_.missing_packets.empty();
+}
+
+bool QuicReceivedPacketManager::HasNewMissingPackets() {
+  return HasMissingPackets() &&
+      (received_info_.largest_observed -
+       *received_info_.missing_packets.rbegin()) <= kMaxPacketsAfterNewMissing;
 }
 
 }  // namespace net

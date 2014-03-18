@@ -35,32 +35,30 @@ namespace WebCore {
 
 class ActiveDOMObject : public ContextLifecycleObserver {
 public:
-    ActiveDOMObject(ScriptExecutionContext*);
+    ActiveDOMObject(ExecutionContext*);
 
     // suspendIfNeeded() should be called exactly once after object construction to synchronize
-    // the suspend state with that in ScriptExecutionContext.
+    // the suspend state with that in ExecutionContext.
     void suspendIfNeeded();
 #if !ASSERT_DISABLED
     bool suspendIfNeededCalled() const { return m_suspendIfNeededCalled; }
 #endif
 
+    // Should return true if there's any pending asynchronous activity, and so
+    // this object must not be garbage collected.
+    //
+    // Default implementation is that it returns true iff
+    // m_pendingActivityCount is non-zero.
     virtual bool hasPendingActivity() const;
 
-    // canSuspend() is used by the caller if there is a choice between suspending and stopping.
-    // For example, a page won't be suspended and placed in the back/forward cache if it has
-    // the objects that can not be suspended.
-    // However, 'suspend' can be called even if canSuspend() would return 'false'. That
-    // happens in step-by-step JS debugging for example - in this case it would be incorrect
-    // to stop the object. Exact semantics of suspend is up to the object then.
-    enum ReasonForSuspension {
-        JavaScriptDebuggerPaused,
-        WillDeferLoading,
-        DocumentWillBecomeInactive
-    };
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
+    // These methods have an empty default implementation so that subclasses
+    // which don't need special treatment can skip implementation.
+    virtual void suspend();
     virtual void resume();
     virtual void stop();
+
+protected:
+    virtual ~ActiveDOMObject();
 
     template<class T> void setPendingActivity(T* thisObject)
     {
@@ -75,9 +73,6 @@ public:
         --m_pendingActivityCount;
         thisObject->deref();
     }
-
-protected:
-    virtual ~ActiveDOMObject();
 
 private:
     unsigned m_pendingActivityCount;

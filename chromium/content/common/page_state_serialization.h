@@ -16,14 +16,14 @@
 namespace content {
 
 struct CONTENT_EXPORT ExplodedHttpBodyElement {
-  WebKit::WebHTTPBody::Element::Type type;
+  blink::WebHTTPBody::Element::Type type;
   std::string data;
   base::NullableString16 file_path;
   GURL filesystem_url;
   int64 file_start;
   int64 file_length;
   double file_modification_time;
-  GURL deprecated_blob_url;
+  std::string blob_uuid;
 
   ExplodedHttpBodyElement();
   ~ExplodedHttpBodyElement();
@@ -45,18 +45,13 @@ struct CONTENT_EXPORT ExplodedFrameState {
   base::NullableString16 original_url_string;
   base::NullableString16 referrer;
   base::NullableString16 target;
-  base::NullableString16 parent;
-  base::NullableString16 title;
-  base::NullableString16 alternate_title;
   base::NullableString16 state_object;
   std::vector<base::NullableString16> document_state;
   gfx::Point scroll_offset;
   int64 item_sequence_number;
   int64 document_sequence_number;
-  int visit_count;
-  double visited_time;
+  int64 target_frame_id;
   double page_scale_factor;
-  bool is_target_item;
   ExplodedHttpBody http_body;
   std::vector<ExplodedFrameState> children;
 

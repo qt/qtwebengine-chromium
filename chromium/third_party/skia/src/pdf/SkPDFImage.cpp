@@ -27,7 +27,7 @@ static bool skip_compression(SkPDFCatalog* catalog) {
 
 static size_t get_uncompressed_size(const SkBitmap& bitmap,
                                     const SkIRect& srcRect) {
-    switch (bitmap.getConfig()) {
+    switch (bitmap.config()) {
         case SkBitmap::kIndex8_Config:
             return srcRect.width() * srcRect.height();
         case SkBitmap::kARGB_4444_Config:
@@ -36,7 +36,6 @@ static size_t get_uncompressed_size(const SkBitmap& bitmap,
             return srcRect.width() * 3 * srcRect.height();
         case SkBitmap::kARGB_8888_Config:
             return srcRect.width() * 3 * srcRect.height();
-        case SkBitmap::kA1_Config:
         case SkBitmap::kA8_Config:
             return 1;
         default:
@@ -166,48 +165,6 @@ static SkStream* extract_argb8888_data(const SkBitmap& bitmap,
     return stream;
 }
 
-static SkStream* extract_a1_alpha(const SkBitmap& bitmap,
-                                  const SkIRect& srcRect,
-                                  bool* isOpaque,
-                                  bool* isTransparent) {
-    const int alphaRowBytes = (srcRect.width() + 7) / 8;
-    SkStream* stream = SkNEW_ARGS(SkMemoryStream,
-                                  (alphaRowBytes * srcRect.height()));
-    uint8_t* alphaDst = (uint8_t*)stream->getMemoryBase();
-
-    int offset1 = srcRect.fLeft % 8;
-    int offset2 = 8 - offset1;
-
-    for (int y = srcRect.fTop; y < srcRect.fBottom; y++) {
-        uint8_t* src = bitmap.getAddr1(0, y);
-        // This may read up to one byte after src, but the
-        // potentially invalid bits are never used for computation.
-        for (int x = srcRect.fLeft; x < srcRect.fRight; x += 8)  {
-            if (offset1) {
-                alphaDst[0] = src[x / 8] << offset1 |
-                    src[x / 8 + 1] >> offset2;
-            } else {
-                alphaDst[0] = src[x / 8];
-            }
-            if (x + 7 < srcRect.fRight) {
-                *isOpaque &= alphaDst[0] == SK_AlphaOPAQUE;
-                *isTransparent &= alphaDst[0] == SK_AlphaTRANSPARENT;
-            }
-            alphaDst++;
-        }
-        // Calculate the mask of bits we're interested in within the
-        // last byte of alphaDst.
-        // width mod 8  == 1 -> 0x80 ... width mod 8 == 7 -> 0xFE
-        uint8_t mask = ~((1 << (8 - (srcRect.width() % 8))) - 1);
-        if (srcRect.width() % 8) {
-            *isOpaque &= (alphaDst[-1] & mask) == (SK_AlphaOPAQUE & mask);
-            *isTransparent &=
-                    (alphaDst[-1] & mask) == (SK_AlphaTRANSPARENT & mask);
-        }
-    }
-    return stream;
-}
-
 static SkStream* extract_a8_alpha(const SkBitmap& bitmap,
                                   const SkIRect& srcRect,
                                   bool* isOpaque,
@@ -283,14 +240,6 @@ static SkStream* extract_image_data(const SkBitmap& bitmap,
             stream = extract_argb8888_data(bitmap, srcRect, extractAlpha,
                                            &isOpaque, &transparent);
             break;
-        case SkBitmap::kA1_Config:
-            if (!extractAlpha) {
-                stream = create_black_image();
-            } else {
-                stream = extract_a1_alpha(bitmap, srcRect,
-                                          &isOpaque, &transparent);
-            }
-            break;
         case SkBitmap::kA8_Config:
             if (!extractAlpha) {
                 stream = create_black_image();
@@ -336,11 +285,162 @@ static SkPDFArray* make_indexed_color_space(SkColorTable* table) {
     return result;
 }
 
+/**
+ * Removes the alpha component of an ARGB color (including unpremultiply) while
+ * keeping the output in the same format as the input.
+ */
+static uint32_t remove_alpha_argb8888(uint32_t pmColor) {
+    SkColor color = SkUnPreMultiply::PMColorToColor(pmColor);
+    return SkPackARGB32NoCheck(SK_AlphaOPAQUE,
+                               SkColorGetR(color),
+                               SkColorGetG(color),
+                               SkColorGetB(color));
+}
+
+static uint16_t remove_alpha_argb4444(uint16_t pmColor) {
+    return SkPixel32ToPixel4444(
+            remove_alpha_argb8888(SkPixel4444ToPixel32(pmColor)));
+}
+
+static uint32_t get_argb8888_neighbor_avg_color(const SkBitmap& bitmap,
+                                                int xOrig, int yOrig) {
+    uint8_t count = 0;
+    uint16_t r = 0;
+    uint16_t g = 0;
+    uint16_t b = 0;
+
+    for (int y = yOrig - 1; y <= yOrig + 1; y++) {
+        if (y < 0 || y >= bitmap.height()) {
+            continue;
+        }
+        uint32_t* src = bitmap.getAddr32(0, y);
+        for (int x = xOrig - 1; x <= xOrig + 1; x++) {
+            if (x < 0 || x >= bitmap.width()) {
+                continue;
+            }
+            if (SkGetPackedA32(src[x]) != SK_AlphaTRANSPARENT) {
+                uint32_t color = remove_alpha_argb8888(src[x]);
+                r += SkGetPackedR32(color);
+                g += SkGetPackedG32(color);
+                b += SkGetPackedB32(color);
+                count++;
+            }
+        }
+    }
+
+    if (count == 0) {
+        return SkPackARGB32NoCheck(SK_AlphaOPAQUE, 0, 0, 0);
+    } else {
+        return SkPackARGB32NoCheck(SK_AlphaOPAQUE,
+                                   r / count, g / count, b / count);
+    }
+}
+
+static uint16_t get_argb4444_neighbor_avg_color(const SkBitmap& bitmap,
+                                                int xOrig, int yOrig) {
+    uint8_t count = 0;
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+
+    for (int y = yOrig - 1; y <= yOrig + 1; y++) {
+        if (y < 0 || y >= bitmap.height()) {
+            continue;
+        }
+        uint16_t* src = bitmap.getAddr16(0, y);
+        for (int x = xOrig - 1; x <= xOrig + 1; x++) {
+            if (x < 0 || x >= bitmap.width()) {
+                continue;
+            }
+            if ((SkGetPackedA4444(src[x]) & 0x0F) != SK_AlphaTRANSPARENT) {
+                uint16_t color = remove_alpha_argb4444(src[x]);
+                r += SkGetPackedR4444(color);
+                g += SkGetPackedG4444(color);
+                b += SkGetPackedB4444(color);
+                count++;
+            }
+        }
+    }
+
+    if (count == 0) {
+        return SkPackARGB4444(SK_AlphaOPAQUE & 0x0F, 0, 0, 0);
+    } else {
+        return SkPackARGB4444(SK_AlphaOPAQUE & 0x0F,
+                                   r / count, g / count, b / count);
+    }
+}
+
+static SkBitmap unpremultiply_bitmap(const SkBitmap& bitmap,
+                                     const SkIRect& srcRect) {
+    SkBitmap outBitmap;
+    outBitmap.setConfig(bitmap.config(), srcRect.width(), srcRect.height());
+    outBitmap.allocPixels();
+    int dstRow = 0;
+
+    outBitmap.lockPixels();
+    bitmap.lockPixels();
+    switch (bitmap.config()) {
+        case SkBitmap::kARGB_4444_Config: {
+            for (int y = srcRect.fTop; y < srcRect.fBottom; y++) {
+                uint16_t* dst = outBitmap.getAddr16(0, dstRow);
+                uint16_t* src = bitmap.getAddr16(0, y);
+                for (int x = srcRect.fLeft; x < srcRect.fRight; x++) {
+                    uint8_t a = SkGetPackedA4444(src[x]);
+                    // It is necessary to average the color component of
+                    // transparent pixels with their surrounding neighbors
+                    // since the PDF renderer may separately re-sample the
+                    // alpha and color channels when the image is not
+                    // displayed at its native resolution. Since an alpha of
+                    // zero gives no information about the color component,
+                    // the pathological case is a white image with sharp
+                    // transparency bounds - the color channel goes to black,
+                    // and the should-be-transparent pixels are rendered
+                    // as grey because of the separate soft mask and color
+                    // resizing.
+                    if (a == (SK_AlphaTRANSPARENT & 0x0F)) {
+                        *dst = get_argb4444_neighbor_avg_color(bitmap, x, y);
+                    } else {
+                        *dst = remove_alpha_argb4444(src[x]);
+                    }
+                    dst++;
+                }
+                dstRow++;
+            }
+            break;
+        }
+        case SkBitmap::kARGB_8888_Config: {
+            for (int y = srcRect.fTop; y < srcRect.fBottom; y++) {
+                uint32_t* dst = outBitmap.getAddr32(0, dstRow);
+                uint32_t* src = bitmap.getAddr32(0, y);
+                for (int x = srcRect.fLeft; x < srcRect.fRight; x++) {
+                    uint8_t a = SkGetPackedA32(src[x]);
+                    if (a == SK_AlphaTRANSPARENT) {
+                        *dst = get_argb8888_neighbor_avg_color(bitmap, x, y);
+                    } else {
+                        *dst = remove_alpha_argb8888(src[x]);
+                    }
+                    dst++;
+                }
+                dstRow++;
+            }
+            break;
+        }
+        default:
+            SkASSERT(false);
+    }
+    bitmap.unlockPixels();
+    outBitmap.unlockPixels();
+
+    outBitmap.setImmutable();
+
+    return outBitmap;
+}
+
 // static
 SkPDFImage* SkPDFImage::CreateImage(const SkBitmap& bitmap,
                                     const SkIRect& srcRect,
-                                    EncodeToDCTStream encoder) {
-    if (bitmap.getConfig() == SkBitmap::kNo_Config) {
+                                    SkPicture::EncodeBitmap encoder) {
+    if (bitmap.config() == SkBitmap::kNo_Config) {
         return NULL;
     }
 
@@ -358,8 +458,17 @@ SkPDFImage* SkPDFImage::CreateImage(const SkBitmap& bitmap,
         return NULL;
     }
 
-    SkPDFImage* image = SkNEW_ARGS(SkPDFImage, (NULL, bitmap,
-                                                false, srcRect, encoder));
+    SkPDFImage* image;
+    SkBitmap::Config config = bitmap.config();
+    if (alphaData.get() != NULL && (config == SkBitmap::kARGB_8888_Config ||
+            config == SkBitmap::kARGB_4444_Config)) {
+        SkBitmap unpremulBitmap = unpremultiply_bitmap(bitmap, srcRect);
+        image = SkNEW_ARGS(SkPDFImage, (NULL, unpremulBitmap, false,
+                           SkIRect::MakeWH(srcRect.width(), srcRect.height()),
+                           encoder));
+    } else {
+        image = SkNEW_ARGS(SkPDFImage, (NULL, bitmap, false, srcRect, encoder));
+    }
     if (alphaData.get() != NULL) {
         SkAutoTUnref<SkPDFImage> mask(
                 SkNEW_ARGS(SkPDFImage, (alphaData.get(), bitmap,
@@ -390,7 +499,7 @@ SkPDFImage::SkPDFImage(SkStream* stream,
                        const SkBitmap& bitmap,
                        bool isAlpha,
                        const SkIRect& srcRect,
-                       EncodeToDCTStream encoder)
+                       SkPicture::EncodeBitmap encoder)
     : fIsAlpha(isAlpha),
       fSrcRect(srcRect),
       fEncoder(encoder) {
@@ -409,13 +518,12 @@ SkPDFImage::SkPDFImage(SkStream* stream,
         fStreamValid = false;
     }
 
-    SkBitmap::Config config = fBitmap.getConfig();
+    SkBitmap::Config config = fBitmap.config();
 
     insertName("Type", "XObject");
     insertName("Subtype", "Image");
 
-    bool alphaOnly = (config == SkBitmap::kA1_Config ||
-                      config == SkBitmap::kA8_Config);
+    bool alphaOnly = (config == SkBitmap::kA8_Config);
 
     if (!isAlpha && alphaOnly) {
         // For alpha only images, we stretch a single pixel of black for
@@ -441,8 +549,6 @@ SkPDFImage::SkPDFImage(SkStream* stream,
     int bitsPerComp = 8;
     if (config == SkBitmap::kARGB_4444_Config) {
         bitsPerComp = 4;
-    } else if (isAlpha && config == SkBitmap::kA1_Config) {
-        bitsPerComp = 1;
     }
     insertInt("BitsPerComponent", bitsPerComp);
 
@@ -450,9 +556,9 @@ SkPDFImage::SkPDFImage(SkStream* stream,
         SkASSERT(!isAlpha);
         SkAutoTUnref<SkPDFInt> zeroVal(new SkPDFInt(0));
         SkAutoTUnref<SkPDFScalar> scale5Val(
-                new SkPDFScalar(SkFloatToScalar(8.2258f)));  // 255/2^5-1
+                new SkPDFScalar(8.2258f));  // 255/2^5-1
         SkAutoTUnref<SkPDFScalar> scale6Val(
-                new SkPDFScalar(SkFloatToScalar(4.0476f)));  // 255/2^6-1
+                new SkPDFScalar(4.0476f));  // 255/2^6-1
         SkAutoTUnref<SkPDFArray> decodeValue(new SkPDFArray());
         decodeValue->reserve(6);
         decodeValue->append(zeroVal.get());
@@ -482,19 +588,28 @@ bool SkPDFImage::populate(SkPDFCatalog* catalog) {
         // Initializing image data for the first time.
         SkDynamicMemoryWStream dctCompressedWStream;
         if (!skip_compression(catalog) && fEncoder &&
-                get_uncompressed_size(fBitmap, fSrcRect) > 1 &&
-                fEncoder(&dctCompressedWStream, fBitmap, fSrcRect) &&
-                dctCompressedWStream.getOffset() <
-                            get_uncompressed_size(fBitmap, fSrcRect)) {
-            SkAutoTUnref<SkData> data(dctCompressedWStream.copyToData());
-            SkAutoTUnref<SkStream> stream(SkNEW_ARGS(SkMemoryStream, (data)));
-            setData(stream.get());
+                get_uncompressed_size(fBitmap, fSrcRect) > 1) {
+            SkBitmap subset;
+            // Extract subset
+            if (!fBitmap.extractSubset(&subset, fSrcRect)) {
+                // TODO(edisonn) It fails only for kA1_Config, if that is a
+                // major concern we will fix it later, so far it is NYI.
+                return false;
+            }
+            size_t pixelRefOffset = 0;
+            SkAutoTUnref<SkData> data(fEncoder(&pixelRefOffset, subset));
+            if (data.get() && data->size() < get_uncompressed_size(fBitmap,
+                                                                   fSrcRect)) {
+                SkAutoTUnref<SkStream> stream(SkNEW_ARGS(SkMemoryStream,
+                                                         (data)));
+                setData(stream.get());
 
-            insertName("Filter", "DCTDecode");
-            insertInt("ColorTransform", kNoColorTransform);
-            insertInt("Length", getData()->getLength());
-            setState(kCompressed_State);
-            return true;
+                insertName("Filter", "DCTDecode");
+                insertInt("ColorTransform", kNoColorTransform);
+                insertInt("Length", getData()->getLength());
+                setState(kCompressed_State);
+                return true;
+            }
         }
         // Fallback method
         if (!fStreamValid) {

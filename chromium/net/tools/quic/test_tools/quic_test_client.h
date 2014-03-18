@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef NET_QUIC_TEST_TOOLS_QUIC_CLIENT_H_
-#define NET_QUIC_TEST_TOOLS_QUIC_CLIENT_H_
+#ifndef NET_QUIC_TEST_TOOLS_QUIC_TEST_CLIENT_H_
+#define NET_QUIC_TEST_TOOLS_QUIC_TEST_CLIENT_H_
 
 #include <string>
 
@@ -12,8 +12,8 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/test_tools/quic_test_writer.h"
 #include "net/tools/quic/quic_client.h"
-#include "net/tools/quic/quic_packet_writer.h"
 
 namespace net {
 
@@ -23,30 +23,22 @@ namespace tools {
 
 namespace test {
 
-// Allows setting a writer for the client's QuicConnectionHelper, to allow
-// fine-grained control of writes.
-class QuicTestWriter : public QuicPacketWriter {
- public:
-  virtual ~QuicTestWriter() {}
-  virtual void set_fd(int fd) = 0;
-};
-
 class HTTPMessage;
 
 // A toy QUIC client used for testing.
-class QuicTestClient :  public ReliableQuicStream::Visitor {
+class QuicTestClient :  public QuicDataStream::Visitor {
  public:
   QuicTestClient(IPEndPoint server_address, const string& server_hostname,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
                  const string& server_hostname,
                  bool secure,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
                  const string& server_hostname,
                  bool secure,
                  const QuicConfig& config,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
 
   virtual ~QuicTestClient();
 
@@ -68,8 +60,6 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
 
   QuicPacketCreator::Options* options() { return client_->options(); }
 
-  const BalsaHeaders *response_headers() const {return &headers_;}
-
   void WaitForResponse();
 
   void Connect();
@@ -77,21 +67,32 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
   void Disconnect();
   IPEndPoint LocalSocketAddress() const;
   void ClearPerRequestState();
-  void WaitForInitialResponse();
+  void WaitForResponseForMs(int timeout_ms);
+  void WaitForInitialResponseForMs(int timeout_ms);
   ssize_t Send(const void *buffer, size_t size);
+  bool response_complete() const { return response_complete_; }
+  bool response_headers_complete() const;
+  const BalsaHeaders* response_headers() const;
   int response_size() const;
+  int response_header_size() const { return response_header_size_; }
+  int response_body_size() const { return response_body_size_; }
   size_t bytes_read() const;
   size_t bytes_written() const;
+  bool buffer_body() const { return buffer_body_; }
+  void set_buffer_body(bool buffer_body) { buffer_body_ = buffer_body; }
 
-  // From ReliableQuicStream::Visitor
-  virtual void OnClose(ReliableQuicStream* stream) OVERRIDE;
+  // From QuicDataStream::Visitor
+  virtual void OnClose(QuicDataStream* stream) OVERRIDE;
 
   // Configures client_ to take ownership of and use the writer.
   // Must be called before initial connect.
-  void UseWriter(QuicTestWriter* writer);
+  void UseWriter(net::test::QuicTestWriter* writer);
+  // If the given GUID is nonzero, configures client_ to use a specific GUID
+  // instead of a random one.
+  void UseGuid(QuicGuid guid);
 
   // Returns NULL if the maximum number of streams have already been created.
-  QuicReliableClientStream* GetOrCreateStream();
+  QuicSpdyClientStream* GetOrCreateStream();
 
   QuicRstStreamErrorCode stream_error() { return stream_error_; }
   QuicErrorCode connection_error() { return client()->session()->error(); }
@@ -109,30 +110,38 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
 
   void set_priority(QuicPriority priority) { priority_ = priority; }
 
+  void WaitForWriteToFlush();
+
  private:
   void Initialize(IPEndPoint address, const string& hostname, bool secure);
 
   IPEndPoint server_address_;
   IPEndPoint client_address_;
   scoped_ptr<QuicClient> client_;  // The actual client
-  QuicReliableClientStream* stream_;
+  QuicSpdyClientStream* stream_;
 
   QuicRstStreamErrorCode stream_error_;
 
+  bool response_complete_;
+  bool response_headers_complete_;
   BalsaHeaders headers_;
   QuicPriority priority_;
-
   string response_;
   uint64 bytes_read_;
   uint64 bytes_written_;
-  // True if the client has never connected before.  The client will
-  // auto-connect exactly once before sending data.  If something causes a
-  // connection reset, it will not automatically reconnect.
-  bool never_connected_;
+  // The number of uncompressed HTTP header bytes received.
+  int response_header_size_;
+  // The number of HTTP body bytes received.
+  int response_body_size_;
+  // True if we tried to connect already since the last call to Disconnect().
+  bool connect_attempted_;
   bool secure_;
-  // If true, the client will always reconnect if necessary before creating a
-  // stream.
+  // The client will auto-connect exactly once before sending data.  If
+  // something causes a connection reset, it will not automatically reconnect
+  // unless auto_reconnect_ is true.
   bool auto_reconnect_;
+  // Should we buffer the response body? Defaults to true.
+  bool buffer_body_;
 
   // proof_verifier_ points to a RecordingProofVerifier that is owned by
   // client_.
@@ -144,4 +153,4 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
 }  // namespace tools
 }  // namespace net
 
-#endif  // NET_QUIC_TEST_TOOLS_QUIC_CLIENT_H_
+#endif  // NET_QUIC_TEST_TOOLS_QUIC_TEST_CLIENT_H_

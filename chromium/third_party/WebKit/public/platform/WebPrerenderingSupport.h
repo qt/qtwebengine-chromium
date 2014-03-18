@@ -33,15 +33,15 @@
 
 #include "WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebPrerender;
 
 class WebPrerenderingSupport {
 public:
-    WEBKIT_EXPORT static void initialize(WebPrerenderingSupport*);
-    WEBKIT_EXPORT static void shutdown();
-    WEBKIT_EXPORT static WebPrerenderingSupport* current();
+    BLINK_PLATFORM_EXPORT static void initialize(WebPrerenderingSupport*);
+    BLINK_PLATFORM_EXPORT static void shutdown();
+    BLINK_PLATFORM_EXPORT static WebPrerenderingSupport* current();
 
     // A prerender link element is added when it is inserted into a document.
     virtual void add(const WebPrerender&) = 0;
@@ -62,6 +62,6 @@ private:
     static WebPrerenderingSupport* s_platform;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebPrerenderingSupport_h

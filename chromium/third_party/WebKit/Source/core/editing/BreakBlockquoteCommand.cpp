@@ -105,18 +105,19 @@ void BreakBlockquoteCommand::doApply()
 
     // startNode is the first node that we need to move to the new blockquote.
     Node* startNode = pos.deprecatedNode();
+    ASSERT(startNode);
 
     // Split at pos if in the middle of a text node.
     if (startNode->isTextNode()) {
         Text* textNode = toText(startNode);
         if ((unsigned)pos.deprecatedEditingOffset() >= textNode->length()) {
-            startNode = NodeTraversal::next(startNode);
+            startNode = NodeTraversal::next(*startNode);
             ASSERT(startNode);
         } else if (pos.deprecatedEditingOffset() > 0)
             splitTextNode(textNode, pos.deprecatedEditingOffset());
     } else if (pos.deprecatedEditingOffset() > 0) {
         Node* childAtOffset = startNode->childNode(pos.deprecatedEditingOffset());
-        startNode = childAtOffset ? childAtOffset : NodeTraversal::next(startNode);
+        startNode = childAtOffset ? childAtOffset : NodeTraversal::next(*startNode);
         ASSERT(startNode);
     }
 
@@ -150,7 +151,7 @@ void BreakBlockquoteCommand::doApply()
             while (listChildNode && !listChildNode->hasTagName(liTag))
                 listChildNode = listChildNode->nextSibling();
             if (listChildNode && listChildNode->renderer() && listChildNode->renderer()->isListItem())
-                setNodeAttribute(clonedChild, startAttr, String::number(toRenderListItem(listChildNode->renderer())->value()));
+                setNodeAttribute(clonedChild, startAttr, AtomicString::number(toRenderListItem(listChildNode->renderer())->value()));
         }
 
         appendNode(clonedChild.get(), clonedAncestor.get());

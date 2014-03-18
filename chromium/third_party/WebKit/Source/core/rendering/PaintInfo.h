@@ -27,11 +27,11 @@
 #define PaintInfo_h
 
 #include <limits>
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/PaintPhase.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 

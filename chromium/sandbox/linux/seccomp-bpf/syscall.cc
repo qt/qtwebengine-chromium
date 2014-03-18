@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "sandbox/linux/seccomp-bpf/syscall.h"
+
 #include <asm/unistd.h>
 #include <errno.h>
 
-#include "sandbox/linux/seccomp-bpf/port.h"
-#include "sandbox/linux/seccomp-bpf/syscall.h"
+#include "base/basictypes.h"
 
-
-namespace playground2 {
+namespace sandbox {
 
   asm(      // We need to be able to tell the kernel exactly where we made a
             // system call. The C++ compiler likes to sometimes clone or
@@ -196,7 +196,7 @@ intptr_t SandboxSyscall(int nr,
     // N.B. These are not the calling conventions normally used by the ABI.
     : "=a"(ret)
     : "0"(ret), "D"(args)
-    : "esp", "memory", "ecx", "edx");
+    : "cc", "esp", "memory", "ecx", "edx");
 #elif defined(__x86_64__)
   intptr_t ret = nr;
   {
@@ -208,7 +208,7 @@ intptr_t SandboxSyscall(int nr,
       // N.B. These are not the calling conventions normally used by the ABI.
       : "=a"(ret)
       : "0"(ret), "r"(data)
-      : "rsp", "memory",
+      : "cc", "rsp", "memory",
         "rcx", "rdi", "rsi", "rdx", "r8", "r9", "r10", "r11");
   }
 #elif defined(__arm__)
@@ -221,7 +221,7 @@ intptr_t SandboxSyscall(int nr,
       // N.B. These are not the calling conventions normally used by the ABI.
       : "=r"(inout)
       : "0"(inout), "r"(data)
-      : "lr", "memory", "r1", "r2", "r3", "r4", "r5"
+      : "cc", "lr", "memory", "r1", "r2", "r3", "r4", "r5"
 #if !defined(__arm__)
       // In thumb mode, we cannot use "r7" as a general purpose register, as
       // it is our frame pointer. We have to manually manage and preserve it.
@@ -240,4 +240,4 @@ intptr_t SandboxSyscall(int nr,
   return ret;
 }
 
-}  // namespace
+}  // namespace sandbox

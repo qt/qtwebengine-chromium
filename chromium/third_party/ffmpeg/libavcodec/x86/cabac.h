@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,18 @@
 #endif
 
 #if HAVE_INLINE_ASM
+
+#ifndef UNCHECKED_BITSTREAM_READER
+#define UNCHECKED_BITSTREAM_READER !CONFIG_SAFE_BITSTREAM_READER
+#endif
+
+#if UNCHECKED_BITSTREAM_READER
+#define END_CHECK(end) ""
+#else
+#define END_CHECK(end) \
+        "cmp    "end"       , %%"REG_c"                                 \n\t"\
+        "jge    1f                                                      \n\t"
+#endif
 
 #ifdef BROKEN_RELOCATIONS
 #define TABLES_ARG , "r"(tables)
@@ -80,7 +92,9 @@
         "test   "lowword"   , "lowword"                                 \n\t"\
         "jnz    2f                                                      \n\t"\
         "mov    "byte"      , %%"REG_c"                                 \n\t"\
+        END_CHECK(end)\
         "add"OPSIZE" $2     , "byte"                                    \n\t"\
+        "1:                                                             \n\t"\
         "movzwl (%%"REG_c") , "tmp"                                     \n\t"\
         "lea    -1("low")   , %%ecx                                     \n\t"\
         "xor    "low"       , %%ecx                                     \n\t"\
@@ -139,7 +153,9 @@
         "test   "lowword"   , "lowword"                                 \n\t"\
         " jnz   2f                                                      \n\t"\
         "mov    "byte"      , %%"REG_c"                                 \n\t"\
+        END_CHECK(end)\
         "add"OPSIZE" $2     , "byte"                                    \n\t"\
+        "1:                                                             \n\t"\
         "movzwl (%%"REG_c")     , "tmp"                                 \n\t"\
         "lea    -1("low")   , %%ecx                                     \n\t"\
         "xor    "low"       , %%ecx                                     \n\t"\
@@ -191,6 +207,7 @@ static av_always_inline int get_cabac_inline_x86(CABACContext *c,
 }
 #endif /* HAVE_7REGS */
 
+#if !BROKEN_COMPILER
 #define get_cabac_bypass_sign get_cabac_bypass_sign_x86
 static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
 {
@@ -213,9 +230,16 @@ static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
         "movzwl         (%1), %%edx     \n\t"
         "bswap         %%edx            \n\t"
         "shrl            $15, %%edx     \n\t"
+#if UNCHECKED_BITSTREAM_READER
         "add              $2, %1        \n\t"
         "addl          %%edx, %%eax     \n\t"
         "mov              %1, %c4(%2)   \n\t"
+#else
+        "addl          %%edx, %%eax     \n\t"
+        "cmp         %c5(%2), %1        \n\t"
+        "jge              1f            \n\t"
+        "add"OPSIZE"      $2, %c4(%2)   \n\t"
+#endif
         "1:                             \n\t"
         "movl          %%eax, %c3(%2)   \n\t"
 
@@ -230,7 +254,6 @@ static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
     return val;
 }
 
-#if !BROKEN_COMPILER
 #define get_cabac_bypass get_cabac_bypass_x86
 static av_always_inline int get_cabac_bypass_x86(CABACContext *c)
 {

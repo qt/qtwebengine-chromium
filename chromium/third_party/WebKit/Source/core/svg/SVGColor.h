@@ -23,7 +23,7 @@
 #define SVGColor_h
 
 #include "core/css/CSSValue.h"
-#include "core/platform/graphics/Color.h"
+#include "platform/graphics/Color.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -69,7 +69,7 @@ public:
     void setRGBColorICCColor(const String& rgbColor, const String& iccColor, ExceptionState&);
     void setColor(unsigned short colorType, const String& rgbColor, const String& iccColor, ExceptionState&);
 
-    String customCssText() const;
+    String customCSSText() const;
 
     ~SVGColor() { }
 
@@ -92,6 +92,8 @@ private:
     Color m_color;
     SVGColorType m_colorType;
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(SVGColor, isSVGColor());
 
 } // namespace WebCore
 

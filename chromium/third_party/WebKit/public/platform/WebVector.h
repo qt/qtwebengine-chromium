@@ -35,7 +35,7 @@
 
 #include <algorithm>
 
-namespace WebKit {
+namespace blink {
 
 // A simple vector class.
 //
@@ -123,12 +123,12 @@ public:
 
     T& operator[](size_t i)
     {
-        WEBKIT_ASSERT(i < m_size);
+        BLINK_ASSERT(i < m_size);
         return m_ptr[i];
     }
     const T& operator[](size_t i) const
     {
-        WEBKIT_ASSERT(i < m_size);
+        BLINK_ASSERT(i < m_size);
         return m_ptr[i];
     }
 
@@ -187,6 +187,6 @@ private:
     size_t m_size;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

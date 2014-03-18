@@ -3,9 +3,6 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/components',
-  },
   'targets': [
     {
       'target_name': 'component_strings',
@@ -25,6 +22,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/components/strings',
         ],
       },
+      'hard_dependency': 1,
     },
   ],
 }

@@ -5,8 +5,8 @@
   -->
 
 <polymer-element name="kb-key-base"
-    on-pointerdown="down" on-pointerup="up" on-pointerout="out"
-    attributes="accents char invert repeat hintText toKeyset toLayout">
+    on-pointerdown="{{down}}" on-pointerup="{{up}}" on-pointerout="{{out}}"
+    attributes="char invert repeat hintText toKeyset toLayout">
   <script>
     /**
      * The long-press delay in milliseconds before long-press handler is
@@ -69,6 +69,7 @@
       repeat: false,
       invert: false,
       longPressTimer: null,
+      pointerId: undefined,
 
       /**
        * The keyset transition rules. It defines which keyset to transit to on
@@ -108,51 +109,120 @@
           });
         }
       },
+
       down: function(event) {
-        var detail = this.populateDetails();
-        if (this.keysetRules && this.keysetRules.down != undefined) {
-          detail.toKeyset = this.keysetRules.down[TO_KEYSET - OFFSET];
-          detail.nextKeyset = this.keysetRules.down[NEXT_KEYSET - OFFSET];
-        }
+        this.pointerId = event.pointerId;
+        var detail = this.populateDetails('down');
         this.fire('key-down', detail);
         this.longPressTimer = this.generateLongPressTimer();
       },
       out: function(event) {
+        this.classList.remove('active');
         clearTimeout(this.longPressTimer);
       },
       up: function(event) {
+        this.generateKeyup();
+      },
+
+      /**
+       * Releases the pressed key programmatically and fires key-up event. This
+       * should be called if a second key is pressed while the first key is not
+       * released yet.
+       */
+      autoRelease: function() {
+        this.generateKeyup();
+      },
+
+      /**
+       * Drops the pressed key.
+       */
+      dropKey: function() {
+        this.classList.remove('active');
         clearTimeout(this.longPressTimer);
-        var detail = this.populateDetails();
-        if (this.keysetRules && this.keysetRules.up != undefined) {
-          detail.toKeyset = this.keysetRules.up[TO_KEYSET - OFFSET];
-          detail.nextKeyset = this.keysetRules.up[NEXT_KEYSET - OFFSET];
-        }
+        this.pointerId = undefined;
+      },
+
+      /**
+       * Populates details for this key, and then fires a key-up event.
+       */
+      generateKeyup: function() {
+        if (this.pointerId === undefined)
+          return;
+
+        // Invalidates the pointerId so the subsequent pointerup event is a
+        // noop.
+        this.pointerId = undefined;
+        clearTimeout(this.longPressTimer);
+        var detail = this.populateDetails('up');
         this.fire('key-up', detail);
       },
 
       /**
        * Character value associated with the key. Typically, the value is a
-       * single charcater, but may be multi-character in cases like a ".com"
+       * single character, but may be multi-character in cases like a ".com"
        * button.
-       * @type {string}
+       * @return {string}
        */
       get charValue() {
-        return this.char || this.textContent;
+        return this.invert ? this.hintText : (this.char || this.textContent);
       },
 
-      populateDetails: function() {
-         return {
-            char: this.charValue,
-            toLayout: this.toLayout,
-            repeat: this.repeat
-         };
+      /**
+       * Hint text value associated with the key. Typically, the value is a
+       * single character.
+       * @return {string}
+       */
+      get hintTextValue() {
+        return this.invert ? (this.char || this.textContent) : this.hintText;
+      },
+
+      /**
+       * Handles a swipe flick that originated from this key.
+       * @param {detail} The details of the swipe.
+       */
+      onFlick: function(detail) {
+        if (!(detail.direction & SWIPE_DIRECTION.UP) || !this.hintTextValue)
+          return;
+        var typeDetails = {char: this.hintTextValue};
+        this.fire('type-key', typeDetails);
+      },
+
+      /**
+       * Returns a subset of the key attributes.
+       * @param {string} caller The id of the function which called
+       *     populateDetails.
+       */
+      populateDetails: function(caller) {
+        var detail = {
+          char: this.charValue,
+          toLayout: this.toLayout,
+          repeat: this.repeat
+        };
+
+        switch (caller) {
+          case ('up'):
+            if (this.keysetRules && this.keysetRules.up != undefined) {
+              detail.toKeyset = this.keysetRules.up[TO_KEYSET - OFFSET];
+              detail.nextKeyset = this.keysetRules.up[NEXT_KEYSET - OFFSET];
+            }
+            break;
+          case ('down'):
+            if (this.keysetRules && this.keysetRules.down != undefined) {
+              detail.toKeyset = this.keysetRules.down[TO_KEYSET - OFFSET];
+              detail.nextKeyset = this.keysetRules.down[NEXT_KEYSET - OFFSET];
+            }
+            break;
+          default:
+            break;
+        }
+        return detail;
       },
 
       generateLongPressTimer: function() {
         return this.asyncMethod(function() {
           var detail = {
             char: this.charValue,
-            hintText: this.hintText
+            hintText: this.hintTextValue
           };
           if (this.keysetRules && this.keysetRules.long != undefined) {
             detail.toKeyset = this.keysetRules.long[TO_KEYSET - OFFSET];

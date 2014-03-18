@@ -12,7 +12,7 @@ namespace gfx {
 
 // A 3d version of gfx::RectF, with the positive z-axis pointed towards
 // the camera.
-class UI_EXPORT BoxF {
+class GFX_EXPORT BoxF {
  public:
   BoxF()
       : width_(0.f),
@@ -94,14 +94,32 @@ class UI_EXPORT BoxF {
   const Point3F& origin() const { return origin_; }
   void set_origin(const Point3F& origin) { origin_ = origin; }
 
+  // Expands |this| to contain the given point, if necessary. Please note, even
+  // if |this| is empty, after the function |this| will continue to contain its
+  // |origin_|.
+  void ExpandTo(const Point3F& point);
+
+  // Expands |this| to contain the given box, if necessary. Please note, even
+  // if |this| is empty, after the function |this| will continue to contain its
+  // |origin_|.
+  void ExpandTo(const BoxF& box);
+
  private:
+  // Expands the box to contain the two given points. It is required that each
+  // component of |min| is less than or equal to the corresponding component in
+  // |max|. Precisely, what this function does is ensure that after the function
+  // completes, |this| contains origin_, min, max, and origin_ + (width_,
+  // height_, depth_), even if the box is empty. Emptiness checks are handled in
+  // the public function Union.
+  void ExpandTo(const Point3F& min, const Point3F& max);
+
   Point3F origin_;
   float width_;
   float height_;
   float depth_;
 };
 
-UI_EXPORT BoxF UnionBoxes(const BoxF& a, const BoxF& b);
+GFX_EXPORT BoxF UnionBoxes(const BoxF& a, const BoxF& b);
 
 inline BoxF ScaleBox(const BoxF& b,
                      float x_scale,

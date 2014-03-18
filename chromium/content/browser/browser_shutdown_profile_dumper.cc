@@ -37,7 +37,7 @@ void BrowserShutdownProfileDumper::WriteTracesToDisc(
       base::debug::TraceLog::GetInstance()->GetBufferPercentFull() <<
       " full.";
   DCHECK(!dump_file_);
-  dump_file_ = file_util::OpenFile(file_name, "w+");
+  dump_file_ = base::OpenFile(file_name, "w+");
   if (!IsFileValid()) {
     LOG(ERROR) << "Failed to open performance trace file: " <<
         file_name.value();
@@ -65,8 +65,7 @@ void BrowserShutdownProfileDumper::WriteTracesToDisc(
 
 void BrowserShutdownProfileDumper::EndTraceAndFlush(
     base::WaitableEvent* flush_complete_event) {
-  while (base::debug::TraceLog::GetInstance()->IsEnabled())
-    base::debug::TraceLog::GetInstance()->SetDisabled();
+  base::debug::TraceLog::GetInstance()->SetDisabled();
   base::debug::TraceLog::GetInstance()->Flush(
       base::Bind(&BrowserShutdownProfileDumper::WriteTraceDataCollected,
                  base::Unretained(this),
@@ -132,7 +131,7 @@ void BrowserShutdownProfileDumper::WriteChars(const char* chars, size_t size) {
 void BrowserShutdownProfileDumper::CloseFile() {
   if (!dump_file_)
     return;
-  file_util::CloseFile(dump_file_);
+  base::CloseFile(dump_file_);
   dump_file_ = NULL;
 }
 

@@ -32,21 +32,21 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionSync.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/SQLTransactionSyncCallback.h"
 
 namespace WebCore {
 
-PassRefPtr<SQLTransactionSync> SQLTransactionSync::create(DatabaseSync* db, PassRefPtr<SQLTransactionSyncCallback> callback, bool readOnly)
+PassRefPtr<SQLTransactionSync> SQLTransactionSync::create(DatabaseSync* db, PassOwnPtr<SQLTransactionSyncCallback> callback, bool readOnly)
 {
     return adoptRef(new SQLTransactionSync(db, callback, readOnly));
 }
 
-SQLTransactionSync::SQLTransactionSync(DatabaseSync* db, PassRefPtr<SQLTransactionSyncCallback> callback, bool readOnly)
+SQLTransactionSync::SQLTransactionSync(DatabaseSync* db, PassOwnPtr<SQLTransactionSyncCallback> callback, bool readOnly)
     : SQLTransactionBackendSync(db, callback, readOnly)
 {
-    ASSERT(m_database->scriptExecutionContext()->isContextThread());
+    ASSERT(m_database->executionContext()->isContextThread());
     ScriptWrappable::init(this);
 }
 

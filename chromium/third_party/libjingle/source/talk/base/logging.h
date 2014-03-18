@@ -41,6 +41,8 @@
 // LOG_V(sev) Like LOG(), but sev is a run-time variable of the LoggingSeverity
 //     type (basically, it just doesn't prepend the namespace).
 // LOG_F(sev) Like LOG(), but includes the name of the current function.
+// LOG_T(sev) Like LOG(), but includes the this pointer.
+// LOG_T_F(sev) Like LOG_F(), but includes the this pointer.
 // LOG_GLE(M)(sev [, mod]) attempt to add a string description of the
 //     HRESULT returned by GetLastError.  The "M" variant allows searching of a
 //     DLL's string table for the error description.
@@ -310,8 +312,10 @@ class LogMessageVoidify {
 // The _F version prefixes the message with the current function name.
 #if (defined(__GNUC__) && defined(_DEBUG)) || defined(WANT_PRETTY_LOG_F)
 #define LOG_F(sev) LOG(sev) << __PRETTY_FUNCTION__ << ": "
+#define LOG_T_F(sev) LOG(sev) << this << ": " << __PRETTY_FUNCTION__ << ": "
 #else
 #define LOG_F(sev) LOG(sev) << __FUNCTION__ << ": "
+#define LOG_T_F(sev) LOG(sev) << this << ": " << __FUNCTION__ << ": "
 #endif
 
 #define LOG_CHECK_LEVEL(sev) \
@@ -327,6 +331,8 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
     talk_base::LogMessage(__FILE__, __LINE__, talk_base::sev, \
                           talk_base::ERRCTX_ ## ctx, err , ##__VA_ARGS__) \
         .stream()
+
+#define LOG_T(sev) LOG(sev) << this << ": "
 
 #else  // !LOGGING
 
@@ -348,6 +354,8 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
                           talk_base::ERRCTX_ ## ctx, err , ##__VA_ARGS__) \
       .stream()
 
+#define LOG_T(sev) LOG(sev) << this << ": "
+#define LOG_T_F(sev) LOG(sev) << this << ": " << __FUNCTION__ <<
 #endif  // !LOGGING
 
 #define LOG_ERRNO_EX(sev, err) \

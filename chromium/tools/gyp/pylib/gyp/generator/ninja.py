@@ -4,6 +4,7 @@
 
 import copy
 import hashlib
+import json
 import multiprocessing
 import os.path
 import re
@@ -57,6 +58,7 @@ generator_default_variables = {
 generator_additional_non_configuration_keys = []
 generator_additional_path_sections = []
 generator_extra_sources_for_rules = []
+generator_filelist_paths = None
 
 # TODO: figure out how to not build extra host objects in the non-cross-compile
 # case when this is enabled, and enable unconditionally.
@@ -211,7 +213,7 @@ class Target:
 class NinjaWriter:
   def __init__(self, qualified_target, target_outputs, base_dir, build_dir,
                output_file, toplevel_build, output_file_name, flavor,
-               deps_file=None, toplevel_dir=None):
+               toplevel_dir=None):
     """
     base_dir: path from source root to directory containing this gyp file,
               by gyp semantics, all input paths are relative to this
@@ -245,7 +247,6 @@ class NinjaWriter:
     # Relative path from base dir to build dir.
     base_to_top = gyp.common.InvertRelativePath(base_dir, toplevel_dir)
     self.base_to_build = os.path.join(base_to_top, build_dir)
-    self.link_deps_file = deps_file
 
   def ExpandSpecial(self, path, product_dir=None):
     """Expand specials like $!PRODUCT_DIR in |path|.
@@ -769,8 +770,8 @@ class NinjaWriter:
     env = self.GetSortedXcodeEnv(additional_settings=extra_env)
     env = self.ComputeExportEnvString(env)
 
-    keys = self.xcode_settings.GetExtraPlistItems()
-    keys = [QuoteShellArgument(v, self.flavor) for v in sum(keys.items(), ())]
+    keys = self.xcode_settings.GetExtraPlistItems(self.config_name)
+    keys = QuoteShellArgument(json.dumps(keys), self.flavor)
     self.ninja.build(out, 'copy_infoplist', info_plist,
                      variables=[('env', env), ('keys', keys)])
     bundle_depends.append(out)
@@ -813,15 +814,18 @@ class NinjaWriter:
       cflags_c = self.msvs_settings.GetCflagsC(config_name)
       cflags_cc = self.msvs_settings.GetCflagsCC(config_name)
       extra_defines = self.msvs_settings.GetComputedDefines(config_name)
-      pdbpath = self.msvs_settings.GetCompilerPdbName(
+      # See comment at cc_command for why there's two .pdb files.
+      pdbpath_c = pdbpath_cc = self.msvs_settings.GetCompilerPdbName(
           config_name, self.ExpandSpecial)
-      if not pdbpath:
+      if not pdbpath_c:
         obj = 'obj'
         if self.toolset != 'target':
           obj += '.' + self.toolset
-        pdbpath = os.path.normpath(os.path.join(obj, self.base_dir,
-                                                self.name + '.pdb'))
-      self.WriteVariableList(ninja_file, 'pdbname', [pdbpath])
+        pdbpath = os.path.normpath(os.path.join(obj, self.base_dir, self.name))
+        pdbpath_c = pdbpath + '.c.pdb'
+        pdbpath_cc = pdbpath + '.cc.pdb'
+      self.WriteVariableList(ninja_file, 'pdbname_c', [pdbpath_c])
+      self.WriteVariableList(ninja_file, 'pdbname_cc', [pdbpath_cc])
       self.WriteVariableList(ninja_file, 'pchprefix', [self.name])
     else:
       cflags = config.get('cflags', [])
@@ -846,10 +850,12 @@ class NinjaWriter:
                                                   self.GypPathToNinja)])
 
     include_dirs = config.get('include_dirs', [])
+    env = self.GetSortedXcodeEnv()
     if self.flavor == 'win':
+      env = self.msvs_settings.GetVSMacroEnv('$!PRODUCT_DIR',
+                                             config=config_name)
       include_dirs = self.msvs_settings.AdjustIncludeDirs(include_dirs,
                                                           config_name)
-    env = self.GetSortedXcodeEnv()
     self.WriteVariableList(ninja_file, 'includes',
         [QuoteShellArgument('-I' + self.GypPathToNinja(i, env), self.flavor)
          for i in include_dirs])
@@ -875,6 +881,7 @@ class NinjaWriter:
                              map(self.ExpandSpecial, cflags_objcc))
     ninja_file.newline()
     outputs = []
+    has_rc_source = False
     for source in sources:
       filename, ext = os.path.splitext(source)
       ext = ext[1:]
@@ -902,6 +909,7 @@ class NinjaWriter:
       elif self.flavor == 'win' and ext == 'rc':
         command = 'rc'
         obj_ext = '.res'
+        has_rc_source = True
       else:
         # Ignore unhandled extensions.
         continue
@@ -919,6 +927,12 @@ class NinjaWriter:
                        implicit=[gch for _, _, gch in implicit],
                        order_only=predepends, variables=variables)
       outputs.append(output)
+
+    if has_rc_source:
+      resource_include_dirs = config.get('resource_include_dirs', include_dirs)
+      self.WriteVariableList(ninja_file, 'resource_includes',
+          [QuoteShellArgument('-I' + self.GypPathToNinja(i, env), self.flavor)
+           for i in resource_include_dirs])
 
     self.WritePchTargets(ninja_file, pch_commands)
 
@@ -984,13 +998,6 @@ class NinjaWriter:
           continue
         linkable = target.Linkable()
         if linkable:
-          if self.link_deps_file:
-            # Save the mapping of link deps.
-            self.link_deps_file.write(self.qualified_target)
-            self.link_deps_file.write(' ')
-            self.link_deps_file.write(target.binary)
-            self.link_deps_file.write('\n')
-
           new_deps = []
           if (self.flavor == 'win' and
               target.component_objs and
@@ -1021,15 +1028,20 @@ class NinjaWriter:
       self.AppendPostbuildVariable(extra_bindings, spec, output, output)
 
     is_executable = spec['type'] == 'executable'
+    # The ldflags config key is not used on mac or win. On those platforms
+    # linker flags are set via xcode_settings and msvs_settings, respectively.
+    env_ldflags = os.environ.get('LDFLAGS', '').split()
     if self.flavor == 'mac':
       ldflags = self.xcode_settings.GetLdflags(config_name,
           self.ExpandSpecial(generator_default_variables['PRODUCT_DIR']),
           self.GypPathToNinja, arch)
+      ldflags = env_ldflags + ldflags
     elif self.flavor == 'win':
       manifest_name = self.GypPathToUniqueOutput(
           self.ComputeOutputFileName(spec))
       ldflags, manifest_files = self.msvs_settings.GetLdflags(config_name,
           self.GypPathToNinja, self.ExpandSpecial, manifest_name, is_executable)
+      ldflags = env_ldflags + ldflags
       self.WriteVariableList(ninja_file, 'manifests', manifest_files)
       command_suffix = _GetWinLinkRuleNameSuffix(
           self.msvs_settings.IsEmbedManifest(config_name),
@@ -1040,8 +1052,7 @@ class NinjaWriter:
     else:
       # Respect environment variables related to build, but target-specific
       # flags can still override them.
-      ldflags = (os.environ.get('LDFLAGS', '').split() +
-                 config.get('ldflags', []))
+      ldflags = env_ldflags + config.get('ldflags', [])
       if is_executable and len(solibs):
         rpath = 'lib/'
         if self.toolset != 'target':
@@ -1055,8 +1066,8 @@ class NinjaWriter:
     if self.flavor == 'win':
       library_dirs = [self.msvs_settings.ConvertVSMacros(l, config_name)
                       for l in library_dirs]
-      library_dirs = [QuoteShellArgument('-LIBPATH:' + self.GypPathToNinja(l),
-                                         self.flavor)
+      library_dirs = ['/LIBPATH:' + QuoteShellArgument(self.GypPathToNinja(l),
+                                                       self.flavor)
                       for l in library_dirs]
     else:
       library_dirs = [QuoteShellArgument('-L' + self.GypPathToNinja(l),
@@ -1066,7 +1077,7 @@ class NinjaWriter:
     libraries = gyp.common.uniquer(map(self.ExpandSpecial,
                                        spec.get('libraries', [])))
     if self.flavor == 'mac':
-      libraries = self.xcode_settings.AdjustLibraries(libraries)
+      libraries = self.xcode_settings.AdjustLibraries(libraries, config_name)
     elif self.flavor == 'win':
       libraries = self.msvs_settings.AdjustLibraries(libraries)
 
@@ -1245,17 +1256,16 @@ class NinjaWriter:
     if not self.xcode_settings or spec['type'] == 'none' or not output:
       return ''
     output = QuoteShellArgument(output, self.flavor)
-    target_postbuilds = []
+    postbuilds = gyp.xcode_emulation.GetSpecPostbuildCommands(spec, quiet=True)
     if output_binary is not None:
-      target_postbuilds = self.xcode_settings.GetTargetPostbuilds(
+      postbuilds = self.xcode_settings.AddImplicitPostbuilds(
           self.config_name,
           os.path.normpath(os.path.join(self.base_to_build, output)),
           QuoteShellArgument(
               os.path.normpath(os.path.join(self.base_to_build, output_binary)),
               self.flavor),
-          quiet=True)
-    postbuilds = gyp.xcode_emulation.GetSpecPostbuildCommands(spec, quiet=True)
-    postbuilds = target_postbuilds + postbuilds
+          postbuilds, quiet=True)
+
     if not postbuilds:
       return ''
     # Postbuilds expect to be run in the gyp file's directory, so insert an
@@ -1488,7 +1498,6 @@ def CalculateVariables(default_variables, params):
     default_variables['STATIC_LIB_SUFFIX'] = '.lib'
     default_variables['SHARED_LIB_PREFIX'] = ''
     default_variables['SHARED_LIB_SUFFIX'] = '.dll'
-    generator_flags = params.get('generator_flags', {})
 
     # Copy additional generator configuration data from VS, which is shared
     # by the Windows Ninja generator.
@@ -1498,19 +1507,7 @@ def CalculateVariables(default_variables, params):
     generator_additional_path_sections = getattr(msvs_generator,
         'generator_additional_path_sections', [])
 
-    # Set a variable so conditions can be based on msvs_version.
-    msvs_version = gyp.msvs_emulation.GetVSVersion(generator_flags)
-    default_variables['MSVS_VERSION'] = msvs_version.ShortName()
-
-    # To determine processor word size on Windows, in addition to checking
-    # PROCESSOR_ARCHITECTURE (which reflects the word size of the current
-    # process), it is also necessary to check PROCESSOR_ARCHITEW6432 (which
-    # contains the actual word size of the system when running thru WOW64).
-    if ('64' in os.environ.get('PROCESSOR_ARCHITECTURE', '') or
-        '64' in os.environ.get('PROCESSOR_ARCHITEW6432', '')):
-      default_variables['MSVS_OS_BITS'] = 64
-    else:
-      default_variables['MSVS_OS_BITS'] = 32
+    gyp.msvs_emulation.CalculateCommonVariables(default_variables, params)
   else:
     operating_system = flavor
     if flavor == 'android':
@@ -1526,6 +1523,33 @@ def CalculateVariables(default_variables, params):
       toplevel_offset = os.path.relpath(options.depth, options.toplevel_dir)
     default_variables.setdefault('LIB_DIR',
                                  os.path.join('$!PRODUCT_DIR', 'obj', toplevel_offset))
+
+def ComputeOutputDir(params):
+  """Returns the path from the toplevel_dir to the build output directory."""
+  # generator_dir: relative path from pwd to where make puts build files.
+  # Makes migrating from make to ninja easier, ninja doesn't put anything here.
+  generator_dir = os.path.relpath(params['options'].generator_output or '.')
+
+  # output_dir: relative path from generator_dir to the build directory.
+  output_dir = params.get('generator_flags', {}).get('output_dir', 'out')
+
+  # Relative path from source root to our output files.  e.g. "out"
+  return os.path.normpath(os.path.join(generator_dir, output_dir))
+
+
+def CalculateGeneratorInputInfo(params):
+  """Called by __init__ to initialize generator values based on params."""
+  # E.g. "out/gypfiles"
+  toplevel = params['options'].toplevel_dir
+  qualified_out_dir = os.path.normpath(os.path.join(
+      toplevel, ComputeOutputDir(params), 'gypfiles'))
+
+  global generator_filelist_paths
+  generator_filelist_paths = {
+      'toplevel': toplevel,
+      'qualified_out_dir': qualified_out_dir,
+  }
+
 
 def OpenOutput(path, mode='w'):
   """Open |path| for writing, creating directories if necessary."""
@@ -1605,18 +1629,24 @@ def _GetWinLinkRuleNameSuffix(embed_manifest, link_incremental):
 def _AddWinLinkRules(master_ninja, embed_manifest, link_incremental):
   """Adds link rules for Windows platform to |master_ninja|."""
   def FullLinkCommand(ldcmd, out, binary_type):
-    cmd = ('cmd /c %(ldcmd)s'
-           ' && %(python)s gyp-win-tool manifest-wrapper $arch'
-           ' cmd /c if exist %(out)s.manifest del %(out)s.manifest'
-           ' && %(python)s gyp-win-tool manifest-wrapper $arch'
-           ' $mt -nologo -manifest $manifests')
+    """Returns a one-liner written for cmd.exe to handle multiphase linker
+    operations including manifest file generation. The command will be
+    structured as follows:
+      cmd /c (linkcmd1 a b) && (linkcmd2 x y) && ... &&
+      if not "$manifests"=="" ((manifestcmd1 a b) && (manifestcmd2 x y) && ... )
+    Note that $manifests becomes empty when no manifest file is generated."""
+    link_commands = ['%(ldcmd)s',
+                     'if exist %(out)s.manifest del %(out)s.manifest']
+    mt_cmd = ('%(python)s gyp-win-tool manifest-wrapper'
+              ' $arch $mt -nologo -manifest $manifests')
     if embed_manifest and not link_incremental:
       # Embed manifest into a binary. If incremental linking is enabled,
       # embedding is postponed to the re-linking stage (see below).
-      cmd += ' -outputresource:%(out)s;%(resname)s'
+      mt_cmd += ' -outputresource:%(out)s;%(resname)s'
     else:
       # Save manifest as an external file.
-      cmd += ' -out:%(out)s.manifest'
+      mt_cmd += ' -out:%(out)s.manifest'
+    manifest_commands = [mt_cmd]
     if link_incremental:
       # There is no point in generating separate rule for the case when
       # incremental linking is enabled, but manifest embedding is disabled.
@@ -1624,11 +1654,14 @@ def _AddWinLinkRules(master_ninja, embed_manifest, link_incremental):
       # See also implementation of _GetWinLinkRuleNameSuffix().
       assert embed_manifest
       # Make .rc file out of manifest, compile it to .res file and re-link.
-      cmd += (' && %(python)s gyp-win-tool manifest-to-rc $arch'
-              ' %(out)s.manifest %(out)s.manifest.rc %(resname)s'
-              ' && %(python)s gyp-win-tool rc-wrapper $arch $rc'
-              ' %(out)s.manifest.rc'
-              ' && %(ldcmd)s %(out)s.manifest.res')
+      manifest_commands += [
+        ('%(python)s gyp-win-tool manifest-to-rc $arch %(out)s.manifest'
+         ' %(out)s.manifest.rc %(resname)s'),
+        '%(python)s gyp-win-tool rc-wrapper $arch $rc %(out)s.manifest.rc',
+        '%(ldcmd)s %(out)s.manifest.res']
+    cmd = 'cmd /c %s && if not "$manifests"=="" (%s)' % (
+      ' && '.join(['(%s)' % c for c in link_commands]),
+      ' && '.join(['(%s)' % c for c in manifest_commands]))
     resource_name = {
       'exe': '1',
       'dll': '2',
@@ -1676,24 +1709,15 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
   flavor = gyp.common.GetFlavor(params)
   generator_flags = params.get('generator_flags', {})
 
-  # generator_dir: relative path from pwd to where make puts build files.
-  # Makes migrating from make to ninja easier, ninja doesn't put anything here.
-  generator_dir = os.path.relpath(params['options'].generator_output or '.')
-
-  # output_dir: relative path from generator_dir to the build directory.
-  output_dir = generator_flags.get('output_dir', 'out')
-
   # build_dir: relative path from source root to our output files.
   # e.g. "out/Debug"
-  build_dir = os.path.normpath(os.path.join(generator_dir,
-                                            output_dir,
-                                            config_name))
+  build_dir = os.path.normpath(
+      os.path.join(ComputeOutputDir(params), config_name))
 
   toplevel_build = os.path.join(options.toplevel_dir, build_dir)
 
-  master_ninja = ninja_syntax.Writer(
-      OpenOutput(os.path.join(toplevel_build, 'build.ninja')),
-      width=120)
+  master_ninja_file = OpenOutput(os.path.join(toplevel_build, 'build.ninja'))
+  master_ninja = ninja_syntax.Writer(master_ninja_file, width=120)
 
   # Put build-time support tools in out/{config_name}.
   gyp.common.CopyTool(flavor, toplevel_build)
@@ -1714,8 +1738,8 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     ld = 'link.exe'
     ld_host = '$ld'
   else:
-    cc = 'gcc'
-    cxx = 'g++'
+    cc = 'cc'
+    cxx = 'c++'
     ld = '$cc'
     ldxx = '$cxx'
     ld_host = '$cc_host'
@@ -1833,14 +1857,20 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
       depfile='$out.d',
       deps=deps)
   else:
+    # TODO(scottmg) Separate pdb names is a test to see if it works around
+    # http://crbug.com/142362. It seems there's a race between the creation of
+    # the .pdb by the precompiled header step for .cc and the compilation of
+    # .c files. This should be handled by mspdbsrv, but rarely errors out with
+    #   c1xx : fatal error C1033: cannot open program database
+    # By making the rules target separate pdb files this might be avoided.
     cc_command = ('ninja -t msvc -e $arch ' +
                   '-- '
                   '$cc /nologo /showIncludes /FC '
-                  '@$out.rsp /c $in /Fo$out /Fd$pdbname ')
+                  '@$out.rsp /c $in /Fo$out /Fd$pdbname_c ')
     cxx_command = ('ninja -t msvc -e $arch ' +
                    '-- '
                    '$cxx /nologo /showIncludes /FC '
-                   '@$out.rsp /c $in /Fo$out /Fd$pdbname ')
+                   '@$out.rsp /c $in /Fo$out /Fd$pdbname_cc ')
     master_ninja.rule(
       'cc',
       description='CC $out',
@@ -1866,7 +1896,7 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
       description='RC $in',
       # Note: $in must be last otherwise rc.exe complains.
       command=('%s gyp-win-tool rc-wrapper '
-               '$arch $rc $defines $includes $rcflags /fo$out $in' %
+               '$arch $rc $defines $resource_includes $rcflags /fo$out $in' %
                sys.executable))
     master_ninja.rule(
       'asm',
@@ -2075,13 +2105,6 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
   # objects.
   target_short_names = {}
 
-  # Extract the optional link deps file name.
-  LINK_DEPS_FILE = 'link_deps_file'
-  if LINK_DEPS_FILE in generator_flags:
-    link_deps_file = open(generator_flags.get(LINK_DEPS_FILE), 'wb')
-  else:
-    link_deps_file = None
-
   for qualified_target in target_list:
     # qualified_target is like: third_party/icu/icu.gyp:icui18n#target
     build_file, name, toolset = \
@@ -2107,8 +2130,7 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     writer = NinjaWriter(qualified_target, target_outputs, base_path, build_dir,
                          ninja_output,
                          toplevel_build, output_file,
-                         flavor, link_deps_file,
-                         toplevel_dir=options.toplevel_dir)
+                         flavor, toplevel_dir=options.toplevel_dir)
 
     target = writer.WriteSpec(spec, config_name, generator_flags)
 
@@ -2141,6 +2163,8 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     master_ninja.build('all', 'phony', list(all_outputs))
     master_ninja.default(generator_flags.get('default_target', 'all'))
 
+  master_ninja_file.close()
+
 
 def PerformBuild(data, configurations, params):
   options = params['options']
@@ -2161,6 +2185,10 @@ def CallGenerateOutputForConfig(arglist):
 
 
 def GenerateOutput(target_list, target_dicts, data, params):
+  # Update target_dicts for iOS device builds.
+  target_dicts = gyp.xcode_emulation.CloneConfigurationForDeviceAndEmulator(
+      target_dicts)
+
   user_config = params.get('generator_flags', {}).get('config', None)
   if gyp.common.GetFlavor(params) == 'win':
     target_list, target_dicts = MSVSUtil.ShardTargets(target_list, target_dicts)

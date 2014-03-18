@@ -33,11 +33,11 @@
 
 #include "../platform/WebString.h"
 #include "RuntimeEnabledFeatures.h"
-#include "core/dom/CustomElement.h"
+#include "core/dom/custom/CustomElement.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebCustomElement::addEmbedderCustomElementName(const WebString& name)
 {
@@ -45,4 +45,4 @@ void WebCustomElement::addEmbedderCustomElementName(const WebString& name)
     CustomElement::addEmbedderCustomElementName(name);
 }
 
-} // namespace WebKit
+} // namespace blink

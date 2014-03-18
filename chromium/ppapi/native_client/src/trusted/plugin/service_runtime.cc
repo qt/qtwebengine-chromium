@@ -50,7 +50,7 @@
 #include "ppapi/native_client/src/trusted/plugin/manifest.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
-#include "ppapi/native_client/src/trusted/plugin/pnacl_coordinator.h"
+#include "ppapi/native_client/src/trusted/plugin/pnacl_options.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_resources.h"
 #include "ppapi/native_client/src/trusted/plugin/sel_ldr_launcher_chrome.h"
 #include "ppapi/native_client/src/trusted/plugin/srpc_client.h"
@@ -313,9 +313,9 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
           plugin_,
           PnaclUrls::PnaclComponentURLToFilename(mapped_url).c_str());
       if (fd < 0) {
-        // We should check earlier if the pnacl component wasn't installed
-        // yet.  At this point, we can't do much anymore, so just continue
-        // with an invalid fd.
+        // We checked earlier if the pnacl component wasn't installed
+        // yet, so this shouldn't happen. At this point, we can't do much
+        // anymore, so just continue with an invalid fd.
         NaClLog(4,
                 "OpenManifestEntry_MainThreadContinuation: "
                 "GetReadonlyPnaclFd failed\n");
@@ -333,23 +333,18 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
               "OpenManifestEntry_MainThreadContinuation: GetPnaclFd okay\n");
     }
   } else {
-    // Requires PNaCl translation.
+    // Requires PNaCl translation, but that's not supported.
     NaClLog(4,
             "OpenManifestEntry_MainThreadContinuation: "
-            "pulling down and translating.\n");
-    CHECK(plugin_->nacl_interface()->IsPnaclEnabled());
-    pp::CompletionCallback translate_callback =
-        WeakRefNewCallback(
-            anchor_,
-            this,
-            &PluginReverseInterface::BitcodeTranslate_MainThreadContinuation,
-            open_cont);
-    // Will always call the callback on success or failure.
-    pnacl_coordinator_.reset(
-        PnaclCoordinator::BitcodeToNative(plugin_,
-                                          mapped_url,
-                                          pnacl_options,
-                                          translate_callback));
+            "Requires PNaCl translation -- not supported\n");
+    nacl::MutexLocker take(&mu_);
+    *p->op_complete_ptr = true;  // done...
+    p->file_info->desc = -1;  // but failed.
+    p->error_info->SetReport(
+        ERROR_MANIFEST_OPEN,
+        "ServiceRuntime: Translating OpenManifestEntry files not supported");
+    NaClXCondVarBroadcast(&cv_);
+    return;
   }
   // p is deleted automatically
 }
@@ -379,38 +374,6 @@ void PluginReverseInterface::StreamAsFile_MainThreadContinuation(
   *p->op_complete_ptr = true;
   NaClXCondVarBroadcast(&cv_);
 }
-
-
-void PluginReverseInterface::BitcodeTranslate_MainThreadContinuation(
-    OpenManifestEntryResource* p,
-    int32_t result) {
-  NaClLog(4,
-          "Entered BitcodeTranslate_MainThreadContinuation\n");
-
-  nacl::MutexLocker take(&mu_);
-  if (result == PP_OK) {
-    // TODO(jvoung): clean this up. We are assuming that the NaClDesc is
-    // a host IO desc and doing a downcast. Once the ReverseInterface
-    // accepts NaClDescs we can avoid this downcast.
-    NaClDesc* desc = pnacl_coordinator_->ReleaseTranslatedFD()->desc();
-    struct NaClDescIoDesc* ndiodp = (struct NaClDescIoDesc*)desc;
-    p->file_info->desc = ndiodp->hd->d;
-    pnacl_coordinator_.reset(NULL);
-    NaClLog(4,
-            "BitcodeTranslate_MainThreadContinuation: PP_OK, desc %d\n",
-            p->file_info->desc);
-  } else {
-    NaClLog(4,
-            "BitcodeTranslate_MainThreadContinuation: !PP_OK, "
-            "setting desc -1\n");
-    p->file_info->desc = -1;
-    // Error should have been reported by pnacl coordinator.
-    NaClLog(LOG_ERROR, "PluginReverseInterface::BitcodeTranslate error.\n");
-  }
-  *p->op_complete_ptr = true;
-  NaClXCondVarBroadcast(&cv_);
-}
-
 
 bool PluginReverseInterface::CloseManifestEntry(int32_t desc) {
   bool op_complete = false;
@@ -509,11 +472,11 @@ void PluginReverseInterface::AddTempQuotaManagedFile(
 
 ServiceRuntime::ServiceRuntime(Plugin* plugin,
                                const Manifest* manifest,
-                               bool should_report_uma,
+                               bool main_service_runtime,
                                pp::CompletionCallback init_done_cb,
                                pp::CompletionCallback crash_cb)
     : plugin_(plugin),
-      should_report_uma_(should_report_uma),
+      main_service_runtime_(main_service_runtime),
       reverse_service_(NULL),
       anchor_(new nacl::WeakRefAnchor()),
       rev_interface_(new PluginReverseInterface(anchor_, plugin,
@@ -588,7 +551,7 @@ bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
   }
   NaClLog(4, "ServiceRuntime::InitCommunication (load_status=%d)\n",
           load_status);
-  if (should_report_uma_) {
+  if (main_service_runtime_) {
     plugin_->ReportSelLdrLoadStatus(load_status);
   }
   if (LOAD_OK != load_status) {
@@ -748,14 +711,10 @@ ServiceRuntime::~ServiceRuntime() {
   NaClMutexDtor(&mu_);
 }
 
-int ServiceRuntime::exit_status() {
-  nacl::MutexLocker take(&mu_);
-  return exit_status_;
-}
-
 void ServiceRuntime::set_exit_status(int exit_status) {
   nacl::MutexLocker take(&mu_);
-  exit_status_ = exit_status & 0xff;
+  if (main_service_runtime_)
+    plugin_->set_exit_status(exit_status & 0xff);
 }
 
 nacl::string ServiceRuntime::GetCrashLogOutput() {

@@ -33,15 +33,12 @@
 [
     NoInterfaceObject
 ] interface InspectorFrontendHost {
-    void closeWindow();
     void setZoomFactor(float zoom);
     void inspectedURLChanged(DOMString newURL);
 
-    void setAttachedWindowHeight(unsigned long height);
     void setInjectedScriptForOrigin(DOMString origin, DOMString script);
 
     void copyText(DOMString text);
-    void close(DOMString url);
 
     [Custom] DOMString platform();
     [Custom] DOMString port();
@@ -53,20 +50,11 @@
     [Custom] void recordPanelShown(unsigned long panelCode);
     [Custom] void recordSettingChanged(unsigned long settingChanged);
 
-    DOMString loadResourceSynchronously(DOMString url);
     DOMString getSelectionBackgroundColor();
     DOMString getSelectionForegroundColor();
 
     DOMFileSystem isolatedFileSystem(DOMString fileSystemId, DOMString registeredName);
+    void upgradeDraggedFileSystemPermissions(DOMFileSystem domFileSystem);
 
     boolean isUnderTest();
-
-    // Deprecated
-    boolean canInspectWorkers();
-    boolean canSaveAs();
-    boolean canSave();
-    boolean supportsFileSystems();
-    void loaded();
-    DOMString hiddenPanels();
-    DOMString localizedStringsURL();
 };

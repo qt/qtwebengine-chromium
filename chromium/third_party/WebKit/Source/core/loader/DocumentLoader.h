@@ -37,10 +37,10 @@
 #include "core/loader/DocumentWriter.h"
 #include "core/loader/NavigationAction.h"
 #include "core/loader/SubstituteData.h"
-#include "core/platform/Timer.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/Timer.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
 
@@ -81,10 +81,12 @@ namespace WebCore {
         unsigned long mainResourceIdentifier() const;
 
         void replaceDocument(const String& source, Document*);
-        DocumentWriter* beginWriting(const String& mimeType, const String& encoding, const KURL& = KURL());
+        DocumentWriter* beginWriting(const AtomicString& mimeType, const AtomicString& encoding, const KURL& = KURL());
         void endWriting(DocumentWriter*);
 
-        String mimeType() const;
+        const AtomicString& mimeType() const;
+
+        void setUserChosenEncoding(const String& charset);
 
         const ResourceRequest& originalRequest() const;
         const ResourceRequest& originalRequestCopy() const;
@@ -99,12 +101,13 @@ namespace WebCore {
         // FIXME: This is the same as requestURL(). We should remove one of them.
         const KURL& url() const;
         const KURL& unreachableURL() const;
+        bool isURLValidForNewHistoryEntry() const;
 
         const KURL& originalURL() const;
         const KURL& requestURL() const;
-        const String& responseMIMEType() const;
+        const AtomicString& responseMIMEType() const;
 
-        void replaceRequestURLForSameDocumentNavigation(const KURL&);
+        void updateForSameDocumentNavigation(const KURL&);
         void stopLoading();
         void setCommitted(bool committed) { m_committed = committed; }
         bool isCommitted() const { return m_committed; }
@@ -116,7 +119,7 @@ namespace WebCore {
         bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
         void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) { m_replacesCurrentHistoryItem = replacesCurrentHistoryItem; }
         bool isLoadingInAPISense() const;
-        const String& overrideEncoding() const { return m_overrideEncoding; }
+        const AtomicString& overrideEncoding() const { return m_overrideEncoding; }
 
         bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
         void cancelPendingSubstituteLoad(ResourceLoader*);
@@ -129,9 +132,7 @@ namespace WebCore {
         const NavigationAction& triggeringAction() const { return m_triggeringAction; }
         void setTriggeringAction(const NavigationAction& action) { m_triggeringAction = action; }
 
-        void setOverrideEncoding(const String& encoding) { m_overrideEncoding = encoding; }
-
-        KURL urlForHistory() const;
+        void setOverrideEncoding(const AtomicString& encoding) { m_overrideEncoding = encoding; }
 
         void setDefersLoading(bool);
 
@@ -164,10 +165,10 @@ namespace WebCore {
         Vector<KURL> m_redirectChain;
 
     private:
-        static PassRefPtr<DocumentWriter> createWriterFor(Frame*, const Document* ownerDocument, const KURL&, const String& mimeType, const String& encoding, bool userChosen, bool dispatch);
+        static PassRefPtr<DocumentWriter> createWriterFor(Frame*, const Document* ownerDocument, const KURL&, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch);
 
         void ensureWriter();
-        void ensureWriter(const String& mimeType, const KURL& overridingURL = KURL());
+        void ensureWriter(const AtomicString& mimeType, const KURL& overridingURL = KURL());
 
         Document* document() const;
 
@@ -239,7 +240,7 @@ namespace WebCore {
         bool m_isClientRedirect;
         bool m_replacesCurrentHistoryItem;
 
-        String m_overrideEncoding;
+        AtomicString m_overrideEncoding;
 
         // The action that triggered loading - we keep this around for the
         // benefit of the various policy handlers.

@@ -27,7 +27,6 @@
 #include <math.h>
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "SVGNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
@@ -36,33 +35,32 @@
 #include "core/css/StyleRule.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/platform/graphics/Font.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGFontElement.h"
 #include "core/svg/SVGFontFaceSrcElement.h"
 #include "core/svg/SVGGlyphElement.h"
+#include "platform/fonts/Font.h"
 
 namespace WebCore {
 
 using namespace SVGNames;
 
-inline SVGFontFaceElement::SVGFontFaceElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGFontFaceElement::SVGFontFaceElement(Document& document)
+    : SVGElement(font_faceTag, document)
     , m_fontFaceRule(StyleRuleFontFace::create())
     , m_fontElement(0)
 {
-    ASSERT(hasTagName(font_faceTag));
     ScriptWrappable::init(this);
-    RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create(CSSStrictMode);
+    RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create(HTMLStandardMode);
     m_fontFaceRule->setProperties(styleDeclaration.release());
 }
 
-PassRefPtr<SVGFontFaceElement> SVGFontFaceElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFontFaceElement> SVGFontFaceElement::create(Document& document)
 {
-    return adoptRef(new SVGFontFaceElement(tagName, document));
+    return adoptRef(new SVGFontFaceElement(document));
 }
 
-static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName& attrName)
+static CSSPropertyID cssPropertyIdForFontFaceAttributeName(const QualifiedName& attrName)
 {
     if (!attrName.namespaceURI().isNull())
         return CSSPropertyInvalid;
@@ -112,7 +110,7 @@ static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName& attrN
 
 void SVGFontFaceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    CSSPropertyID propId = cssPropertyIdForSVGAttributeName(name);
+    CSSPropertyID propId = cssPropertyIdForFontFaceAttributeName(name);
     if (propId > 0) {
         m_fontFaceRule->mutableProperties()->setProperty(propId, value, false);
         rebuildFontFace();

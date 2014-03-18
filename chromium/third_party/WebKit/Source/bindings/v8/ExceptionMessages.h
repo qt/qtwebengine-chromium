@@ -41,8 +41,21 @@ public:
     static String failedToExecute(const String& method, const String& type, const String& detail = String());
     static String failedToGet(const String& property, const String& type, const String& detail);
     static String failedToSet(const String& property, const String& type, const String& detail);
+    static String failedToDelete(const String& property, const String& type, const String& detail);
+
+    static String incorrectArgumentType(int argumentIndex, const String& detail);
+    static String incorrectPropertyType(const String& property, const String& detail);
+
+    // If  > 0, the argument index that failed type check (1-indexed.)
+    // If == 0, a (non-argument) value (e.g., a setter) failed the same check.
+    static String notAnArrayTypeArgumentOrValue(int argumentIndex);
+    static String notASequenceTypeProperty(const String& propertyName);
+    static String notAFiniteNumber(double value);
 
     static String notEnoughArguments(unsigned expected, unsigned providedleastNumMandatoryParams);
+
+private:
+    static String ordinalNumber(int number);
 };
 
 } // namespace WebCore

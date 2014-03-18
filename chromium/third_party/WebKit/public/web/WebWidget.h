@@ -39,7 +39,7 @@
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebInputEvent;
 class WebLayerTreeView;
@@ -125,11 +125,6 @@ public:
     // ready to use.
     virtual void setCompositorSurfaceReady() { }
 
-    // Temporary method for the embedder to notify the WebWidget that the widget
-    // has taken damage, e.g. due to a window expose. This method will be
-    // removed when the WebWidget inversion patch lands --- http://crbug.com/112837
-    virtual void setNeedsRedraw() { }
-
     // Called to inform the WebWidget of a change in theme.
     // Implementors that cache rendered copies of widgets need to re-render
     // on receiving this message
@@ -199,6 +194,13 @@ public:
     // If the selection range is empty, it returns the caret bounds.
     virtual bool selectionBounds(WebRect& anchor, WebRect& focus) const { return false; }
 
+    // Called to notify that IME candidate window has changed its visibility or
+    // its appearance. These calls correspond to trigger
+    // candidatewindow{show,update,hide} events defined in W3C IME API.
+    virtual void didShowCandidateWindow() { }
+    virtual void didUpdateCandidateWindow() { }
+    virtual void didHideCandidateWindow() { }
+
     // Returns the text direction at the start and end bounds of the current selection.
     // If the selection range is empty, it returns false.
     virtual bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const { return false; }
@@ -219,6 +221,13 @@ public:
     // Returns true if the WebWidget uses GPU accelerated compositing
     // to render its contents.
     virtual bool isAcceleratedCompositingActive() const { return false; }
+
+    // Returns true if the WebWidget created is of type WebPagePopup.
+    virtual bool isPagePopup() const { return false; }
+    // Returns true if the WebWidget created is of type WebPopupMenu.
+    virtual bool isPopupMenu() const { return false; }
+    // Returns true if the WebWidget created is of type WebHelperPlugin.
+    virtual bool isHelperPlugin() const { return false; }
 
     // The WebLayerTreeView initialized on this WebWidgetClient will be going away and
     // is no longer safe to access.
@@ -248,6 +257,6 @@ protected:
     ~WebWidget() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

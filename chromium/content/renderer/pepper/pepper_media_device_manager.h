@@ -29,6 +29,7 @@ class PepperMediaDeviceManager
   // PepperDeviceEnumerationHostHelper::Delegate implementation:
   virtual int EnumerateDevices(
       PP_DeviceType_Dev type,
+      const GURL& document_url,
       const EnumerateDevicesCallback& callback) OVERRIDE;
   virtual void StopEnumerateDevices(int request_id) OVERRIDE;
 
@@ -60,11 +61,11 @@ class PepperMediaDeviceManager
       const StreamDeviceInfoArray& audio_device_array,
       const StreamDeviceInfoArray& video_device_array) OVERRIDE;
   virtual void OnStreamGenerationFailed(int request_id) OVERRIDE;
-  virtual void OnStopGeneratedStream(const std::string& label) OVERRIDE;
+  virtual void OnDeviceStopped(const std::string& label,
+                               const StreamDeviceInfo& device_info) OVERRIDE;
   virtual void OnDevicesEnumerated(
       int request_id,
       const StreamDeviceInfoArray& device_array) OVERRIDE;
-  virtual void OnDevicesEnumerationFailed(int request_id) OVERRIDE;
   virtual void OnDeviceOpened(
       int request_id,
       const std::string& label,
@@ -77,11 +78,6 @@ class PepperMediaDeviceManager
 
  private:
   PepperMediaDeviceManager(RenderView* render_view);
-
-  void NotifyDevicesEnumerated(
-      int request_id,
-      bool succeeded,
-      const StreamDeviceInfoArray& device_array);
 
   void NotifyDeviceOpened(int request_id,
                           bool succeeded,

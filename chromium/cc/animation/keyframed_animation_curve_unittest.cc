@@ -7,19 +7,113 @@
 #include "cc/animation/transform_operations.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/gfx/box_f.h"
+#include "ui/gfx/test/color_util.h"
 
 namespace cc {
 namespace {
 
-void ExpectTranslateX(double translate_x, const gfx::Transform& transform) {
-  EXPECT_FLOAT_EQ(translate_x, transform.matrix().getDouble(0, 3));
+void ExpectTranslateX(SkMScalar translate_x, const gfx::Transform& transform) {
+  EXPECT_FLOAT_EQ(translate_x, transform.matrix().get(0, 3));
 }
 
 void ExpectBrightness(double brightness, const FilterOperations& filter) {
   EXPECT_EQ(1u, filter.size());
   EXPECT_EQ(FilterOperation::BRIGHTNESS, filter.at(0).type());
   EXPECT_FLOAT_EQ(brightness, filter.at(0).amount());
+}
+
+// Tests that a color animation with one keyframe works as expected.
+TEST(KeyframedAnimationCurveTest, OneColorKeyFrame) {
+  SkColor color = SkColorSetARGB(255, 255, 255, 255);
+  scoped_ptr<KeyframedColorAnimationCurve> curve(
+      KeyframedColorAnimationCurve::Create());
+  curve->AddKeyframe(
+      ColorKeyframe::Create(0.0, color, scoped_ptr<TimingFunction>()));
+
+  EXPECT_SKCOLOR_EQ(color, curve->GetValue(-1.f));
+  EXPECT_SKCOLOR_EQ(color, curve->GetValue(0.f));
+  EXPECT_SKCOLOR_EQ(color, curve->GetValue(0.5f));
+  EXPECT_SKCOLOR_EQ(color, curve->GetValue(1.f));
+  EXPECT_SKCOLOR_EQ(color, curve->GetValue(2.f));
+}
+
+// Tests that a color animation with two keyframes works as expected.
+TEST(KeyframedAnimationCurveTest, TwoColorKeyFrame) {
+  SkColor color_a = SkColorSetARGB(255, 255, 0, 0);
+  SkColor color_b = SkColorSetARGB(255, 0, 255, 0);
+  SkColor color_midpoint = gfx::Tween::ColorValueBetween(0.5, color_a, color_b);
+  scoped_ptr<KeyframedColorAnimationCurve> curve(
+      KeyframedColorAnimationCurve::Create());
+  curve->AddKeyframe(
+      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
+
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
+  EXPECT_SKCOLOR_EQ(color_midpoint, curve->GetValue(0.5f));
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(1.f));
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(2.f));
+}
+
+// Tests that a color animation with three keyframes works as expected.
+TEST(KeyframedAnimationCurveTest, ThreeColorKeyFrame) {
+  SkColor color_a = SkColorSetARGB(255, 255, 0, 0);
+  SkColor color_b = SkColorSetARGB(255, 0, 255, 0);
+  SkColor color_c = SkColorSetARGB(255, 0, 0, 255);
+  SkColor color_midpoint1 =
+      gfx::Tween::ColorValueBetween(0.5, color_a, color_b);
+  SkColor color_midpoint2 =
+      gfx::Tween::ColorValueBetween(0.5, color_b, color_c);
+  scoped_ptr<KeyframedColorAnimationCurve> curve(
+      KeyframedColorAnimationCurve::Create());
+  curve->AddKeyframe(
+      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(2.0, color_c, scoped_ptr<TimingFunction>()));
+
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
+  EXPECT_SKCOLOR_EQ(color_midpoint1, curve->GetValue(0.5f));
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(1.f));
+  EXPECT_SKCOLOR_EQ(color_midpoint2, curve->GetValue(1.5f));
+  EXPECT_SKCOLOR_EQ(color_c, curve->GetValue(2.f));
+  EXPECT_SKCOLOR_EQ(color_c, curve->GetValue(3.f));
+}
+
+// Tests that a colro animation with multiple keys at a given time works sanely.
+TEST(KeyframedAnimationCurveTest, RepeatedColorKeyFrame) {
+  SkColor color_a = SkColorSetARGB(255, 64, 0, 0);
+  SkColor color_b = SkColorSetARGB(255, 192, 0, 0);
+
+  scoped_ptr<KeyframedColorAnimationCurve> curve(
+      KeyframedColorAnimationCurve::Create());
+  curve->AddKeyframe(
+      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(1.0, color_a, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(
+      ColorKeyframe::Create(2.0, color_b, scoped_ptr<TimingFunction>()));
+
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
+  EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.5f));
+
+  SkColor value = curve->GetValue(1.0f);
+  EXPECT_EQ(255u, SkColorGetA(value));
+  int red_value = SkColorGetR(value);
+  EXPECT_LE(64, red_value);
+  EXPECT_GE(192, red_value);
+
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(1.5f));
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(2.f));
+  EXPECT_SKCOLOR_EQ(color_b, curve->GetValue(3.f));
 }
 
 // Tests that a float animation with one keyframe works as expected.
@@ -185,8 +279,8 @@ TEST(KeyframedAnimationCurveTest, RepeatedTransformKeyTimes) {
 
   // There is a discontinuity at 1. Any value between 4 and 6 is valid.
   gfx::Transform value = curve->GetValue(1.f);
-  EXPECT_GE(value.matrix().getDouble(0.f, 3.f), 4);
-  EXPECT_LE(value.matrix().getDouble(0.f, 3.f), 6);
+  EXPECT_GE(value.matrix().get(0, 3), 4.f);
+  EXPECT_LE(value.matrix().get(0, 3), 6.f);
 
   ExpectTranslateX(6.f, curve->GetValue(1.5f));
   ExpectTranslateX(6.f, curve->GetValue(2.f));

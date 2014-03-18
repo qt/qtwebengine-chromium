@@ -11,8 +11,8 @@
 
 using media::AudioParameters;
 using media::ChannelLayout;
-using media::VideoCaptureParams;
-using media::VideoCaptureSessionId;
+using media::VideoCaptureFormat;
+using media::VideoPixelFormat;
 
 namespace IPC {
 
@@ -25,13 +25,14 @@ void ParamTraits<AudioParameters>::Write(Message* m,
   m->WriteInt(p.frames_per_buffer());
   m->WriteInt(p.channels());
   m->WriteInt(p.input_channels());
+  m->WriteInt(p.effects());
 }
 
 bool ParamTraits<AudioParameters>::Read(const Message* m,
                                         PickleIterator* iter,
                                         AudioParameters* r) {
   int format, channel_layout, sample_rate, bits_per_sample,
-      frames_per_buffer, channels, input_channels;
+      frames_per_buffer, channels, input_channels, effects;
 
   if (!m->ReadInt(iter, &format) ||
       !m->ReadInt(iter, &channel_layout) ||
@@ -39,11 +40,14 @@ bool ParamTraits<AudioParameters>::Read(const Message* m,
       !m->ReadInt(iter, &bits_per_sample) ||
       !m->ReadInt(iter, &frames_per_buffer) ||
       !m->ReadInt(iter, &channels) ||
-      !m->ReadInt(iter, &input_channels))
+      !m->ReadInt(iter, &input_channels) ||
+      !m->ReadInt(iter, &effects))
     return false;
-  r->Reset(static_cast<AudioParameters::Format>(format),
-           static_cast<ChannelLayout>(channel_layout), channels,
-           input_channels, sample_rate, bits_per_sample, frames_per_buffer);
+  AudioParameters params(static_cast<AudioParameters::Format>(format),
+         static_cast<ChannelLayout>(channel_layout), channels,
+         input_channels, sample_rate, bits_per_sample, frames_per_buffer,
+         effects);
+  *r = params;
   if (!r->IsValid())
     return false;
   return true;
@@ -54,38 +58,34 @@ void ParamTraits<AudioParameters>::Log(const AudioParameters& p,
   l->append(base::StringPrintf("<AudioParameters>"));
 }
 
-void ParamTraits<VideoCaptureParams>::Write(Message* m,
-                                            const VideoCaptureParams& p) {
-  m->WriteInt(p.width);
-  m->WriteInt(p.height);
+void ParamTraits<VideoCaptureFormat>::Write(Message* m,
+                                            const VideoCaptureFormat& p) {
+  m->WriteInt(p.frame_size.width());
+  m->WriteInt(p.frame_size.height());
   m->WriteInt(p.frame_rate);
-  m->WriteInt(static_cast<int>(p.session_id));
-  m->WriteInt(static_cast<int>(p.frame_size_type));
+  m->WriteInt(static_cast<int>(p.pixel_format));
 }
 
-bool ParamTraits<VideoCaptureParams>::Read(const Message* m,
+bool ParamTraits<VideoCaptureFormat>::Read(const Message* m,
                                            PickleIterator* iter,
-                                           VideoCaptureParams* r) {
-  int session_id, frame_size_type;
-  if (!m->ReadInt(iter, &r->width) ||
-      !m->ReadInt(iter, &r->height) ||
+                                           VideoCaptureFormat* r) {
+  int frame_size_width, frame_size_height, pixel_format;
+  if (!m->ReadInt(iter, &frame_size_width) ||
+      !m->ReadInt(iter, &frame_size_height) ||
       !m->ReadInt(iter, &r->frame_rate) ||
-      !m->ReadInt(iter, &session_id) ||
-      !m->ReadInt(iter, &frame_size_type))
+      !m->ReadInt(iter, &pixel_format))
     return false;
 
-  r->session_id = static_cast<VideoCaptureSessionId>(session_id);
-  r->frame_size_type =
-      static_cast<media::VideoCaptureResolutionType>(
-          frame_size_type);
+  r->frame_size.SetSize(frame_size_width, frame_size_height);
+  r->pixel_format = static_cast<VideoPixelFormat>(pixel_format);
   if (!r->IsValid())
     return false;
   return true;
 }
 
-void ParamTraits<VideoCaptureParams>::Log(const VideoCaptureParams& p,
+void ParamTraits<VideoCaptureFormat>::Log(const VideoCaptureFormat& p,
                                           std::string* l) {
-  l->append(base::StringPrintf("<VideoCaptureParams>"));
+  l->append(base::StringPrintf("<VideoCaptureFormat>"));
 }
 
 }

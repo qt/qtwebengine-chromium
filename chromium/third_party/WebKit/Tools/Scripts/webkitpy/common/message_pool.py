@@ -56,17 +56,16 @@ from webkitpy.common.system import stack_utils
 _log = logging.getLogger(__name__)
 
 
-def get(caller, worker_factory, num_workers, worker_startup_delay_secs=0.0, host=None):
+def get(caller, worker_factory, num_workers, host=None):
     """Returns an object that exposes a run() method that takes a list of test shards and runs them in parallel."""
-    return _MessagePool(caller, worker_factory, num_workers, worker_startup_delay_secs, host)
+    return _MessagePool(caller, worker_factory, num_workers, host)
 
 
 class _MessagePool(object):
-    def __init__(self, caller, worker_factory, num_workers, worker_startup_delay_secs=0.0, host=None):
+    def __init__(self, caller, worker_factory, num_workers, host=None):
         self._caller = caller
         self._worker_factory = worker_factory
         self._num_workers = num_workers
-        self._worker_startup_delay_secs = worker_startup_delay_secs
         self._workers = []
         self._workers_stopped = set()
         self._host = host
@@ -107,8 +106,6 @@ class _MessagePool(object):
             worker = _Worker(host, self._messages_to_manager, self._messages_to_worker, self._worker_factory, worker_number, self._running_inline, self if self._running_inline else None, self._worker_log_level())
             self._workers.append(worker)
             worker.start()
-            if self._worker_startup_delay_secs:
-                time.sleep(self._worker_startup_delay_secs)
 
     def _worker_log_level(self):
         log_level = logging.NOTSET
@@ -209,6 +206,7 @@ class _Worker(multiprocessing.Process):
         self.name = 'worker/%d' % worker_number
         self.log_messages = []
         self.log_level = log_level
+        self._running = False
         self._running_inline = running_inline
         self._manager = manager
 
@@ -245,11 +243,12 @@ class _Worker(multiprocessing.Process):
         worker = self._worker
         exception_msg = ""
         _log.debug("%s starting" % self.name)
+        self._running = True
 
         try:
             if hasattr(worker, 'start'):
                 worker.start()
-            while True:
+            while self._running:
                 message = self._messages_to_worker.get()
                 if message.from_user:
                     worker.handle(message.name, message.src, *message.args)
@@ -272,6 +271,9 @@ class _Worker(multiprocessing.Process):
             finally:
                 self._post(name='done', args=(), from_user=False)
             self._close()
+
+    def stop_running(self):
+        self._running = False
 
     def post(self, name, *args):
         self._post(name, args, from_user=True)

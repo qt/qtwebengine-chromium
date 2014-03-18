@@ -303,6 +303,10 @@ NET_ERROR(TOO_MANY_SOCKET_STREAMS, -155)
 // The SSL server certificate changed in a renegotiation.
 NET_ERROR(SSL_SERVER_CERT_CHANGED, -156)
 
+// The SSL server indicated that an unnecessary TLS version fallback was
+// performed.
+NET_ERROR(SSL_INAPPROPRIATE_FALLBACK, -157)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -400,13 +404,20 @@ NET_ERROR(CERT_NON_UNIQUE_NAME, -210)
 // a too-small RSA key).
 NET_ERROR(CERT_WEAK_KEY, -211)
 
+// The certificate claimed DNS names that are in violation of name constraints.
+NET_ERROR(CERT_NAME_CONSTRAINT_VIOLATION, -212)
+
 // Add new certificate error codes here.
 //
 // Update the value of CERT_END whenever you add a new certificate error
 // code.
 
 // The value immediately past the last certificate error code.
-NET_ERROR(CERT_END, -212)
+NET_ERROR(CERT_END, -213)
+
+// Certificate Transparency: All Signed Certificate Timestamps failed to verify.
+// XXX(eranm): Move this error to a more appropriate category.
+NET_ERROR(CT_NO_SCTS_VERIFIED_OK, -299)
 
 // The URL is invalid.
 NET_ERROR(INVALID_URL, -300)
@@ -555,6 +566,10 @@ NET_ERROR(QUIC_PROTOCOL_ERROR, -356)
 // The HTTP headers were truncated by an EOF.
 NET_ERROR(RESPONSE_HEADERS_TRUNCATED, -357)
 
+// The QUIC crytpo handshake failed.  This means that the server was unable
+// to read any requests sent, so they may be resent.
+NET_ERROR(QUIC_HANDSHAKE_FAILED, -358)
+
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)
 
@@ -673,6 +688,9 @@ NET_ERROR(PRIVATE_KEY_EXPORT_FAILED, -712)
 
 // Self-signed certificate generation failed.
 NET_ERROR(SELF_SIGNED_CERT_GENERATION_FAILED, -713)
+
+// The certificate database changed in some way.
+NET_ERROR(CERT_DATABASE_CHANGED, -714)
 
 // DNS error codes.
 

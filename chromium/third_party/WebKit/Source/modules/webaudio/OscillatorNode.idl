@@ -34,7 +34,7 @@
     const unsigned short TRIANGLE = 3;
     const unsigned short CUSTOM = 4;
 
-    [CustomSetter] attribute DOMString type;
+    [Custom=Setter] attribute DOMString type;
 
     // Playback state constants.
     const unsigned short UNSCHEDULED_STATE = 0;
@@ -47,11 +47,11 @@
     readonly attribute AudioParam frequency; // in Hertz
     readonly attribute AudioParam detune; // in Cents
 
-    void start(double when);
-    void stop(double when);
+    [RaisesException] void start(optional double when);
+    [RaisesException] void stop(optional double when);
 
-    void noteOn(double when);
-    void noteOff(double when);
+    [RaisesException, ImplementedAs=start] void noteOn(double when);
+    [RaisesException, ImplementedAs=stop] void noteOff(double when);
 
     void setPeriodicWave(PeriodicWave periodicWave);
 

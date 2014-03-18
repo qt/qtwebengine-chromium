@@ -11,6 +11,7 @@
 #include "base/platform_file.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/loader/resource_request_info_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/file_stream.h"
@@ -54,13 +55,11 @@ static const int kMaxReadBufSize = 524288;
 
 RedirectToFileResourceHandler::RedirectToFileResourceHandler(
     scoped_ptr<ResourceHandler> next_handler,
-    int process_id,
+    net::URLRequest* request,
     ResourceDispatcherHostImpl* host)
-    : LayeredResourceHandler(next_handler.Pass()),
+    : LayeredResourceHandler(request, next_handler.Pass()),
       weak_factory_(this),
       host_(host),
-      process_id_(process_id),
-      request_id_(-1),
       buf_(new net::GrowableIOBuffer()),
       buf_write_pending_(false),
       write_cursor_(0),
@@ -88,7 +87,6 @@ bool RedirectToFileResourceHandler::OnResponseStarted(
 bool RedirectToFileResourceHandler::OnWillStart(int request_id,
                                                 const GURL& url,
                                                 bool* defer) {
-  request_id_ = request_id;
   if (!deletable_file_.get()) {
     // Defer starting the request until we have created the temporary file.
     // TODO(darin): This is sub-optimal.  We should not delay starting the
@@ -104,10 +102,11 @@ bool RedirectToFileResourceHandler::OnWillStart(int request_id,
   return next_handler_->OnWillStart(request_id, url, defer);
 }
 
-bool RedirectToFileResourceHandler::OnWillRead(int request_id,
-                                               net::IOBuffer** buf,
-                                               int* buf_size,
-                                               int min_size) {
+bool RedirectToFileResourceHandler::OnWillRead(
+    int request_id,
+    scoped_refptr<net::IOBuffer>* buf,
+    int* buf_size,
+    int min_size) {
   DCHECK_EQ(-1, min_size);
 
   if (buf_->capacity() < next_buffer_size_)
@@ -147,17 +146,20 @@ bool RedirectToFileResourceHandler::OnReadCompleted(int request_id,
   return WriteMore();
 }
 
-bool RedirectToFileResourceHandler::OnResponseCompleted(
+void RedirectToFileResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& status,
-    const std::string& security_info) {
+    const std::string& security_info,
+    bool* defer) {
   if (write_callback_pending_) {
     completed_during_write_ = true;
     completed_status_ = status;
     completed_security_info_ = security_info;
-    return false;
+    did_defer_ = true;
+    *defer = true;
+    return;
   }
-  return next_handler_->OnResponseCompleted(request_id, status, security_info);
+  next_handler_->OnResponseCompleted(request_id, status, security_info, defer);
 }
 
 void RedirectToFileResourceHandler::DidCreateTemporaryFile(
@@ -172,17 +174,19 @@ void RedirectToFileResourceHandler::DidCreateTemporaryFile(
       new net::FileStream(file_handle.ReleaseValue(),
                           base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC,
                           NULL));
+  const ResourceRequestInfo* info = GetRequestInfo();
   host_->RegisterDownloadedTempFile(
-      process_id_, request_id_, deletable_file_.get());
+      info->GetChildID(), info->GetRequestID(), deletable_file_.get());
   ResumeIfDeferred();
 }
 
 void RedirectToFileResourceHandler::DidWriteToFile(int result) {
   write_callback_pending_ = false;
+  int request_id = GetRequestID();
 
   bool failed = false;
   if (result > 0) {
-    next_handler_->OnDataDownloaded(request_id_, result);
+    next_handler_->OnDataDownloaded(request_id, result);
     write_cursor_ += result;
     failed = !WriteMore();
   } else {
@@ -192,10 +196,13 @@ void RedirectToFileResourceHandler::DidWriteToFile(int result) {
   if (failed) {
     ResumeIfDeferred();
   } else if (completed_during_write_) {
-    if (next_handler_->OnResponseCompleted(request_id_, completed_status_,
-                                           completed_security_info_)) {
+    bool defer = false;
+    next_handler_->OnResponseCompleted(request_id,
+                                       completed_status_,
+                                       completed_security_info_,
+                                       &defer);
+    if (!defer)
       ResumeIfDeferred();
-    }
   }
 }
 
@@ -246,7 +253,7 @@ bool RedirectToFileResourceHandler::WriteMore() {
     }
     if (rv <= 0)
       return false;
-    next_handler_->OnDataDownloaded(request_id_, rv);
+    next_handler_->OnDataDownloaded(GetRequestID(), rv);
     write_cursor_ += rv;
   }
 }

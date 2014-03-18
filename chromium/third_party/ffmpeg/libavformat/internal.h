@@ -26,6 +26,10 @@
 
 #define MAX_URL_SIZE 4096
 
+/** size of probe buffer, for guessing file type from file contents */
+#define PROBE_BUF_MIN 2048
+#define PROBE_BUF_MAX (1<<20)
+
 #ifdef DEBUG
 #    define hex_dump_debug(class, buf, size) av_hex_dump_log(class, AV_LOG_DEBUG, buf, size)
 #else
@@ -353,8 +357,28 @@ enum AVCodecID ff_get_pcm_codec_id(int bps, int flt, int be, int sflags);
 AVRational ff_choose_timebase(AVFormatContext *s, AVStream *st, int min_precission);
 
 /**
- * Generate standard extradata for AVC-Intra based on width/height and field order.
+ * Generate standard extradata for AVC-Intra based on width/height and field
+ * order.
  */
-void ff_generate_avci_extradata(AVStream *st);
+int ff_generate_avci_extradata(AVStream *st);
+
+/**
+ * Allocate extradata with additional FF_INPUT_BUFFER_PADDING_SIZE at end
+ * which is always set to 0.
+ *
+ * @param size size of extradata
+ * @return 0 if OK, AVERROR_xxx on error
+ */
+int ff_alloc_extradata(AVCodecContext *avctx, int size);
+
+/**
+ * add frame for rfps calculation.
+ *
+ * @param dts timestamp of the i-th frame
+ * @return 0 if OK, AVERROR_xxx on error
+ */
+int ff_rfps_add_frame(AVFormatContext *ic, AVStream *st, int64_t dts);
+
+void ff_rfps_calculate(AVFormatContext *ic);
 
 #endif /* AVFORMAT_INTERNAL_H */

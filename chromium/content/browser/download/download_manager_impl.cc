@@ -40,6 +40,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/referrer.h"
 #include "net/base/load_flags.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/url_request/url_request_context.h"
@@ -55,8 +56,8 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
   // we must down cast. RDHI is the only subclass of RDH as of 2012 May 4.
   scoped_ptr<net::URLRequest> request(
       params->resource_context()->GetRequestContext()->CreateRequest(
-          params->url(), NULL));
-  request->set_load_flags(request->load_flags() | params->load_flags());
+          params->url(), net::DEFAULT_PRIORITY, NULL));
+  request->SetLoadFlags(request->load_flags() | params->load_flags());
   request->set_method(params->method());
   if (!params->post_body().empty()) {
     const std::string& body = params->post_body();
@@ -71,10 +72,10 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
     // to do a re-POST without user consent, and currently don't have a good
     // plan on how to display the UI for that.
     DCHECK(params->prefer_cache());
-    DCHECK(params->method() == "POST");
+    DCHECK_EQ("POST", params->method());
     ScopedVector<net::UploadElementReader> element_readers;
     request->set_upload(make_scoped_ptr(
-        new net::UploadDataStream(&element_readers, params->post_id())));
+        new net::UploadDataStream(element_readers.Pass(), params->post_id())));
   }
 
   // If we're not at the beginning of the file, retrieve only the remaining
@@ -108,7 +109,7 @@ void BeginDownload(scoped_ptr<DownloadUrlParameters> params,
        iter != params->request_headers_end();
        ++iter) {
     request->SetExtraRequestHeaderByName(
-        iter->first, iter->second, false/*overwrite*/);
+        iter->first, iter->second, false /*overwrite*/);
   }
 
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
@@ -155,13 +156,6 @@ class MapValueIteratorAdapter {
   base::hash_map<int64, DownloadItem*>::const_iterator iter_;
   // Allow copy and assign.
 };
-
-void EnsureNoPendingDownloadJobsOnFile(bool* result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  *result = (DownloadFile::GetNumberOfDownloadFiles() == 0);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
-}
 
 class DownloadItemFactoryImpl : public DownloadItemFactory {
  public:
@@ -404,6 +398,7 @@ void DownloadManagerImpl::StartDownloadWithId(
     }
     download = item_iterator->second;
     DCHECK_EQ(DownloadItem::INTERRUPTED, download->GetState());
+    download->MergeOriginInfoOnResume(*info);
   }
 
   base::FilePath default_download_directory;
@@ -419,7 +414,7 @@ void DownloadManagerImpl::StartDownloadWithId(
       file_factory_->CreateFile(
           info->save_info.Pass(), default_download_directory,
           info->url(), info->referrer_url,
-          delegate_->GenerateFileHash(),
+          delegate_ && delegate_->GenerateFileHash(),
           stream.Pass(), download->GetBoundNetLog(),
           download->DestinationObserverAsWeakPtr()));
 
@@ -561,11 +556,9 @@ void DownloadManagerImpl::DownloadRemoved(DownloadItemImpl* download) {
     return;
 
   uint32 download_id = download->GetId();
-  if (downloads_.find(download_id) == downloads_.end())
+  if (downloads_.erase(download_id) == 0)
     return;
-
   delete download;
-  downloads_.erase(download_id);
 }
 
 int DownloadManagerImpl::RemoveDownloadsBetween(base::Time remove_begin,
@@ -605,7 +598,7 @@ void DownloadManagerImpl::DownloadUrl(
   if (params->post_id() >= 0) {
     // Check this here so that the traceback is more useful.
     DCHECK(params->prefer_cache());
-    DCHECK(params->method() == "POST");
+    DCHECK_EQ("POST", params->method());
   }
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, base::Bind(
       &BeginDownload, base::Passed(&params),
@@ -636,9 +629,10 @@ DownloadItem* DownloadManagerImpl::CreateDownloadItem(
     DownloadDangerType danger_type,
     DownloadInterruptReason interrupt_reason,
     bool opened) {
-  DCHECK(!ContainsKey(downloads_, id));
-  if (ContainsKey(downloads_, id))
+  if (ContainsKey(downloads_, id)) {
+    NOTREACHED();
     return NULL;
+  }
   DownloadItemImpl* item = item_factory_->CreatePersistedItem(
       this,
       id,
@@ -669,6 +663,22 @@ int DownloadManagerImpl::InProgressCount() const {
        it != downloads_.end(); ++it) {
     if (it->second->GetState() == DownloadItem::IN_PROGRESS)
       ++count;
+  }
+  return count;
+}
+
+int DownloadManagerImpl::NonMaliciousInProgressCount() const {
+  int count = 0;
+  for (DownloadMap::const_iterator it = downloads_.begin();
+       it != downloads_.end(); ++it) {
+    if (it->second->GetState() == DownloadItem::IN_PROGRESS &&
+        it->second->GetDangerType() != DOWNLOAD_DANGER_TYPE_DANGEROUS_URL &&
+        it->second->GetDangerType() != DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT &&
+        it->second->GetDangerType() != DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST &&
+        it->second->GetDangerType() !=
+            DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED) {
+      ++count;
+    }
   }
   return count;
 }

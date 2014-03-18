@@ -27,7 +27,7 @@
 #define CSSImageGeneratorValue_h
 
 #include "core/css/CSSValue.h"
-#include "core/platform/graphics/IntSizeHash.h"
+#include "platform/geometry/IntSizeHash.h"
 #include "wtf/HashCountedSet.h"
 #include "wtf/RefPtr.h"
 
@@ -78,6 +78,8 @@ protected:
     RenderObjectSizeCountMap m_clients; // A map from RenderObjects (with entry count) to image sizes.
     HashMap<IntSize, RefPtr<Image> > m_images; // A cache of Image objects by image size.
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSImageGeneratorValue, isImageGeneratorValue());
 
 } // namespace WebCore
 

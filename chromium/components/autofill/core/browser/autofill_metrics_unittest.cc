@@ -16,12 +16,13 @@
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/forms_seen_state.h"
@@ -94,9 +95,8 @@ class TestPersonalDataManager : public PersonalDataManager {
     CreateTestAutofillProfiles(&web_profiles_);
   }
 
-  void SetBrowserContext(content::BrowserContext* context) {
-    set_browser_context(context);
-  }
+  using PersonalDataManager::set_database;
+  using PersonalDataManager::set_pref_service;
 
   // Overridden to avoid a trip to the database. This should be a no-op except
   // for the side-effect of logging the profile count.
@@ -284,17 +284,17 @@ void AutofillMetricsTest::SetUp() {
   PersonalDataManagerFactory::GetInstance()->SetTestingFactory(profile(), NULL);
 
   TabAutofillManagerDelegate::CreateForWebContents(web_contents());
+  autofill::TabAutofillManagerDelegate* manager_delegate =
+      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
 
   personal_data_.reset(new TestPersonalDataManager());
-  personal_data_->SetBrowserContext(profile());
-  autofill_driver_.reset(new TestAutofillDriver(web_contents()));
+  personal_data_->set_database(manager_delegate->GetDatabase());
+  personal_data_->set_pref_service(profile()->GetPrefs());
+  autofill_driver_.reset(new TestAutofillDriver());
   autofill_manager_.reset(new TestAutofillManager(
-      autofill_driver_.get(),
-      TabAutofillManagerDelegate::FromWebContents(web_contents()),
-      personal_data_.get()));
+      autofill_driver_.get(), manager_delegate, personal_data_.get()));
 
   external_delegate_.reset(new AutofillExternalDelegate(
-      web_contents(),
       autofill_manager_.get(),
       autofill_driver_.get()));
   autofill_manager_->SetExternalDelegate(external_delegate_.get());
@@ -302,9 +302,7 @@ void AutofillMetricsTest::SetUp() {
 
 void AutofillMetricsTest::TearDown() {
   // Order of destruction is important as AutofillManager relies on
-  // PersonalDataManager to be around when it gets destroyed. Also, a real
-  // AutofillManager is tied to the lifetime of the WebContents, so it must
-  // be destroyed at the destruction of the WebContents.
+  // PersonalDataManager to be around when it gets destroyed.
   autofill_manager_.reset();
   autofill_driver_.reset();
   personal_data_.reset();
@@ -1004,7 +1002,11 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtStartup) {
   personal_data_->set_autofill_enabled(true);
   EXPECT_CALL(*personal_data_->metric_logger(),
               LogIsAutofillEnabledAtStartup(true)).Times(1);
-  personal_data_->Init(profile());
+  autofill::TabAutofillManagerDelegate* manager_delegate =
+      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
+  personal_data_->Init(manager_delegate->GetDatabase(),
+                       profile()->GetPrefs(),
+                       profile()->IsOffTheRecord());
 }
 
 // Test that we correctly log when Autofill is disabled.
@@ -1012,7 +1014,11 @@ TEST_F(AutofillMetricsTest, AutofillIsDisabledAtStartup) {
   personal_data_->set_autofill_enabled(false);
   EXPECT_CALL(*personal_data_->metric_logger(),
               LogIsAutofillEnabledAtStartup(false)).Times(1);
-  personal_data_->Init(profile());
+  autofill::TabAutofillManagerDelegate* manager_delegate =
+      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents());
+  personal_data_->Init(manager_delegate->GetDatabase(),
+                       profile()->GetPrefs(),
+                       profile()->IsOffTheRecord());
 }
 
 // Test that we log the number of Autofill suggestions when filling a form.

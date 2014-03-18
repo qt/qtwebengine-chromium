@@ -24,7 +24,7 @@
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/platform/FileChooser.h"
+#include "platform/FileChooser.h"
 #include "wtf/Deque.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/text/StringBuilder.h"
@@ -294,7 +294,7 @@ class FormKeyGenerator {
 
 public:
     static PassOwnPtr<FormKeyGenerator> create() { return adoptPtr(new FormKeyGenerator); }
-    AtomicString formKey(const HTMLFormControlElementWithState&);
+    const AtomicString& formKey(const HTMLFormControlElementWithState&);
     void willDeleteForm(HTMLFormElement*);
 
 private:
@@ -342,11 +342,11 @@ static inline String formSignature(const HTMLFormElement& form)
     return builder.toString();
 }
 
-AtomicString FormKeyGenerator::formKey(const HTMLFormControlElementWithState& control)
+const AtomicString& FormKeyGenerator::formKey(const HTMLFormControlElementWithState& control)
 {
     HTMLFormElement* form = ownerFormForState(control);
     if (!form) {
-        DEFINE_STATIC_LOCAL(AtomicString, formKeyForNoOwner, ("No owner", AtomicString::ConstructFromLiteral));
+        DEFINE_STATIC_LOCAL(const AtomicString, formKeyForNoOwner, ("No owner", AtomicString::ConstructFromLiteral));
         return formKeyForNoOwner;
     }
     FormToKeyMap::const_iterator it = m_formToKeyMap.find(form);
@@ -358,13 +358,12 @@ AtomicString FormKeyGenerator::formKey(const HTMLFormControlElementWithState& co
     FormSignatureToNextIndexMap::AddResult result = m_formSignatureToNextIndexMap.add(signature, 0);
     unsigned nextIndex = result.iterator->value++;
 
-    StringBuilder builder;
-    builder.append(signature);
-    builder.appendLiteral(" #");
-    builder.appendNumber(nextIndex);
-    AtomicString formKey = builder.toAtomicString();
-    m_formToKeyMap.add(form, formKey);
-    return formKey;
+    StringBuilder formKeyBuilder;
+    formKeyBuilder.append(signature);
+    formKeyBuilder.appendLiteral(" #");
+    formKeyBuilder.appendNumber(nextIndex);
+    FormToKeyMap::AddResult addFormKeyresult = m_formToKeyMap.add(form, formKeyBuilder.toAtomicString());
+    return addFormKeyresult.iterator->value;
 }
 
 void FormKeyGenerator::willDeleteForm(HTMLFormElement* form)
@@ -401,7 +400,7 @@ PassOwnPtr<FormController::SavedFormStateMap> FormController::createSavedFormSta
         ASSERT(control->inDocument());
         if (!control->shouldSaveAndRestoreFormControlState())
             continue;
-        SavedFormStateMap::AddResult result = stateMap->add(keyGenerator->formKey(*control).impl(), nullptr);
+        SavedFormStateMap::AddResult result = stateMap->add(keyGenerator->formKey(*control), nullptr);
         if (result.isNewEntry)
             result.iterator->value = SavedFormState::create();
         result.iterator->value->appendControlState(control->name(), control->type(), control->saveFormControlState());
@@ -436,7 +435,7 @@ FormControlState FormController::takeStateForFormElement(const HTMLFormControlEl
         return FormControlState();
     if (!m_formKeyGenerator)
         m_formKeyGenerator = FormKeyGenerator::create();
-    SavedFormStateMap::iterator it = m_savedFormStateMap.find(m_formKeyGenerator->formKey(control).impl());
+    SavedFormStateMap::iterator it = m_savedFormStateMap.find(m_formKeyGenerator->formKey(control));
     if (it == m_savedFormStateMap.end())
         return FormControlState();
     FormControlState state = it->value->takeControlState(control.name(), control.type());
@@ -460,7 +459,7 @@ void FormController::formStatesFromStateVector(const Vector<String>& stateVector
             i = 0;
             break;
         }
-        map.add(formKey.impl(), state.release());
+        map.add(formKey, state.release());
     }
     if (i != stateVector.size())
         map.clear();

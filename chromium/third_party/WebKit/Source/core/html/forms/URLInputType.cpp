@@ -31,26 +31,26 @@
 #include "config.h"
 #include "core/html/forms/URLInputType.h"
 
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/LocalizedStrings.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> URLInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> URLInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new URLInputType(element));
 }
 
 void URLInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeURL);
+    countUsageIfVisible(UseCounter::InputTypeURL);
 }
 
 const AtomicString& URLInputType::formControlType() const
 {
-    return InputTypeNames::url();
+    return InputTypeNames::url;
 }
 
 bool URLInputType::typeMismatchFor(const String& value) const
@@ -60,12 +60,12 @@ bool URLInputType::typeMismatchFor(const String& value) const
 
 bool URLInputType::typeMismatch() const
 {
-    return typeMismatchFor(element()->value());
+    return typeMismatchFor(element().value());
 }
 
 String URLInputType::typeMismatchText() const
 {
-    return validationMessageTypeMismatchForURLText();
+    return locale().queryString(blink::WebLocalizedString::ValidationTypeMismatchForURL);
 }
 
 bool URLInputType::isURLField() const

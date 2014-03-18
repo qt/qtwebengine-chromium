@@ -13,6 +13,8 @@
         '<(skia_src_path)/pdf/SkPDFCatalog.cpp',
         '<(skia_src_path)/pdf/SkPDFCatalog.h',
         '<(skia_src_path)/pdf/SkPDFDevice.cpp',
+        '<(skia_src_path)/pdf/SkPDFDeviceFlattener.cpp',
+        '<(skia_src_path)/pdf/SkPDFDeviceFlattener.h',
         '<(skia_src_path)/pdf/SkPDFDocument.cpp',
         '<(skia_src_path)/pdf/SkPDFFont.cpp',
         '<(skia_src_path)/pdf/SkPDFFont.h',
@@ -38,9 +40,3 @@
         '<(skia_src_path)/pdf/SkTSet.h',
     ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

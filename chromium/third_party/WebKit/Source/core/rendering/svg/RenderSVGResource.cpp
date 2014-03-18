@@ -24,8 +24,8 @@
 
 #include "core/rendering/svg/RenderSVGResource.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
@@ -203,7 +203,7 @@ void RenderSVGResource::markForLayoutAndParentResourceInvalidation(RenderObject*
 
         if (current->isSVGResourceContainer()) {
             // This will process the rest of the ancestors.
-            current->toRenderSVGResourceContainer()->removeAllClientsFromCache();
+            toRenderSVGResourceContainer(current)->removeAllClientsFromCache();
             break;
         }
 

@@ -14,15 +14,15 @@
 namespace content {
 
 class MockDeviceOrientationListener
-    : public WebKit::WebDeviceOrientationListener {
+    : public blink::WebDeviceOrientationListener {
  public:
   MockDeviceOrientationListener();
   virtual ~MockDeviceOrientationListener() { }
   virtual void didChangeDeviceOrientation(
-      const WebKit::WebDeviceOrientationData&) OVERRIDE;
+      const blink::WebDeviceOrientationData&) OVERRIDE;
   void ResetDidChangeOrientation();
   bool did_change_device_orientation_;
-  WebKit::WebDeviceOrientationData data_;
+  blink::WebDeviceOrientationData data_;
 };
 
 MockDeviceOrientationListener::MockDeviceOrientationListener()
@@ -31,7 +31,7 @@ MockDeviceOrientationListener::MockDeviceOrientationListener()
 }
 
 void MockDeviceOrientationListener::didChangeDeviceOrientation(
-    const WebKit::WebDeviceOrientationData& data) {
+    const blink::WebDeviceOrientationData& data) {
   memcpy(&data_, &data, sizeof(data));
   did_change_device_orientation_ = true;
 }
@@ -50,6 +50,11 @@ class DeviceOrientationEventPumpForTesting : public DeviceOrientationEventPump {
   }
   virtual bool SendStartMessage() OVERRIDE { return true; }
   virtual bool SendStopMessage() OVERRIDE { return true; }
+  virtual void FireEvent() OVERRIDE {
+    DeviceOrientationEventPump::FireEvent();
+    Stop();
+    base::MessageLoop::current()->QuitWhenIdle();
+  }
 };
 
 class DeviceOrientationEventPumpTest : public testing::Test {
@@ -70,7 +75,7 @@ class DeviceOrientationEventPumpTest : public testing::Test {
   }
 
   void InitBuffer() {
-    WebKit::WebDeviceOrientationData& data = buffer_->data;
+    blink::WebDeviceOrientationData& data = buffer_->data;
     data.alpha = 1;
     data.hasAlpha = true;
     data.beta = 2;
@@ -94,17 +99,15 @@ class DeviceOrientationEventPumpTest : public testing::Test {
 #define MAYBE_DidStartPolling DidStartPolling
 #endif
 TEST_F(DeviceOrientationEventPumpTest, MAYBE_DidStartPolling) {
-  base::MessageLoop loop(base::MessageLoop::TYPE_UI);
-  InitBuffer();
+  base::MessageLoop loop;
 
+  InitBuffer();
   orientation_pump_->SetListener(listener_.get());
   orientation_pump_->OnDidStart(handle_);
-  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
-          orientation_pump_->GetDelayMillis() * 2));
-  RunAllPendingInMessageLoop();
-  orientation_pump_->SetListener(0);
 
-  WebKit::WebDeviceOrientationData& received_data = listener_->data_;
+  base::MessageLoop::current()->Run();
+
+  blink::WebDeviceOrientationData& received_data = listener_->data_;
   EXPECT_TRUE(listener_->did_change_device_orientation_);
   EXPECT_TRUE(received_data.allAvailableSensorsAreActive);
   EXPECT_EQ(1, (double)received_data.alpha);
@@ -125,16 +128,15 @@ TEST_F(DeviceOrientationEventPumpTest, MAYBE_DidStartPolling) {
 #endif
 TEST_F(DeviceOrientationEventPumpTest,
     MAYBE_UpdateRespectsOrientationThreshold) {
-  base::MessageLoop loop(base::MessageLoop::TYPE_UI);
-  InitBuffer();
+  base::MessageLoop loop;
 
+  InitBuffer();
   orientation_pump_->SetListener(listener_.get());
   orientation_pump_->OnDidStart(handle_);
-  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
-      orientation_pump_->GetDelayMillis() * 2));
-  RunAllPendingInMessageLoop();
 
-  WebKit::WebDeviceOrientationData& received_data = listener_->data_;
+  base::MessageLoop::current()->Run();
+
+  blink::WebDeviceOrientationData& received_data = listener_->data_;
   EXPECT_TRUE(listener_->did_change_device_orientation_);
   EXPECT_TRUE(received_data.allAvailableSensorsAreActive);
   EXPECT_EQ(1, (double)received_data.alpha);
@@ -148,9 +150,10 @@ TEST_F(DeviceOrientationEventPumpTest,
       1 + DeviceOrientationEventPump::kOrientationThreshold / 2.0;
   listener_->ResetDidChangeOrientation();
 
-  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
-      orientation_pump_->GetDelayMillis() * 2));
-  RunAllPendingInMessageLoop();
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&DeviceOrientationEventPumpForTesting::FireEvent,
+                 base::Unretained(orientation_pump_.get())));
+  base::MessageLoop::current()->Run();
 
   EXPECT_FALSE(listener_->did_change_device_orientation_);
   EXPECT_TRUE(received_data.allAvailableSensorsAreActive);
@@ -165,10 +168,10 @@ TEST_F(DeviceOrientationEventPumpTest,
       1 + DeviceOrientationEventPump::kOrientationThreshold;
   listener_->ResetDidChangeOrientation();
 
-  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
-      orientation_pump_->GetDelayMillis() * 2));
-  RunAllPendingInMessageLoop();
-  orientation_pump_->SetListener(0);
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&DeviceOrientationEventPumpForTesting::FireEvent,
+                 base::Unretained(orientation_pump_.get())));
+  base::MessageLoop::current()->Run();
 
   EXPECT_TRUE(listener_->did_change_device_orientation_);
   EXPECT_EQ(1 + DeviceOrientationEventPump::kOrientationThreshold,

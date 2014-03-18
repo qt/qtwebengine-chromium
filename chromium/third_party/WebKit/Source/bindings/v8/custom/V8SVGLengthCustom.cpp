@@ -31,6 +31,7 @@
 #include "config.h"
 #include "V8SVGLength.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
@@ -39,19 +40,19 @@
 
 namespace WebCore {
 
-void V8SVGLength::valueAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8SVGLength::valueAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     SVGPropertyTearOff<SVGLength>* wrapper = V8SVGLength::toNative(info.Holder());
     SVGLength& imp = wrapper->propertyReference();
-    ExceptionState es(info.GetIsolate());
+    ExceptionState exceptionState(info.Holder(), info.GetIsolate());
     SVGLengthContext lengthContext(wrapper->contextElement());
-    float value = imp.value(lengthContext, es);
-    if (es.throwIfNeeded())
+    float value = imp.value(lengthContext, exceptionState);
+    if (exceptionState.throwIfNeeded())
         return;
     v8SetReturnValue(info, value);
 }
 
-void V8SVGLength::valueAttributeSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
+void V8SVGLength::valueAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     SVGPropertyTearOff<SVGLength>* wrapper = V8SVGLength::toNative(info.Holder());
     if (wrapper->isReadOnly()) {
@@ -60,38 +61,40 @@ void V8SVGLength::valueAttributeSetterCustom(v8::Local<v8::String> name, v8::Loc
     }
 
     if (!isUndefinedOrNull(value) && !value->IsNumber() && !value->IsBoolean()) {
-        throwTypeError(info.GetIsolate());
+        throwUninformativeAndGenericTypeError(info.GetIsolate());
         return;
     }
 
     SVGLength& imp = wrapper->propertyReference();
-    ExceptionState es(info.GetIsolate());
+    ExceptionState exceptionState(info.Holder(), info.GetIsolate());
     SVGLengthContext lengthContext(wrapper->contextElement());
-    imp.setValue(static_cast<float>(value->NumberValue()), lengthContext, es);
-    if (es.throwIfNeeded())
+    imp.setValue(static_cast<float>(value->NumberValue()), lengthContext, exceptionState);
+    if (exceptionState.throwIfNeeded())
         return;
     wrapper->commitChange();
 }
 
-void V8SVGLength::convertToSpecifiedUnitsMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8SVGLength::convertToSpecifiedUnitsMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    SVGPropertyTearOff<SVGLength>* wrapper = V8SVGLength::toNative(args.Holder());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "convertToSpecifiedUnits", "SVGLength", info.Holder(), info.GetIsolate());
+    SVGPropertyTearOff<SVGLength>* wrapper = V8SVGLength::toNative(info.Holder());
     if (wrapper->isReadOnly()) {
-        setDOMException(NoModificationAllowedError, args.GetIsolate());
+        exceptionState.throwDOMException(NoModificationAllowedError, "The length is read only.");
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    if (args.Length() < 1) {
-        throwNotEnoughArgumentsError(args.GetIsolate());
+    if (info.Length() < 1) {
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(1, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
 
     SVGLength& imp = wrapper->propertyReference();
-    ExceptionState es(args.GetIsolate());
-    V8TRYCATCH_VOID(int, unitType, toUInt32(args[0]));
+    V8TRYCATCH_VOID(int, unitType, toUInt32(info[0]));
     SVGLengthContext lengthContext(wrapper->contextElement());
-    imp.convertToSpecifiedUnits(unitType, lengthContext, es);
-    if (es.throwIfNeeded())
+    imp.convertToSpecifiedUnits(unitType, lengthContext, exceptionState);
+    if (exceptionState.throwIfNeeded())
         return;
     wrapper->commitChange();
 }

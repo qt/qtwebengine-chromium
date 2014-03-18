@@ -9,8 +9,9 @@
 
 namespace app_list {
 
-AppListItemModel::AppListItemModel()
-    : highlighted_(false),
+AppListItemModel::AppListItemModel(const std::string& id)
+    : id_(id),
+      highlighted_(false),
       is_installing_(false),
       percent_downloaded_(-1) {
 }
@@ -72,8 +73,27 @@ void AppListItemModel::RemoveObserver(AppListItemModelObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+void AppListItemModel::Activate(int event_flags) {
+}
+
+const char* AppListItemModel::GetAppType() const {
+  static const char* app_type = "";
+  return app_type;
+}
+
 ui::MenuModel* AppListItemModel::GetContextMenuModel() {
   return NULL;
+}
+
+bool AppListItemModel::CompareForTest(const AppListItemModel* other) const {
+  return id_ == other->id_ &&
+      title_ == other->title_ &&
+      position_.Equals(other->position_);
+}
+
+std::string AppListItemModel::ToDebugString() const {
+  return id_.substr(0, 8) + " '" + title_ + "'"
+      + " [" + position_.ToDebugString() + "]";
 }
 
 }  // namespace app_list

@@ -79,6 +79,17 @@ public:
     // But ctrl+right arrow moves caret to "abc |def |hij |opq" on Windows and "abc| def| hij| opq|" on Mac and Linux.
     bool shouldSkipSpaceWhenMovingRight() const { return m_type == EditingWindowsBehavior; }
 
+    // On Mac, undo of delete/forward-delete of text should select the deleted text. On other platforms deleted text
+    // should not be selected and the cursor should be placed where the deletion started.
+    bool shouldUndoOfDeleteSelectText() const { return m_type == EditingMacBehavior; }
+
+    // Support for global selections, used on platforms like the X Window
+    // System that treat selection as a type of clipboard.
+    bool supportsGlobalSelection() const
+    {
+        return m_type != EditingWindowsBehavior && m_type != EditingMacBehavior;
+    }
+
 private:
     EditingBehaviorType m_type;
 };

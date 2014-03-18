@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "media/cdm/ppapi/api/content_decryption_module.h"
+#include "media/cdm/ppapi/clear_key_cdm_common.h"
 
 struct AVCodecContext;
 struct AVFrame;
@@ -19,17 +19,18 @@ struct AVFrame;
 namespace media {
 class AudioBus;
 class AudioTimestampHelper;
+class ScopedPtrAVFreeContext;
+class ScopedPtrAVFreeFrame;
 }
 
 namespace media {
-
 // TODO(xhwang): This class is partially cloned from FFmpegAudioDecoder. When
 // FFmpegAudioDecoder is updated, it's a pain to keep this class in sync with
 // FFmpegAudioDecoder. We need a long term sustainable solution for this. See
 // http://crbug.com/169203
 class FFmpegCdmAudioDecoder {
  public:
-  explicit FFmpegCdmAudioDecoder(cdm::Host* host);
+  explicit FFmpegCdmAudioDecoder(ClearKeyCdmHost* host);
   ~FFmpegCdmAudioDecoder();
   bool Initialize(const cdm::AudioDecoderConfig& config);
   void Deinitialize();
@@ -60,14 +61,13 @@ class FFmpegCdmAudioDecoder {
 
   bool is_initialized_;
 
-  cdm::Host* const host_;
+  ClearKeyCdmHost* const host_;
 
   // FFmpeg structures owned by this object.
-  AVCodecContext* codec_context_;
-  AVFrame* av_frame_;
+  scoped_ptr_malloc<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
+  scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
 
   // Audio format.
-  int bits_per_channel_;
   int samples_per_second_;
   int channels_;
 
@@ -78,10 +78,6 @@ class FFmpegCdmAudioDecoder {
   scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
   int bytes_per_frame_;
   base::TimeDelta last_input_timestamp_;
-
-  // We may need to convert the audio data coming out of FFmpeg from planar
-  // float to integer.
-  scoped_ptr<AudioBus> converter_bus_;
 
   // Number of output sample bytes to drop before generating output buffers.
   // This is required for handling negative timestamps when decoding Vorbis

@@ -39,7 +39,7 @@ QuicStreamSequencer::~QuicStreamSequencer() {
 
 bool QuicStreamSequencer::WillAcceptStreamFrame(
     const QuicStreamFrame& frame) const {
-  size_t data_len = frame.data.size();
+  size_t data_len = frame.data.TotalBufferSize();
   DCHECK_LE(data_len, max_frame_memory_);
 
   if (IsDuplicate(frame)) {
@@ -75,32 +75,37 @@ bool QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
   }
 
   QuicStreamOffset byte_offset = frame.offset;
-  const char* data = frame.data.data();
-  size_t data_len = frame.data.size();
-
+  size_t data_len = frame.data.TotalBufferSize();
   if (data_len == 0 && !frame.fin) {
     // Stream frames must have data or a fin flag.
-    stream_->ConnectionClose(QUIC_INVALID_STREAM_FRAME, false);
+    stream_->CloseConnectionWithDetails(QUIC_INVALID_STREAM_FRAME,
+                                        "Empty stream frame without FIN set.");
     return false;
   }
 
   if (frame.fin) {
-    CloseStreamAtOffset(frame.offset + frame.data.size());
+    CloseStreamAtOffset(frame.offset + data_len);
     if (data_len == 0) {
       return true;
     }
   }
 
+  IOVector data;
+  data.AppendIovec(frame.data.iovec(), frame.data.Size());
   if (byte_offset == num_bytes_consumed_) {
     DVLOG(1) << "Processing byte offset " << byte_offset;
-    size_t bytes_consumed = stream_->ProcessRawData(data, data_len);
+    size_t bytes_consumed = 0;
+    for (size_t i = 0; i < data.Size(); ++i) {
+      bytes_consumed += stream_->ProcessRawData(
+          static_cast<char*>(data.iovec()[i].iov_base),
+          data.iovec()[i].iov_len);
+    }
     num_bytes_consumed_ += bytes_consumed;
-
     if (MaybeCloseStream()) {
       return true;
     }
     if (bytes_consumed > data_len) {
-      stream_->Close(QUIC_ERROR_PROCESSING_STREAM);
+      stream_->Reset(QUIC_ERROR_PROCESSING_STREAM);
       return false;
     } else if (bytes_consumed == data_len) {
       FlushBufferedFrames();
@@ -108,12 +113,17 @@ bool QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
     } else {
       // Set ourselves up to buffer what's left
       data_len -= bytes_consumed;
-      data += bytes_consumed;
+      data.Consume(bytes_consumed);
       byte_offset += bytes_consumed;
     }
   }
-  DVLOG(1) << "Buffering packet at offset " << byte_offset;
-  frames_.insert(make_pair(byte_offset, string(data, data_len)));
+  for (size_t i = 0; i < data.Size(); ++i) {
+    DVLOG(1) << "Buffering stream data at offset " << byte_offset;
+    frames_.insert(make_pair(byte_offset, string(
+        static_cast<char*>(data.iovec()[i].iov_base),
+        data.iovec()[i].iov_len)));
+    byte_offset += data.iovec()[i].iov_len;
+  }
   return true;
 }
 
@@ -123,7 +133,7 @@ void QuicStreamSequencer::CloseStreamAtOffset(QuicStreamOffset offset) {
   // If we have a scheduled termination or close, any new offset should match
   // it.
   if (close_offset_ != kMaxOffset && offset != close_offset_) {
-    stream_->Close(QUIC_MULTIPLE_TERMINATION_OFFSETS);
+    stream_->Reset(QUIC_MULTIPLE_TERMINATION_OFFSETS);
     return;
   }
 
@@ -133,13 +143,13 @@ void QuicStreamSequencer::CloseStreamAtOffset(QuicStreamOffset offset) {
 }
 
 bool QuicStreamSequencer::MaybeCloseStream() {
-  if (IsHalfClosed()) {
+  if (IsClosed()) {
     DVLOG(1) << "Passing up termination, as we've processed "
              << num_bytes_consumed_ << " of " << close_offset_
              << " bytes.";
     // Technically it's an error if num_bytes_consumed isn't exactly
     // equal, but error handling seems silly at this point.
-    stream_->TerminateFromPeer(true);
+    stream_->OnFinRead();
     return true;
   }
   return false;
@@ -215,7 +225,7 @@ void QuicStreamSequencer::MarkConsumed(size_t num_bytes_consumed) {
                   << " end_offset: " << end_offset
                   << " offset: " << it->first
                   << " length: " << it->second.length();
-      stream_->Close(QUIC_ERROR_PROCESSING_STREAM);
+      stream_->Reset(QUIC_ERROR_PROCESSING_STREAM);
       return;
     }
 
@@ -241,7 +251,7 @@ bool QuicStreamSequencer::HasBytesToRead() const {
   return it != frames_.end() && it->first == num_bytes_consumed_;
 }
 
-bool QuicStreamSequencer::IsHalfClosed() const {
+bool QuicStreamSequencer::IsClosed() const {
   return num_bytes_consumed_ >= close_offset_;
 }
 
@@ -266,7 +276,7 @@ void QuicStreamSequencer::FlushBufferedFrames() {
       return;
     }
     if (bytes_consumed > data->size()) {
-      stream_->Close(QUIC_ERROR_PROCESSING_STREAM);  // Programming error
+      stream_->Reset(QUIC_ERROR_PROCESSING_STREAM);  // Programming error
       return;
     } else if (bytes_consumed == data->size()) {
       frames_.erase(it);

@@ -31,7 +31,6 @@
 #include "config.h"
 #include "bindings/v8/ScriptPromiseResolver.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
@@ -42,115 +41,71 @@
 
 namespace WebCore {
 
-ScriptPromiseResolver::ScriptPromiseResolver(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-    : m_isolate(isolate)
-    , m_promiseForExposeDetached(false)
-    , m_promiseForResolveDetached(false)
+ScriptPromiseResolver::ScriptPromiseResolver(ScriptPromise promise)
+    : m_isolate(promise.isolate())
+    , m_promise(promise)
 {
-    ASSERT(RuntimeEnabledFeatures::promiseEnabled());
-    v8::Local<v8::Object> promise = V8PromiseCustom::createPromise(creationContext, isolate);
-    m_promise = ScriptPromise(promise, isolate);
 }
 
 ScriptPromiseResolver::~ScriptPromiseResolver()
 {
-    // We don't call "detach" here because it requires a caller
+    // We don't call "reject" here because it requires a caller
     // to be in a v8 context.
 
-    detachPromiseForExpose();
-    detachPromiseForResolve();
+    m_promise.clear();
 }
 
-void ScriptPromiseResolver::detachPromise()
+PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptPromise promise, ExecutionContext* context)
 {
-    detachPromiseForExpose();
-}
-
-void ScriptPromiseResolver::detachPromiseForExpose()
-{
-    m_promiseForExposeDetached = true;
-    if (m_promiseForResolveDetached)
-        m_promise.clear();
-}
-
-void ScriptPromiseResolver::detachPromiseForResolve()
-{
-    m_promiseForResolveDetached = true;
-    if (m_promiseForExposeDetached)
-        m_promise.clear();
-}
-
-PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptExecutionContext* context)
-{
-    ASSERT(v8::Context::InContext());
+    ASSERT(promise.isolate()->InContext());
     ASSERT(context);
-    return adoptRef(new ScriptPromiseResolver(toV8Context(context, DOMWrapperWorld::current())->Global(), toIsolate(context)));
+    return adoptRef(new ScriptPromiseResolver(promise));
 }
 
-PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create()
+PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptPromise promise)
 {
-    ASSERT(v8::Context::InContext());
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    return adoptRef(new ScriptPromiseResolver(v8::Object::New(), isolate));
+    ASSERT(promise.isolate()->InContext());
+    return adoptRef(new ScriptPromiseResolver(promise));
 }
 
 bool ScriptPromiseResolver::isPending() const
 {
-    ASSERT(v8::Context::InContext());
-    if (m_promiseForResolveDetached)
+    ASSERT(m_isolate->InContext());
+    if (m_promise.hasNoValue())
         return false;
-    ASSERT(!m_promise.hasNoValue());
     v8::Local<v8::Object> promise = m_promise.v8Value().As<v8::Object>();
     v8::Local<v8::Object> internal = V8PromiseCustom::getInternal(promise);
     V8PromiseCustom::PromiseState state = V8PromiseCustom::getState(internal);
     return state == V8PromiseCustom::Pending;
 }
 
-void ScriptPromiseResolver::detach()
-{
-    ASSERT(v8::Context::InContext());
-    detachPromiseForExpose();
-    reject(v8::Undefined(m_isolate));
-    detachPromiseForResolve();
-}
-
-void ScriptPromiseResolver::fulfill(v8::Handle<v8::Value> value)
-{
-    resolve(value);
-}
-
 void ScriptPromiseResolver::resolve(v8::Handle<v8::Value> value)
 {
-    ASSERT(v8::Context::InContext());
+    ASSERT(m_isolate->InContext());
     if (!isPending())
         return;
-    V8PromiseCustom::resolve(m_promise.v8Value().As<v8::Object>(), value, V8PromiseCustom::Asynchronous, m_isolate);
-    detachPromiseForResolve();
+    V8PromiseCustom::resolve(m_promise.v8Value().As<v8::Object>(), value, m_isolate);
+    m_promise.clear();
 }
 
 void ScriptPromiseResolver::reject(v8::Handle<v8::Value> value)
 {
-    ASSERT(v8::Context::InContext());
+    ASSERT(m_isolate->InContext());
     if (!isPending())
         return;
-    V8PromiseCustom::reject(m_promise.v8Value().As<v8::Object>(), value, V8PromiseCustom::Asynchronous, m_isolate);
-    detachPromiseForResolve();
-}
-
-void ScriptPromiseResolver::fulfill(ScriptValue value)
-{
-    resolve(value);
+    V8PromiseCustom::reject(m_promise.v8Value().As<v8::Object>(), value, m_isolate);
+    m_promise.clear();
 }
 
 void ScriptPromiseResolver::resolve(ScriptValue value)
 {
-    ASSERT(v8::Context::InContext());
+    ASSERT(m_isolate->InContext());
     resolve(value.v8Value());
 }
 
 void ScriptPromiseResolver::reject(ScriptValue value)
 {
-    ASSERT(v8::Context::InContext());
+    ASSERT(m_isolate->InContext());
     reject(value.v8Value());
 }
 

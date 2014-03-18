@@ -31,15 +31,15 @@
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/StyleSheetResourceClient.h"
 #include "core/fetch/TextResourceDecoder.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/HTTPParsers.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/HTTPParsers.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
 CSSStyleSheetResource::CSSStyleSheetResource(const ResourceRequest& resourceRequest, const String& charset)
-    : Resource(resourceRequest, CSSStyleSheet)
+    : StyleSheetResource(resourceRequest, CSSStyleSheet)
     , m_decoder(TextResourceDecoder::create("text/css", charset))
 {
     DEFINE_STATIC_LOCAL(const AtomicString, acceptCSS, ("text/css,*/*;q=0.1", AtomicString::ConstructFromLiteral));
@@ -123,7 +123,7 @@ bool CSSStyleSheetResource::canUseSheet(bool enforceMIMEType, bool* hasValidMIME
     //
     // This code defaults to allowing the stylesheet for non-HTTP protocols so
     // folks can use standards mode for local HTML documents.
-    String mimeType = extractMIMETypeFromMediaType(response().httpHeaderField("Content-Type"));
+    const AtomicString& mimeType = extractMIMETypeFromMediaType(response().httpHeaderField("Content-Type"));
     bool typeOK = mimeType.isEmpty() || equalIgnoringCase(mimeType, "text/css") || equalIgnoringCase(mimeType, "application/x-unknown-content-type");
     if (hasValidMIMEType)
         *hasValidMIMEType = typeOK;

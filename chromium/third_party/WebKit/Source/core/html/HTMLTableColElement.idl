@@ -26,4 +26,3 @@ interface HTMLTableColElement : HTMLElement {
     [Reflect] attribute DOMString vAlign;
     [Reflect] attribute DOMString width;
 };
-

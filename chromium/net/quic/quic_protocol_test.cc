@@ -56,14 +56,14 @@ TEST(QuicProtocolTest, QuicVersionToQuicTag) {
 #endif
 
   // Explicitly test a specific version.
-  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '0'),
-            QuicVersionToQuicTag(QUIC_VERSION_10));
+  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '2'),
+            QuicVersionToQuicTag(QUIC_VERSION_12));
 
   // Loop over all supported versions and make sure that we never hit the
   // default case (i.e. all supported versions should be successfully converted
   // to valid QuicTags).
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
-    const QuicVersion& version = kSupportedQuicVersions[i];
+    QuicVersion version = kSupportedQuicVersions[i];
     EXPECT_LT(0u, QuicVersionToQuicTag(version));
   }
 }
@@ -95,11 +95,11 @@ TEST(QuicProtocolTest, QuicTagToQuicVersion) {
 #endif
 
   // Explicitly test specific versions.
-  EXPECT_EQ(QUIC_VERSION_10,
-            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '0')));
+  EXPECT_EQ(QUIC_VERSION_12,
+            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '2')));
 
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
-    const QuicVersion& version = kSupportedQuicVersions[i];
+    QuicVersion version = kSupportedQuicVersions[i];
 
     // Get the tag from the version (we can loop over QuicVersions easily).
     QuicTag tag = QuicVersionToQuicTag(version);
@@ -127,19 +127,30 @@ TEST(QuicProtocolTest, QuicTagToQuicVersionUnsupported) {
 }
 
 TEST(QuicProtocolTest, QuicVersionToString) {
-  EXPECT_EQ("QUIC_VERSION_8",
-            QuicVersionToString(QUIC_VERSION_8));
+  EXPECT_EQ("QUIC_VERSION_12", QuicVersionToString(QUIC_VERSION_12));
   EXPECT_EQ("QUIC_VERSION_UNSUPPORTED",
             QuicVersionToString(QUIC_VERSION_UNSUPPORTED));
 
-  QuicVersion single_version[] = {QUIC_VERSION_8};
-  EXPECT_EQ("QUIC_VERSION_8,", QuicVersionArrayToString(
-                                   single_version, arraysize(single_version)));
-  QuicVersion multiple_versions[] =
-      {QUIC_VERSION_10, QUIC_VERSION_9, QUIC_VERSION_8};
-  EXPECT_EQ("QUIC_VERSION_10,QUIC_VERSION_9,QUIC_VERSION_8,",
-            QuicVersionArrayToString(multiple_versions,
-                                     arraysize(multiple_versions)));
+  QuicVersion single_version[] = {QUIC_VERSION_12};
+  QuicVersionVector versions_vector;
+  for (size_t i = 0; i < arraysize(single_version); ++i) {
+    versions_vector.push_back(single_version[i]);
+  }
+  EXPECT_EQ("QUIC_VERSION_12", QuicVersionVectorToString(versions_vector));
+
+  QuicVersion multiple_versions[] = {QUIC_VERSION_UNSUPPORTED, QUIC_VERSION_12};
+  versions_vector.clear();
+  for (size_t i = 0; i < arraysize(multiple_versions); ++i) {
+    versions_vector.push_back(multiple_versions[i]);
+  }
+  EXPECT_EQ("QUIC_VERSION_UNSUPPORTED,QUIC_VERSION_12",
+            QuicVersionVectorToString(versions_vector));
+
+  // Make sure that all supported versions are present in QuicVersionToString.
+  for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
+    QuicVersion version = kSupportedQuicVersions[i];
+    EXPECT_NE("QUIC_VERSION_UNSUPPORTED", QuicVersionToString(version));
+  }
 }
 
 }  // namespace

@@ -35,17 +35,17 @@
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/history/HistoryItem.h"
 #include "core/html/forms/FormController.h"
-#include "core/platform/network/FormData.h"
+#include "platform/network/FormData.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
 #include "wtf/text/StringHash.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 namespace {
 
 void addReferencedFilePaths(HistoryItem* item, HashSet<String>& results)
@@ -129,55 +129,6 @@ void WebHistoryItem::setTarget(const WebString& target)
     m_private->setTarget(target);
 }
 
-WebString WebHistoryItem::parent() const
-{
-    return m_private->parent();
-}
-
-void WebHistoryItem::setParent(const WebString& parent)
-{
-    ensureMutable();
-    m_private->setParent(parent);
-}
-
-WebString WebHistoryItem::title() const
-{
-    return m_private->title();
-}
-
-void WebHistoryItem::setTitle(const WebString& title)
-{
-    ensureMutable();
-    m_private->setTitle(title);
-}
-
-WebString WebHistoryItem::alternateTitle() const
-{
-    return m_private->alternateTitle();
-}
-
-void WebHistoryItem::setAlternateTitle(const WebString& alternateTitle)
-{
-    ensureMutable();
-    m_private->setAlternateTitle(alternateTitle);
-}
-
-double WebHistoryItem::lastVisitedTime() const
-{
-    return m_private->lastVisitedTime();
-}
-
-void WebHistoryItem::setLastVisitedTime(double lastVisitedTime)
-{
-    ensureMutable();
-    // FIXME: setLastVisitedTime increments the visit count, so we have to
-    // correct for that.  Instead, we should have a back-door to just mutate
-    // the last visited time directly.
-    int count = m_private->visitCount();
-    m_private->setLastVisitedTime(lastVisitedTime);
-    m_private->setVisitCount(count);
-}
-
 WebPoint WebHistoryItem::scrollOffset() const
 {
     return m_private->scrollPoint();
@@ -198,28 +149,6 @@ void WebHistoryItem::setPageScaleFactor(float scale)
 {
     ensureMutable();
     m_private->setPageScaleFactor(scale);
-}
-
-bool WebHistoryItem::isTargetItem() const
-{
-    return m_private->isTargetItem();
-}
-
-void WebHistoryItem::setIsTargetItem(bool isTargetItem)
-{
-    ensureMutable();
-    m_private->setIsTargetItem(isTargetItem);
-}
-
-int WebHistoryItem::visitCount() const
-{
-    return m_private->visitCount();
-}
-
-void WebHistoryItem::setVisitCount(int count)
-{
-    ensureMutable();
-    m_private->setVisitCount(count);
 }
 
 WebVector<WebString> WebHistoryItem::documentState() const
@@ -257,6 +186,17 @@ void WebHistoryItem::setDocumentSequenceNumber(long long documentSequenceNumber)
 {
     ensureMutable();
     m_private->setDocumentSequenceNumber(documentSequenceNumber);
+}
+
+long long WebHistoryItem::targetFrameID() const
+{
+    return m_private->targetFrameID();
+}
+
+void WebHistoryItem::setTargetFrameID(long long targetFrameID)
+{
+    ensureMutable();
+    m_private->setTargetFrameID(targetFrameID);
 }
 
 WebSerializedScriptValue WebHistoryItem::stateObject() const
@@ -343,4 +283,4 @@ void WebHistoryItem::ensureMutable()
         m_private = m_private->copy();
 }
 
-} // namespace WebKit
+} // namespace blink

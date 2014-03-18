@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/layout/layout_constants.h"
@@ -256,9 +257,7 @@ void DialogClientView::ViewHierarchyChanged(
     // The old dialog style needs an explicit background color, while the new
     // dialog style simply inherits the bubble's frame view color.
     const DialogDelegate* dialog = GetDialogDelegate();
-    const bool use_new_style = dialog ?
-        dialog->UseNewStyleForThisDialog() : DialogDelegate::UseNewStyle();
-    if (!use_new_style)
+    if (dialog && !dialog->UseNewStyleForThisDialog())
       set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
           GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
 
@@ -370,7 +369,7 @@ LabelButton* DialogClientView::CreateDialogButton(ui::DialogButton type) {
     button = new LabelButton(this, title);
     button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
   }
-  button->set_focusable(true);
+  button->SetFocusable(true);
 
   const int kDialogMinButtonWidth = 75;
   button->set_min_size(gfx::Size(kDialogMinButtonWidth, 0));
@@ -400,15 +399,10 @@ int DialogClientView::GetButtonsAndExtraViewRowHeight() const {
 }
 
 gfx::Insets DialogClientView::GetButtonRowInsets() const {
-  if (GetButtonsAndExtraViewRowHeight() == 0)
-    return gfx::Insets();
-
   // NOTE: The insets only apply to the buttons, extra view, and footnote view.
-  return DialogDelegate::UseNewStyle() ?
+  return GetButtonsAndExtraViewRowHeight() == 0 ? gfx::Insets() :
       gfx::Insets(0, kButtonHEdgeMarginNew,
-                  kButtonVEdgeMarginNew, kButtonHEdgeMarginNew) :
-      gfx::Insets(0, kButtonHEdgeMargin,
-                  kButtonVEdgeMargin, kButtonHEdgeMargin);
+                  kButtonVEdgeMarginNew, kButtonHEdgeMarginNew);
 }
 
 void DialogClientView::Close() {

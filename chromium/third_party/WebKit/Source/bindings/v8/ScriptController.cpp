@@ -50,29 +50,28 @@
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/Node.h"
 #include "core/dom/ScriptableDocumentParser.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/HistogramSupport.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/Widget.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/NotImplemented.h"
+#include "platform/TraceEvent.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/Widget.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/StringExtras.h"
@@ -84,7 +83,7 @@ namespace WebCore {
 
 bool ScriptController::canAccessFromCurrentOrigin(Frame *frame)
 {
-    return !v8::Context::InContext() || BindingSecurity::shouldAllowAccessToFrame(frame);
+    return !v8::Isolate::GetCurrent()->InContext() || BindingSecurity::shouldAllowAccessToFrame(frame);
 }
 
 ScriptController::ScriptController(Frame* frame)
@@ -92,7 +91,6 @@ ScriptController::ScriptController(Frame* frame)
     , m_sourceURL(0)
     , m_isolate(v8::Isolate::GetCurrent())
     , m_windowShell(V8WindowShell::create(frame, mainThreadNormalWorld(), m_isolate))
-    , m_paused(false)
     , m_windowScriptNPObject(0)
 {
 }
@@ -139,7 +137,7 @@ void ScriptController::clearForClose()
 {
     double start = currentTime();
     clearForClose(false);
-    HistogramSupport::histogramCustomCounts("WebCore.ScriptController.clearForClose", (currentTime() - start) * 1000, 0, 10000, 50);
+    blink::Platform::current()->histogramCustomCounts("WebCore.ScriptController.clearForClose", (currentTime() - start) * 1000, 0, 10000, 50);
 }
 
 void ScriptController::updateSecurityOrigin()
@@ -147,68 +145,47 @@ void ScriptController::updateSecurityOrigin()
     m_windowShell->updateSecurityOrigin();
 }
 
-bool ScriptController::processingUserGesture()
-{
-    return UserGestureIndicator::processingUserGesture();
-}
-
-v8::Local<v8::Value> ScriptController::callFunction(v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[])
+v8::Local<v8::Value> ScriptController::callFunction(v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> info[])
 {
     // Keep Frame (and therefore ScriptController) alive.
     RefPtr<Frame> protect(m_frame);
-    return ScriptController::callFunctionWithInstrumentation(m_frame ? m_frame->document() : 0, function, receiver, argc, args, m_isolate);
+    return ScriptController::callFunction(m_frame->document(), function, receiver, argc, info, m_isolate);
 }
 
-ScriptValue ScriptController::callFunctionEvenIfScriptDisabled(v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> argv[])
-{
-    // FIXME: This should probably perform the same isPaused check that happens in ScriptController::executeScript.
-    return ScriptValue(callFunction(function, receiver, argc, argv), m_isolate);
-}
-
-static void resourceInfo(const v8::Handle<v8::Function> function, String& resourceName, int& lineNumber)
+static bool resourceInfo(const v8::Handle<v8::Function> function, String& resourceName, int& lineNumber)
 {
     v8::ScriptOrigin origin = function->GetScriptOrigin();
     if (origin.ResourceName().IsEmpty()) {
         resourceName = "undefined";
         lineNumber = 1;
     } else {
-        resourceName = toWebCoreString(origin.ResourceName());
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringResourceName, origin.ResourceName(), false);
+        resourceName = stringResourceName;
         lineNumber = function->GetScriptLineNumber() + 1;
     }
+    return true;
 }
 
-static String resourceString(const v8::Handle<v8::Function> function)
-{
-    String resourceName;
-    int lineNumber;
-    resourceInfo(function, resourceName, lineNumber);
-
-    StringBuilder builder;
-    builder.append(resourceName);
-    builder.append(':');
-    builder.appendNumber(lineNumber);
-    return builder.toString();
-}
-
-v8::Local<v8::Value> ScriptController::callFunctionWithInstrumentation(ScriptExecutionContext* context, v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[], v8::Isolate* isolate)
+v8::Local<v8::Value> ScriptController::callFunction(ExecutionContext* context, v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate* isolate)
 {
     InspectorInstrumentationCookie cookie;
     if (InspectorInstrumentation::timelineAgentEnabled(context)) {
         String resourceName;
         int lineNumber;
-        resourceInfo(function, resourceName, lineNumber);
+        if (!resourceInfo(function, resourceName, lineNumber))
+            return v8::Local<v8::Value>();
         cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
     }
 
-    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, context, receiver, argc, args, isolate);
+    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, context, receiver, argc, info, isolate);
 
     InspectorInstrumentation::didCallFunction(cookie);
     return result;
 }
 
-v8::Local<v8::Value> ScriptController::compileAndRunScript(const ScriptSourceCode& source, AccessControlStatus corsStatus)
+v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Handle<v8::Context> context, const ScriptSourceCode& source, AccessControlStatus corsStatus)
 {
-    ASSERT(v8::Context::InContext());
+    v8::Context::Scope scope(context);
 
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(m_frame, source.url().isNull() ? String() : source.url().string(), source.startLine());
 
@@ -221,7 +198,7 @@ v8::Local<v8::Value> ScriptController::compileAndRunScript(const ScriptSourceCod
         v8::TryCatch tryCatch;
         tryCatch.SetVerbose(true);
 
-        v8::Handle<v8::String> code = v8String(source.source(), m_isolate);
+        v8::Handle<v8::String> code = v8String(m_isolate, source.source());
         OwnPtr<v8::ScriptData> scriptData = V8ScriptRunner::precompileScript(code, source.resource());
 
         // NOTE: For compatibility with WebCore, ScriptSourceCode's line starts at
@@ -283,16 +260,17 @@ V8WindowShell* ScriptController::windowShell(DOMWrapperWorld* world)
     if (!shell->isContextInitialized() && shell->initializeIfNeeded()) {
         if (world->isMainWorld()) {
             // FIXME: Remove this if clause. See comment with existingWindowShellWorkaroundWorld().
-            m_frame->loader()->dispatchDidClearWindowObjectInWorld(existingWindowShellWorkaroundWorld());
-        } else
-            m_frame->loader()->dispatchDidClearWindowObjectInWorld(world);
+            m_frame->loader().dispatchDidClearWindowObjectInWorld(existingWindowShellWorkaroundWorld());
+        } else {
+            m_frame->loader().dispatchDidClearWindowObjectInWorld(world);
+        }
     }
     return shell;
 }
 
 bool ScriptController::shouldBypassMainWorldContentSecurityPolicy()
 {
-    if (DOMWrapperWorld* world = isolatedWorldForEnteredContext())
+    if (DOMWrapperWorld* world = isolatedWorldForEnteredContext(m_isolate))
         return world->isolatedWorldHasContentSecurityPolicy();
     return false;
 }
@@ -305,34 +283,31 @@ TextPosition ScriptController::eventHandlerPosition() const
     return TextPosition::minimumPosition();
 }
 
-static inline v8::Local<v8::Context> contextForWorld(ScriptController* scriptController, DOMWrapperWorld* world)
+static inline v8::Local<v8::Context> contextForWorld(ScriptController& scriptController, DOMWrapperWorld* world)
 {
-    return scriptController->windowShell(world)->context();
+    return scriptController.windowShell(world)->context();
 }
 
 v8::Local<v8::Context> ScriptController::currentWorldContext()
 {
-    if (!v8::Context::InContext())
-        return contextForWorld(this, mainThreadNormalWorld());
+    if (!isolate()->InContext())
+        return contextForWorld(*this, mainThreadNormalWorld());
 
-    v8::Handle<v8::Context> context = v8::Context::GetEntered();
+    v8::Handle<v8::Context> context = isolate()->GetEnteredContext();
     DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(context);
     if (!isolatedWorld)
-        return contextForWorld(this, mainThreadNormalWorld());
+        return contextForWorld(*this, mainThreadNormalWorld());
 
     Frame* frame = toFrameIfNotDetached(context);
-    if (!m_frame)
-        return v8::Local<v8::Context>();
-
     if (m_frame == frame)
         return v8::Local<v8::Context>::New(m_isolate, context);
 
-    return contextForWorld(this, isolatedWorld);
+    return contextForWorld(*this, isolatedWorld);
 }
 
 v8::Local<v8::Context> ScriptController::mainWorldContext()
 {
-    return contextForWorld(this, mainThreadNormalWorld());
+    return contextForWorld(*this, mainThreadNormalWorld());
 }
 
 v8::Local<v8::Context> ScriptController::mainWorldContext(Frame* frame)
@@ -358,7 +333,7 @@ void ScriptController::bindToWindowObject(Frame* frame, const String& key, NPObj
 
     // Attach to the global object.
     v8::Handle<v8::Object> global = v8Context->Global();
-    global->Set(v8String(key, m_isolate), value);
+    global->Set(v8String(m_isolate, key), value);
 }
 
 void ScriptController::enableEval()
@@ -376,10 +351,10 @@ void ScriptController::disableEval(const String& errorMessage)
     v8::HandleScope handleScope(m_isolate);
     v8::Local<v8::Context> v8Context = m_windowShell->context();
     v8Context->AllowCodeGenerationFromStrings(false);
-    v8Context->SetErrorMessageForCodeGenerationFromStrings(v8String(errorMessage, m_isolate));
+    v8Context->SetErrorMessageForCodeGenerationFromStrings(v8String(m_isolate, errorMessage));
 }
 
-PassScriptInstance ScriptController::createScriptInstanceForWidget(Widget* widget)
+PassRefPtr<SharedPersistent<v8::Object> > ScriptController::createPluginWrapper(Widget* widget)
 {
     ASSERT(widget);
 
@@ -419,7 +394,7 @@ PassScriptInstance ScriptController::createScriptInstanceForWidget(Widget* widge
     // Track the plugin object. We've been given a reference to the object.
     m_pluginObjects.set(widget, npObject);
 
-    return V8ScriptInstance::create(wrapper, m_isolate);
+    return SharedPersistent<v8::Object>::create(wrapper, m_isolate);
 }
 
 void ScriptController::cleanupScriptObjectsForPlugin(Widget* nativeHandle)
@@ -518,7 +493,7 @@ void ScriptController::clearWindowShell()
     for (IsolatedWorldMap::iterator iter = m_isolatedWorlds.begin(); iter != m_isolatedWorlds.end(); ++iter)
         iter->value->clearForNavigation();
     V8GCController::hintForCollectGarbage();
-    HistogramSupport::histogramCustomCounts("WebCore.ScriptController.clearWindowShell", (currentTime() - start) * 1000, 0, 10000, 50);
+    blink::Platform::current()->histogramCustomCounts("WebCore.ScriptController.clearWindowShell", (currentTime() - start) * 1000, 0, 10000, 50);
 }
 
 void ScriptController::setCaptureCallStackForUncaughtExceptions(bool value)
@@ -560,7 +535,7 @@ int ScriptController::contextDebugId(v8::Handle<v8::Context> context)
 void ScriptController::updateDocument()
 {
     // For an uninitialized main window shell, do not incur the cost of context initialization during FrameLoader::init().
-    if ((!m_windowShell->isContextInitialized() || !m_windowShell->isGlobalInitialized()) && m_frame->loader()->stateMachine()->creatingInitialEmptyDocument())
+    if ((!m_windowShell->isContextInitialized() || !m_windowShell->isGlobalInitialized()) && m_frame->loader().stateMachine()->creatingInitialEmptyDocument())
         return;
 
     if (!initializeMainWorld())
@@ -592,26 +567,10 @@ bool ScriptController::canExecuteScripts(ReasonForCallingCanExecuteScripts reaso
     }
 
     Settings* settings = m_frame->settings();
-    const bool allowed = m_frame->loader()->client()->allowScript(settings && settings->isScriptEnabled());
+    const bool allowed = m_frame->loader().client()->allowScript(settings && settings->isScriptEnabled());
     if (!allowed && reason == AboutToExecuteScript)
-        m_frame->loader()->client()->didNotAllowScript();
+        m_frame->loader().client()->didNotAllowScript();
     return allowed;
-}
-
-ScriptValue ScriptController::executeScript(const String& script, bool forceUserGesture)
-{
-    UserGestureIndicator gestureIndicator(forceUserGesture ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
-    return executeScript(ScriptSourceCode(script, m_frame->document()->url()));
-}
-
-ScriptValue ScriptController::executeScript(const ScriptSourceCode& sourceCode)
-{
-    if (!canExecuteScripts(AboutToExecuteScript) || isPaused())
-        return ScriptValue();
-
-    RefPtr<Frame> protect(m_frame); // Script execution can destroy the frame, and thus the ScriptController.
-
-    return executeScriptInMainWorld(sourceCode);
 }
 
 bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
@@ -630,10 +589,10 @@ bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
 
     const int javascriptSchemeLength = sizeof("javascript:") - 1;
 
-    bool locationChangeBefore = m_frame->navigationScheduler()->locationChangePending();
+    bool locationChangeBefore = m_frame->navigationScheduler().locationChangePending();
 
     String decodedURL = decodeURLEscapeSequences(url.string());
-    ScriptValue result = executeScript(decodedURL.substring(javascriptSchemeLength));
+    ScriptValue result = evaluateScriptInMainWorld(ScriptSourceCode(decodedURL.substring(javascriptSchemeLength)), NotSharableCrossOrigin, DoNotExecuteScriptWhenScriptsDisabled);
 
     // If executing script caused this frame to be removed from the page, we
     // don't want to try to replace its document!
@@ -647,18 +606,38 @@ bool ScriptController::executeScriptIfJavaScriptURL(const KURL& url)
     // We're still in a frame, so there should be a DocumentLoader.
     ASSERT(m_frame->document()->loader());
 
-    if (!locationChangeBefore && m_frame->navigationScheduler()->locationChangePending())
+    if (!locationChangeBefore && m_frame->navigationScheduler().locationChangePending())
         return true;
 
     // DocumentWriter::replaceDocument can cause the DocumentLoader to get deref'ed and possible destroyed,
     // so protect it with a RefPtr.
-    if (RefPtr<DocumentLoader> loader = m_frame->document()->loader())
+    if (RefPtr<DocumentLoader> loader = m_frame->document()->loader()) {
+        UseCounter::count(*m_frame->document(), UseCounter::ReplaceDocumentViaJavaScriptURL);
         loader->replaceDocument(scriptResult, ownerDocument.get());
+    }
     return true;
 }
 
-ScriptValue ScriptController::executeScriptInMainWorld(const ScriptSourceCode& sourceCode, AccessControlStatus corsStatus)
+void ScriptController::executeScriptInMainWorld(const String& script, ExecuteScriptPolicy policy)
 {
+    evaluateScriptInMainWorld(ScriptSourceCode(script), NotSharableCrossOrigin, policy);
+}
+
+void ScriptController::executeScriptInMainWorld(const ScriptSourceCode& sourceCode, AccessControlStatus corsStatus)
+{
+    evaluateScriptInMainWorld(sourceCode, corsStatus, DoNotExecuteScriptWhenScriptsDisabled);
+}
+
+ScriptValue ScriptController::executeScriptInMainWorldAndReturnValue(const ScriptSourceCode& sourceCode)
+{
+    return evaluateScriptInMainWorld(sourceCode, NotSharableCrossOrigin, DoNotExecuteScriptWhenScriptsDisabled);
+}
+
+ScriptValue ScriptController::evaluateScriptInMainWorld(const ScriptSourceCode& sourceCode, AccessControlStatus corsStatus, ExecuteScriptPolicy policy)
+{
+    if (policy == DoNotExecuteScriptWhenScriptsDisabled && !canExecuteScripts(AboutToExecuteScript))
+        return ScriptValue();
+
     String sourceURL = sourceCode.url();
     const String* savedSourceURL = m_sourceURL;
     m_sourceURL = &sourceURL;
@@ -669,15 +648,13 @@ ScriptValue ScriptController::executeScriptInMainWorld(const ScriptSourceCode& s
         return ScriptValue();
 
     RefPtr<Frame> protect(m_frame);
-    if (m_frame->loader()->stateMachine()->isDisplayingInitialEmptyDocument())
-        m_frame->loader()->didAccessInitialDocument();
+    if (m_frame->loader().stateMachine()->isDisplayingInitialEmptyDocument())
+        m_frame->loader().didAccessInitialDocument();
 
     OwnPtr<ScriptSourceCode> maybeProcessedSourceCode =  InspectorInstrumentation::preprocess(m_frame, sourceCode);
     const ScriptSourceCode& sourceCodeToCompile = maybeProcessedSourceCode ? *maybeProcessedSourceCode : sourceCode;
 
-    v8::Context::Scope scope(v8Context);
-    v8::Local<v8::Value> object = compileAndRunScript(sourceCodeToCompile, corsStatus);
-
+    v8::Local<v8::Value> object = executeScriptAndReturnValue(v8Context, sourceCodeToCompile, corsStatus);
     m_sourceURL = savedSourceURL;
 
     if (object.IsEmpty())
@@ -693,7 +670,7 @@ void ScriptController::executeScriptInIsolatedWorld(int worldID, const Vector<Sc
     v8::HandleScope handleScope(m_isolate);
     v8::Local<v8::Array> v8Results;
     {
-        v8::HandleScope evaluateHandleScope(m_isolate);
+        v8::EscapableHandleScope evaluateHandleScope(m_isolate);
         RefPtr<DOMWrapperWorld> world = DOMWrapperWorld::ensureIsolatedWorld(worldID, extensionGroup);
         V8WindowShell* isolatedWorldShell = windowShell(world.get());
 
@@ -702,16 +679,16 @@ void ScriptController::executeScriptInIsolatedWorld(int worldID, const Vector<Sc
 
         v8::Local<v8::Context> context = isolatedWorldShell->context();
         v8::Context::Scope contextScope(context);
-        v8::Local<v8::Array> resultArray = v8::Array::New(sources.size());
+        v8::Local<v8::Array> resultArray = v8::Array::New(m_isolate, sources.size());
 
         for (size_t i = 0; i < sources.size(); ++i) {
-            v8::Local<v8::Value> evaluationResult = compileAndRunScript(sources[i]);
+            v8::Local<v8::Value> evaluationResult = executeScriptAndReturnValue(context, sources[i]);
             if (evaluationResult.IsEmpty())
                 evaluationResult = v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
             resultArray->Set(i, evaluationResult);
         }
 
-        v8Results = evaluateHandleScope.Close(resultArray);
+        v8Results = evaluateHandleScope.Escape(resultArray);
     }
 
     if (results && !v8Results.IsEmpty()) {

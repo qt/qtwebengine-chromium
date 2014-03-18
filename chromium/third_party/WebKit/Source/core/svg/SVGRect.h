@@ -20,17 +20,42 @@
 #ifndef SVGRect_h
 #define SVGRect_h
 
-#include "core/platform/graphics/FloatRect.h"
 #include "core/svg/properties/SVGPropertyTraits.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
-typedef FloatRect SVGRect;
+class SVGRect : public FloatRect {
+public:
+    struct InvalidSVGRectTag { };
+
+    SVGRect()
+        : m_isValid(true) { }
+    SVGRect(InvalidSVGRectTag)
+        : m_isValid(false) { }
+    SVGRect(const FloatRect& rect)
+        : FloatRect(rect), m_isValid(true) { }
+    SVGRect(const FloatPoint& location, const FloatSize& size)
+        : FloatRect(location, size), m_isValid(true) { }
+    SVGRect(float x, float y, float width, float height)
+        : FloatRect(x, y, width, height), m_isValid(true) { }
+    SVGRect(const IntRect& intRect)
+        : FloatRect(intRect), m_isValid(true) { }
+    SVGRect(const LayoutRect& layoutRect)
+        : FloatRect(layoutRect), m_isValid(true) { }
+    SVGRect(const SkRect& skRect)
+        : FloatRect(skRect), m_isValid(true) { }
+
+    bool isValid() const { return m_isValid; }
+
+private:
+    bool m_isValid;
+};
 
 template<>
 struct SVGPropertyTraits<SVGRect> {
-    static SVGRect initialValue() { return SVGRect(); }
+    static SVGRect initialValue() { return SVGRect(SVGRect::InvalidSVGRectTag()); }
     static String toString(const SVGRect& type)
     {
         StringBuilder builder;

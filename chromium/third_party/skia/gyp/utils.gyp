@@ -34,6 +34,7 @@
         '../src/utils/SkThreadPool.cpp',
 
         '../include/utils/SkBoundaryPatch.h',
+        '../include/utils/SkFrontBufferedStream.h',
         '../include/utils/SkCamera.h',
         '../include/utils/SkCanvasStateUtils.h',
         '../include/utils/SkCubicInterval.h',
@@ -65,6 +66,7 @@
         '../src/utils/SkBitSet.cpp',
         '../src/utils/SkBitSet.h',
         '../src/utils/SkBoundaryPatch.cpp',
+        '../src/utils/SkFrontBufferedStream.cpp',
         '../src/utils/SkCamera.cpp',
         '../src/utils/SkCanvasStack.h',
         '../src/utils/SkCanvasStack.cpp',
@@ -212,6 +214,11 @@
             '../src/utils/android/ashmem.cpp',
           ],
         }],
+        ['skia_run_pdfviewer_in_gm', {
+          'defines': [
+            'SK_BUILD_NATIVE_PDF_RENDERER',
+          ],
+        }],
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -221,9 +228,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

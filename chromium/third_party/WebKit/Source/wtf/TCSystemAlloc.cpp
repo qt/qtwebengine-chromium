@@ -37,7 +37,6 @@
 #include "Assertions.h"
 #include "CheckedArithmetic.h"
 #include "TCSpinLock.h"
-#include "UnusedParam.h"
 #include "VMTags.h"
 #include <algorithm>
 #include <stdint.h>
@@ -78,9 +77,6 @@ static bool use_mmap = true;
 static bool devmem_failure = false;
 static bool sbrk_failure = false;
 static bool mmap_failure = false;
-
-static const int32_t FLAGS_malloc_devmem_start = 0;
-static const int32_t FLAGS_malloc_devmem_limit = 0;
 
 #if HAVE(MMAP)
 
@@ -184,11 +180,6 @@ void TCMalloc_SystemRelease(void* start, size_t length)
 #else
     const int advice = MADV_DONTNEED;
 #endif
-  if (FLAGS_malloc_devmem_start) {
-    // It's not safe to use MADV_DONTNEED if we've been mapping
-    // /dev/mem for heap memory
-    return;
-  }
   if (pagesize == 0) pagesize = getpagesize();
   const size_t pagemask = pagesize - 1;
 

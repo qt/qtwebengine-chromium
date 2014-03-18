@@ -4,8 +4,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/test_suite.h"
-#include "base/test/unit_test_launcher.h"
 #include "build/build_config.h"
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
@@ -41,10 +41,6 @@ void TestSuiteNoAtExit::Initialize() {
   media::InitializeMediaLibraryForTesting();
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   cmd_line->AppendSwitch(switches::kEnableMP3StreamParser);
-
-  // Enable Opus support for all media tests.
-  // TODO(vigneshv): Remove this once the Opus flag is removed or negated.
-  cmd_line->AppendSwitch(switches::kEnableOpusPlayback);
 }
 
 int main(int argc, char** argv) {

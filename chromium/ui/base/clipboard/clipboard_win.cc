@@ -211,8 +211,8 @@ Clipboard::Clipboard() {
 Clipboard::~Clipboard() {
 }
 
-void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+void Clipboard::WriteObjects(ClipboardType type, const ObjectMap& objects) {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
   ScopedClipboard clipboard;
   if (!clipboard.Acquire(GetClipboardWindow()))
@@ -273,8 +273,7 @@ void Clipboard::WriteWebSmartPaste() {
   ::SetClipboardData(GetWebKitSmartPasteFormatType().ToUINT(), NULL);
 }
 
-void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
-  const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
+void Clipboard::WriteBitmap(const SkBitmap& bitmap) {
   HDC dc = ::GetDC(NULL);
 
   // This doesn't actually cost us a memcpy when the bitmap comes from the
@@ -284,8 +283,8 @@ void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
   // TODO(darin): share data in gfx/bitmap_header.cc somehow
   BITMAPINFO bm_info = {0};
   bm_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-  bm_info.bmiHeader.biWidth = size->width();
-  bm_info.bmiHeader.biHeight = -size->height();  // sets vertical orientation
+  bm_info.bmiHeader.biWidth = bitmap.width();
+  bm_info.bmiHeader.biHeight = -bitmap.height();  // sets vertical orientation
   bm_info.bmiHeader.biPlanes = 1;
   bm_info.bmiHeader.biBitCount = 32;
   bm_info.bmiHeader.biCompression = BI_RGB;
@@ -298,11 +297,15 @@ void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
       ::CreateDIBSection(dc, &bm_info, DIB_RGB_COLORS, &bits, NULL, 0);
 
   if (bits && source_hbitmap) {
-    // Copy the bitmap out of shared memory and into GDI
-    memcpy(bits, pixel_data, 4 * size->width() * size->height());
+    {
+      SkAutoLockPixels bitmap_lock(bitmap);
+      // Copy the bitmap out of shared memory and into GDI
+      memcpy(bits, bitmap.getPixels(), bitmap.getSize());
+    }
 
     // Now we have an HBITMAP, we can write it to the clipboard
-    WriteBitmapFromHandle(source_hbitmap, *size);
+    WriteBitmapFromHandle(source_hbitmap,
+                          gfx::Size(bitmap.width(), bitmap.height()));
   }
 
   ::DeleteObject(source_hbitmap);
@@ -371,19 +374,19 @@ void Clipboard::WriteToClipboard(unsigned int format, HANDLE handle) {
   }
 }
 
-uint64 Clipboard::GetSequenceNumber(Buffer buffer) {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+uint64 Clipboard::GetSequenceNumber(ClipboardType type) {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   return ::GetClipboardSequenceNumber();
 }
 
 bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
-                                  Clipboard::Buffer buffer) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+                                  ClipboardType type) const {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   return ::IsClipboardFormatAvailable(format.ToUINT()) != FALSE;
 }
 
-void Clipboard::Clear(Buffer buffer) {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+void Clipboard::Clear(ClipboardType type) {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   ScopedClipboard clipboard;
   if (!clipboard.Acquire(GetClipboardWindow()))
     return;
@@ -391,7 +394,7 @@ void Clipboard::Clear(Buffer buffer) {
   ::EmptyClipboard();
 }
 
-void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
+void Clipboard::ReadAvailableTypes(ClipboardType type,
                                    std::vector<string16>* types,
                                    bool* contains_filenames) const {
   if (!types || !contains_filenames) {
@@ -423,8 +426,8 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
   ::GlobalUnlock(hdata);
 }
 
-void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+void Clipboard::ReadText(ClipboardType type, string16* result) const {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   if (!result) {
     NOTREACHED();
     return;
@@ -445,9 +448,8 @@ void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
   ::GlobalUnlock(data);
 }
 
-void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
-                              std::string* result) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+void Clipboard::ReadAsciiText(ClipboardType type, std::string* result) const {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   if (!result) {
     NOTREACHED();
     return;
@@ -468,10 +470,12 @@ void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
   ::GlobalUnlock(data);
 }
 
-void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
-                         std::string* src_url, uint32* fragment_start,
+void Clipboard::ReadHTML(ClipboardType type,
+                         string16* markup,
+                         std::string* src_url,
+                         uint32* fragment_start,
                          uint32* fragment_end) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
   markup->clear();
   // TODO(dcheng): Remove these checks, I don't think they should be optional.
@@ -518,14 +522,14 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
   *fragment_end = base::checked_numeric_cast<uint32>(offsets[1]);
 }
 
-void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+void Clipboard::ReadRTF(ClipboardType type, std::string* result) const {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
   ReadData(GetRtfFormatType(), result);
 }
 
-SkBitmap Clipboard::ReadImage(Buffer buffer) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+SkBitmap Clipboard::ReadImage(ClipboardType type) const {
+  DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
   // Acquire the clipboard.
   ScopedClipboard clipboard;
@@ -562,7 +566,7 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
 
   gfx::Canvas canvas(gfx::Size(bitmap->bmiHeader.biWidth,
                                bitmap->bmiHeader.biHeight),
-                     ui::SCALE_FACTOR_100P,
+                     1.0f,
                      false);
   {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
@@ -594,10 +598,10 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   return canvas.ExtractImageRep().sk_bitmap();
 }
 
-void Clipboard::ReadCustomData(Buffer buffer,
+void Clipboard::ReadCustomData(ClipboardType clipboard_type,
                                const string16& type,
                                string16* result) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  DCHECK_EQ(clipboard_type, CLIPBOARD_TYPE_COPY_PASTE);
 
   // Acquire the clipboard.
   ScopedClipboard clipboard;

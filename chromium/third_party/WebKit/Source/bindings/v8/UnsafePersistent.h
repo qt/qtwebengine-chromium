@@ -88,9 +88,14 @@ public:
         return handle;
     }
 
+    void setReferenceFrom(const v8::Persistent<v8::Object>& parent, v8::Isolate* isolate)
+    {
+        isolate->SetReference(parent, *persistent());
+    }
+
     void dispose()
     {
-        persistent()->Dispose();
+        persistent()->Reset();
         m_value = 0;
     }
 

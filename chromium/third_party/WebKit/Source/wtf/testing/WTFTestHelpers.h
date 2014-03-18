@@ -31,26 +31,15 @@
 #ifndef WTFTestHelpers_h
 #define WTFTestHelpers_h
 
-#include "wtf/text/CString.h"
+#include "wtf/testing/WTFUnitTestHelpersExport.h"
 #include "wtf/text/WTFString.h"
-
-#include <ostream> // NOLINT
+#include <iosfwd> // NOLINT
 
 namespace WTF {
 
 // Output stream operator so gTest's macros work with WebCore strings.
-static std::ostream& operator<<(std::ostream& out, const String& str)
-{
-    return str.isEmpty() ? out : out << str.utf8().data();
-}
-
-// Output stream operator so gtest can print WTF::CString.
-static std::ostream& operator<<(std::ostream& out, const CString& str)
-{
-    return out << str.data();
-}
+WTF_UNITTEST_HELPERS_EXPORT std::ostream& operator<<(std::ostream&, const String&);
 
 } // namespace WTF
-
 
 #endif // WTFTestHelpers_h

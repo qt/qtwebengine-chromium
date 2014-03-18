@@ -32,4 +32,5 @@ interface CSSVariablesMap {
     [RaisesException] void set(DOMString name, DOMString value);
     [ImplementedAs=remove] boolean delete(DOMString name);
     [RaisesException] void clear();
+    void forEach(CSSVariablesMapForEachCallback callback, optional any thisArg);
 };

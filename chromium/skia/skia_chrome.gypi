@@ -20,23 +20,18 @@
     ],
   },
 
-  'include_dirs': [
-    '..',
-  ],
-
   'sources': [
     'ext/analysis_canvas.cc',
     'ext/analysis_canvas.h',
     'ext/benchmarking_canvas.cc',
     'ext/benchmarking_canvas.h',
     'ext/bitmap_platform_device.h',
-    'ext/bitmap_platform_device_android.cc',
-    'ext/bitmap_platform_device_android.h',
-    'ext/bitmap_platform_device_data.h',
-    'ext/bitmap_platform_device_linux.cc',
-    'ext/bitmap_platform_device_linux.h',
+    'ext/bitmap_platform_device_cairo.cc',
+    'ext/bitmap_platform_device_cairo.h',
     'ext/bitmap_platform_device_mac.cc',
     'ext/bitmap_platform_device_mac.h',
+    'ext/bitmap_platform_device_skia.cc',
+    'ext/bitmap_platform_device_skia.h',
     'ext/bitmap_platform_device_win.cc',
     'ext/bitmap_platform_device_win.h',
     'ext/convolver.cc',
@@ -48,7 +43,6 @@
     'ext/lazy_pixel_ref.h',
     'ext/lazy_pixel_ref_utils.cc',
     'ext/lazy_pixel_ref_utils.h',
-    'ext/SkThread_chrome.cc',
     'ext/opacity_draw_filter.cc',
     'ext/opacity_draw_filter.h',
     'ext/paint_simplifier.cc',
@@ -83,17 +77,13 @@
     'ext/vector_platform_device_skia.h',
   ],
   'conditions': [
-    # For POSIX platforms, prefer the Mutex implementation provided by Skia
-    # since it does not generate static initializers.
-    # TODO: should check if SK_USE_POSIX_THREADS is defined instead
-    [ 'OS == "android" or OS == "linux" or OS == "mac" or OS == "ios"', {
-      'sources!': [
-        'ext/SkThread_chrome.cc',
-      ],
-    }],
     [ 'OS == "android" and enable_printing == 0', {
       'sources!': [
         'ext/skia_utils_base.cc',
+      ],
+    }],
+    [ 'enable_printing == 0', {
+      'sources!': [
         'ext/vector_platform_device_skia.cc',
       ],
     }],
@@ -103,11 +93,6 @@
       ],
       'dependencies!': [
         'skia_chrome_opts',
-      ],
-    }],
-    [ 'OS == "win"', {
-      'sources!': [
-        'ext/SkThread_chrome.cc',
       ],
     }],
     # TODO(scottmg): http://crbug.com/177306
@@ -120,6 +105,11 @@
       },
       'cflags!': [
         '-Wstring-conversion',
+      ],
+    }],
+    [ 'OS != "android" and (OS != "linux" or use_cairo==1)', {
+      'sources!': [
+        'ext/bitmap_platform_device_skia.cc',
       ],
     }],
   ],

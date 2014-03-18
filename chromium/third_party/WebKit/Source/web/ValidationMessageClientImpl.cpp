@@ -30,17 +30,17 @@
 #include "WebValidationMessageClient.h"
 #include "WebViewImpl.h"
 #include "core/dom/Element.h"
-#include "core/page/FrameView.h"
-#include "core/platform/HostWindow.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
-#include "wtf/CurrentTime.h"
+#include "platform/HostWindow.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebViewClient.h"
+#include "wtf/CurrentTime.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView, WebValidationMessageClient* client)
     : m_webView(webView)
@@ -119,7 +119,7 @@ bool ValidationMessageClientImpl::isValidationMessageVisible(const Element& anch
 
 void ValidationMessageClientImpl::documentDetached(const Document& document)
 {
-    if (m_currentAnchor && &m_currentAnchor->document() == &document)
+    if (m_currentAnchor && m_currentAnchor->document() == document)
         hideValidationMessage(*m_currentAnchor);
 }
 

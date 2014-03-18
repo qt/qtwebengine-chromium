@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "gpu/command_buffer/common/command_buffer.h"
@@ -87,8 +88,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
                   const base::Closure& context_lost_callback,
                   unsigned int share_group_id);
   void Destroy();
-  void SignalSyncPoint(unsigned sync_point,
-                       const base::Closure& callback);
 
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
@@ -106,22 +105,39 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   virtual void SetParseError(gpu::error::Error error) OVERRIDE;
   virtual void SetContextLostReason(
       gpu::error::ContextLostReason reason) OVERRIDE;
-  virtual uint32 InsertSyncPoint() OVERRIDE;
   virtual gpu::error::Error GetLastError() OVERRIDE;
 
   // GpuControl implementation:
+  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
       size_t width,
       size_t height,
       unsigned internalformat,
       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
+  virtual bool GenerateMailboxNames(unsigned num,
+                                    std::vector<gpu::Mailbox>* names) OVERRIDE;
+  virtual uint32 InsertSyncPoint() OVERRIDE;
+  virtual void SignalSyncPoint(uint32 sync_point,
+                               const base::Closure& callback) OVERRIDE;
+  virtual void SignalQuery(uint32 query,
+                           const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
+  virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
+      OVERRIDE;
+  virtual void Echo(const base::Closure& callback) OVERRIDE;
 
   // The serializer interface to the GPU service (i.e. thread).
   class SchedulerClient {
    public:
      virtual ~SchedulerClient() {}
+
+     // Queues a task to run as soon as possible.
      virtual void QueueTask(const base::Closure& task) = 0;
+
+     // Schedules |callback| to run at an appropriate time for performing idle
+     // work.
+     virtual void ScheduleIdleWork(const base::Closure& task) = 0;
   };
 
 #if defined(OS_ANDROID)
@@ -130,11 +146,29 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
 #endif
 
  private:
-  bool InitializeOnGpuThread(bool is_offscreen,
-                             gfx::AcceleratedWidget window,
-                             const gfx::Size& size,
-                             const std::vector<int32>& attribs,
-                             gfx::GpuPreference gpu_preference);
+  struct InitializeOnGpuThreadParams {
+    bool is_offscreen;
+    gfx::AcceleratedWidget window;
+    const gfx::Size& size;
+    const std::vector<int32>& attribs;
+    gfx::GpuPreference gpu_preference;
+    gpu::Capabilities* capabilities;  // Ouptut.
+
+    InitializeOnGpuThreadParams(bool is_offscreen,
+                                gfx::AcceleratedWidget window,
+                                const gfx::Size& size,
+                                const std::vector<int32>& attribs,
+                                gfx::GpuPreference gpu_preference,
+                                gpu::Capabilities* capabilities)
+        : is_offscreen(is_offscreen),
+          window(window),
+          size(size),
+          attribs(attribs),
+          gpu_preference(gpu_preference),
+          capabilities(capabilities) {}
+  };
+
+  bool InitializeOnGpuThread(const InitializeOnGpuThreadParams& params);
   bool DestroyOnGpuThread();
   void FlushOnGpuThread(int32 put_offset);
   bool MakeCurrent();
@@ -149,6 +183,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void OnResizeView(gfx::Size size, float scale_factor);
   bool GetBufferChanged(int32 transfer_buffer_id);
   void PumpCommands();
+  void ScheduleMoreIdleWork();
 
   // Members accessed on the gpu thread (possibly with the exception of
   // creation):
@@ -165,6 +200,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   // Members accessed on the client thread:
   State last_state_;
   int32 last_put_offset_;
+  gpu::Capabilities capabilities_;
 
   // Accessed on both threads:
   scoped_ptr<CommandBuffer> command_buffer_;
@@ -182,6 +218,9 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   // Only used with explicit scheduling and the gpu thread is the same as
   // the client thread.
   scoped_ptr<base::SequenceChecker> sequence_checker_;
+
+  base::WeakPtr<InProcessCommandBuffer> gpu_thread_weak_ptr_;
+  base::WeakPtrFactory<InProcessCommandBuffer> gpu_thread_weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessCommandBuffer);
 };

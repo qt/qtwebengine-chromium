@@ -290,8 +290,8 @@ void BlockingGarbageCollect(
 
   base::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
   base::FilePath trash_directory;
-  if (!file_util::CreateTemporaryDirInDir(storage_root, kTrashDirname,
-                                          &trash_directory)) {
+  if (!base::CreateTemporaryDirInDir(storage_root, kTrashDirname,
+                                     &trash_directory)) {
     // Unable to continue without creating the trash directory so give up.
     return;
   }
@@ -460,11 +460,15 @@ void StoragePartitionImplMap::AsyncObliterate(
        ++it) {
     const StoragePartitionConfig& config = it->first;
     if (config.partition_domain == partition_domain) {
-      it->second->ClearDataForUnboundedRange(
+      it->second->ClearData(
           // All except shader cache.
           StoragePartition::REMOVE_DATA_MASK_ALL &
             (~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE),
-          StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL);
+          StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+          NULL,
+          StoragePartition::OriginMatcherFunction(),
+          base::Time(), base::Time::Max(),
+          base::Bind(&base::DoNothing));
       if (!config.in_memory) {
         paths_to_keep.push_back(it->second->GetPath());
       }

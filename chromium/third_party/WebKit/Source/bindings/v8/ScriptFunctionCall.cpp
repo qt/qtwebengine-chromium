@@ -41,7 +41,6 @@
 #include "bindings/v8/V8Utilities.h"
 
 #include <v8.h>
-#include "wtf/OwnArrayPtr.h"
 
 namespace WebCore {
 
@@ -63,14 +62,14 @@ void ScriptCallArgumentHandler::appendArgument(const String& argument)
 {
     v8::Isolate* isolate = m_scriptState->isolate();
     ScriptScope scope(m_scriptState);
-    m_arguments.append(ScriptValue(v8String(argument, isolate), isolate));
+    m_arguments.append(ScriptValue(v8String(isolate, argument), isolate));
 }
 
 void ScriptCallArgumentHandler::appendArgument(const char* argument)
 {
     v8::Isolate* isolate = m_scriptState->isolate();
     ScriptScope scope(m_scriptState);
-    m_arguments.append(ScriptValue(v8String(argument, isolate), isolate));
+    m_arguments.append(ScriptValue(v8String(isolate, argument), isolate));
 }
 
 void ScriptCallArgumentHandler::appendArgument(long argument)
@@ -126,7 +125,7 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
     ScriptScope scope(m_scriptState, reportExceptions);
 
     v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
-    v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
+    v8::Local<v8::Value> value = thisObject->Get(v8String(m_scriptState->isolate(), m_name));
     if (!scope.success()) {
         hadException = true;
         return ScriptValue();
@@ -135,13 +134,13 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Function> function = v8::Local<v8::Function>::Cast(value);
-    OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
+    OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
     for (size_t i = 0; i < m_arguments.size(); ++i) {
-        args[i] = m_arguments[i].v8Value();
-        ASSERT(!args[i].IsEmpty());
+        info[i] = m_arguments[i].v8Value();
+        ASSERT(!info[i].IsEmpty());
     }
 
-    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, getScriptExecutionContext(), thisObject, m_arguments.size(), args.get(), m_scriptState->isolate());
+    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, getExecutionContext(), thisObject, m_arguments.size(), info.get(), m_scriptState->isolate());
     if (!scope.success()) {
         hadException = true;
         return ScriptValue();
@@ -161,7 +160,7 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
     ScriptScope scope(m_scriptState, reportExceptions);
 
     v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
-    v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
+    v8::Local<v8::Value> value = thisObject->Get(v8String(m_scriptState->isolate(), m_name));
     if (!scope.success()) {
         hadException = true;
         return ScriptObject();
@@ -170,11 +169,11 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Function> constructor = v8::Local<v8::Function>::Cast(value);
-    OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
+    OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
     for (size_t i = 0; i < m_arguments.size(); ++i)
-        args[i] = m_arguments[i].v8Value();
+        info[i] = m_arguments[i].v8Value();
 
-    v8::Local<v8::Object> result = V8ObjectConstructor::newInstance(constructor, m_arguments.size(), args.get());
+    v8::Local<v8::Object> result = V8ObjectConstructor::newInstance(constructor, m_arguments.size(), info.get());
     if (!scope.success()) {
         hadException = true;
         return ScriptObject();
@@ -185,25 +184,27 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
 
 ScriptCallback::ScriptCallback(ScriptState* state, const ScriptValue& function)
     : ScriptCallArgumentHandler(state)
+    , m_scriptState(state)
     , m_function(function)
 {
 }
 
 ScriptValue ScriptCallback::call()
 {
-    ASSERT(v8::Context::InContext());
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
     ASSERT(m_function.v8Value()->IsFunction());
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
-    v8::Handle<v8::Object> object = v8::Context::GetCurrent()->Global();
+    v8::Handle<v8::Object> object = isolate->GetCurrentContext()->Global();
     v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(m_function.v8Value());
 
-    OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
+    OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
     for (size_t i = 0; i < m_arguments.size(); ++i)
-        args[i] = m_arguments[i].v8Value();
+        info[i] = m_arguments[i].v8Value();
 
-    v8::Handle<v8::Value> result = ScriptController::callFunctionWithInstrumentation(0, function, object, m_arguments.size(), args.get(), m_scriptState->isolate());
+    v8::Handle<v8::Value> result = ScriptController::callFunction(m_scriptState->executionContext(), function, object, m_arguments.size(), info.get(), m_scriptState->isolate());
     return ScriptValue(result, m_scriptState->isolate());
 }
 

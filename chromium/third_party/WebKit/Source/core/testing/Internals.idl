@@ -37,6 +37,10 @@
 
     void crash();
 
+    void setStyleResolverStatsEnabled(boolean enabled);
+    [RaisesException] DOMString styleResolverStatsReport();
+    [RaisesException] DOMString styleResolverStatsTotalsReport();
+
     [RaisesException] unsigned long numberOfScopedHTMLStyleChildren(Node scope);
     [RaisesException] CSSStyleDeclaration computedStyleIncludingVisitedInfo(Node node);
 
@@ -51,7 +55,6 @@
     [RaisesException] boolean hasShadowInsertionPoint(Node root);
     [RaisesException] boolean hasContentElement(Node root);
     [RaisesException] unsigned long countElementShadow(Node Root);
-    [RaisesException] Element includerFor(Node node);
     [RaisesException] DOMString shadowPseudoId(Element element);
     [RaisesException] void setShadowPseudoId(Element element, DOMString id);
     [RaisesException] Element createContentElement();
@@ -63,11 +66,10 @@
     [RaisesException] boolean hasSelectorForAttributeInShadow(Element host, DOMString attributeName);
     [RaisesException] boolean hasSelectorForPseudoClassInShadow(Element host, DOMString pseudoClass);
     [RaisesException] unsigned short compareTreeScopePosition(Node treeScope1, Node treeScope2);
+    [RaisesException] unsigned long updateStyleAndReturnAffectedElementCount();
 
     // CSS Animation and Transition testing.
     unsigned long numberOfActiveAnimations();
-    [RaisesException] void suspendAnimations(Document document);
-    [RaisesException] void resumeAnimations(Document document);
     [RaisesException] void pauseAnimations(double pauseTime);
 
     [RaisesException] Node nextSiblingByWalker(Node node);
@@ -76,14 +78,12 @@
     [RaisesException] Node nextNodeByWalker(Node node);
     [RaisesException] Node previousNodeByWalker(Node node);
 
-    [RaisesException] boolean attached(Node node);
-
     DOMString visiblePlaceholder(Element element);
 
     void selectColorInColorChooser(Element element, DOMString colorValue);
 
-    [RaisesException] DOMString[] formControlStateOfPreviousHistoryItem();
-    [RaisesException] void setFormControlStateOfPreviousHistoryItem(sequence<DOMString> values);
+    [RaisesException] DOMString[] formControlStateOfHistoryItem();
+    [RaisesException] void setFormControlStateOfHistoryItem(sequence<DOMString> values);
     [RaisesException] void setEnableMockPagePopup(boolean enabled);
     readonly attribute PagePopupController pagePopupController;
 
@@ -148,7 +148,7 @@
         unsigned long topPadding, unsigned long rightPadding, unsigned long bottomPadding, unsigned long leftPadding,
         boolean ignoreClipping, boolean allowShadowContent, boolean allowChildFrameContent);
 
-    void emitInspectorDidBeginFrame();
+    void emitInspectorDidBeginFrame(optional long frameId);
     void emitInspectorDidCancelFrame();
 
     [RaisesException] boolean hasSpellingMarker(Document document, long from, long length);
@@ -172,6 +172,7 @@
     const unsigned short LAYER_TREE_INCLUDES_REPAINT_RECTS = 2;
     const unsigned short LAYER_TREE_INCLUDES_PAINTING_PHASES = 4;
     const unsigned short LAYER_TREE_INCLUDES_ROOT_LAYER = 8;
+    const unsigned short LAYER_TREE_INCLUDES_CLIP_AND_SCROLL_PARENTS = 16;
     [RaisesException] DOMString layerTreeAsText(Document document, optional unsigned short flags);
     [RaisesException] DOMString elementLayerTreeAsText(Element element, optional unsigned short flags);
 
@@ -180,6 +181,7 @@
 
     [RaisesException] boolean scrollsWithRespectTo(Element element1, Element element2);
     [RaisesException] boolean isUnclippedDescendant(Element element);
+    [RaisesException] boolean needsCompositedScrolling(Element element);
 
     // The values of these constants must be kept in sync with those in RenderLayer.
     const unsigned short DO_NOT_FORCE_COMPOSITED_SCROLLING = 0;
@@ -192,17 +194,16 @@
     [RaisesException] ClientRectList nonFastScrollableRects(Document document);
 
     [RaisesException] DOMString repaintRectsAsText(Document document);
+    [RaisesException] ClientRectList repaintRects(Element element);
 
     [RaisesException] void garbageCollectDocumentResources(Document document);
     void evictAllResources();
 
     void allowRoundingHacks();
 
-    void insertAuthorCSS(Document document, DOMString css);
-    void insertUserCSS(Document document, DOMString css);
-
     unsigned long numberOfLiveNodes();
     unsigned long numberOfLiveDocuments();
+    DOMString dumpRefCountedInstanceCounts();
     sequence<DOMString> consoleMessageArgumentCounts(Document document);
     Window openDummyInspectorFrontend(DOMString url);
     void closeDummyInspectorFrontend();
@@ -239,6 +240,15 @@
     [RaisesException] void startTrackingRepaints(Document document);
     [RaisesException] void stopTrackingRepaints(Document document);
 
+    // |node| should be Document, HTMLIFrameElement, or unspecified.
+    // If |node| is an HTMLIFrameElement, it assumes node.contentDocument is
+    // specified without security checks. Unspecified means this document.
+    [RaisesException] void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(optional Node node);
+
+    // Returns a list of draggable/non-draggable regions in the document.
+    [RaisesException] ClientRectList draggableRegions(Document document);
+    [RaisesException] ClientRectList nonDraggableRegions(Document document);
+
     // Returns a string with information about the mouse cursor used at the specified client location.
     [RaisesException] DOMString getCurrentCursorInfo(Document document);
 
@@ -251,8 +261,6 @@
 
     void forceReload(boolean endToEnd);
 
-    void enableMockSpeechSynthesizer();
-
     [RaisesException] DOMString getImageSourceURL(Element element);
 
     boolean isSelectPopupVisible(Node node);
@@ -260,4 +268,9 @@
     [RaisesException] ClientRect selectionBounds();
 
     boolean loseSharedGraphicsContext3D();
+
+    [RaisesException] void forceCompositingUpdate(Document document);
+    [RaisesException] boolean isCompositorFramePending(Document document);
+
+    void setZoomFactor(float factor);
 };

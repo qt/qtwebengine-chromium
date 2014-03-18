@@ -161,22 +161,22 @@ DebuggerScript._formatScript = function(script)
     };
 }
 
-DebuggerScript.setBreakpoint = function(execState, args)
+DebuggerScript.setBreakpoint = function(execState, info)
 {
-    var positionAlignment = args.interstatementLocation ? Debug.BreakPositionAlignment.BreakPosition : Debug.BreakPositionAlignment.Statement;
-    var breakId = Debug.setScriptBreakPointById(args.sourceID, args.lineNumber, args.columnNumber, args.condition, undefined, positionAlignment);
+    var positionAlignment = info.interstatementLocation ? Debug.BreakPositionAlignment.BreakPosition : Debug.BreakPositionAlignment.Statement;
+    var breakId = Debug.setScriptBreakPointById(info.sourceID, info.lineNumber, info.columnNumber, info.condition, undefined, positionAlignment);
 
     var locations = Debug.findBreakPointActualLocations(breakId);
     if (!locations.length)
         return undefined;
-    args.lineNumber = locations[0].line;
-    args.columnNumber = locations[0].column;
+    info.lineNumber = locations[0].line;
+    info.columnNumber = locations[0].column;
     return breakId.toString();
 }
 
-DebuggerScript.removeBreakpoint = function(execState, args)
+DebuggerScript.removeBreakpoint = function(execState, info)
 {
-    Debug.findBreakPoint(args.breakpointId, true);
+    Debug.findBreakPoint(info.breakpointId, true);
 }
 
 DebuggerScript.pauseOnExceptionsState = function()
@@ -217,14 +217,16 @@ DebuggerScript.stepIntoStatement = function(execState)
     execState.prepareStep(Debug.StepAction.StepIn, 1);
 }
 
-DebuggerScript.stepOverStatement = function(execState)
+DebuggerScript.stepOverStatement = function(execState, callFrame)
 {
-    execState.prepareStep(Debug.StepAction.StepNext, 1);
+    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
+    execState.prepareStep(Debug.StepAction.StepNext, 1, frameMirror);
 }
 
-DebuggerScript.stepOutOfFunction = function(execState)
+DebuggerScript.stepOutOfFunction = function(execState, callFrame)
 {
-    execState.prepareStep(Debug.StepAction.StepOut, 1);
+    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
+    execState.prepareStep(Debug.StepAction.StepOut, 1, frameMirror);
 }
 
 // Returns array in form:
@@ -260,14 +262,14 @@ DebuggerScript.liveEditScriptSource = function(scriptId, newSource, preview)
     }
 }
 
-DebuggerScript.clearBreakpoints = function(execState, args)
+DebuggerScript.clearBreakpoints = function(execState, info)
 {
     Debug.clearAllBreakPoints();
 }
 
-DebuggerScript.setBreakpointsActivated = function(execState, args)
+DebuggerScript.setBreakpointsActivated = function(execState, info)
 {
-    Debug.debuggerFlags().breakPointsActive.setValue(args.enabled);
+    Debug.debuggerFlags().breakPointsActive.setValue(info.enabled);
 }
 
 DebuggerScript.getScriptSource = function(eventData)
@@ -310,18 +312,24 @@ DebuggerScript.isEvalCompilation = function(eventData)
 
 DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
 {
-    // Get function name.
-    var func;
+    // Get function name and display name.
+    var funcMirror;
+    var displayName;
     try {
-        func = frameMirror.func();
+        funcMirror = frameMirror.func();
+        if (funcMirror) {
+            var valueMirror = funcMirror.property("displayName").value();
+            if (valueMirror && valueMirror.isString())
+                displayName = valueMirror.value();
+        }
     } catch(e) {
     }
     var functionName;
-    if (func)
-        functionName = func.name() || func.inferredName();
+    if (funcMirror)
+        functionName = displayName || funcMirror.name() || funcMirror.inferredName();
 
     // Get script ID.
-    var script = func.script();
+    var script = funcMirror.script();
     var sourceID = script && script.id();
 
     // Get location.
@@ -329,6 +337,9 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
 
     // Get this object.
     var thisObject = frameMirror.details_.receiver();
+
+    var isAtReturn = !!frameMirror.details_.isAtReturn();
+    var returnValue = isAtReturn ? frameMirror.details_.returnValue() : undefined;
 
     var scopeChain = [];
     var scopeType = [];
@@ -387,7 +398,10 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
         "caller": callerFrame,
         "restart": restart,
         "setVariableValue": setVariableValue,
-        "stepInPositions": stepInPositions
+        "stepInPositions": stepInPositions,
+        "isAtReturn": isAtReturn,
+        "returnValue": returnValue,
+        "frameMirror": frameMirror
     };
 }
 

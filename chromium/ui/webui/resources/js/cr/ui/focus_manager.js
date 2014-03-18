@@ -112,14 +112,7 @@ cr.define('cr.ui', function() {
      * @private
      */
     setFocus_: function() {
-      // If |this.focusDirBackwards_| is true, the user has pressed "Shift+Tab"
-      // and has caused the focus to be transferred backward, outside of the
-      // current dialog. In this case, loop around and try to focus the last
-      // element of the dialog; otherwise, try to focus the first element of the
-      // dialog.
-      var focusableElements = this.getFocusableElements_();
-      var element = this.focusDirBackwards_ ? focusableElements.pop() :
-                                              focusableElements.shift();
+      var element = this.selectFocusableElement_();
       if (element) {
         element.focus();
         this.dispatchFocusEvent_(element);
@@ -134,6 +127,40 @@ cr.define('cr.ui', function() {
     },
 
     /**
+     * Selects first appropriate focusable element according to the
+     * current focus direction and element type.  If it is a radio button,
+     * checked one is selected from the group.
+     * @private
+     */
+    selectFocusableElement_: function() {
+      // If |this.focusDirBackwards_| is true, the user has pressed "Shift+Tab"
+      // and has caused the focus to be transferred backward, outside of the
+      // current dialog. In this case, loop around and try to focus the last
+      // element of the dialog; otherwise, try to focus the first element of the
+      // dialog.
+      var focusableElements = this.getFocusableElements_();
+      var element = this.focusDirBackwards_ ? focusableElements.pop() :
+                                              focusableElements.shift();
+      if (!element)
+        return null;
+      if (element.tagName != 'INPUT' || element.type != 'radio' ||
+          element.name == '') {
+        return element;
+      }
+      if (!element.checked) {
+        for (var i = 0; i < focusableElements.length; i++) {
+          var e = focusableElements[i];
+          if (e && e.tagName == 'INPUT' && e.type == 'radio' &&
+              e.name == element.name && e.checked) {
+            element = e;
+            break;
+          }
+        }
+      }
+      return element;
+    },
+
+    /**
      * Handler for focus events on the page.
      * @param {Event} event The focus event.
      * @private
@@ -145,6 +172,10 @@ cr.define('cr.ui', function() {
         this.dispatchFocusEvent_(event.target);
         return;
       }
+
+      // Focus event handlers for descendant elements might dispatch another
+      // focus event.
+      event.stopPropagation();
 
       // The target of the focus event is not in the topmost visible page and
       // should not be focused.

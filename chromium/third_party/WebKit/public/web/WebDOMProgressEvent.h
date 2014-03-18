@@ -33,16 +33,16 @@
 
 #include "WebDOMEvent.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
 class WebDOMProgressEvent : public WebDOMEvent {
 public:
     WebDOMProgressEvent() { }
-    WEBKIT_EXPORT WebDOMProgressEvent(const WebString& type, bool lengthIsComputable, unsigned long long loaded, unsigned long long total);
+    BLINK_EXPORT WebDOMProgressEvent(const WebString& type, bool lengthIsComputable, unsigned long long loaded, unsigned long long total);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

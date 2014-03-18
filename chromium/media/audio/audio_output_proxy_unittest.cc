@@ -6,11 +6,13 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/audio_output_resampler.h"
+#include "media/audio/fake_audio_log_factory.h"
 #include "media/audio/fake_audio_output_stream.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,10 +38,7 @@ using media::FakeAudioOutputStream;
 
 namespace {
 
-static const int kTestCloseDelayMs = 100;
-
-// Used in the test where we don't want a stream to be closed unexpectedly.
-static const int kTestBigCloseDelaySeconds = 1000;
+static const int kTestCloseDelayMs = 10;
 
 // Delay between callbacks to AudioSourceCallback::OnMoreData.
 static const int kOnMoreDataCallbackDelayMs = 10;
@@ -87,14 +86,14 @@ class MockAudioOutputStream : public AudioOutputStream {
 
 class MockAudioManager : public AudioManagerBase {
  public:
-  MockAudioManager() {}
+  MockAudioManager() : AudioManagerBase(&fake_audio_log_factory_) {}
   virtual ~MockAudioManager() {
     Shutdown();
   }
 
   MOCK_METHOD0(HasAudioOutputDevices, bool());
   MOCK_METHOD0(HasAudioInputDevices, bool());
-  MOCK_METHOD0(GetAudioInputDeviceModel, string16());
+  MOCK_METHOD0(GetAudioInputDeviceModel, base::string16());
   MOCK_METHOD3(MakeAudioOutputStream, AudioOutputStream*(
       const AudioParameters& params,
       const std::string& device_id,
@@ -107,6 +106,7 @@ class MockAudioManager : public AudioManagerBase {
       const AudioParameters& params, const std::string& device_id));
   MOCK_METHOD0(ShowAudioInputSettings, void());
   MOCK_METHOD0(GetMessageLoop, scoped_refptr<base::MessageLoopProxy>());
+  MOCK_METHOD0(GetWorkerLoop, scoped_refptr<base::MessageLoopProxy>());
   MOCK_METHOD1(GetAudioInputDeviceNames, void(
       media::AudioDeviceNames* device_name));
 
@@ -121,6 +121,9 @@ class MockAudioManager : public AudioManagerBase {
       const AudioParameters& params, const std::string& device_id));
   MOCK_METHOD2(GetPreferredOutputStreamParameters, AudioParameters(
       const std::string& device_id, const AudioParameters& params));
+
+ private:
+  media::FakeAudioLogFactory fake_audio_log_factory_;
 };
 
 class MockAudioSourceCallback : public AudioOutputStream::AudioSourceCallback {
@@ -145,33 +148,28 @@ class AudioOutputProxyTest : public testing::Test {
   virtual void SetUp() {
     EXPECT_CALL(manager_, GetMessageLoop())
         .WillRepeatedly(Return(message_loop_.message_loop_proxy()));
+    EXPECT_CALL(manager_, GetWorkerLoop())
+        .WillRepeatedly(Return(message_loop_.message_loop_proxy()));
+    // Use a low sample rate and large buffer size when testing otherwise the
+    // FakeAudioOutputStream will keep the message loop busy indefinitely; i.e.,
+    // RunUntilIdle() will never terminate.
+    params_ = AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                              CHANNEL_LAYOUT_STEREO, 8000, 16, 2048);
     InitDispatcher(base::TimeDelta::FromMilliseconds(kTestCloseDelayMs));
   }
 
   virtual void TearDown() {
-    // All paused proxies should have been closed at this point.
-    EXPECT_EQ(0u, dispatcher_impl_->paused_proxies_);
-
     // This is necessary to free all proxy objects that have been
     // closed by the test.
     message_loop_.RunUntilIdle();
   }
 
   virtual void InitDispatcher(base::TimeDelta close_delay) {
-    // Use a low sample rate and large buffer size when testing otherwise the
-    // FakeAudioOutputStream will keep the message loop busy indefinitely; i.e.,
-    // RunUntilIdle() will never terminate.
-    params_ = AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
-                              CHANNEL_LAYOUT_STEREO, 8000, 16, 2048);
     dispatcher_impl_ = new AudioOutputDispatcherImpl(&manager(),
                                                      params_,
                                                      std::string(),
                                                      std::string(),
                                                      close_delay);
-
-    // Necessary to know how long the dispatcher will wait before posting
-    // StopStreamTask.
-    pause_delay_ = dispatcher_impl_->pause_delay_;
   }
 
   virtual void OnStart() {}
@@ -180,15 +178,24 @@ class AudioOutputProxyTest : public testing::Test {
     return manager_;
   }
 
-  // Wait for the close timer to fire.
-  void WaitForCloseTimer(const int timer_delay_ms) {
-    message_loop_.RunUntilIdle();  // OpenTask() may reset the timer.
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMilliseconds(timer_delay_ms) * 2);
-    message_loop_.RunUntilIdle();
+  void WaitForCloseTimer(MockAudioOutputStream* stream) {
+    base::RunLoop run_loop;
+    EXPECT_CALL(*stream, Close())
+        .WillOnce(testing::InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
+    run_loop.Run();
   }
 
-  // Methods that do actual tests.
+  void CloseAndWaitForCloseTimer(AudioOutputProxy* proxy,
+                                 MockAudioOutputStream* stream) {
+    // Close the stream and verify it doesn't happen immediately.
+    proxy->Close();
+    Mock::VerifyAndClear(stream);
+
+    // Wait for the actual close event to come from the close timer.
+    WaitForCloseTimer(stream);
+  }
+
+  // Basic Open() and Close() test.
   void OpenAndClose(AudioOutputDispatcher* dispatcher) {
     MockAudioOutputStream stream(&manager_, params_);
 
@@ -196,16 +203,13 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(&stream));
     EXPECT_CALL(stream, Open())
         .WillOnce(Return(true));
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy->Open());
-    proxy->Close();
-    WaitForCloseTimer(kTestCloseDelayMs);
+    CloseAndWaitForCloseTimer(proxy, &stream);
   }
 
-  // Create a stream, and then calls Start() and Stop().
+  // Creates a stream, and then calls Start() and Stop().
   void StartAndStop(AudioOutputDispatcher* dispatcher) {
     MockAudioOutputStream stream(&manager_, params_);
 
@@ -215,8 +219,6 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(true));
     EXPECT_CALL(stream, SetVolume(_))
         .Times(1);
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy->Open());
@@ -225,13 +227,12 @@ class AudioOutputProxyTest : public testing::Test {
     OnStart();
     proxy->Stop();
 
-    proxy->Close();
-    WaitForCloseTimer(kTestCloseDelayMs);
+    CloseAndWaitForCloseTimer(proxy, &stream);
     EXPECT_TRUE(stream.stop_called());
     EXPECT_TRUE(stream.start_called());
   }
 
-  // Verify that the stream is closed after Stop is called.
+  // Verify that the stream is closed after Stop() is called.
   void CloseAfterStop(AudioOutputDispatcher* dispatcher) {
     MockAudioOutputStream stream(&manager_, params_);
 
@@ -241,8 +242,6 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(true));
     EXPECT_CALL(stream, SetVolume(_))
         .Times(1);
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy->Open());
@@ -251,19 +250,14 @@ class AudioOutputProxyTest : public testing::Test {
     OnStart();
     proxy->Stop();
 
-    // Wait for StopStream() to post StopStreamTask().
-    base::PlatformThread::Sleep(pause_delay_ * 2);
-    WaitForCloseTimer(kTestCloseDelayMs);
-
-    // Verify expectation before calling Close().
-    Mock::VerifyAndClear(&stream);
-
+    // Wait for the close timer to fire after StopStream().
+    WaitForCloseTimer(&stream);
     proxy->Close();
     EXPECT_TRUE(stream.stop_called());
     EXPECT_TRUE(stream.start_called());
   }
 
-  // Create two streams, but don't start them. Only one device must be open.
+  // Create two streams, but don't start them.  Only one device must be opened.
   void TwoStreams(AudioOutputDispatcher* dispatcher) {
     MockAudioOutputStream stream(&manager_, params_);
 
@@ -271,16 +265,13 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(&stream));
     EXPECT_CALL(stream, Open())
         .WillOnce(Return(true));
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy1 = new AudioOutputProxy(dispatcher);
     AudioOutputProxy* proxy2 = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy1->Open());
     EXPECT_TRUE(proxy2->Open());
     proxy1->Close();
-    proxy2->Close();
-    WaitForCloseTimer(kTestCloseDelayMs);
+    CloseAndWaitForCloseTimer(proxy2, &stream);
     EXPECT_FALSE(stream.stop_called());
     EXPECT_FALSE(stream.start_called());
   }
@@ -299,7 +290,6 @@ class AudioOutputProxyTest : public testing::Test {
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_FALSE(proxy->Open());
     proxy->Close();
-    WaitForCloseTimer(kTestCloseDelayMs);
     EXPECT_FALSE(stream.stop_called());
     EXPECT_FALSE(stream.start_called());
   }
@@ -311,61 +301,45 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(&stream));
     EXPECT_CALL(stream, Open())
         .WillOnce(Return(true));
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy->Open());
 
-    // Simulate a delay.
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMilliseconds(kTestCloseDelayMs) * 2);
-    message_loop_.RunUntilIdle();
-
-    // Verify expectation before calling Close().
-    Mock::VerifyAndClear(&stream);
-
+    WaitForCloseTimer(&stream);
     proxy->Close();
     EXPECT_FALSE(stream.stop_called());
     EXPECT_FALSE(stream.start_called());
   }
 
-  void TwoStreams_OnePlaying(AudioOutputDispatcher* dispatcher) {
-    MockAudioOutputStream stream1(&manager_, params_);
-    MockAudioOutputStream stream2(&manager_, params_);
+  void OneStream_TwoPlays(AudioOutputDispatcher* dispatcher) {
+    MockAudioOutputStream stream(&manager_, params_);
 
     EXPECT_CALL(manager(), MakeAudioOutputStream(_, _, _))
-        .WillOnce(Return(&stream1))
-        .WillOnce(Return(&stream2));
+        .WillOnce(Return(&stream));
 
-    EXPECT_CALL(stream1, Open())
+    EXPECT_CALL(stream, Open())
         .WillOnce(Return(true));
-    EXPECT_CALL(stream1, SetVolume(_))
-        .Times(1);
-    EXPECT_CALL(stream1, Close())
-        .Times(1);
-
-    EXPECT_CALL(stream2, Open())
-        .WillOnce(Return(true));
-    EXPECT_CALL(stream2, Close())
-        .Times(1);
+    EXPECT_CALL(stream, SetVolume(_))
+        .Times(2);
 
     AudioOutputProxy* proxy1 = new AudioOutputProxy(dispatcher);
-    AudioOutputProxy* proxy2 = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy1->Open());
-    EXPECT_TRUE(proxy2->Open());
 
     proxy1->Start(&callback_);
-    message_loop_.RunUntilIdle();
     OnStart();
     proxy1->Stop();
 
+    // The stream should now be idle and get reused by |proxy2|.
+    AudioOutputProxy* proxy2 = new AudioOutputProxy(dispatcher);
+    EXPECT_TRUE(proxy2->Open());
+    proxy2->Start(&callback_);
+    OnStart();
+    proxy2->Stop();
+
     proxy1->Close();
-    proxy2->Close();
-    EXPECT_TRUE(stream1.stop_called());
-    EXPECT_TRUE(stream1.start_called());
-    EXPECT_FALSE(stream2.stop_called());
-    EXPECT_FALSE(stream2.start_called());
+    CloseAndWaitForCloseTimer(proxy2, &stream);
+    EXPECT_TRUE(stream.stop_called());
+    EXPECT_TRUE(stream.start_called());
   }
 
   void TwoStreams_BothPlaying(AudioOutputDispatcher* dispatcher) {
@@ -380,14 +354,10 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(true));
     EXPECT_CALL(stream1, SetVolume(_))
         .Times(1);
-    EXPECT_CALL(stream1, Close())
-        .Times(1);
 
     EXPECT_CALL(stream2, Open())
         .WillOnce(Return(true));
     EXPECT_CALL(stream2, SetVolume(_))
-        .Times(1);
-    EXPECT_CALL(stream2, Close())
         .Times(1);
 
     AudioOutputProxy* proxy1 = new AudioOutputProxy(dispatcher);
@@ -399,10 +369,11 @@ class AudioOutputProxyTest : public testing::Test {
     proxy2->Start(&callback_);
     OnStart();
     proxy1->Stop();
-    proxy2->Stop();
+    CloseAndWaitForCloseTimer(proxy1, &stream1);
 
-    proxy1->Close();
-    proxy2->Close();
+    proxy2->Stop();
+    CloseAndWaitForCloseTimer(proxy2, &stream2);
+
     EXPECT_TRUE(stream1.stop_called());
     EXPECT_TRUE(stream1.start_called());
     EXPECT_TRUE(stream2.stop_called());
@@ -416,19 +387,11 @@ class AudioOutputProxyTest : public testing::Test {
         .WillOnce(Return(&stream));
     EXPECT_CALL(stream, Open())
         .WillOnce(Return(true));
-    EXPECT_CALL(stream, Close())
-        .Times(1);
 
     AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher);
     EXPECT_TRUE(proxy->Open());
 
-    // Simulate a delay.
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMilliseconds(kTestCloseDelayMs) * 2);
-    message_loop_.RunUntilIdle();
-
-    // Verify expectation before calling Close().
-    Mock::VerifyAndClear(&stream);
+    WaitForCloseTimer(&stream);
 
     // |stream| is closed at this point. Start() should reopen it again.
     EXPECT_CALL(manager(), MakeAudioOutputStream(_, _, _))
@@ -452,7 +415,6 @@ class AudioOutputProxyTest : public testing::Test {
 
   base::MessageLoop message_loop_;
   scoped_refptr<AudioOutputDispatcherImpl> dispatcher_impl_;
-  base::TimeDelta pause_delay_;
   MockAudioManager manager_;
   MockAudioSourceCallback callback_;
   AudioParameters params_;
@@ -465,7 +427,6 @@ class AudioOutputResamplerTest : public AudioOutputProxyTest {
   }
 
   virtual void InitDispatcher(base::TimeDelta close_delay) OVERRIDE {
-    AudioOutputProxyTest::InitDispatcher(close_delay);
     // Use a low sample rate and large buffer size when testing otherwise the
     // FakeAudioOutputStream will keep the message loop busy indefinitely; i.e.,
     // RunUntilIdle() will never terminate.
@@ -478,10 +439,13 @@ class AudioOutputResamplerTest : public AudioOutputProxyTest {
   }
 
   virtual void OnStart() OVERRIDE {
-    // Let start run for a bit.
-    message_loop_.RunUntilIdle();
-    base::PlatformThread::Sleep(
+    // Let Start() run for a bit.
+    base::RunLoop run_loop;
+    message_loop_.PostDelayedTask(
+        FROM_HERE,
+        run_loop.QuitClosure(),
         base::TimeDelta::FromMilliseconds(kStartRunTimeMs));
+    run_loop.Run();
   }
 
  protected:
@@ -490,86 +454,82 @@ class AudioOutputResamplerTest : public AudioOutputProxyTest {
 };
 
 TEST_F(AudioOutputProxyTest, CreateAndClose) {
-  AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher_impl_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(dispatcher_impl_);
   proxy->Close();
 }
 
 TEST_F(AudioOutputResamplerTest, CreateAndClose) {
-  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_);
   proxy->Close();
 }
 
 TEST_F(AudioOutputProxyTest, OpenAndClose) {
-  OpenAndClose(dispatcher_impl_.get());
+  OpenAndClose(dispatcher_impl_);
 }
 
 TEST_F(AudioOutputResamplerTest, OpenAndClose) {
-  OpenAndClose(resampler_.get());
+  OpenAndClose(resampler_);
 }
 
 // Create a stream, and verify that it is closed after kTestCloseDelayMs.
 // if it doesn't start playing.
 TEST_F(AudioOutputProxyTest, CreateAndWait) {
-  CreateAndWait(dispatcher_impl_.get());
+  CreateAndWait(dispatcher_impl_);
 }
 
 // Create a stream, and verify that it is closed after kTestCloseDelayMs.
 // if it doesn't start playing.
 TEST_F(AudioOutputResamplerTest, CreateAndWait) {
-  CreateAndWait(resampler_.get());
+  CreateAndWait(resampler_);
 }
 
 TEST_F(AudioOutputProxyTest, StartAndStop) {
-  StartAndStop(dispatcher_impl_.get());
+  StartAndStop(dispatcher_impl_);
 }
 
 TEST_F(AudioOutputResamplerTest, StartAndStop) {
-  StartAndStop(resampler_.get());
+  StartAndStop(resampler_);
 }
 
 TEST_F(AudioOutputProxyTest, CloseAfterStop) {
-  CloseAfterStop(dispatcher_impl_.get());
+  CloseAfterStop(dispatcher_impl_);
 }
 
 TEST_F(AudioOutputResamplerTest, CloseAfterStop) {
-  CloseAfterStop(resampler_.get());
+  CloseAfterStop(resampler_);
 }
 
-TEST_F(AudioOutputProxyTest, TwoStreams) { TwoStreams(dispatcher_impl_.get()); }
+TEST_F(AudioOutputProxyTest, TwoStreams) { TwoStreams(dispatcher_impl_); }
 
-TEST_F(AudioOutputResamplerTest, TwoStreams) { TwoStreams(resampler_.get()); }
+TEST_F(AudioOutputResamplerTest, TwoStreams) { TwoStreams(resampler_); }
 
 // Two streams: verify that second stream is allocated when the first
 // starts playing.
-TEST_F(AudioOutputProxyTest, TwoStreams_OnePlaying) {
-  InitDispatcher(base::TimeDelta::FromSeconds(kTestBigCloseDelaySeconds));
-  TwoStreams_OnePlaying(dispatcher_impl_.get());
+TEST_F(AudioOutputProxyTest, OneStream_TwoPlays) {
+  OneStream_TwoPlays(dispatcher_impl_);
 }
 
-TEST_F(AudioOutputResamplerTest, TwoStreams_OnePlaying) {
-  InitDispatcher(base::TimeDelta::FromSeconds(kTestBigCloseDelaySeconds));
-  TwoStreams_OnePlaying(resampler_.get());
+TEST_F(AudioOutputResamplerTest, OneStream_TwoPlays) {
+  OneStream_TwoPlays(resampler_);
 }
 
 // Two streams, both are playing. Dispatcher should not open a third stream.
 TEST_F(AudioOutputProxyTest, TwoStreams_BothPlaying) {
-  InitDispatcher(base::TimeDelta::FromSeconds(kTestBigCloseDelaySeconds));
-  TwoStreams_BothPlaying(dispatcher_impl_.get());
+  TwoStreams_BothPlaying(dispatcher_impl_);
 }
 
 TEST_F(AudioOutputResamplerTest, TwoStreams_BothPlaying) {
-  InitDispatcher(base::TimeDelta::FromSeconds(kTestBigCloseDelaySeconds));
-  TwoStreams_BothPlaying(resampler_.get());
+  TwoStreams_BothPlaying(resampler_);
 }
 
-TEST_F(AudioOutputProxyTest, OpenFailed) { OpenFailed(dispatcher_impl_.get()); }
+TEST_F(AudioOutputProxyTest, OpenFailed) { OpenFailed(dispatcher_impl_); }
 
 // Start() method failed.
 TEST_F(AudioOutputProxyTest, StartFailed) {
-  StartFailed(dispatcher_impl_.get());
+  StartFailed(dispatcher_impl_);
 }
 
-TEST_F(AudioOutputResamplerTest, StartFailed) { StartFailed(resampler_.get()); }
+TEST_F(AudioOutputResamplerTest, StartFailed) { StartFailed(resampler_); }
 
 // Simulate AudioOutputStream::Create() failure with a low latency stream and
 // ensure AudioOutputResampler falls back to the high latency path.
@@ -581,13 +541,10 @@ TEST_F(AudioOutputResamplerTest, LowLatencyCreateFailedFallback) {
       .WillRepeatedly(Return(&stream));
   EXPECT_CALL(stream, Open())
       .WillOnce(Return(true));
-  EXPECT_CALL(stream, Close())
-      .Times(1);
 
-  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_);
   EXPECT_TRUE(proxy->Open());
-  proxy->Close();
-  WaitForCloseTimer(kTestCloseDelayMs);
+  CloseAndWaitForCloseTimer(proxy, &stream);
 }
 
 // Simulate AudioOutputStream::Open() failure with a low latency stream and
@@ -605,13 +562,10 @@ TEST_F(AudioOutputResamplerTest, LowLatencyOpenFailedFallback) {
       .Times(1);
   EXPECT_CALL(okay_stream, Open())
       .WillOnce(Return(true));
-  EXPECT_CALL(okay_stream, Close())
-      .Times(1);
 
-  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_);
   EXPECT_TRUE(proxy->Open());
-  proxy->Close();
-  WaitForCloseTimer(kTestCloseDelayMs);
+  CloseAndWaitForCloseTimer(proxy, &okay_stream);
 }
 
 // Simulate failures to open both the low latency and the fallback high latency
@@ -642,13 +596,10 @@ TEST_F(AudioOutputResamplerTest, HighLatencyFallbackFailed) {
       .WillOnce(Return(&okay_stream));
   EXPECT_CALL(okay_stream, Open())
       .WillOnce(Return(true));
-  EXPECT_CALL(okay_stream, Close())
-      .Times(1);
 
-  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_);
   EXPECT_TRUE(proxy->Open());
-  proxy->Close();
-  WaitForCloseTimer(kTestCloseDelayMs);
+  CloseAndWaitForCloseTimer(proxy, &okay_stream);
 }
 
 // Simulate failures to open both the low latency, the fallback high latency
@@ -666,15 +617,69 @@ TEST_F(AudioOutputResamplerTest, AllFallbackFailed) {
       .Times(kFallbackCount)
       .WillRepeatedly(Return(static_cast<AudioOutputStream*>(NULL)));
 
-  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_.get());
+  AudioOutputProxy* proxy = new AudioOutputProxy(resampler_);
   EXPECT_FALSE(proxy->Open());
   proxy->Close();
-  WaitForCloseTimer(kTestCloseDelayMs);
 }
 
 // Simulate an eventual OpenStream() failure; i.e. successful OpenStream() calls
 // eventually followed by one which fails; root cause of http://crbug.com/150619
 TEST_F(AudioOutputResamplerTest, LowLatencyOpenEventuallyFails) {
+  MockAudioOutputStream stream1(&manager_, params_);
+  MockAudioOutputStream stream2(&manager_, params_);
+
+  // Setup the mock such that all three streams are successfully created.
+  EXPECT_CALL(manager(), MakeAudioOutputStream(_, _, _))
+      .WillOnce(Return(&stream1))
+      .WillOnce(Return(&stream2))
+      .WillRepeatedly(Return(static_cast<AudioOutputStream*>(NULL)));
+
+  // Stream1 should be able to successfully open and start.
+  EXPECT_CALL(stream1, Open())
+      .WillOnce(Return(true));
+  EXPECT_CALL(stream1, SetVolume(_))
+      .Times(1);
+
+  // Stream2 should also be able to successfully open and start.
+  EXPECT_CALL(stream2, Open())
+      .WillOnce(Return(true));
+  EXPECT_CALL(stream2, SetVolume(_))
+      .Times(1);
+
+  // Open and start the first proxy and stream.
+  AudioOutputProxy* proxy1 = new AudioOutputProxy(resampler_);
+  EXPECT_TRUE(proxy1->Open());
+  proxy1->Start(&callback_);
+  OnStart();
+
+  // Open and start the second proxy and stream.
+  AudioOutputProxy* proxy2 = new AudioOutputProxy(resampler_);
+  EXPECT_TRUE(proxy2->Open());
+  proxy2->Start(&callback_);
+  OnStart();
+
+  // Attempt to open the third stream which should fail.
+  AudioOutputProxy* proxy3 = new AudioOutputProxy(resampler_);
+  EXPECT_FALSE(proxy3->Open());
+  proxy3->Close();
+
+  // Perform the required Stop()/Close() shutdown dance for each proxy.  Under
+  // the hood each proxy should correctly call CloseStream() if OpenStream()
+  // succeeded or not.
+  proxy2->Stop();
+  CloseAndWaitForCloseTimer(proxy2, &stream2);
+
+  proxy1->Stop();
+  CloseAndWaitForCloseTimer(proxy1, &stream1);
+
+  EXPECT_TRUE(stream1.stop_called());
+  EXPECT_TRUE(stream1.start_called());
+  EXPECT_TRUE(stream2.stop_called());
+  EXPECT_TRUE(stream2.start_called());
+}
+
+// Ensures the methods used to fix audio output wedges are working correctly.
+TEST_F(AudioOutputResamplerTest, WedgeFix) {
   MockAudioOutputStream stream1(&manager_, params_);
   MockAudioOutputStream stream2(&manager_, params_);
   MockAudioOutputStream stream3(&manager_, params_);
@@ -683,31 +688,15 @@ TEST_F(AudioOutputResamplerTest, LowLatencyOpenEventuallyFails) {
   EXPECT_CALL(manager(), MakeAudioOutputStream(_, _, _))
       .WillOnce(Return(&stream1))
       .WillOnce(Return(&stream2))
-      .WillOnce(Return(&stream3))
-      .WillRepeatedly(Return(static_cast<AudioOutputStream*>(NULL)));
+      .WillOnce(Return(&stream3));
 
   // Stream1 should be able to successfully open and start.
   EXPECT_CALL(stream1, Open())
       .WillOnce(Return(true));
-  EXPECT_CALL(stream1, Close())
-      .Times(1);
-  EXPECT_CALL(stream1, SetVolume(_))
-      .Times(1);
-
-  // Stream2 should also be able to successfully open and start.
+  EXPECT_CALL(stream1, SetVolume(_));
   EXPECT_CALL(stream2, Open())
       .WillOnce(Return(true));
-  EXPECT_CALL(stream2, Close())
-      .Times(1);
-  EXPECT_CALL(stream2, SetVolume(_))
-      .Times(1);
-
-  // Stream3 should fail on Open() (yet still be closed since
-  // MakeAudioOutputStream returned a valid AudioOutputStream object).
-  EXPECT_CALL(stream3, Open())
-      .WillOnce(Return(false));
-  EXPECT_CALL(stream3, Close())
-      .Times(1);
+  EXPECT_CALL(stream2, SetVolume(_));
 
   // Open and start the first proxy and stream.
   AudioOutputProxy* proxy1 = new AudioOutputProxy(resampler_.get());
@@ -715,34 +704,49 @@ TEST_F(AudioOutputResamplerTest, LowLatencyOpenEventuallyFails) {
   proxy1->Start(&callback_);
   OnStart();
 
-  // Open and start the second proxy and stream.
+  // Open, but do not start the second proxy.
   AudioOutputProxy* proxy2 = new AudioOutputProxy(resampler_.get());
   EXPECT_TRUE(proxy2->Open());
-  proxy2->Start(&callback_);
+
+  // Open, start and then stop the third proxy.
+  AudioOutputProxy* proxy3 = new AudioOutputProxy(resampler_.get());
+  EXPECT_TRUE(proxy3->Open());
+  proxy3->Start(&callback_);
+  OnStart();
+  proxy3->Stop();
+
+  // Wait for stream to timeout and shutdown.
+  WaitForCloseTimer(&stream2);
+
+  EXPECT_CALL(stream1, Close());
+  resampler_->CloseStreamsForWedgeFix();
+
+  // Don't pump the MessageLoop between CloseStreamsForWedgeFix() and
+  // RestartStreamsForWedgeFix() to simulate intended usage.  The OnStart() call
+  // will take care of necessary work.
+
+  // Stream3 should take Stream1's place after RestartStreamsForWedgeFix().  No
+  // additional streams should be opened for proxy2 and proxy3.
+  EXPECT_CALL(stream3, Open())
+      .WillOnce(Return(true));
+  EXPECT_CALL(stream3, SetVolume(_));
+
+  resampler_->RestartStreamsForWedgeFix();
   OnStart();
 
-  // Attempt to open the third stream which should fail.
-  AudioOutputProxy* proxy3 = new AudioOutputProxy(resampler_.get());
-  EXPECT_FALSE(proxy3->Open());
-
-  // Perform the required Stop()/Close() shutdown dance for each proxy.  Under
-  // the hood each proxy should correctly call CloseStream() if OpenStream()
-  // succeeded or not.
-  proxy3->Stop();
+  // Perform the required Stop()/Close() shutdown dance for each proxy.
   proxy3->Close();
-  proxy2->Stop();
   proxy2->Close();
   proxy1->Stop();
-  proxy1->Close();
+  CloseAndWaitForCloseTimer(proxy1, &stream3);
 
   // Wait for all of the messages to fly and then verify stream behavior.
-  WaitForCloseTimer(kTestCloseDelayMs);
   EXPECT_TRUE(stream1.stop_called());
   EXPECT_TRUE(stream1.start_called());
   EXPECT_TRUE(stream2.stop_called());
   EXPECT_TRUE(stream2.start_called());
-  EXPECT_FALSE(stream3.stop_called());
-  EXPECT_FALSE(stream3.start_called());
+  EXPECT_TRUE(stream3.stop_called());
+  EXPECT_TRUE(stream3.start_called());
 }
 
 }  // namespace media

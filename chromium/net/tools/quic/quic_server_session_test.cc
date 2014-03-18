@@ -4,14 +4,13 @@
 
 #include "net/tools/quic/quic_server_session.h"
 
-
-#include "net/quic/crypto/crypto_server_config.h"
+#include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
+#include "net/quic/test_tools/quic_data_stream_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
-#include "net/quic/test_tools/reliable_quic_stream_peer.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -20,7 +19,7 @@
 using __gnu_cxx::vector;
 using net::test::MockConnection;
 using net::test::QuicConnectionPeer;
-using net::test::ReliableQuicStreamPeer;
+using net::test::QuicDataStreamPeer;
 using testing::_;
 using testing::StrictMock;
 
@@ -30,19 +29,19 @@ namespace test {
 
 class QuicServerSessionPeer {
  public:
-  static ReliableQuicStream* GetIncomingReliableStream(
+  static QuicDataStream* GetIncomingReliableStream(
       QuicServerSession* s, QuicStreamId id) {
     return s->GetIncomingReliableStream(id);
   }
-  static ReliableQuicStream* GetStream(QuicServerSession* s, QuicStreamId id) {
-    return s->GetStream(id);
+  static QuicDataStream* GetDataStream(QuicServerSession* s, QuicStreamId id) {
+    return s->GetDataStream(id);
   }
 };
 
-class CloseOnDataStream : public ReliableQuicStream {
+class CloseOnDataStream : public QuicDataStream {
  public:
   CloseOnDataStream(QuicStreamId id, QuicSession* session)
-      : ReliableQuicStream(id, session) {
+      : QuicDataStream(id, session) {
   }
 
   virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE {
@@ -65,9 +64,9 @@ class TestQuicQuicServerSession : public QuicServerSession {
         close_stream_on_data_(false) {
   }
 
-  virtual ReliableQuicStream* CreateIncomingReliableStream(
+  virtual QuicDataStream* CreateIncomingDataStream(
       QuicStreamId id) OVERRIDE {
-    if (!ShouldCreateIncomingReliableStream(id)) {
+    if (!ShouldCreateIncomingDataStream(id)) {
       return NULL;
     }
     if (close_stream_on_data_) {
@@ -90,13 +89,12 @@ namespace {
 class QuicServerSessionTest : public ::testing::Test {
  protected:
   QuicServerSessionTest()
-      : guid_(1),
-        crypto_config_(QuicCryptoServerConfig::TESTING,
+      : crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance()) {
     config_.SetDefaults();
     config_.set_max_streams_per_connection(3, 3);
 
-    connection_ = new MockConnection(guid_, IPEndPoint(), 0, &eps_, true);
+    connection_ = new MockConnection(true);
     session_.reset(new TestQuicQuicServerSession(
         config_, connection_, &owner_));
     session_->InitializeSession(crypto_config_);
@@ -104,14 +102,12 @@ class QuicServerSessionTest : public ::testing::Test {
   }
 
   void MarkHeadersReadForStream(QuicStreamId id) {
-    ReliableQuicStream* stream = QuicServerSessionPeer::GetStream(
+    QuicDataStream* stream = QuicServerSessionPeer::GetDataStream(
         session_.get(), id);
     ASSERT_TRUE(stream != NULL);
-    ReliableQuicStreamPeer::SetHeadersDecompressed(stream, true);
+    QuicDataStreamPeer::SetHeadersDecompressed(stream, true);
   }
 
-  QuicGuid guid_;
-  EpollServer eps_;
   StrictMock<MockQuicSessionOwner> owner_;
   MockConnection* connection_;
   QuicConfig config_;
@@ -123,11 +119,7 @@ class QuicServerSessionTest : public ::testing::Test {
 TEST_F(QuicServerSessionTest, CloseStreamDueToReset) {
   // Open a stream, then reset it.
   // Send two bytes of payload to open it.
-  QuicPacketHeader header;
-  header.public_header.guid = guid_;
-  header.public_header.reset_flag = false;
-  header.public_header.version_flag = false;
-  QuicStreamFrame data1(3, false, 0, "HT");
+  QuicStreamFrame data1(3, false, 0, MakeIOVector("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
   EXPECT_TRUE(visitor_->OnStreamFrames(frames));
@@ -156,11 +148,7 @@ TEST_F(QuicServerSessionTest, NeverOpenStreamDueToReset) {
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
   // Send two bytes of payload.
-  QuicPacketHeader header;
-  header.public_header.guid = guid_;
-  header.public_header.reset_flag = false;
-  header.public_header.version_flag = false;
-  QuicStreamFrame data1(3, false, 0, "HT");
+  QuicStreamFrame data1(3, false, 0, MakeIOVector("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
 
@@ -176,11 +164,7 @@ TEST_F(QuicServerSessionTest, NeverOpenStreamDueToReset) {
 }
 
 TEST_F(QuicServerSessionTest, GoOverPrematureClosedStreamLimit) {
-  QuicPacketHeader header;
-  header.public_header.guid = guid_;
-  header.public_header.reset_flag = false;
-  header.public_header.version_flag = false;
-  QuicStreamFrame data1(3, false, 0, "H");
+  QuicStreamFrame data1(3, false, 0, MakeIOVector("H"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
 
@@ -194,14 +178,12 @@ TEST_F(QuicServerSessionTest, GoOverPrematureClosedStreamLimit) {
 }
 
 TEST_F(QuicServerSessionTest, AcceptClosedStream) {
-  QuicPacketHeader header;
-  header.public_header.guid = guid_;
-  header.public_header.reset_flag = false;
-  header.public_header.version_flag = false;
   vector<QuicStreamFrame> frames;
   // Send (empty) compressed headers followed by two bytes of data.
-  frames.push_back(QuicStreamFrame(3, false, 0, "\1\0\0\0\0\0\0\0HT"));
-  frames.push_back(QuicStreamFrame(5, false, 0, "\2\0\0\0\0\0\0\0HT"));
+  frames.push_back(
+      QuicStreamFrame(3, false, 0, MakeIOVector("\1\0\0\0\0\0\0\0HT")));
+  frames.push_back(
+      QuicStreamFrame(5, false, 0, MakeIOVector("\2\0\0\0\0\0\0\0HT")));
   EXPECT_TRUE(visitor_->OnStreamFrames(frames));
 
   // Pretend we got full headers, so we won't trigger the 'unercoverable
@@ -216,8 +198,8 @@ TEST_F(QuicServerSessionTest, AcceptClosedStream) {
   // past the reset point of stream 3.  As it's a closed stream we just drop the
   // data on the floor, but accept the packet because it has data for stream 5.
   frames.clear();
-  frames.push_back(QuicStreamFrame(3, false, 2, "TP"));
-  frames.push_back(QuicStreamFrame(5, false, 2, "TP"));
+  frames.push_back(QuicStreamFrame(3, false, 2, MakeIOVector("TP")));
+  frames.push_back(QuicStreamFrame(5, false, 2, MakeIOVector("TP")));
   EXPECT_TRUE(visitor_->OnStreamFrames(frames));
 }
 

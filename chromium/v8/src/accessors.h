@@ -86,6 +86,13 @@ class Accessors : public AllStatic {
   static Handle<AccessorInfo> MakeModuleExport(
       Handle<String> name, int index, PropertyAttributes attributes);
 
+  // Returns true for properties that are accessors to object fields.
+  // If true, *object_offset contains offset of object field.
+  static bool IsJSObjectFieldAccessor(
+      Handle<Map> map, Handle<String> name,
+      int* object_offset);
+
+
  private:
   // Accessor functions only used through the descriptor.
   static MaybeObject* FunctionSetPrototype(Isolate* isolate,
@@ -142,7 +149,7 @@ class Accessors : public AllStatic {
                                                     void*);
 
   // Helper functions.
-  static Object* FlattenNumber(Isolate* isolate, Object* value);
+  static Handle<Object> FlattenNumber(Isolate* isolate, Handle<Object> value);
   static MaybeObject* IllegalSetter(Isolate* isolate,
                                     JSObject*,
                                     Object*,

@@ -21,6 +21,7 @@
 #include "net/http/http_transaction.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
 
@@ -68,15 +69,17 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
+  virtual void SetWebSocketHandshakeStreamCreateHelper(
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
 
   // HttpStreamRequest::Delegate methods:
   virtual void OnStreamReady(const SSLConfig& used_ssl_config,
                              const ProxyInfo& used_proxy_info,
                              HttpStreamBase* stream) OVERRIDE;
-  virtual void OnWebSocketStreamReady(
+  virtual void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      WebSocketStreamBase* stream) OVERRIDE;
+      WebSocketHandshakeStreamBase* stream) OVERRIDE;
   virtual void OnStreamFailed(int status,
                               const SSLConfig& used_ssl_config) OVERRIDE;
   virtual void OnCertificateError(int status,
@@ -184,6 +187,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Called to handle a client certificate request.
   int HandleCertificateRequest(int error);
 
+  // Called to possibly handle a client authentication error.
+  void HandleClientAuthError(int error);
+
   // Called to possibly recover from an SSL handshake error.  Sets next_state_
   // and returns OK if recovering from the error.  Otherwise, the same error
   // code is returned.
@@ -242,6 +248,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Get the {scheme, host, path, port} for the authentication target
   GURL AuthURL(HttpAuth::Target target) const;
 
+  // Returns true if this transaction is for a WebSocket handshake
+  bool ForWebSocketHandshake() const;
+
   // Debug helper.
   static std::string DescribeState(State state);
 
@@ -256,7 +265,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   CompletionCallback io_callback_;
   CompletionCallback callback_;
 
-  scoped_refptr<HttpNetworkSession> session_;
+  HttpNetworkSession* session_;
 
   BoundNetLog net_log_;
   const HttpRequestInfo* request_;
@@ -279,6 +288,12 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
+  // fallback_error_code contains the error code that caused the last TLS
+  // fallback. If the fallback connection results in
+  // ERR_SSL_INAPPROPRIATE_FALLBACK (i.e. the server indicated that the
+  // fallback should not have been needed) then we use this value to return the
+  // original error that triggered the fallback.
+  int fallback_error_code_;
 
   HttpRequestHeaders request_headers_;
 
@@ -305,6 +320,11 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // True when the tunnel is in the process of being established - we can't
   // read from the socket until the tunnel is done.
   bool establishing_tunnel_;
+
+  // The helper object to use to create WebSocketHandshakeStreamBase
+  // objects. Only relevant when establishing a WebSocket connection.
+  WebSocketHandshakeStreamBase::CreateHelper*
+      websocket_handshake_stream_base_create_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

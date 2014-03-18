@@ -31,34 +31,16 @@
 #include "config.h"
 #include "WebFontCache.h"
 
-#include "core/platform/graphics/FontCache.h"
+#include "platform/fonts/FontCache.h"
 
 using namespace WebCore;
 
-namespace WebKit {
-
-// static
-size_t WebFontCache::fontDataCount()
-{
-    return fontCache()->fontDataCount();
-}
-
-// static
-size_t WebFontCache::inactiveFontDataCount()
-{
-    return fontCache()->inactiveFontDataCount();
-}
+namespace blink {
 
 // static
 void WebFontCache::clear()
 {
-    fontCache()->invalidate();
+    FontCache::fontCache()->invalidate();
 }
 
-// static
-void WebFontCache::prune()
-{
-    fontCache()->purgeInactiveFontData();
-}
-
-}  // namespace WebKit
+}  // namespace blink

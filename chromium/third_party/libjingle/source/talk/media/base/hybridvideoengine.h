@@ -87,8 +87,10 @@ class HybridVideoMediaChannel : public VideoMediaChannel {
 
   virtual bool GetStats(VideoMediaInfo* info);
 
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet);
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time);
   virtual void OnReadyToSend(bool ready);
 
   virtual void UpdateAspectRatio(int ratio_w, int ratio_h);
@@ -183,8 +185,8 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
         channel1.release(), channel2.release());
   }
 
-  bool SetOptions(int o) {
-    return video1_.SetOptions(o) && video2_.SetOptions(o);
+  bool SetOptions(const VideoOptions& options) {
+    return video1_.SetOptions(options) && video2_.SetOptions(options);
   }
   bool SetDefaultEncoderConfig(const VideoEncoderConfig& config) {
     VideoEncoderConfig conf = config;
@@ -203,6 +205,20 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
       }
     }
     return true;
+  }
+  VideoEncoderConfig GetDefaultEncoderConfig() const {
+    // This looks pretty strange, but, in practice, it'll do sane things if
+    // GetDefaultEncoderConfig is only called after SetDefaultEncoderConfig,
+    // since both engines should be essentially equivalent at that point. If it
+    // hasn't been called, though, we'll use the first meaningful encoder
+    // config, or the config from the second video engine if neither are
+    // meaningful.
+    VideoEncoderConfig config = video1_.GetDefaultEncoderConfig();
+    if (config.max_codec.width != 0) {
+      return config;
+    } else {
+      return video2_.GetDefaultEncoderConfig();
+    }
   }
   const std::vector<VideoCodec>& codecs() const {
     return codecs_;

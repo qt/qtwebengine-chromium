@@ -7,11 +7,12 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_CLIENT_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_CLIENT_TEST_HELPER_H_
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer.h"
-#include "gpu/command_buffer/common/compiler_specific.h"
 #include "gpu/command_buffer/common/gpu_control.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,7 +40,6 @@ class MockCommandBufferBase : public CommandBuffer {
   virtual void SetToken(int32 token) OVERRIDE;
   virtual void SetParseError(error::Error error) OVERRIDE;
   virtual void SetContextLostReason(error::ContextLostReason reason) OVERRIDE;
-  virtual uint32 InsertSyncPoint() OVERRIDE;
 
   // Get's the Id of the next transfer buffer that will be returned
   // by CreateTransferBuffer. This is useful for testing expected ids.
@@ -87,12 +87,24 @@ class MockClientGpuControl : public GpuControl {
   MockClientGpuControl();
   virtual ~MockClientGpuControl();
 
+  MOCK_METHOD0(GetCapabilities, Capabilities());
   MOCK_METHOD4(CreateGpuMemoryBuffer,
                gfx::GpuMemoryBuffer*(size_t width,
                                      size_t height,
                                      unsigned internalformat,
                                      int32* id));
   MOCK_METHOD1(DestroyGpuMemoryBuffer, void(int32 id));
+  MOCK_METHOD2(GenerateMailboxNames, bool(unsigned num,
+                                          std::vector<gpu::Mailbox>* names));
+  MOCK_METHOD0(InsertSyncPoint, uint32());
+  MOCK_METHOD2(SignalSyncPoint, void(uint32 id,
+                                     const base::Closure& callback));
+  MOCK_METHOD1(Echo, void(const base::Closure& callback));
+
+  MOCK_METHOD2(SignalQuery, void(uint32 query, const base::Closure& callback));
+  MOCK_METHOD1(SetSurfaceVisible, void(bool visible));
+  MOCK_METHOD1(SendManagedMemoryStats,
+               void(const ManagedMemoryStats& stats));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockClientGpuControl);

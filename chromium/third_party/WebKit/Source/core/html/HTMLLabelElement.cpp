@@ -27,8 +27,8 @@
 
 #include "HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/FormAssociatedElement.h"
 
 namespace WebCore {
@@ -44,16 +44,15 @@ static bool supportsLabels(Element* element)
     return toLabelableElement(element)->supportLabels();
 }
 
-inline HTMLLabelElement::HTMLLabelElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLLabelElement::HTMLLabelElement(Document& document)
+    : HTMLElement(labelTag, document)
 {
-    ASSERT(hasTagName(labelTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLabelElement> HTMLLabelElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document)
 {
-    return adoptRef(new HTMLLabelElement(tagName, document));
+    return adoptRef(new HTMLLabelElement(document));
 }
 
 bool HTMLLabelElement::rendererIsFocusable() const
@@ -70,7 +69,7 @@ LabelableElement* HTMLLabelElement::control()
         // per http://dev.w3.org/html5/spec/Overview.html#the-label-element
         // the form element must be "labelable form-associated element".
         Element* element = this;
-        while ((element = ElementTraversal::next(element, this))) {
+        while ((element = ElementTraversal::next(*element, this))) {
             if (!supportsLabels(element))
                 continue;
             return toLabelableElement(element);
@@ -86,22 +85,22 @@ LabelableElement* HTMLLabelElement::control()
     return 0;
 }
 
-HTMLFormElement* HTMLLabelElement::form() const
+HTMLFormElement* HTMLLabelElement::formOwner() const
 {
     return FormAssociatedElement::findAssociatedForm(this, 0);
 }
 
-void HTMLLabelElement::setActive(bool down, bool pause)
+void HTMLLabelElement::setActive(bool down)
 {
     if (down == active())
         return;
 
     // Update our status first.
-    HTMLElement::setActive(down, pause);
+    HTMLElement::setActive(down);
 
     // Also update our corresponding control.
     if (HTMLElement* element = control())
-        element->setActive(down, pause);
+        element->setActive(down);
 }
 
 void HTMLLabelElement::setHovered(bool over)
@@ -138,7 +137,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
 {
     static bool processingClick = false;
 
-    if (evt->type() == eventNames().clickEvent && !processingClick) {
+    if (evt->type() == EventTypeNames::click && !processingClick) {
         RefPtr<HTMLElement> element = control();
 
         // If we can't find a control or if the control received the click

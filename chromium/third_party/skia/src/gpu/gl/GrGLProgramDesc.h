@@ -154,12 +154,12 @@ private:
         // should the FS discard if the coverage is zero (to avoid stencil manipulation)
         SkBool8                     fDiscardIfZeroCoverage;
 
-        uint8_t                     fColorInput;            // casts to enum ColorInput
-        uint8_t                     fCoverageInput;         // casts to enum ColorInput
-        uint8_t                     fCoverageOutput;        // casts to enum CoverageOutput
+        ColorInput                  fColorInput : 8;
+        ColorInput                  fCoverageInput : 8;
+        CoverageOutput              fCoverageOutput : 8;
 
+        SkBool8                     fHasVertexCode;
         SkBool8                     fEmitsPointSize;
-        uint8_t                     fColorFilterXfermode;   // casts to enum SkXfermode::Mode
 
         // To enable experimental geometry shader code (not for use in
         // production)
@@ -220,6 +220,8 @@ private:
     // code generation to GrGLShaderBuilder (and maybe add getters rather than friending).
     friend class GrGLProgram;
     friend class GrGLShaderBuilder;
+    friend class GrGLFullShaderBuilder;
+    friend class GrGLFragmentOnlyShaderBuilder;
 };
 
 #endif

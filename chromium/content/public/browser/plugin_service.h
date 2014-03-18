@@ -70,7 +70,7 @@ class PluginService {
   // the |context| and renderer IDs. This will report whether the data is stale
   // via |is_stale| and returns whether or not the plugin can be found.
   virtual bool GetPluginInfo(int render_process_id,
-                             int render_view_id,
+                             int render_frame_id,
                              ResourceContext* context,
                              const GURL& url,
                              const GURL& page_url,
@@ -89,7 +89,7 @@ class PluginService {
   // Returns the display name for the plugin identified by the given path. If
   // the path doesn't identify a plugin, or the plugin has no display name,
   // this will attempt to generate a display name from the path.
-  virtual string16 GetPluginDisplayNameByPath(
+  virtual base::string16 GetPluginDisplayNameByPath(
       const base::FilePath& plugin_path) = 0;
 
   // Asynchronously loads plugins if necessary and then calls back to the
@@ -159,6 +159,9 @@ class PluginService {
                                        base::string16* plugin_name,
                                        base::string16* plugin_version) = 0;
 #endif
+
+  // Returns true iff PPAPI "dev channel" methods are supported.
+  virtual bool PpapiDevChannelSupported() = 0;
 };
 
 }  // namespace content

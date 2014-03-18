@@ -42,6 +42,7 @@ class HTMLMapElement;
 class LayoutPoint;
 class IdTargetObserverRegistry;
 class Node;
+class RenderObject;
 
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
@@ -54,7 +55,7 @@ public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
     void setParentTreeScope(TreeScope*);
 
-    Element* adjustedFocusedElement();
+    Element* adjustedFocusedElement() const;
     Element* getElementById(const AtomicString&) const;
     bool hasElementWithId(StringImpl* id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
@@ -89,17 +90,11 @@ public:
     bool applyAuthorStyles() const;
 
     // Used by the basic DOM mutation methods (e.g., appendChild()).
-    void adoptIfNeeded(Node*);
+    void adoptIfNeeded(Node&);
 
     Node* rootNode() const { return m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
-
-    static TreeScope* noDocumentInstance()
-    {
-        DEFINE_STATIC_LOCAL(TreeScope, instance, ());
-        return &instance;
-    }
 
     // Nodes belonging to this scope hold guard references -
     // these are enough to keep the scope from being destroyed, but
@@ -116,7 +111,7 @@ public:
     {
         ASSERT(!deletionHasBegun());
         --m_guardRefCount;
-        if (!m_guardRefCount && !refCount() && this != noDocumentInstance() && !rootNodeHasTreeSharedParent()) {
+        if (!m_guardRefCount && !refCount() && !rootNodeHasTreeSharedParent()) {
             beginDeletion();
             delete this;
         }
@@ -139,7 +134,6 @@ protected:
     void setDocumentScope(Document* document)
     {
         ASSERT(document);
-        ASSERT(this != noDocumentInstance());
         m_documentScope = document;
     }
 
@@ -151,7 +145,7 @@ private:
     virtual void dispose() { }
 
     int refCount() const;
-#ifndef NDEBUG
+#if SECURITY_ASSERT_ENABLED
     bool deletionHasBegun();
     void beginDeletion();
 #else
@@ -186,7 +180,14 @@ inline bool TreeScope::containsMultipleElementsWithId(const AtomicString& id) co
     return m_elementsById && m_elementsById->containsMultiple(id.impl());
 }
 
-Node* nodeFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
+inline bool operator==(const TreeScope& a, const TreeScope& b) { return &a == &b; }
+inline bool operator==(const TreeScope& a, const TreeScope* b) { return &a == b; }
+inline bool operator==(const TreeScope* a, const TreeScope& b) { return a == &b; }
+inline bool operator!=(const TreeScope& a, const TreeScope& b) { return !(a == b); }
+inline bool operator!=(const TreeScope& a, const TreeScope* b) { return !(a == b); }
+inline bool operator!=(const TreeScope* a, const TreeScope& b) { return !(a == b); }
+
+RenderObject* rendererFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
 TreeScope* commonTreeScope(Node*, Node*);
 
 } // namespace WebCore

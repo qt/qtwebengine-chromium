@@ -29,10 +29,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8GCController.h"
 #include "bindings/v8/V8RecursionScope.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/fetch/CachedMetadata.h"
 #include "core/fetch/ScriptResource.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "platform/TraceEvent.h"
 
 namespace WebCore {
 
@@ -67,7 +67,7 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
 {
     TRACE_EVENT0("v8", "v8.compile");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Compile");
-    v8::Handle<v8::String> name = v8String(fileName, isolate);
+    v8::Handle<v8::String> name = v8String(isolate, fileName);
     v8::Handle<v8::Integer> line = v8::Integer::New(scriptStartPosition.m_line.zeroBasedInt(), isolate);
     v8::Handle<v8::Integer> column = v8::Integer::New(scriptStartPosition.m_column.zeroBasedInt(), isolate);
     v8::Handle<v8::Boolean> isSharedCrossOrigin = corsStatus == SharableCrossOrigin ? v8::True(isolate) : v8::False(isolate);
@@ -75,7 +75,7 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
     return v8::Script::Compile(code, &origin, scriptData);
 }
 
-v8::Local<v8::Value> V8ScriptRunner::runCompiledScript(v8::Handle<v8::Script> script, ScriptExecutionContext* context, v8::Isolate* isolate)
+v8::Local<v8::Value> V8ScriptRunner::runCompiledScript(v8::Handle<v8::Script> script, ExecutionContext* context, v8::Isolate* isolate)
 {
     TRACE_EVENT0("v8", "v8.run");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
@@ -87,6 +87,8 @@ v8::Local<v8::Value> V8ScriptRunner::runCompiledScript(v8::Handle<v8::Script> sc
 
     if (handleOutOfMemory())
         return v8::Local<v8::Value>();
+
+    RELEASE_ASSERT(!context->isIteratingOverObservers());
 
     // Run the script and keep track of the current recursion depth.
     v8::Local<v8::Value> result;
@@ -119,7 +121,7 @@ v8::Local<v8::Value> V8ScriptRunner::compileAndRunInternalScript(v8::Handle<v8::
     return result;
 }
 
-v8::Local<v8::Value> V8ScriptRunner::callFunction(v8::Handle<v8::Function> function, ScriptExecutionContext* context, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[], v8::Isolate* isolate)
+v8::Local<v8::Value> V8ScriptRunner::callFunction(v8::Handle<v8::Function> function, ExecutionContext* context, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate* isolate)
 {
     TRACE_EVENT0("v8", "v8.callFunction");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
@@ -127,38 +129,42 @@ v8::Local<v8::Value> V8ScriptRunner::callFunction(v8::Handle<v8::Function> funct
     if (V8RecursionScope::recursionLevel() >= kMaxRecursionDepth)
         return handleMaxRecursionDepthExceeded(isolate);
 
+    RELEASE_ASSERT(!context->isIteratingOverObservers());
+
     V8RecursionScope recursionScope(context);
-    v8::Local<v8::Value> result = function->Call(receiver, argc, args);
+    v8::Local<v8::Value> result = function->Call(receiver, argc, info);
     crashIfV8IsDead();
     return result;
 }
 
-v8::Local<v8::Value> V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[], v8::Isolate* isolate)
+v8::Local<v8::Value> V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function> function, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate* isolate)
 {
     TRACE_EVENT0("v8", "v8.callFunction");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
     V8RecursionScope::MicrotaskSuppression recursionScope;
-    v8::Local<v8::Value> result = function->Call(receiver, argc, args);
+    v8::Local<v8::Value> result = function->Call(receiver, argc, info);
     crashIfV8IsDead();
     return result;
 }
 
-v8::Local<v8::Value> V8ScriptRunner::callAsFunction(v8::Handle<v8::Object> object, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[])
+v8::Local<v8::Value> V8ScriptRunner::callAsFunction(v8::Handle<v8::Object> object, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[])
 {
     TRACE_EVENT0("v8", "v8.callFunction");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
+
     V8RecursionScope::MicrotaskSuppression recursionScope;
-    v8::Local<v8::Value> result = object->CallAsFunction(receiver, argc, args);
+    v8::Local<v8::Value> result = object->CallAsFunction(receiver, argc, info);
     crashIfV8IsDead();
     return result;
 }
 
-v8::Local<v8::Value> V8ScriptRunner::callAsConstructor(v8::Handle<v8::Object> object, int argc, v8::Handle<v8::Value> args[])
+v8::Local<v8::Value> V8ScriptRunner::callAsConstructor(v8::Handle<v8::Object> object, int argc, v8::Handle<v8::Value> info[])
 {
     TRACE_EVENT0("v8", "v8.callFunction");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
+
     V8RecursionScope::MicrotaskSuppression recursionScope;
-    v8::Local<v8::Value> result = object->CallAsConstructor(argc, args);
+    v8::Local<v8::Value> result = object->CallAsConstructor(argc, info);
     crashIfV8IsDead();
     return result;
 }
@@ -167,6 +173,7 @@ v8::Local<v8::Object> V8ScriptRunner::instantiateObject(v8::Handle<v8::ObjectTem
 {
     TRACE_EVENT0("v8", "v8.newInstance");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
+
     V8RecursionScope::MicrotaskSuppression scope;
     v8::Local<v8::Object> result = objectTemplate->NewInstance();
     crashIfV8IsDead();
@@ -177,13 +184,14 @@ v8::Local<v8::Object> V8ScriptRunner::instantiateObject(v8::Handle<v8::Function>
 {
     TRACE_EVENT0("v8", "v8.newInstance");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");
+
     V8RecursionScope::MicrotaskSuppression scope;
     v8::Local<v8::Object> result = function->NewInstance(argc, argv);
     crashIfV8IsDead();
     return result;
 }
 
-v8::Local<v8::Object> V8ScriptRunner::instantiateObjectInDocument(v8::Handle<v8::Function> function, ScriptExecutionContext* context, int argc, v8::Handle<v8::Value> argv[])
+v8::Local<v8::Object> V8ScriptRunner::instantiateObjectInDocument(v8::Handle<v8::Function> function, ExecutionContext* context, int argc, v8::Handle<v8::Value> argv[])
 {
     TRACE_EVENT0("v8", "v8.newInstance");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "Execution");

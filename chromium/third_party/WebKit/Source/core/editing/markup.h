@@ -51,7 +51,7 @@ PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String
 PassRefPtr<DocumentFragment> createFragmentFromMarkup(Document&, const String& markup, const String& baseURL, ParserContentPolicy = AllowScriptingContent);
 PassRefPtr<DocumentFragment> createFragmentFromMarkupWithContext(Document&, const String& markup, unsigned fragmentStart, unsigned fragmentEnd, const String& baseURL, ParserContentPolicy);
 PassRefPtr<DocumentFragment> createFragmentFromNodes(Document*, const Vector<Node*>&);
-PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String&, Element*, ParserContentPolicy, ExceptionState&);
+PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String&, Element*, ParserContentPolicy, const char* method, ExceptionState&);
 PassRefPtr<DocumentFragment> createFragmentForTransformToFragment(const String&, const String& sourceMIMEType, Document& outputDoc);
 PassRefPtr<DocumentFragment> createContextualFragment(const String&, HTMLElement*, ParserContentPolicy, ExceptionState&);
 
@@ -69,6 +69,7 @@ String createFullMarkup(const Node*);
 String createFullMarkup(const Range*);
 
 String urlToMarkup(const KURL&, const String& title);
+void mergeWithNextTextNode(PassRefPtr<Node>, ExceptionState&);
 
 }
 

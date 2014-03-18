@@ -10,7 +10,7 @@
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_driven_test.h"
 #include "components/autofill/core/browser/form_structure.h"
@@ -228,9 +228,9 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
       }
 
       // Import the profile.
-      const CreditCard* imported_credit_card;
+      scoped_ptr<CreditCard> imported_credit_card;
       personal_data_.ImportFormData(form_structure, &imported_credit_card);
-      EXPECT_EQ(static_cast<const CreditCard*>(NULL), imported_credit_card);
+      EXPECT_EQ(static_cast<CreditCard*>(NULL), imported_credit_card.get());
 
       // Clear the |form| to start a new profile.
       form.fields.clear();

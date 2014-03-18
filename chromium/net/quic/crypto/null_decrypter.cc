@@ -11,6 +11,8 @@ using std::string;
 
 namespace net {
 
+NullDecrypter::NullDecrypter() {}
+
 bool NullDecrypter::SetKey(StringPiece key) { return key.empty(); }
 
 bool NullDecrypter::SetNoncePrefix(StringPiece nonce_prefix) {
@@ -25,7 +27,7 @@ bool NullDecrypter::Decrypt(StringPiece /*nonce*/,
   QuicDataReader reader(ciphertext.data(), ciphertext.length());
 
   uint128 hash;
-  if (!reader.ReadUInt128(&hash)) {
+  if (!ReadHash(&reader, &hash)) {
     return false;
   }
 
@@ -34,8 +36,7 @@ bool NullDecrypter::Decrypt(StringPiece /*nonce*/,
   // TODO(rch): avoid buffer copy here
   string buffer = associated_data.as_string();
   plaintext.AppendToString(&buffer);
-
-  if (hash != QuicUtils::FNV1a_128_Hash(buffer.data(), buffer.length())) {
+  if (hash != ComputeHash(buffer)) {
     return false;
   }
   memcpy(output, plaintext.data(), plaintext.length());
@@ -51,7 +52,7 @@ QuicData* NullDecrypter::DecryptPacket(QuicPacketSequenceNumber /*seq_number*/,
   QuicDataReader reader(ciphertext.data(), ciphertext.length());
 
   uint128 hash;
-  if (!reader.ReadUInt128(&hash)) {
+  if (!ReadHash(&reader, &hash)) {
     return NULL;
   }
 
@@ -61,7 +62,7 @@ QuicData* NullDecrypter::DecryptPacket(QuicPacketSequenceNumber /*seq_number*/,
   string buffer = associated_data.as_string();
   plaintext.AppendToString(&buffer);
 
-  if (hash != QuicUtils::FNV1a_128_Hash(buffer.data(), buffer.length())) {
+  if (hash != ComputeHash(buffer)) {
     return NULL;
   }
   return new QuicData(plaintext.data(), plaintext.length());
@@ -70,5 +71,26 @@ QuicData* NullDecrypter::DecryptPacket(QuicPacketSequenceNumber /*seq_number*/,
 StringPiece NullDecrypter::GetKey() const { return StringPiece(); }
 
 StringPiece NullDecrypter::GetNoncePrefix() const { return StringPiece(); }
+
+bool NullDecrypter::ReadHash(QuicDataReader* reader, uint128* hash) {
+  uint64 lo;
+  uint32 hi;
+  if (!reader->ReadUInt64(&lo) ||
+      !reader->ReadUInt32(&hi)) {
+    return false;
+  }
+  *hash = hi;
+  *hash <<= 64;
+  *hash += lo;
+  return true;
+}
+
+uint128 NullDecrypter::ComputeHash(const string& data) const {
+  uint128 correct_hash = QuicUtils::FNV1a_128_Hash(data.data(), data.length());
+  uint128 mask(GG_UINT64_C(0x0), GG_UINT64_C(0xffffffff));
+  mask <<= 96;
+  correct_hash &= ~mask;
+  return correct_hash;
+}
 
 }  // namespace net

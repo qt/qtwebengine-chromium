@@ -50,7 +50,8 @@ bool FakeMessageCenter::HasClickedListener(const std::string& id) {
   return false;
 }
 
-const NotificationList::Notifications& FakeMessageCenter::GetNotifications() {
+const NotificationList::Notifications&
+FakeMessageCenter::GetVisibleNotifications() {
   return empty_notifications_;
 }
 
@@ -71,6 +72,9 @@ void FakeMessageCenter::RemoveNotification(const std::string& id,
 }
 
 void FakeMessageCenter::RemoveAllNotifications(bool by_user) {
+}
+
+void FakeMessageCenter::RemoveAllVisibleNotifications(bool by_user) {
 }
 
 void FakeMessageCenter::SetNotificationIcon(const std::string& notification_id,
@@ -126,7 +130,7 @@ void FakeMessageCenter::EnterQuietModeWithExpire(
 void FakeMessageCenter::SetVisibility(Visibility visible) {
 }
 
-bool FakeMessageCenter::IsMessageCenterVisible() {
+bool FakeMessageCenter::IsMessageCenterVisible() const {
   return false;
 }
 

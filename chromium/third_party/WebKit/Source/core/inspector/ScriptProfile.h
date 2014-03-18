@@ -41,13 +41,13 @@ class CpuProfile;
 
 namespace WebCore {
 
-class ScriptProfile : public RefCounted<ScriptProfile> {
+class ScriptProfile FINAL : public RefCounted<ScriptProfile> {
 public:
     static PassRefPtr<ScriptProfile> create(const v8::CpuProfile* profile, double idleTime)
     {
         return adoptRef(new ScriptProfile(profile, idleTime));
     }
-    virtual ~ScriptProfile();
+    ~ScriptProfile();
 
     String title() const;
     unsigned int uid() const;

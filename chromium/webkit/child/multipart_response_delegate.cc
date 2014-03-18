@@ -14,11 +14,11 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 
-using WebKit::WebHTTPHeaderVisitor;
-using WebKit::WebString;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLResponse;
+using blink::WebHTTPHeaderVisitor;
+using blink::WebString;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLResponse;
 
 namespace webkit_glue {
 
@@ -319,7 +319,7 @@ bool MultipartResponseDelegate::ReadMultipartBoundary(
   // The byte range response can have quoted boundary strings. This is legal
   // as per MIME specifications. Individual data fragements however don't
   // contain quoted boundary strings.
-  TrimString(*multipart_boundary, "\"", multipart_boundary);
+  base::TrimString(*multipart_boundary, "\"", multipart_boundary);
   return true;
 }
 

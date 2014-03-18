@@ -212,9 +212,13 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   check_for_completed_raster_tasks_pending_ = false;
   ScheduleCheckForCompletedRasterTasks();
 
-  TRACE_EVENT_ASYNC_STEP1(
+  TRACE_EVENT_ASYNC_STEP_INTO1(
       "cc", "ScheduledTasks", this, StateName(),
       "state", TracedValue::FromValue(StateAsValue().release()));
+}
+
+GLenum PixelBufferRasterWorkerPool::GetResourceTarget() const {
+  return GL_TEXTURE_2D;
 }
 
 ResourceFormat PixelBufferRasterWorkerPool::GetResourceFormat() const {
@@ -397,7 +401,7 @@ void PixelBufferRasterWorkerPool::CheckForCompletedRasterTasks() {
   if (PendingRasterTaskCount())
     ScheduleMoreTasks();
 
-  TRACE_EVENT_ASYNC_STEP1(
+  TRACE_EVENT_ASYNC_STEP_INTO1(
       "cc", "ScheduledTasks", this, StateName(),
       "state", TracedValue::FromValue(StateAsValue().release()));
 

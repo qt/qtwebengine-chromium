@@ -36,6 +36,8 @@
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBPendingTransactionMonitor.h"
+#include "platform/SharedBuffer.h"
+#include "public/platform/WebIDBDatabase.h"
 
 #include <gtest/gtest.h>
 
@@ -52,7 +54,7 @@ public:
     {
     }
 
-    ScriptExecutionContext* scriptExecutionContext()
+    ExecutionContext* executionContext()
     {
         return m_document.get();
     }
@@ -63,32 +65,16 @@ private:
     RefPtr<Document> m_document;
 };
 
-class FakeIDBDatabaseBackendProxy : public IDBDatabaseBackendInterface {
+class FakeWebIDBDatabase : public blink::WebIDBDatabase {
 public:
-    static PassRefPtr<FakeIDBDatabaseBackendProxy> create() { return adoptRef(new FakeIDBDatabaseBackendProxy()); }
+    static PassOwnPtr<FakeWebIDBDatabase> create() { return adoptPtr(new FakeWebIDBDatabase()); }
 
-    virtual void createObjectStore(int64_t transactionId, int64_t objectStoreId, const String& name, const IDBKeyPath&, bool autoIncrement) OVERRIDE { }
-    virtual void deleteObjectStore(int64_t transactionId, int64_t objectStoreId) OVERRIDE { }
-    virtual void createTransaction(int64_t transactionId, PassRefPtr<IDBDatabaseCallbacks>, const Vector<int64_t>& objectStoreIds, unsigned short mode) OVERRIDE { }
-    virtual void close(PassRefPtr<IDBDatabaseCallbacks>) OVERRIDE { }
-
-    virtual void commit(int64_t transactionId) OVERRIDE { }
-    virtual void abort(int64_t transactionId) OVERRIDE { }
-
-    virtual void createIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId, const String& name, const IDBKeyPath&, bool unique, bool multiEntry) OVERRIDE { }
-    virtual void deleteIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId) OVERRIDE { }
-
-    virtual void get(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, bool keyOnly, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void put(int64_t transactionId, int64_t objectStoreId, PassRefPtr<SharedBuffer> value, PassRefPtr<IDBKey>, PutMode, PassRefPtr<IDBCallbacks>, const Vector<int64_t>& indexIds, const Vector<IndexKeys>&) OVERRIDE { }
-    virtual void setIndexKeys(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBKey>, const Vector<int64_t>& indexIds, const Vector<IndexKeys>&) OVERRIDE { }
-    virtual void setIndexesReady(int64_t transactionId, int64_t objectStoreId, const Vector<int64_t>& indexIds) OVERRIDE { }
-    virtual void openCursor(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, IndexedDB::CursorDirection, bool keyOnly, TaskType, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void count(int64_t transactionId, int64_t objectStoreId, int64_t indexId, PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void deleteRange(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>) OVERRIDE { }
-    virtual void clear(int64_t transactionId, int64_t objectStoreId, PassRefPtr<IDBCallbacks>) OVERRIDE { }
+    virtual void commit(long long transactionId) OVERRIDE { }
+    virtual void abort(long long transactionId) OVERRIDE { }
+    virtual void close() OVERRIDE { }
 
 private:
-    FakeIDBDatabaseBackendProxy() { }
+    FakeWebIDBDatabase() { }
 };
 
 class FakeIDBDatabaseCallbacks : public IDBDatabaseCallbacks {
@@ -104,18 +90,18 @@ private:
 
 TEST_F(IDBTransactionTest, EnsureLifetime)
 {
-    RefPtr<FakeIDBDatabaseBackendProxy> proxy = FakeIDBDatabaseBackendProxy::create();
+    OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
     RefPtr<FakeIDBDatabaseCallbacks> connection = FakeIDBDatabaseCallbacks::create();
-    RefPtr<IDBDatabase> db = IDBDatabase::create(scriptExecutionContext(), proxy, connection);
+    RefPtr<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), connection);
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    RefPtr<IDBTransaction> transaction = IDBTransaction::create(scriptExecutionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
+    RefPtr<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
 
     // Local reference, IDBDatabase's reference and IDBPendingTransactionMonitor's reference:
     EXPECT_EQ(3, transaction->refCount());
 
-    RefPtr<IDBRequest> request = IDBRequest::create(scriptExecutionContext(), IDBAny::createInvalid(), transaction.get());
+    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction.get());
     IDBPendingTransactionMonitor::deactivateNewTransactions();
 
     // Local reference, IDBDatabase's reference, and the IDBRequest's reference
@@ -123,7 +109,7 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
 
     // This will generate an abort() call to the back end which is dropped by the fake proxy,
     // so an explicit onAbort call is made.
-    scriptExecutionContext()->stopActiveDOMObjects();
+    executionContext()->stopActiveDOMObjects();
     transaction->onAbort(DOMError::create(AbortError, "Aborted"));
 
     EXPECT_EQ(1, transaction->refCount());
@@ -131,13 +117,13 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
 
 TEST_F(IDBTransactionTest, TransactionFinish)
 {
-    RefPtr<FakeIDBDatabaseBackendProxy> proxy = FakeIDBDatabaseBackendProxy::create();
+    OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
     RefPtr<FakeIDBDatabaseCallbacks> connection = FakeIDBDatabaseCallbacks::create();
-    RefPtr<IDBDatabase> db = IDBDatabase::create(scriptExecutionContext(), proxy, connection);
+    RefPtr<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), connection);
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    RefPtr<IDBTransaction> transaction = IDBTransaction::create(scriptExecutionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
+    RefPtr<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
 
     // Local reference, IDBDatabase's reference and IDBPendingTransactionMonitor's reference:
     EXPECT_EQ(3, transaction->refCount());
@@ -154,7 +140,7 @@ TEST_F(IDBTransactionTest, TransactionFinish)
     EXPECT_EQ(1, transactionPtr->refCount());
 
     // Stop the context, so events don't get queued (which would keep the transaction alive).
-    scriptExecutionContext()->stopActiveDOMObjects();
+    executionContext()->stopActiveDOMObjects();
 
     // Fire an abort to make sure this doesn't free the transaction during use. The test
     // will not fail if it is, but ASAN would notice the error.

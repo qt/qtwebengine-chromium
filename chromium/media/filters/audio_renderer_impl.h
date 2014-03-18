@@ -53,14 +53,10 @@ class MEDIA_EXPORT AudioRendererImpl
   //
   // |set_decryptor_ready_cb| is fired when the audio decryptor is available
   // (only applicable if the stream is encrypted and we have a decryptor).
-  //
-  // |increase_preroll_on_underflow| Set to true if the preroll duration
-  // should be increased when ResumeAfterUnderflow() is called.
   AudioRendererImpl(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                     AudioRendererSink* sink,
                     ScopedVector<AudioDecoder> decoders,
-                    const SetDecryptorReadyCB& set_decryptor_ready_cb,
-                    bool increase_preroll_on_underflow);
+                    const SetDecryptorReadyCB& set_decryptor_ready_cb);
   virtual ~AudioRendererImpl();
 
   // AudioRenderer implementation.
@@ -97,6 +93,18 @@ class MEDIA_EXPORT AudioRendererImpl
  private:
   friend class AudioRendererImplTest;
 
+  // TODO(acolwell): Add a state machine graph.
+  enum State {
+    kUninitialized,
+    kPaused,
+    kFlushing,
+    kPrerolling,
+    kPlaying,
+    kStopped,
+    kUnderflow,
+    kRebuffering,
+  };
+
   // Callback from the audio decoder delivering decoded audio samples.
   void DecodedAudioReady(AudioDecoder::Status status,
                          const scoped_refptr<AudioBuffer>& buffer);
@@ -109,38 +117,33 @@ class MEDIA_EXPORT AudioRendererImpl
   // DecodedAudioReady().
   void HandleAbortedReadOrDecodeError(bool is_decode_error);
 
-  // Fills the given buffer with audio data by delegating to its |algorithm_|.
-  // FillBuffer() also takes care of updating the clock. Returns the number of
-  // frames copied into |dest|, which may be less than or equal to
-  // |requested_frames|.
-  //
-  // If this method returns fewer frames than |requested_frames|, it could
-  // be a sign that the pipeline is stalled or unable to stream the data fast
-  // enough.  In such scenarios, the callee should zero out unused portions
-  // of their buffer to playback silence.
-  //
-  // FillBuffer() updates the pipeline's playback timestamp. If FillBuffer() is
-  // not called at the same rate as audio samples are played, then the reported
-  // timestamp in the pipeline will be ahead of the actual audio playback. In
-  // this case |playback_delay| should be used to indicate when in the future
-  // should the filled buffer be played.
-  //
-  // Safe to call on any thread.
-  uint32 FillBuffer(AudioBus* dest,
-                    uint32 requested_frames,
-                    int audio_delay_milliseconds);
-
   // Estimate earliest time when current buffer can stop playing.
   void UpdateEarliestEndTime_Locked(int frames_filled,
                                     const base::TimeDelta& playback_delay,
                                     const base::TimeTicks& time_now);
 
-  void DoPlay();
-  void DoPause();
+  void DoPlay_Locked();
+  void DoPause_Locked();
 
   // AudioRendererSink::RenderCallback implementation.
   //
   // NOTE: These are called on the audio callback thread!
+  //
+  // Render() fills the given buffer with audio data by delegating to its
+  // |algorithm_|. Render() also takes care of updating the clock.
+  // Returns the number of frames copied into |audio_bus|, which may be less
+  // than or equal to the initial number of frames in |audio_bus|
+  //
+  // If this method returns fewer frames than the initial number of frames in
+  // |audio_bus|, it could be a sign that the pipeline is stalled or unable to
+  // stream the data fast enough.  In such scenarios, the callee should zero out
+  // unused portions of their buffer to play back silence.
+  //
+  // Render() updates the pipeline's playback timestamp. If Render() is
+  // not called at the same rate as audio samples are played, then the reported
+  // timestamp in the pipeline will be ahead of the actual audio playback. In
+  // this case |audio_delay_milliseconds| should be used to indicate when in the
+  // future should the filled buffer be played.
   virtual int Render(AudioBus* audio_bus,
                      int audio_delay_milliseconds) OVERRIDE;
   virtual void OnRenderError() OVERRIDE;
@@ -152,6 +155,7 @@ class MEDIA_EXPORT AudioRendererImpl
   void AttemptRead();
   void AttemptRead_Locked();
   bool CanRead_Locked();
+  void ChangeState_Locked(State new_state);
 
   // Returns true if the data in the buffer is all before
   // |preroll_timestamp_|. This can only return true while
@@ -167,7 +171,16 @@ class MEDIA_EXPORT AudioRendererImpl
       scoped_ptr<AudioDecoder> decoder,
       scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream);
 
-  void ResetDecoder(const base::Closure& callback);
+  // Used to initiate the flush operation once all pending reads have
+  // completed.
+  void DoFlush_Locked();
+
+  // Calls |decoder_|.Reset() and arranges for ResetDecoderDone() to get
+  // called when the reset completes.
+  void ResetDecoder();
+
+  // Called when the |decoder_|.Reset() has completed.
+  void ResetDecoderDone();
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   base::WeakPtrFactory<AudioRendererImpl> weak_factory_;
@@ -198,8 +211,8 @@ class MEDIA_EXPORT AudioRendererImpl
   base::Closure disabled_cb_;
   PipelineStatusCB error_cb_;
 
-  // Callback provided to Pause().
-  base::Closure pause_cb_;
+  // Callback provided to Flush().
+  base::Closure flush_cb_;
 
   // Callback provided to Preroll().
   PipelineStatusCB preroll_cb_;
@@ -215,15 +228,6 @@ class MEDIA_EXPORT AudioRendererImpl
   scoped_ptr<AudioRendererAlgorithm> algorithm_;
 
   // Simple state tracking variable.
-  enum State {
-    kUninitialized,
-    kPaused,
-    kPrerolling,
-    kPlaying,
-    kStopped,
-    kUnderflow,
-    kRebuffering,
-  };
   State state_;
 
   // Keep track of whether or not the sink is playing.
@@ -261,7 +265,6 @@ class MEDIA_EXPORT AudioRendererImpl
   size_t total_frames_filled_;
 
   bool underflow_disabled_;
-  bool increase_preroll_on_underflow_;
 
   // True if the renderer receives a buffer with kAborted status during preroll,
   // false otherwise. This flag is cleared on the next Preroll() call.

@@ -31,16 +31,14 @@
 #ifndef FileWriterBaseCallback_h
 #define FileWriterBaseCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
 class FileWriterBase;
 
-class FileWriterBaseCallback : public RefCounted<FileWriterBaseCallback> {
+class FileWriterBaseCallback {
 public:
     virtual ~FileWriterBaseCallback() { }
-    virtual bool handleEvent(FileWriterBase*) = 0;
+    virtual void handleEvent(FileWriterBase*) = 0;
 };
 
 } // namespace

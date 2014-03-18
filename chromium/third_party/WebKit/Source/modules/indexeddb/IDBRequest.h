@@ -34,30 +34,48 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/DOMStringList.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/indexeddb/IDBAny.h"
-#include "modules/indexeddb/IDBCallbacks.h"
 #include "modules/indexeddb/IDBCursor.h"
+#include "modules/indexeddb/IDBTransaction.h"
+#include "modules/indexeddb/IndexedDB.h"
+#include "public/platform/WebIDBCursor.h"
 
 namespace WebCore {
 
 class ExceptionState;
-class IDBTransaction;
+struct IDBDatabaseMetadata;
 class SharedBuffer;
 
-class IDBRequest : public ScriptWrappable, public IDBCallbacks, public EventTarget, public ActiveDOMObject {
+// Base class to simplify usage of event target refcounting.
+class IDBRequestBase : public WTF::RefCountedBase {
 public:
-    static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
-    static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
+    virtual void deref() = 0;
+
+protected:
+    virtual ~IDBRequestBase() { }
+};
+
+class IDBRequest : public IDBRequestBase, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING(IDBRequestBase);
+
+public:
+    static PassRefPtr<IDBRequest> create(ExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
     virtual ~IDBRequest();
 
-    PassRefPtr<IDBAny> result(ExceptionState&) const;
+    ScriptValue result(ExceptionState&);
     PassRefPtr<DOMError> error(ExceptionState&) const;
-    PassRefPtr<IDBAny> source() const;
-    PassRefPtr<IDBTransaction> transaction() const;
+    ScriptValue source(ExecutionContext*) const;
+    PassRefPtr<IDBTransaction> transaction() const { return m_transaction; }
+
+    bool isResultDirty() const { return m_resultDirty; }
+    PassRefPtr<IDBAny> resultAsAny() const { return m_result; }
+
+    // Requests made during index population are implementation details and so
+    // events should not be visible to script.
     void preventPropagation() { m_preventPropagation = true; }
 
     // Defined in the IDL
@@ -72,15 +90,13 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(success);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    void markEarlyDeath();
     void setCursorDetails(IndexedDB::CursorType, IndexedDB::CursorDirection);
     void setPendingCursor(PassRefPtr<IDBCursor>);
     void abort();
 
-    // IDBCallbacks
     virtual void onError(PassRefPtr<DOMError>);
     virtual void onSuccess(const Vector<String>&);
-    virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>);
+    virtual void onSuccess(PassOwnPtr<blink::WebIDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>);
     virtual void onSuccess(PassRefPtr<IDBKey>);
     virtual void onSuccess(PassRefPtr<SharedBuffer>);
     virtual void onSuccess(PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&);
@@ -88,22 +104,27 @@ public:
     virtual void onSuccess();
     virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>);
 
+    // Only IDBOpenDBRequest instances should receive these:
+    virtual void onBlocked(int64_t oldVersion) { ASSERT_NOT_REACHED(); }
+    virtual void onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&, blink::WebIDBDataLoss, String dataLossMessage) { ASSERT_NOT_REACHED(); }
+    virtual void onSuccess(PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
+
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-    virtual void uncaughtExceptionInEventHandler();
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual void uncaughtExceptionInEventHandler() OVERRIDE;
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
+    // Called by a version change transaction that has finished to set this
+    // request back from DONE (following "upgradeneeded") back to PENDING (for
+    // the upcoming "success" or "error").
     void transactionDidFinishAndDispatch();
-
-    using IDBCallbacks::ref;
-    using IDBCallbacks::deref;
 
     virtual void deref() OVERRIDE
     {
@@ -113,38 +134,29 @@ public:
             checkForReferenceCycle();
     }
 
-    IDBDatabaseBackendInterface::TaskType taskType() { return m_taskType; }
-
     DOMRequestState* requestState() { return &m_requestState; }
-    IDBCursor* getResultCursor();
+    IDBCursor* getResultCursor() const;
 
 protected:
-    IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
+    IDBRequest(ExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
     void enqueueEvent(PassRefPtr<Event>);
+    void dequeueEvent(Event*);
     virtual bool shouldEnqueueEvent() const;
-    void onSuccessInternal(PassRefPtr<SerializedScriptValue>);
-    void onSuccessInternal(const ScriptValue&);
+    void onSuccessInternal(PassRefPtr<IDBAny>);
+    void setResult(PassRefPtr<IDBAny>);
 
-    RefPtr<IDBAny> m_result;
-    RefPtr<DOMError> m_error;
     bool m_contextStopped;
     RefPtr<IDBTransaction> m_transaction;
     ReadyState m_readyState;
     bool m_requestAborted; // May be aborted by transaction then receive async onsuccess; ignore vs. assert.
 
 private:
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
-
     void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value);
     void checkForReferenceCycle();
 
-
     RefPtr<IDBAny> m_source;
-    const IDBDatabaseBackendInterface::TaskType m_taskType;
+    RefPtr<IDBAny> m_result;
+    RefPtr<DOMError> m_error;
 
     bool m_hasPendingActivity;
     Vector<RefPtr<Event> > m_enqueuedEvents;
@@ -152,14 +164,17 @@ private:
     // Only used if the result type will be a cursor.
     IndexedDB::CursorType m_cursorType;
     IndexedDB::CursorDirection m_cursorDirection;
+    // When a cursor is continued/advanced, m_result is cleared and m_pendingCursor holds it.
     RefPtr<IDBCursor> m_pendingCursor;
+    // New state is not applied to the cursor object until the event is dispatched.
     RefPtr<IDBKey> m_cursorKey;
     RefPtr<IDBKey> m_cursorPrimaryKey;
     RefPtr<SharedBuffer> m_cursorValue;
+
     bool m_didFireUpgradeNeededEvent;
     bool m_preventPropagation;
+    bool m_resultDirty;
 
-    EventTargetData m_eventTargetData;
     DOMRequestState m_requestState;
 };
 

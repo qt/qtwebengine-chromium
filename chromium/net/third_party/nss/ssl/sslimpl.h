@@ -237,6 +237,13 @@ extern PRInt32
 ssl3_CallHelloExtensionSenders(sslSocket *ss, PRBool append, PRUint32 maxBytes,
                                const ssl3HelloExtensionSender *sender);
 
+extern unsigned int
+ssl3_CalculatePaddingExtensionLength(unsigned int clientHelloLength);
+
+extern PRInt32
+ssl3_AppendPaddingExtension(sslSocket *ss, unsigned int extensionLen,
+			    PRUint32 maxBytes);
+
 /* Socket ops */
 struct sslSocketOpsStr {
     int         (*connect) (sslSocket *, const PRNetAddr *);
@@ -305,29 +312,31 @@ typedef struct sslOptionsStr {
      * list of supported protocols. */
     SECItem nextProtoNego;
 
-    unsigned int useSecurity		: 1;  /*  1 */
-    unsigned int useSocks		: 1;  /*  2 */
-    unsigned int requestCertificate	: 1;  /*  3 */
-    unsigned int requireCertificate	: 2;  /*  4-5 */
-    unsigned int handshakeAsClient	: 1;  /*  6 */
-    unsigned int handshakeAsServer	: 1;  /*  7 */
-    unsigned int enableSSL2		: 1;  /*  8 */
-    unsigned int unusedBit9		: 1;  /*  9 */
-    unsigned int unusedBit10		: 1;  /* 10 */
-    unsigned int noCache		: 1;  /* 11 */
-    unsigned int fdx			: 1;  /* 12 */
-    unsigned int v2CompatibleHello	: 1;  /* 13 */
-    unsigned int detectRollBack  	: 1;  /* 14 */
-    unsigned int noStepDown             : 1;  /* 15 */
-    unsigned int bypassPKCS11           : 1;  /* 16 */
-    unsigned int noLocks                : 1;  /* 17 */
-    unsigned int enableSessionTickets   : 1;  /* 18 */
-    unsigned int enableDeflate          : 1;  /* 19 */
-    unsigned int enableRenegotiation    : 2;  /* 20-21 */
-    unsigned int requireSafeNegotiation : 1;  /* 22 */
-    unsigned int enableFalseStart       : 1;  /* 23 */
-    unsigned int cbcRandomIV            : 1;  /* 24 */
-    unsigned int enableOCSPStapling     : 1;  /* 25 */
+    unsigned int useSecurity		    : 1;  /*  1 */
+    unsigned int useSocks		    : 1;  /*  2 */
+    unsigned int requestCertificate	    : 1;  /*  3 */
+    unsigned int requireCertificate	    : 2;  /*  4-5 */
+    unsigned int handshakeAsClient	    : 1;  /*  6 */
+    unsigned int handshakeAsServer	    : 1;  /*  7 */
+    unsigned int enableSSL2		    : 1;  /*  8 */
+    unsigned int unusedBit9		    : 1;  /*  9 */
+    unsigned int unusedBit10		    : 1;  /* 10 */
+    unsigned int noCache		    : 1;  /* 11 */
+    unsigned int fdx			    : 1;  /* 12 */
+    unsigned int v2CompatibleHello	    : 1;  /* 13 */
+    unsigned int detectRollBack  	    : 1;  /* 14 */
+    unsigned int noStepDown                 : 1;  /* 15 */
+    unsigned int bypassPKCS11               : 1;  /* 16 */
+    unsigned int noLocks                    : 1;  /* 17 */
+    unsigned int enableSessionTickets       : 1;  /* 18 */
+    unsigned int enableDeflate              : 1;  /* 19 */
+    unsigned int enableRenegotiation        : 2;  /* 20-21 */
+    unsigned int requireSafeNegotiation     : 1;  /* 22 */
+    unsigned int enableFalseStart           : 1;  /* 23 */
+    unsigned int cbcRandomIV                : 1;  /* 24 */
+    unsigned int enableOCSPStapling	    : 1;  /* 25 */
+    unsigned int enableSignedCertTimestamps : 1;  /* 26 */
+    unsigned int enableFallbackSCSV	    : 1;  /* 27 */
 } sslOptions;
 
 typedef enum { sslHandshakingUndetermined = 0,
@@ -698,6 +707,19 @@ struct sslSessionIDStr {
 	     */
 	    NewSessionTicket  sessionTicket;
             SECItem           srvName;
+
+            /* originalHandshakeHash contains the hash of the original, full
+             * handshake prior to the server's final flow. This is either a
+             * SHA-1/MD5 combination (for TLS < 1.2) or the TLS PRF hash (for
+             * TLS 1.2). This is recorded and used only when ChannelID is
+             * negotiated as it's used to bind the ChannelID signature on the
+             * resumption handshake to the original handshake. */
+	    SECItem           originalHandshakeHash;
+
+	    /* Signed certificate timestamps received in a TLS extension.
+	    ** (used only in client).
+	    */
+	    SECItem	      signedCertTimestamps;
 	} ssl3;
     } u;
 };
@@ -789,6 +811,18 @@ struct TLSExtensionDataStr {
      * is beyond ssl3_HandleClientHello function. */
     SECItem *sniNameArr;
     PRUint32 sniNameArrSize;
+
+    /* Signed Certificate Timestamps extracted from the TLS extension.
+     * (client only).
+     * This container holds a temporary pointer to the extension data,
+     * until a session structure (the sec.ci.sid of an sslSocket) is setup
+     * that can hold a permanent copy of the data
+     * (in sec.ci.sid.u.ssl3.signedCertTimestamps).
+     * The data pointed to by this structure is neither explicitly allocated
+     * nor copied: the pointer points to the handshake message buffer and is
+     * only valid in the scope of ssl3_HandleServerHello.
+     */
+    SECItem signedCertTimestamps;
 };
 
 typedef SECStatus (*sslRestartTarget)(sslSocket *);
@@ -1431,6 +1465,19 @@ extern void      ssl3_SetAlwaysBlock(sslSocket *ss);
 
 extern SECStatus ssl_EnableNagleDelay(sslSocket *ss, PRBool enabled);
 
+extern void      ssl_FinishHandshake(sslSocket *ss);
+
+/* Returns PR_TRUE if we are still waiting for the server to respond to our
+ * client second round. Once we've received any part of the server's second
+ * round then we don't bother trying to false start since it is almost always
+ * the case that the NewSessionTicket, ChangeCipherSoec, and Finished messages
+ * were sent in the same packet and we want to process them all at the same
+ * time. If we were to try to false start in the middle of the server's second
+ * round, then we would increase the number of I/O operations
+ * (SSL_ForceHandshake/PR_Recv/PR_Send/etc.) needed to finish the handshake.
+ */
+extern PRBool    ssl3_WaitingForStartOfServerSecondRound(sslSocket *ss);
+
 extern SECStatus
 ssl3_CompressMACEncryptRecord(ssl3CipherSpec *   cwSpec,
 		              PRBool             isServer,
@@ -1665,6 +1712,8 @@ extern SECStatus ssl3_CipherPrefSet(sslSocket *ss, ssl3CipherSuite which, PRBool
 extern SECStatus ssl3_CipherPrefGet(sslSocket *ss, ssl3CipherSuite which, PRBool *on);
 extern SECStatus ssl2_CipherPrefSet(sslSocket *ss, PRInt32 which, PRBool enabled);
 extern SECStatus ssl2_CipherPrefGet(sslSocket *ss, PRInt32 which, PRBool *enabled);
+extern SECStatus ssl3_CipherOrderSet(sslSocket *ss, const ssl3CipherSuite *cipher,
+				     unsigned int len);
 
 extern SECStatus ssl3_SetPolicy(ssl3CipherSuite which, PRInt32 policy);
 extern SECStatus ssl3_GetPolicy(ssl3CipherSuite which, PRInt32 *policy);

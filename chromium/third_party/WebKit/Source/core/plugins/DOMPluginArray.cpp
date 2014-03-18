@@ -20,10 +20,9 @@
 #include "config.h"
 #include "core/plugins/DOMPluginArray.h"
 
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/plugins/DOMPlugin.h"
-#include "core/plugins/PluginData.h"
+#include "platform/plugins/PluginData.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {

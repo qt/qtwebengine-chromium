@@ -7,6 +7,12 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 {
+  'variables': {
+    'audio_processing_dependencies': [
+      '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
+      '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+    ],
+  },
   'targets': [
     {
       'target_name': 'audio_processing',
@@ -14,26 +20,15 @@
       'variables': {
         # Outputs some low-level debug files.
         'aec_debug_dump%': 0,
+
+        # Disables the usual mode where we trust the reported system delay
+        # values the AEC receives. The corresponding define is set appropriately
+        # in the code, but it can be force-enabled here for testing.
+        'aec_untrusted_delay_for_testing%': 0,
       },
       'dependencies': [
-        '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<@(audio_processing_dependencies)',
       ],
-      'include_dirs': [
-        '../interface',
-        'aec/include',
-        'aecm/include',
-        'agc/include',
-        'include',
-        'ns/include',
-        'utility',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '../interface',
-          'include',
-        ],
-      },
       'sources': [
         'aec/include/echo_cancellation.h',
         'aec/echo_cancellation.c',
@@ -92,6 +87,9 @@
         ['aec_debug_dump==1', {
           'defines': ['WEBRTC_AEC_DEBUG_DUMP',],
         }],
+        ['aec_untrusted_delay_for_testing==1', {
+          'defines': ['WEBRTC_UNTRUSTED_DELAY',],
+        }],
         ['enable_protobuf==1', {
           'dependencies': ['audioproc_debug_proto'],
           'defines': ['WEBRTC_AUDIOPROC_DEBUG_DUMP'],
@@ -119,8 +117,17 @@
         ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': ['audio_processing_sse2',],
         }],
-        ['(target_arch=="arm" and armv7==1) or target_arch=="armv7"', {
+        ['(target_arch=="arm" and arm_version==7) or target_arch=="armv7"', {
           'dependencies': ['audio_processing_neon',],
+        }],
+        ['target_arch=="mipsel"', {
+          'sources': [
+            'aecm/aecm_core_mips.c',
+          ],
+        }, {
+          'sources': [
+            'aecm/aecm_core_c.c',
+          ],
         }],
       ],
       # TODO(jschuh): Bug 1348: fix size_t to int truncations.
@@ -161,7 +168,7 @@
         },
       ],
     }],
-    ['(target_arch=="arm" and armv7==1) or target_arch=="armv7"', {
+    ['(target_arch=="arm" and arm_version==7) or target_arch=="armv7"', {
       'targets': [{
         'target_name': 'audio_processing_neon',
         'type': 'static_library',

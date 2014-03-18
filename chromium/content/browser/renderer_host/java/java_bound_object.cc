@@ -11,6 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #include "content/browser/renderer_host/java/java_type.h"
+#include "content/browser/renderer_host/java/jni_helper.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 
@@ -18,11 +19,10 @@ using base::StringPrintf;
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::GetClass;
-using base::android::GetMethodIDFromClassName;
 using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
-using WebKit::WebBindings;
+using blink::WebBindings;
 
 // The conversion between JavaScript and Java types is based on the Live
 // Connect 2 spec. See

@@ -80,6 +80,9 @@ class WebContentsViewMac : public WebContentsViewPort,
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
   virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
   virtual bool GetAllowOverlappingViews() const OVERRIDE;
+  virtual void SetOverlayView(WebContentsView* overlay,
+                              const gfx::Point& offset) OVERRIDE;
+  virtual void RemoveOverlayView() OVERRIDE;
 
   // WebContentsViewPort implementation ----------------------------------------
   virtual void CreateView(
@@ -88,7 +91,7 @@ class WebContentsViewMac : public WebContentsViewPort,
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual void SetPageTitle(const string16& title) OVERRIDE;
+  virtual void SetPageTitle(const base::string16& title) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void RenderViewSwappedIn(RenderViewHost* host) OVERRIDE;
   virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;
@@ -105,11 +108,11 @@ class WebContentsViewMac : public WebContentsViewPort,
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
   virtual void StartDragging(const DropData& drop_data,
-                             WebKit::WebDragOperationsMask allowed_operations,
+                             blink::WebDragOperationsMask allowed_operations,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,
                              const DragEventSourceInfo& event_info) OVERRIDE;
-  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
+  virtual void UpdateDragCursor(blink::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
@@ -121,6 +124,9 @@ class WebContentsViewMac : public WebContentsViewPort,
   WebContentsViewDelegate* delegate() { return delegate_.get(); }
 
  private:
+  // Updates overlay view on current RenderWidgetHostView.
+  void UpdateRenderWidgetHostViewOverlay();
+
   // The WebContentsImpl whose contents we display.
   WebContentsImpl* web_contents_;
 
@@ -136,6 +142,17 @@ class WebContentsViewMac : public WebContentsViewPort,
 
   // Whether to allow overlapping views.
   bool allow_overlapping_views_;
+
+  // The overlay view which is rendered above this one.
+  // Overlay view has |underlay_view_| set to this view.
+  WebContentsViewMac* overlay_view_;
+
+  // The offset of overlay view relative to this view.
+  gfx::Point overlay_view_offset_;
+
+  // The underlay view which this view is rendered above.
+  // Underlay view has |overlay_view_| set to this view.
+  WebContentsViewMac* underlay_view_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewMac);
 };

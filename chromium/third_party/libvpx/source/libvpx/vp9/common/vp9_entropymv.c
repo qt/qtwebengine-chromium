@@ -18,14 +18,14 @@
 /* Integer pel reference mv threshold for use of high-precision 1/8 mv */
 #define COMPANDED_MVREF_THRESH 8
 
-const vp9_tree_index vp9_mv_joint_tree[2 * MV_JOINTS - 2] = {
+const vp9_tree_index vp9_mv_joint_tree[TREE_SIZE(MV_JOINTS)] = {
   -MV_JOINT_ZERO, 2,
   -MV_JOINT_HNZVZ, 4,
   -MV_JOINT_HZVNZ, -MV_JOINT_HNZVNZ
 };
 struct vp9_token vp9_mv_joint_encodings[MV_JOINTS];
 
-const vp9_tree_index vp9_mv_class_tree[2 * MV_CLASSES - 2] = {
+const vp9_tree_index vp9_mv_class_tree[TREE_SIZE(MV_CLASSES)] = {
   -MV_CLASS_0, 2,
   -MV_CLASS_1, 4,
   6, 8,
@@ -39,12 +39,12 @@ const vp9_tree_index vp9_mv_class_tree[2 * MV_CLASSES - 2] = {
 };
 struct vp9_token vp9_mv_class_encodings[MV_CLASSES];
 
-const vp9_tree_index vp9_mv_class0_tree [2 * CLASS0_SIZE - 2] = {
+const vp9_tree_index vp9_mv_class0_tree[TREE_SIZE(CLASS0_SIZE)] = {
   -0, -1,
 };
 struct vp9_token vp9_mv_class0_encodings[CLASS0_SIZE];
 
-const vp9_tree_index vp9_mv_fp_tree [2 * 4 - 2] = {
+const vp9_tree_index vp9_mv_fp_tree[TREE_SIZE(4)] = {
   -0, 2,
   -1, 4,
   -2, -3
@@ -53,8 +53,8 @@ struct vp9_token vp9_mv_fp_encodings[4];
 
 static const nmv_context default_nmv_context = {
   {32, 64, 96},
-  {
-    { /* vert component */
+  { // NOLINT
+    { /* vert component */ // NOLINT
       128,                                                  /* sign */
       {224, 144, 192, 168, 192, 176, 192, 198, 198, 245},   /* class */
       {216},                                                /* class0 */
@@ -64,7 +64,7 @@ static const nmv_context default_nmv_context = {
       160,                                                  /* class0_hp bit */
       128,                                                  /* hp */
     },
-    { /* hor component */
+    { /* hor component */ // NOLINT
       128,                                                  /* sign */
       {216, 128, 176, 160, 176, 176, 192, 198, 198, 208},   /* class */
       {208},                                                /* class0 */
@@ -149,7 +149,7 @@ int vp9_get_mv_mag(MV_CLASS_TYPE c, int offset) {
 static void inc_mv_component(int v, nmv_component_counts *comp_counts,
                              int incr, int usehp) {
   int s, z, c, o, d, e, f;
-  assert (v != 0);            /* should not be zero */
+  assert(v != 0);            /* should not be zero */
   s = v < 0;
   comp_counts->sign[s] += incr;
   z = (s ? -v : v) - 1;       /* magnitude - 1 */
@@ -175,17 +175,18 @@ static void inc_mv_component(int v, nmv_component_counts *comp_counts,
   }
 }
 
+void vp9_inc_mv(const MV *mv, nmv_context_counts *counts) {
+  if (counts != NULL) {
+    const MV_JOINT_TYPE j = vp9_get_mv_joint(mv);
+    ++counts->joints[j];
 
-void vp9_inc_mv(const MV *mv,  nmv_context_counts *counts) {
-  const MV_JOINT_TYPE j = vp9_get_mv_joint(mv);
-  ++counts->joints[j];
+    if (mv_joint_vertical(j)) {
+      inc_mv_component(mv->row, &counts->comps[0], 1, 1);
+    }
 
-  if (mv_joint_vertical(j)) {
-    inc_mv_component(mv->row, &counts->comps[0], 1, 1);
-  }
-
-  if (mv_joint_horizontal(j)) {
-    inc_mv_component(mv->col, &counts->comps[1], 1, 1);
+    if (mv_joint_horizontal(j)) {
+      inc_mv_component(mv->col, &counts->comps[1], 1, 1);
+    }
   }
 }
 
@@ -198,8 +199,6 @@ static unsigned int adapt_probs(unsigned int i,
                                 vp9_prob this_probs[],
                                 const vp9_prob last_probs[],
                                 const unsigned int num_events[]) {
-
-
   const unsigned int left = tree[i] <= 0
           ? num_events[-tree[i]]
           : adapt_probs(tree[i], tree, this_probs, last_probs, num_events);
@@ -216,11 +215,11 @@ static unsigned int adapt_probs(unsigned int i,
 void vp9_adapt_mv_probs(VP9_COMMON *cm, int allow_hp) {
   int i, j;
 
-  FRAME_CONTEXT *pre_fc = &cm->frame_contexts[cm->frame_context_idx];
+  const FRAME_CONTEXT *pre_fc = &cm->frame_contexts[cm->frame_context_idx];
 
   nmv_context *ctx = &cm->fc.nmvc;
-  nmv_context *pre_ctx = &pre_fc->nmvc;
-  nmv_context_counts *cts = &cm->counts.mv;
+  const nmv_context *pre_ctx = &pre_fc->nmvc;
+  const nmv_context_counts *cts = &cm->counts.mv;
 
   adapt_probs(0, vp9_mv_joint_tree, ctx->joints, pre_ctx->joints, cts->joints);
 

@@ -35,11 +35,11 @@
 #include "WebFormControlElement.h"
 #include "WebOptionElement.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WebCore { class HTMLSelectElement; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 // Provides readonly access to some properties of a DOM select element node.
 class WebSelectElement : public WebFormControlElement {
@@ -54,17 +54,17 @@ public:
     }
     void assign(const WebSelectElement& element) { WebFormControlElement::assign(element); }
 
-    WEBKIT_EXPORT void setValue(const WebString&);
-    WEBKIT_EXPORT WebString value() const;
-    WEBKIT_EXPORT WebVector<WebElement> listItems() const;
+    BLINK_EXPORT void setValue(const WebString&);
+    BLINK_EXPORT WebString value() const;
+    BLINK_EXPORT WebVector<WebElement> listItems() const;
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebSelectElement(const WTF::PassRefPtr<WebCore::HTMLSelectElement>&);
     WebSelectElement& operator=(const WTF::PassRefPtr<WebCore::HTMLSelectElement>&);
     operator WTF::PassRefPtr<WebCore::HTMLSelectElement>() const;
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -32,7 +32,6 @@
 #define ThreadableLoader_h
 
 #include "core/fetch/ResourceLoaderOptions.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -42,7 +41,7 @@ namespace WebCore {
     class ResourceError;
     class ResourceRequest;
     class ResourceResponse;
-    class ScriptExecutionContext;
+    class ExecutionContext;
     class ThreadableLoaderClient;
 
     enum CrossOriginRequestPolicy {
@@ -71,7 +70,6 @@ namespace WebCore {
 
         PreflightPolicy preflightPolicy; // If AccessControl is used, how to determine if a preflight is needed.
         CrossOriginRequestPolicy crossOriginRequestPolicy;
-        RefPtr<SecurityOrigin> securityOrigin;
         AtomicString initiator;
         ContentSecurityPolicyEnforcement contentSecurityPolicyEnforcement;
         unsigned long timeoutMilliseconds;
@@ -82,8 +80,8 @@ namespace WebCore {
     class ThreadableLoader {
         WTF_MAKE_NONCOPYABLE(ThreadableLoader);
     public:
-        static void loadResourceSynchronously(ScriptExecutionContext*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
-        static PassRefPtr<ThreadableLoader> create(ScriptExecutionContext*, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&);
+        static void loadResourceSynchronously(ExecutionContext*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
+        static PassRefPtr<ThreadableLoader> create(ExecutionContext*, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&);
 
         virtual void cancel() = 0;
         void ref() { refThreadableLoader(); }

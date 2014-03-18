@@ -68,17 +68,16 @@ public:
     AudioScheduledSourceNode(AudioContext*, float sampleRate);
 
     // Scheduling.
-    void start(double when);
-    void stop(double when);
-
-    void noteOn(double when);
-    void noteOff(double when);
+    void start(ExceptionState& exceptionState) { start(0.0, exceptionState); }
+    void start(double when, ExceptionState&);
+    void stop(ExceptionState& exceptionState) { stop(0.0, exceptionState); }
+    void stop(double when, ExceptionState&);
 
     unsigned short playbackState() const { return static_cast<unsigned short>(m_playbackState); }
     bool isPlayingOrScheduled() const { return m_playbackState == PLAYING_STATE || m_playbackState == SCHEDULED_STATE; }
     bool hasFinished() const { return m_playbackState == FINISHED_STATE; }
 
-    EventListener* onended(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(eventNames().endedEvent, isolatedWorld); }
+    EventListener* onended(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(EventTypeNames::ended, isolatedWorld); }
     void setOnended(PassRefPtr<EventListener>, DOMWrapperWorld* isolatedWorld = 0);
 
 protected:
@@ -110,6 +109,7 @@ protected:
     double m_endTime; // in seconds
 
     bool m_hasEndedListener;
+    bool m_stopCalled;
 
     static const double UnknownTime;
 };

@@ -39,6 +39,14 @@ public:
         SkDEBUGCODE(if (!fOwnFirstBlock) {*((char*)initialBlock+fBlockSize-1)='a';} );
     }
 
+    /*
+     * Set first block of memory to write into.  Must be called before any other methods.
+     * This requires that you have passed NULL in the constructor.
+     *
+     * @param   initialBlock    optional memory to use for the first block.
+     *                          Must be at least itemSize*itemsPerBlock sized.
+     *                          Caller is responsible for freeing this memory.
+     */
     void setInitialBlock(void* initialBlock) {
         SkASSERT(0 == fCount);
         SkASSERT(1 == fBlocks.count());
@@ -57,9 +65,9 @@ public:
         // we always have at least one block
         if (0 == indexInBlock) {
             if (0 != fCount) {
-                fBlocks.push_back() = GrMalloc(fBlockSize);
+                fBlocks.push_back() = sk_malloc_throw(fBlockSize);
             } else if (fOwnFirstBlock) {
-                fBlocks[0] = GrMalloc(fBlockSize);
+                fBlocks[0] = sk_malloc_throw(fBlockSize);
             }
         }
         void* ret = (char*)fBlocks[fCount/fItemsPerBlock] +
@@ -75,10 +83,10 @@ public:
         int blockCount = GrMax((unsigned)1,
                                GrUIDivRoundUp(fCount, fItemsPerBlock));
         for (int i = 1; i < blockCount; ++i) {
-            GrFree(fBlocks[i]);
+            sk_free(fBlocks[i]);
         }
         if (fOwnFirstBlock) {
-            GrFree(fBlocks[0]);
+            sk_free(fBlocks[0]);
             fBlocks[0] = NULL;
         }
         fBlocks.pop_back_n(blockCount-1);
@@ -153,9 +161,6 @@ public:
      * Create an allocator
      *
      * @param   itemsPerBlock   the number of items to allocate at once
-     * @param   initialBlock    optional memory to use for the first block.
-     *                          Must be at least size(T)*itemsPerBlock sized.
-     *                          Caller is responsible for freeing this memory.
      */
     explicit GrTAllocator(int itemsPerBlock)
         : fAllocator(sizeof(T), itemsPerBlock, NULL) {}
@@ -231,6 +236,13 @@ public:
     }
 
 protected:
+    /*
+     * Set first block of memory to write into.  Must be called before any other methods.
+     *
+     * @param   initialBlock    optional memory to use for the first block.
+     *                          Must be at least size(T)*itemsPerBlock sized.
+     *                          Caller is responsible for freeing this memory.
+     */
     void setInitialBlock(void* initialBlock) {
         fAllocator.setInitialBlock(initialBlock);
     }
@@ -243,7 +255,6 @@ private:
 template <int N, typename T> class GrSTAllocator : public GrTAllocator<T> {
 private:
     typedef GrTAllocator<T> INHERITED;
-
 
 public:
     GrSTAllocator() : INHERITED(N) {

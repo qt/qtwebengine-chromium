@@ -46,15 +46,6 @@ static int CallFstat(int fd, stat_wrapper_t *sb) {
 // NaCl doesn't provide the following system calls, so either simulate them or
 // wrap them in order to minimize the number of #ifdef's in this file.
 #if !defined(OS_NACL)
-static int DoPread(PlatformFile file, char* data, int size, int64 offset) {
-  return HANDLE_EINTR(pread(file, data, size, offset));
-}
-
-static int DoPwrite(PlatformFile file, const char* data, int size,
-                      int64 offset) {
-  return HANDLE_EINTR(pwrite(file, data, size, offset));
-}
-
 static bool IsOpenAppend(PlatformFile file) {
   return (fcntl(file, F_GETFL) & O_APPEND) != 0;
 }
@@ -83,18 +74,18 @@ static int CallFutimes(PlatformFile file, const struct timeval times[2]) {
   return futimes(file, times);
 #endif
 }
-#else  // defined(OS_NACL)
-// TODO(bbudge) Remove DoPread, DoPwrite when NaCl implements pread, pwrite.
-static int DoPread(PlatformFile file, char* data, int size, int64 offset) {
-  lseek(file, static_cast<off_t>(offset), SEEK_SET);
-  return HANDLE_EINTR(read(file, data, size));
-}
 
-static int DoPwrite(PlatformFile file, const char* data, int size,
-                      int64 offset) {
-  lseek(file, static_cast<off_t>(offset), SEEK_SET);
-  return HANDLE_EINTR(write(file, data, size));
+static PlatformFileError CallFctnlFlock(PlatformFile file, bool do_lock) {
+  struct flock lock;
+  lock.l_type = F_WRLCK;
+  lock.l_whence = SEEK_SET;
+  lock.l_start = 0;
+  lock.l_len = 0;  // Lock entire file.
+  if (HANDLE_EINTR(fcntl(file, do_lock ? F_SETLK : F_UNLCK, &lock)) == -1)
+    return ErrnoToPlatformFileError(errno);
+  return PLATFORM_FILE_OK;
 }
+#else  // defined(OS_NACL)
 
 static bool IsOpenAppend(PlatformFile file) {
   // NaCl doesn't implement fcntl. Since NaCl's write conforms to the POSIX
@@ -116,6 +107,11 @@ static int CallFsync(PlatformFile file) {
 static int CallFutimes(PlatformFile file, const struct timeval times[2]) {
   NOTIMPLEMENTED();  // NaCl doesn't implement futimes.
   return 0;
+}
+
+static PlatformFileError CallFctnlFlock(PlatformFile file, bool do_lock) {
+  NOTIMPLEMENTED();  // NaCl doesn't implement flock struct.
+  return PLATFORM_FILE_ERROR_INVALID_OPERATION;
 }
 #endif  // defined(OS_NACL)
 
@@ -225,7 +221,7 @@ FILE* FdopenPlatformFile(PlatformFile file, const char* mode) {
 
 bool ClosePlatformFile(PlatformFile file) {
   base::ThreadRestrictions::AssertIOAllowed();
-  return !HANDLE_EINTR(close(file));
+  return !IGNORE_EINTR(close(file));
 }
 
 int64 SeekPlatformFile(PlatformFile file,
@@ -246,8 +242,8 @@ int ReadPlatformFile(PlatformFile file, int64 offset, char* data, int size) {
   int bytes_read = 0;
   int rv;
   do {
-    rv = DoPread(file, data + bytes_read,
-                 size - bytes_read, offset + bytes_read);
+    rv = HANDLE_EINTR(pread(file, data + bytes_read,
+                            size - bytes_read, offset + bytes_read));
     if (rv <= 0)
       break;
 
@@ -281,7 +277,7 @@ int ReadPlatformFileNoBestEffort(PlatformFile file, int64 offset,
   if (file < 0)
     return -1;
 
-  return DoPread(file, data, size, offset);
+  return HANDLE_EINTR(pread(file, data, size, offset));
 }
 
 int ReadPlatformFileCurPosNoBestEffort(PlatformFile file,
@@ -306,8 +302,8 @@ int WritePlatformFile(PlatformFile file, int64 offset,
   int bytes_written = 0;
   int rv;
   do {
-    rv = DoPwrite(file, data + bytes_written,
-                  size - bytes_written, offset + bytes_written);
+    rv = HANDLE_EINTR(pwrite(file, data + bytes_written,
+                             size - bytes_written, offset + bytes_written));
     if (rv <= 0)
       break;
 
@@ -424,6 +420,14 @@ bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info) {
       base::TimeDelta::FromMicroseconds(creation_time_nsec /
                                         base::Time::kNanosecondsPerMicrosecond);
   return true;
+}
+
+PlatformFileError LockPlatformFile(PlatformFile file) {
+  return CallFctnlFlock(file, true);
+}
+
+PlatformFileError UnlockPlatformFile(PlatformFile file) {
+  return CallFctnlFlock(file, false);
 }
 
 PlatformFileError ErrnoToPlatformFileError(int saved_errno) {

@@ -29,7 +29,7 @@
 #include "modules/speech/SpeechGrammar.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 void WebSpeechGrammar::reset()
 {
@@ -54,14 +54,14 @@ WebSpeechGrammar& WebSpeechGrammar::operator=(const WTF::PassRefPtr<WebCore::Spe
 
 WebURL WebSpeechGrammar::src() const
 {
-    WEBKIT_ASSERT(m_private.get());
+    BLINK_ASSERT(m_private.get());
     return m_private->src();
 }
 
 float WebSpeechGrammar::weight() const
 {
-    WEBKIT_ASSERT(m_private.get());
+    BLINK_ASSERT(m_private.get());
     return m_private->weight();
 }
 
-} // namespace WebKit
+} // namespace blink

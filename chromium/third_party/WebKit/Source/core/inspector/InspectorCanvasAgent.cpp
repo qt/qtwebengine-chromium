@@ -32,10 +32,8 @@
 #include "core/inspector/InspectorCanvasAgent.h"
 
 #include "HTMLNames.h"
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/ScriptProfiler.h"
-#include "bindings/v8/ScriptState.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/inspector/BindingVisitors.h"
 #include "core/inspector/InjectedScript.h"
@@ -45,8 +43,8 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 
 using WebCore::TypeBuilder::Array;
 using WebCore::TypeBuilder::Canvas::ResourceId;
@@ -325,7 +323,7 @@ void InspectorCanvasAgent::didCommitLoad(Frame*, DocumentLoader* loader)
                 String frameId = m_pageAgent->frameId(frame);
                 m_frontend->traceLogsRemoved(&frameId, 0);
             }
-            frame = frame->tree()->traverseNext();
+            frame = frame->tree().traverseNext();
         }
     }
 }

@@ -10,9 +10,11 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
@@ -33,8 +35,11 @@ class Size;
 }
 
 namespace content {
+class AudioRendererHost;
 class BrowserDemuxerAndroid;
+class GeolocationDispatcherHost;
 class GpuMessageFilter;
+class MessagePortMessageFilter;
 class PeerConnectionTrackerHost;
 class RendererMainThread;
 class RenderWidgetHelper;
@@ -80,6 +85,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual int GetNextRoutingID() OVERRIDE;
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
+  virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -107,6 +114,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void SetSuddenTerminationAllowed(bool enabled) OVERRIDE;
   virtual bool SuddenTerminationAllowed() const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
+  virtual void AddFilter(BrowserMessageFilter* filter) OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
@@ -123,6 +131,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
+
+  scoped_refptr<AudioRendererHost> audio_renderer_host() const;
 
   // Tells the ResourceDispatcherHost to resume a deferred navigation without
   // transferring it to a new renderer process.
@@ -144,6 +154,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
       int route_id,
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
+
+  scoped_refptr<GeolocationDispatcherHost>
+      geolocation_dispatcher_host() const {
+    return make_scoped_refptr(geolocation_dispatcher_host_);
+  }
 
   // Register/unregister the host identified by the host id in the global host
   // list.
@@ -178,11 +193,22 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   static base::MessageLoop* GetInProcessRendererThreadForTesting();
 
+  // This forces a renderer that is running "in process" to shut down.
+  static void ShutDownInProcessRenderer();
+
 #if defined(OS_ANDROID)
   const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
     return browser_demuxer_android_;
   }
 #endif
+
+  MessagePortMessageFilter* message_port_message_filter() const {
+    return message_port_message_filter_;
+  }
+
+  void SetIsGuestForTesting(bool is_guest) {
+    is_guest_ = is_guest;
+  }
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -194,6 +220,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // True if we've posted a DeleteTask and will be deleted soon.
   bool deleting_soon_;
+
+#ifndef NDEBUG
+  // True if this object has deleted itself.
+  bool is_self_deleted_;
+#endif
 
   // The count of currently swapped out but pending RenderViews.  We have
   // started to swap these in, so the renderer process should not exit if
@@ -259,6 +290,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // it's valid if non-NULL.
   GpuMessageFilter* gpu_message_filter_;
 
+  // The filter for MessagePort messages coming from the renderer.
+  scoped_refptr<MessagePortMessageFilter> message_port_message_filter_;
+
   // A map of transport DIB ids to cached TransportDIBs
   std::map<TransportDIB::Id, TransportDIB*> cached_dibs_;
 
@@ -295,6 +329,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Owned by |browser_context_|.
   StoragePartitionImpl* storage_partition_impl_;
 
+  // The observers watching our lifetime.
+  ObserverList<RenderProcessHostObserver> observers_;
+
   // True if the process can be shut down suddenly.  If this is true, then we're
   // sure that all the RenderViews in the process can be shutdown suddenly.  If
   // it's false, then specific RenderViews might still be allowed to be shutdown
@@ -329,9 +366,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Forwards power state messages to the renderer process.
   PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
 
+  scoped_refptr<AudioRendererHost> audio_renderer_host_;
+
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
 #endif
+
+  // Message filter for geolocation messages.
+  GeolocationDispatcherHost* geolocation_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

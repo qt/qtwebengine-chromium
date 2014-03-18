@@ -33,15 +33,15 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/platform/graphics/IntRect.h"
+#if INSIDE_BLINK
+#include "platform/geometry/IntRect.h"
 #else
 #include <algorithm>
 #include <cmath>
 #include <ui/gfx/rect.h>
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebRect {
     int x;
@@ -67,7 +67,7 @@ struct WebRect {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WebRect(const WebCore::IntRect& r)
         : x(r.x())
         , y(r.y())
@@ -124,6 +124,6 @@ inline bool operator!=(const WebRect& a, const WebRect& b)
     return !(a == b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -43,12 +43,30 @@ class RenderObject;
 class RenderStyle;
 class SVGPaint;
 class ShadowData;
+class ShadowList;
 class StylePropertySet;
 class StylePropertyShorthand;
 
 enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
 class CSSComputedStyleDeclaration : public CSSStyleDeclaration {
+private:
+    class ComputedCSSVariablesIterator : public CSSVariablesIterator {
+    public:
+        virtual ~ComputedCSSVariablesIterator() { }
+        static PassRefPtr<ComputedCSSVariablesIterator> create(const HashMap<AtomicString, String>* variableMap) { return adoptRef(new ComputedCSSVariablesIterator(variableMap)); }
+    private:
+        explicit ComputedCSSVariablesIterator(const HashMap<AtomicString, String>* variableMap);
+        virtual void advance() OVERRIDE;
+        virtual bool atEnd() const OVERRIDE { return m_it == m_end; }
+        virtual AtomicString name() const OVERRIDE;
+        virtual String value() const OVERRIDE;
+        bool m_active;
+        typedef HashMap<AtomicString, String>::const_iterator VariablesMapIterator;
+        VariablesMapIterator m_it;
+        VariablesMapIterator m_end;
+    };
+
 public:
     static PassRefPtr<CSSComputedStyleDeclaration> create(PassRefPtr<Node> node, bool allowVisitedStyle = false, const String& pseudoElementName = String())
     {
@@ -95,7 +113,7 @@ private:
     virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&);
     virtual String removeProperty(const String& propertyName, ExceptionState&);
     virtual String cssText() const;
-    virtual void setCssText(const String&, ExceptionState&);
+    virtual void setCSSText(const String&, ExceptionState&);
     virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID);
     virtual String getPropertyValueInternal(CSSPropertyID);
     virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&);
@@ -103,17 +121,19 @@ private:
     const HashMap<AtomicString, String>* variableMap() const;
     virtual unsigned variableCount() const OVERRIDE;
     virtual String variableValue(const AtomicString& name) const OVERRIDE;
-    virtual void setVariableValue(const AtomicString& name, const String& value, ExceptionState&) OVERRIDE;
+    virtual bool setVariableValue(const AtomicString& name, const String& value, ExceptionState&) OVERRIDE;
     virtual bool removeVariable(const AtomicString& name) OVERRIDE;
-    virtual void clearVariables(ExceptionState&) OVERRIDE;
+    virtual bool clearVariables(ExceptionState&) OVERRIDE;
+    virtual PassRefPtr<CSSVariablesIterator> variablesIterator() const OVERRIDE { return ComputedCSSVariablesIterator::create(variableMap()); }
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const OVERRIDE;
 
-    PassRefPtr<CSSValue> valueForShadow(const ShadowData*, CSSPropertyID, const RenderStyle*) const;
-    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const Color&) const;
-    PassRefPtr<SVGPaint> adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint>, RenderStyle*) const;
+    PassRefPtr<CSSValue> valueForShadowData(const ShadowData&, const RenderStyle&, bool useSpread) const;
+    PassRefPtr<CSSValue> valueForShadowList(const ShadowList*, const RenderStyle&, bool useSpread) const;
+    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(const RenderStyle&, const Color&) const;
+    PassRefPtr<SVGPaint> adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint>, RenderStyle&) const;
 
-    PassRefPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle*) const;
+    PassRefPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle&) const;
 
     PassRefPtr<CSSValueList> valuesForShorthandProperty(const StylePropertyShorthand&) const;
     PassRefPtr<CSSValueList> valuesForSidesShorthand(const StylePropertyShorthand&) const;

@@ -7,10 +7,12 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <vector>
 
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/picture_pile_base.h"
 #include "skia/ext/analysis_canvas.h"
 #include "skia/ext/refptr.h"
@@ -27,16 +29,6 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   // Get paint-safe version of this picture for a specific thread.
   PicturePileImpl* GetCloneForDrawingOnThread(unsigned thread_index) const;
 
-  struct CC_EXPORT RasterStats {
-    // Minimum rasterize time from N runs
-    // N=max(1,slow-down-raster-scale-factor)
-    base::TimeDelta best_rasterize_time;
-    // Total rasterize time for all N runs
-    base::TimeDelta total_rasterize_time;
-    // Total number of pixels rasterize in all N runs
-    int64 total_pixels_rasterized;
-  };
-
   // Raster a subrect of this PicturePileImpl into the given canvas.
   // It's only safe to call paint on a cloned version.  It is assumed
   // that contents_scale has already been applied to this canvas.
@@ -49,7 +41,7 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
       SkCanvas* canvas,
       gfx::Rect canvas_rect,
       float contents_scale,
-      RasterStats* raster_stats);
+      RenderingStatsInstrumentation* rendering_stats_instrumentation);
 
   // Similar to the above RasterDirect method, but this is a convenience method
   // for when it is known that the raster is going to an intermediate bitmap
@@ -58,15 +50,15 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
       SkCanvas* canvas,
       gfx::Rect canvas_rect,
       float contents_scale,
-      RasterStats* raster_stats);
+      RenderingStatsInstrumentation* stats_instrumentation);
 
   // Called when analyzing a tile. We can use AnalysisCanvas as
   // SkDrawPictureCallback, which allows us to early out from analysis.
   void RasterForAnalysis(
       skia::AnalysisCanvas* canvas,
       gfx::Rect canvas_rect,
-      float contents_scale);
-
+      float contents_scale,
+      RenderingStatsInstrumentation* stats_instrumentation);
 
   skia::RefPtr<SkPicture> GetFlattenedPicture();
 
@@ -83,6 +75,11 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
                      float contents_scale,
                      Analysis* analysis);
 
+  void AnalyzeInRect(gfx::Rect content_rect,
+                     float contents_scale,
+                     Analysis* analysis,
+                     RenderingStatsInstrumentation* stats_instrumentation);
+
   class CC_EXPORT PixelRefIterator {
    public:
     PixelRefIterator(gfx::Rect content_rect,
@@ -96,15 +93,13 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
     operator bool() const { return pixel_ref_iterator_; }
 
    private:
-    bool AdvanceToTileWithPictures();
-    void AdvanceToPictureWithPixelRefs();
+    void AdvanceToTilePictureWithPixelRefs();
 
     const PicturePileImpl* picture_pile_;
     gfx::Rect layer_rect_;
     TilingData::Iterator tile_iterator_;
     Picture::PixelRefIterator pixel_ref_iterator_;
-    const PictureList* picture_list_;
-    PictureList::const_iterator picture_list_iterator_;
+    std::set<const void*> processed_pictures_;
   };
 
   void DidBeginTracing();
@@ -132,12 +127,20 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
 
   PicturePileImpl(const PicturePileImpl* other, unsigned thread_index);
 
+ private:
+  typedef std::map<Picture*, Region> PictureRegionMap;
+  void CoalesceRasters(gfx::Rect canvas_rect,
+                       gfx::Rect content_rect,
+                       float contents_scale,
+                       PictureRegionMap* result);
+
   void RasterCommon(
       SkCanvas* canvas,
       SkDrawPictureCallback* callback,
       gfx::Rect canvas_rect,
       float contents_scale,
-      RasterStats* raster_stats);
+      RenderingStatsInstrumentation* rendering_stats_instrumentation,
+      bool is_analysis);
 
   // Once instantiated, |clones_for_drawing_| can't be modified.  This
   // guarantees thread-safe access during the life time of a PicturePileImpl

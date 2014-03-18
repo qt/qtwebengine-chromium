@@ -18,7 +18,6 @@
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
       'sources': [
-        '../../common_unittest.cc',
         'aligned_malloc_unittest.cc',
         'clock_unittest.cc',
         'condition_variable_unittest.cc',
@@ -79,10 +78,10 @@
           'target_name': 'system_wrappers_unittests_run',
           'type': 'none',
           'dependencies': [
-            '<(import_isolate_path):import_isolate_gypi',
             'system_wrappers_unittests',
           ],
           'includes': [
+            '../../build/isolate.gypi',
             'system_wrappers_unittests.isolate',
           ],
           'sources': [

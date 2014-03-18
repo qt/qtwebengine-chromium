@@ -34,25 +34,26 @@
 #define ImageInputType_h
 
 #include "core/html/forms/BaseButtonInputType.h"
-#include "core/platform/graphics/IntPoint.h"
+#include "platform/geometry/IntPoint.h"
 
 namespace WebCore {
 
 class ImageInputType : public BaseButtonInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
 private:
-    ImageInputType(HTMLInputElement*);
+    ImageInputType(HTMLInputElement&);
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual bool isFormDataAppendable() const OVERRIDE;
     virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
+    virtual String resultForDialogSubmit() const OVERRIDE;
     virtual bool supportsValidation() const OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
     virtual void altAttributeChanged() OVERRIDE;
     virtual void srcAttributeChanged() OVERRIDE;
-    virtual void attach() OVERRIDE;
+    virtual void startResourceLoading() OVERRIDE;
     virtual bool shouldRespectAlignAttribute() OVERRIDE;
     virtual bool canBeSuccessfulSubmitButton() OVERRIDE;
     virtual bool isImageButton() const OVERRIDE;

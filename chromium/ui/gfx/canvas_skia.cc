@@ -20,6 +20,7 @@ namespace gfx {
 
 namespace {
 
+#if defined(OS_WIN)
 // If necessary, wraps |text| with RTL/LTR directionality characters based on
 // |flags| and |text| content.
 // Returns true if the text will be rendered right-to-left.
@@ -52,6 +53,7 @@ bool AdjustStringDirection(int flags, base::string16* text) {
   // locales it will be handled by the if statement above).
   return false;
 }
+#endif  // defined(OS_WIN)
 
 // Checks each pixel immediately adjacent to the given pixel in the bitmap. If
 // any of them are not the halo color, returns true. This defines the halo of
@@ -152,30 +154,16 @@ void UpdateRenderText(const Rect& rect,
   render_text->SetStyle(UNDERLINE, (font_style & Font::UNDERLINE) != 0);
 }
 
-// Returns updated |flags| to match platform-specific expected behavior.
-int AdjustPlatformSpecificFlags(const base::string16& text, int flags) {
-#if defined(OS_LINUX)
-  // TODO(asvitkine): ash/tooltips/tooltip_controller.cc adds \n's to the string
-  //                  without passing MULTI_LINE.
-  if (text.find('\n') != base::string16::npos)
-    flags |= Canvas::MULTI_LINE;
-#endif
-
-  return flags;
-}
-
 }  // namespace
 
 // static
-void Canvas::SizeStringInt(const base::string16& text,
-                           const FontList& font_list,
-                           int* width, int* height,
-                           int line_height,
-                           int flags) {
+void Canvas::SizeStringFloat(const base::string16& text,
+                             const FontList& font_list,
+                             float* width, float* height,
+                             int line_height,
+                             int flags) {
   DCHECK_GE(*width, 0);
   DCHECK_GE(*height, 0);
-
-  flags = AdjustPlatformSpecificFlags(text, flags);
 
   base::string16 adjusted_text = text;
 #if defined(OS_WIN)
@@ -198,12 +186,12 @@ void Canvas::SizeStringInt(const base::string16& text,
     UpdateRenderText(rect, base::string16(), font_list, flags, 0,
                      render_text.get());
 
-    int h = 0;
-    int w = 0;
+    float h = 0;
+    float w = 0;
     for (size_t i = 0; i < strings.size(); ++i) {
       StripAcceleratorChars(flags, &strings[i]);
       render_text->SetText(strings[i]);
-      const Size& string_size = render_text->GetStringSize();
+      const SizeF& string_size = render_text->GetStringSizeF();
       w = std::max(w, string_size.width());
       h += (i > 0 && line_height > 0) ? line_height : string_size.height();
     }
@@ -222,7 +210,7 @@ void Canvas::SizeStringInt(const base::string16& text,
       StripAcceleratorChars(flags, &adjusted_text);
       UpdateRenderText(rect, adjusted_text, font_list, flags, 0,
                        render_text.get());
-      const Size& string_size = render_text->GetStringSize();
+      const SizeF& string_size = render_text->GetStringSizeF();
       *width = string_size.width();
       *height = string_size.height();
     }
@@ -238,8 +226,6 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
                                        const ShadowValues& shadows) {
   if (!IntersectsClipRect(text_bounds))
     return;
-
-  flags = AdjustPlatformSpecificFlags(text, flags);
 
   Rect clip_rect(text_bounds);
   clip_rect.Inset(ShadowValue::GetMargin(shadows));
@@ -350,7 +336,7 @@ void Canvas::DrawStringRectWithHalo(const base::string16& text,
   // Create a temporary buffer filled with the halo color. It must leave room
   // for the 1-pixel border around the text.
   Size size(display_rect.width() + 2, display_rect.height() + 2);
-  Canvas text_canvas(size, scale_factor(), true);
+  Canvas text_canvas(size, image_scale(), false);
   SkPaint bkgnd_paint;
   bkgnd_paint.setColor(halo_color);
   text_canvas.DrawRect(Rect(size), bkgnd_paint);
@@ -381,19 +367,27 @@ void Canvas::DrawStringRectWithHalo(const base::string16& text,
 
   // Draw the halo bitmap with blur.
   ImageSkia text_image = ImageSkia(ImageSkiaRep(text_bitmap,
-      text_canvas.scale_factor()));
+      text_canvas.image_scale()));
   DrawImageInt(text_image, display_rect.x() - 1, display_rect.y() - 1);
 }
 
 void Canvas::DrawFadeTruncatingStringRect(
     const base::string16& text,
     TruncateFadeMode truncate_mode,
-    size_t desired_characters_to_truncate_from_head,
     const FontList& font_list,
     SkColor color,
     const Rect& display_rect) {
-  int flags = NO_ELLIPSIS;
+  DrawFadeTruncatingStringRectWithFlags(
+      text, truncate_mode, font_list, color, display_rect, NO_ELLIPSIS);
+}
 
+void Canvas::DrawFadeTruncatingStringRectWithFlags(
+    const base::string16& text,
+    TruncateFadeMode truncate_mode,
+    const FontList& font_list,
+    SkColor color,
+    const Rect& display_rect,
+    int flags) {
   // If the whole string fits in the destination then just draw it directly.
   if (GetStringWidth(text, font_list) <= display_rect.width()) {
     DrawStringRectWithFlags(text, font_list, color, display_rect, flags);
@@ -401,8 +395,8 @@ void Canvas::DrawFadeTruncatingStringRect(
   }
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-  base::string16 clipped_text = text;
-  const bool is_rtl = AdjustStringDirection(flags, &clipped_text);
+  const bool is_rtl = base::i18n::GetFirstStrongCharacterDirection(text) ==
+                      base::i18n::RIGHT_TO_LEFT;
 
   switch (truncate_mode) {
     case TruncateFadeTail:
@@ -415,26 +409,6 @@ void Canvas::DrawFadeTruncatingStringRect(
       if (!is_rtl)
         flags |= TEXT_ALIGN_RIGHT;
       break;
-    case TruncateFadeHeadAndTail:
-      DCHECK_GT(desired_characters_to_truncate_from_head, 0u);
-      // Due to the fade effect the first character is hard to see.
-      // We want to make sure that the first character starting at
-      // |desired_characters_to_truncate_from_head| is readable so we reduce
-      // the offset by a little bit.
-      desired_characters_to_truncate_from_head =
-          std::max<int>(0, desired_characters_to_truncate_from_head - 2);
-
-      if (desired_characters_to_truncate_from_head) {
-        // Make sure to clip the text at a UTF16 boundary.
-        U16_SET_CP_LIMIT(text.data(), 0,
-                         desired_characters_to_truncate_from_head,
-                         text.length());
-        clipped_text = text.substr(desired_characters_to_truncate_from_head);
-      }
-
-      render_text->set_fade_tail(true);
-      render_text->set_fade_head(true);
-      break;
   }
 
   // Default to left alignment unless right alignment was chosen above.
@@ -442,8 +416,7 @@ void Canvas::DrawFadeTruncatingStringRect(
     flags |= TEXT_ALIGN_LEFT;
 
   Rect rect = display_rect;
-  UpdateRenderText(rect, clipped_text, font_list, flags, color,
-                   render_text.get());
+  UpdateRenderText(rect, text, font_list, flags, color, render_text.get());
 
   const int line_height = render_text->GetStringSize().height();
   // Center the text vertically.
@@ -455,18 +428,6 @@ void Canvas::DrawFadeTruncatingStringRect(
   ClipRect(display_rect);
   render_text->Draw(this);
   canvas_->restore();
-}
-
-void Canvas::DrawFadeTruncatingString(
-    const base::string16& text,
-    TruncateFadeMode truncate_mode,
-    size_t desired_characters_to_truncate_from_head,
-    const Font& font,
-    SkColor color,
-    const Rect& display_rect) {
-  DrawFadeTruncatingStringRect(text, truncate_mode,
-                               desired_characters_to_truncate_from_head,
-                               FontList(font), color, display_rect);
 }
 
 }  // namespace gfx

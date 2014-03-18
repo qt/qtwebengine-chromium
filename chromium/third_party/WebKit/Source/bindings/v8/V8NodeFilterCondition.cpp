@@ -37,7 +37,7 @@
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeFilter.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -45,7 +45,7 @@ V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::H
     : m_filter(isolate, filter)
 {
     owner->SetHiddenValue(V8HiddenPropertyName::condition(isolate), filter);
-    m_filter.makeWeak(this, &makeWeakCallback);
+    m_filter.setWeak(this, &setWeakCallback);
 }
 
 V8NodeFilterCondition::~V8NodeFilterCondition()
@@ -54,9 +54,8 @@ V8NodeFilterCondition::~V8NodeFilterCondition()
 
 short V8NodeFilterCondition::acceptNode(ScriptState* state, Node* node) const
 {
-    ASSERT(v8::Context::InContext());
-
     v8::Isolate* isolate = state->isolate();
+    ASSERT(isolate->InContext());
     v8::HandleScope handleScope(isolate);
     v8::Handle<v8::Value> filter = m_filter.newLocal(isolate);
     ASSERT(!filter.IsEmpty());
@@ -69,7 +68,7 @@ short V8NodeFilterCondition::acceptNode(ScriptState* state, Node* node) const
     if (filter->IsFunction())
         callback = v8::Handle<v8::Function>::Cast(filter);
     else {
-        v8::Local<v8::Value> value = filter->ToObject()->Get(v8::String::NewSymbol("acceptNode"));
+        v8::Local<v8::Value> value = filter->ToObject()->Get(v8AtomicString(isolate, "acceptNode"));
         if (!value->IsFunction()) {
             throwTypeError("NodeFilter object does not have an acceptNode function", state->isolate());
             return NodeFilter::FILTER_REJECT;
@@ -77,11 +76,11 @@ short V8NodeFilterCondition::acceptNode(ScriptState* state, Node* node) const
         callback = v8::Handle<v8::Function>::Cast(value);
     }
 
-    OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[1]);
-    args[0] = toV8(node, v8::Handle<v8::Object>(), state->isolate());
+    OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[1]);
+    info[0] = toV8(node, v8::Handle<v8::Object>(), state->isolate());
 
-    v8::Handle<v8::Object> object = v8::Context::GetCurrent()->Global();
-    v8::Handle<v8::Value> result = ScriptController::callFunctionWithInstrumentation(0, callback, object, 1, args.get(), isolate);
+    v8::Handle<v8::Object> object = isolate->GetCurrentContext()->Global();
+    v8::Handle<v8::Value> result = ScriptController::callFunction(state->executionContext(), callback, object, 1, info.get(), isolate);
 
     if (exceptionCatcher.HasCaught()) {
         state->setException(exceptionCatcher.Exception());
@@ -93,9 +92,9 @@ short V8NodeFilterCondition::acceptNode(ScriptState* state, Node* node) const
     return result->Int32Value();
 }
 
-void V8NodeFilterCondition::makeWeakCallback(v8::Isolate*, v8::Persistent<v8::Value>*, V8NodeFilterCondition* condition)
+void V8NodeFilterCondition::setWeakCallback(const v8::WeakCallbackData<v8::Value, V8NodeFilterCondition>& data)
 {
-    condition->m_filter.clear();
+    data.GetParameter()->m_filter.clear();
 }
 
 } // namespace WebCore

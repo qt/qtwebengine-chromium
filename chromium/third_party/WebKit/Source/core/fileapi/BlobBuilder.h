@@ -31,18 +31,13 @@
 #ifndef BlobBuilder_h
 #define BlobBuilder_h
 
-#include "core/platform/network/BlobData.h"
+#include "platform/blob/BlobData.h"
 #include "wtf/Forward.h"
-
-namespace WTF{
-class TextEncoding;
-}
 
 namespace WebCore {
 
 class Blob;
-
-typedef int ExceptionCode;
+class File;
 
 class BlobBuilder {
 public:
@@ -53,7 +48,8 @@ public:
     void append(ArrayBuffer*);
     void append(ArrayBufferView*);
 
-    PassRefPtr<Blob> getBlob(const String& contentType);
+    PassRefPtr<Blob> createBlob(const String& contentType);
+    PassRefPtr<File> createFile(const String& contentType, const String& fileName, double modificationTime);
 
 private:
     void appendBytesData(const void*, size_t);

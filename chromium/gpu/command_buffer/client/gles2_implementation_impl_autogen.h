@@ -251,7 +251,7 @@ void GLES2Implementation::DeleteBuffers(GLsizei n, const GLuint* buffers) {
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(buffers[i] != 0);
+      DCHECK(buffers[i] != 0);
     }
   });
   if (n < 0) {
@@ -273,7 +273,7 @@ void GLES2Implementation::DeleteFramebuffers(
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(framebuffers[i] != 0);
+      DCHECK(framebuffers[i] != 0);
     }
   });
   if (n < 0) {
@@ -303,7 +303,7 @@ void GLES2Implementation::DeleteRenderbuffers(
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(renderbuffers[i] != 0);
+      DCHECK(renderbuffers[i] != 0);
     }
   });
   if (n < 0) {
@@ -332,7 +332,7 @@ void GLES2Implementation::DeleteTextures(GLsizei n, const GLuint* textures) {
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(textures[i] != 0);
+      DCHECK(textures[i] != 0);
     }
   });
   if (n < 0) {
@@ -1410,13 +1410,38 @@ void GLES2Implementation::Viewport(
   CheckGLError();
 }
 
-void GLES2Implementation::BlitFramebufferEXT(
+void GLES2Implementation::BlitFramebufferCHROMIUM(
     GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,
     GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glBlitFramebufferEXT(" << srcX0 << ", " << srcY0 << ", " << srcX1 << ", " << srcY1 << ", " << dstX0 << ", " << dstY0 << ", " << dstX1 << ", " << dstY1 << ", " << mask << ", " << GLES2Util::GetStringBlitFilter(filter) << ")");  // NOLINT
-  helper_->BlitFramebufferEXT(
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glBlitFramebufferCHROMIUM(" << srcX0 << ", " << srcY0 << ", " << srcX1 << ", " << srcY1 << ", " << dstX0 << ", " << dstY0 << ", " << dstX1 << ", " << dstY1 << ", " << mask << ", " << GLES2Util::GetStringBlitFilter(filter) << ")");  // NOLINT
+  helper_->BlitFramebufferCHROMIUM(
       srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+  CheckGLError();
+}
+
+void GLES2Implementation::RenderbufferStorageMultisampleCHROMIUM(
+    GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
+    GLsizei height) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glRenderbufferStorageMultisampleCHROMIUM(" << GLES2Util::GetStringRenderBufferTarget(target) << ", " << samples << ", " << GLES2Util::GetStringRenderBufferFormat(internalformat) << ", " << width << ", " << height << ")");  // NOLINT
+  if (samples < 0) {
+    SetGLError(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "samples < 0");  // NOLINT
+    return;
+  }
+  if (width < 0) {
+    SetGLError(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "width < 0");  // NOLINT
+    return;
+  }
+  if (height < 0) {
+    SetGLError(
+        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleCHROMIUM", "height < 0");  // NOLINT
+    return;
+  }
+  helper_->RenderbufferStorageMultisampleCHROMIUM(
+      target, samples, internalformat, width, height);
   CheckGLError();
 }
 
@@ -1511,7 +1536,7 @@ void GLES2Implementation::DeleteQueriesEXT(GLsizei n, const GLuint* queries) {
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(queries[i] != 0);
+      DCHECK(queries[i] != 0);
     }
   });
   if (n < 0) {
@@ -1553,7 +1578,7 @@ void GLES2Implementation::DeleteVertexArraysOES(
   });
   GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(arrays[i] != 0);
+      DCHECK(arrays[i] != 0);
     }
   });
   if (n < 0) {
@@ -1731,6 +1756,13 @@ void GLES2Implementation::DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
     return;
   }
   helper_->DrawBuffersEXTImmediate(count, bufs);
+  CheckGLError();
+}
+
+void GLES2Implementation::DiscardBackbufferCHROMIUM() {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glDiscardBackbufferCHROMIUM(" << ")");  // NOLINT
+  helper_->DiscardBackbufferCHROMIUM();
   CheckGLError();
 }
 

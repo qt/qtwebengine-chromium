@@ -25,8 +25,8 @@
 using media::DemuxerStream;
 using media::DemuxerConfigs;
 using media::DemuxerData;
-using WebKit::WebMediaPlayer;
-using WebKit::WebString;
+using blink::WebMediaPlayer;
+using blink::WebString;
 
 namespace {
 
@@ -39,13 +39,6 @@ const uint8 kVorbisPadding[] = { 0xff, 0xff, 0xff, 0xff };
 }  // namespace
 
 namespace content {
-
-static scoped_ptr<media::TextTrack> ReturnNullTextTrack(
-    media::TextKind kind,
-    const std::string& label,
-    const std::string& language) {
-  return scoped_ptr<media::TextTrack>();
-}
 
 static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
                                 const std::string& error) {
@@ -70,7 +63,9 @@ MediaSourceDelegate::MediaSourceDelegate(
       audio_stream_(NULL),
       video_stream_(NULL),
       seeking_(false),
-      last_seek_request_id_(0),
+      doing_browser_seek_(false),
+      browser_seek_time_(media::kNoTimestamp()),
+      expecting_regular_seek_(false),
 #if defined(GOOGLE_TV)
       key_added_(false),
 #endif
@@ -101,7 +96,6 @@ void MediaSourceDelegate::Destroy() {
   }
 
   duration_change_cb_.Reset();
-  time_update_seek_hack_cb_.Reset();
   update_network_state_cb_.Reset();
   media_source_opened_cb_.Reset();
 
@@ -145,11 +139,10 @@ void MediaSourceDelegate::StopDemuxer() {
 
 void MediaSourceDelegate::InitializeMediaSource(
     const MediaSourceOpenedCB& media_source_opened_cb,
-    const media::NeedKeyCB& need_key_cb,
+    const media::Demuxer::NeedKeyCB& need_key_cb,
     const media::SetDecryptorReadyCB& set_decryptor_ready_cb,
     const UpdateNetworkStateCB& update_network_state_cb,
-    const DurationChangeCB& duration_change_cb,
-    const TimeUpdateSeekHackCB& time_update_seek_hack_cb) {
+    const DurationChangeCB& duration_change_cb) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DCHECK(!media_source_opened_cb.is_null());
   media_source_opened_cb_ = media_source_opened_cb;
@@ -157,7 +150,6 @@ void MediaSourceDelegate::InitializeMediaSource(
   set_decryptor_ready_cb_ = set_decryptor_ready_cb;
   update_network_state_cb_ = media::BindToCurrentLoop(update_network_state_cb);
   duration_change_cb_ = duration_change_cb;
-  time_update_seek_hack_cb_ = time_update_seek_hack_cb;
   access_unit_size_ = kAccessUnitSizeForMediaSource;
 
   chunk_demuxer_.reset(new media::ChunkDemuxer(
@@ -165,7 +157,6 @@ void MediaSourceDelegate::InitializeMediaSource(
           &MediaSourceDelegate::OnDemuxerOpened, main_weak_this_)),
       media::BindToCurrentLoop(base::Bind(
           &MediaSourceDelegate::OnNeedKey, main_weak_this_)),
-      base::Bind(&ReturnNullTextTrack),
       base::Bind(&LogMediaSourceError, media_log_)));
   demuxer_ = chunk_demuxer_.get();
 
@@ -180,7 +171,8 @@ void MediaSourceDelegate::InitializeDemuxer() {
   DCHECK(media_loop_->BelongsToCurrentThread());
   demuxer_client_->AddDelegate(demuxer_client_id_, this);
   demuxer_->Initialize(this, base::Bind(&MediaSourceDelegate::OnDemuxerInitDone,
-                                        media_weak_factory_.GetWeakPtr()));
+                                        media_weak_factory_.GetWeakPtr()),
+                       false);
 }
 
 #if defined(GOOGLE_TV)
@@ -203,7 +195,7 @@ void MediaSourceDelegate::InitializeMediaStream(
 }
 #endif
 
-const WebKit::WebTimeRanges& MediaSourceDelegate::Buffered() {
+const blink::WebTimeRanges& MediaSourceDelegate::Buffered() {
   buffered_web_time_ranges_ =
       ConvertToWebTimeRanges(buffered_time_ranges_);
   return buffered_web_time_ranges_;
@@ -225,46 +217,106 @@ size_t MediaSourceDelegate::VideoDecodedByteCount() const {
   return statistics_.video_bytes_decoded;
 }
 
-void MediaSourceDelegate::Seek(const base::TimeDelta& time,
-                               unsigned seek_request_id) {
-  DCHECK(media_loop_->BelongsToCurrentThread());
-  DVLOG(1) << __FUNCTION__ << "(" << time.InSecondsF() << ") : "
+void MediaSourceDelegate::CancelPendingSeek(const base::TimeDelta& seek_time) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__ << "(" << seek_time.InSecondsF() << ") : "
            << demuxer_client_id_;
 
-  last_seek_time_ = time;
-  last_seek_request_id_ = seek_request_id;
+  if (!chunk_demuxer_)
+    return;
 
-  if (chunk_demuxer_) {
-    if (IsSeeking()) {
-      chunk_demuxer_->CancelPendingSeek(time);
+  {
+    // Remember to trivially finish any newly arriving browser seek requests
+    // that may arrive prior to the next regular seek request.
+    base::AutoLock auto_lock(seeking_lock_);
+    expecting_regular_seek_ = true;
+  }
+
+  // Cancel any previously expected or in-progress regular or browser seek.
+  // It is possible that we have just finished the seek, but caller does
+  // not know this yet. It is still safe to cancel in this case because the
+  // caller will always call StartWaitingForSeek() when it is notified of
+  // the finished seek.
+  chunk_demuxer_->CancelPendingSeek(seek_time);
+}
+
+void MediaSourceDelegate::StartWaitingForSeek(
+    const base::TimeDelta& seek_time) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__ << "(" << seek_time.InSecondsF() << ") : "
+           << demuxer_client_id_;
+
+  if (!chunk_demuxer_)
+    return;
+
+  bool cancel_browser_seek = false;
+  {
+    // Remember to trivially finish any newly arriving browser seek requests
+    // that may arrive prior to the next regular seek request.
+    base::AutoLock auto_lock(seeking_lock_);
+    expecting_regular_seek_ = true;
+
+    // Remember to cancel any in-progress browser seek.
+    if (seeking_) {
+      DCHECK(doing_browser_seek_);
+      cancel_browser_seek = true;
+    }
+  }
+
+  if (cancel_browser_seek)
+    chunk_demuxer_->CancelPendingSeek(seek_time);
+  chunk_demuxer_->StartWaitingForSeek(seek_time);
+}
+
+void MediaSourceDelegate::Seek(
+    const base::TimeDelta& seek_time, bool is_browser_seek) {
+  DCHECK(media_loop_->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__ << "(" << seek_time.InSecondsF() << ", "
+           << (is_browser_seek ? "browser seek" : "regular seek") << ") : "
+           << demuxer_client_id_;
+
+  base::TimeDelta internal_seek_time = seek_time;
+  {
+    base::AutoLock auto_lock(seeking_lock_);
+    DCHECK(!seeking_);
+    seeking_ = true;
+    doing_browser_seek_ = is_browser_seek;
+
+    if (doing_browser_seek_ && (!chunk_demuxer_ || expecting_regular_seek_)) {
+      // Trivially finish the browser seek without actually doing it. Reads will
+      // continue to be |kAborted| until the next regular seek is done. Browser
+      // seeking is not supported unless using a ChunkDemuxer; browser seeks are
+      // trivially finished if |chunk_demuxer_| is NULL.
+      seeking_ = false;
+      doing_browser_seek_ = false;
+      demuxer_client_->DemuxerSeekDone(demuxer_client_id_, seek_time);
       return;
     }
 
-    chunk_demuxer_->StartWaitingForSeek(time);
+    if (doing_browser_seek_) {
+      internal_seek_time = FindBufferedBrowserSeekTime_Locked(seek_time);
+      browser_seek_time_ = internal_seek_time;
+    } else {
+      expecting_regular_seek_ = false;
+      browser_seek_time_ = media::kNoTimestamp();
+    }
   }
 
-  SetSeeking(true);
-  SeekInternal(time, seek_request_id);
-
-  // During fullscreen media source playback Seek() can be called without
-  // WebMediaPlayerAndroid's knowledge. We need to inform it that a seek is
-  // in progress so the correct time can be returned to web applications while
-  // seeking.
-  //
-  // TODO(wolenetz): Remove after landing a uniform seeking codepath.
-  if (!time_update_seek_hack_cb_.is_null()) {
-    main_loop_->PostTask(FROM_HERE,
-                         base::Bind(time_update_seek_hack_cb_, time));
+  // Prepare |chunk_demuxer_| for browser seek.
+  if (is_browser_seek) {
+    chunk_demuxer_->CancelPendingSeek(internal_seek_time);
+    chunk_demuxer_->StartWaitingForSeek(internal_seek_time);
   }
+
+  SeekInternal(internal_seek_time);
 }
 
-void MediaSourceDelegate::SeekInternal(const base::TimeDelta& time,
-                                       unsigned request_id) {
+void MediaSourceDelegate::SeekInternal(const base::TimeDelta& seek_time) {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DCHECK(IsSeeking());
-  demuxer_->Seek(time, base::Bind(
-      &MediaSourceDelegate::OnDemuxerSeekDone, media_weak_factory_.GetWeakPtr(),
-      request_id));
+  demuxer_->Seek(seek_time, base::Bind(
+      &MediaSourceDelegate::OnDemuxerSeekDone,
+      media_weak_factory_.GetWeakPtr()));
 }
 
 void MediaSourceDelegate::SetTotalBytes(int64 total_bytes) {
@@ -447,6 +499,19 @@ void MediaSourceDelegate::OnDemuxerError(media::PipelineStatus status) {
     update_network_state_cb_.Run(PipelineErrorToNetworkState(status));
 }
 
+void MediaSourceDelegate::AddTextStream(
+    media::DemuxerStream* /* text_stream */ ,
+    const media::TextTrackConfig& /* config */ ) {
+  // TODO(matthewjheaney): add text stream (http://crbug/322115).
+  NOTIMPLEMENTED();
+}
+
+void MediaSourceDelegate::RemoveTextStream(
+    media::DemuxerStream* /* text_stream */ ) {
+  // TODO(matthewjheaney): remove text stream (http://crbug/322115).
+  NOTIMPLEMENTED();
+}
+
 void MediaSourceDelegate::OnDemuxerInitDone(media::PipelineStatus status) {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << "(" << status << ") : " << demuxer_client_id_;
@@ -546,22 +611,13 @@ void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
     NotifyDemuxerReady();
 }
 
-void MediaSourceDelegate::OnDemuxerSeekDone(unsigned seek_request_id,
-                                            media::PipelineStatus status) {
+void MediaSourceDelegate::OnDemuxerSeekDone(media::PipelineStatus status) {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << "(" << status << ") : " << demuxer_client_id_;
   DCHECK(IsSeeking());
 
   if (status != media::PIPELINE_OK) {
     OnDemuxerError(status);
-    return;
-  }
-
-  // Newer seek has been issued. Resume the last seek request.
-  if (seek_request_id != last_seek_request_id_) {
-    if (chunk_demuxer_)
-      chunk_demuxer_->StartWaitingForSeek(last_seek_time_);
-    SeekInternal(last_seek_time_, last_seek_request_id_);
     return;
   }
 
@@ -597,9 +653,12 @@ void MediaSourceDelegate::ResetVideoDecryptingDemuxerStream() {
 void MediaSourceDelegate::FinishResettingDecryptingDemuxerStreams() {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  SetSeeking(false);
-  demuxer_client_->SeekRequestAck(demuxer_client_id_, last_seek_request_id_);
-  last_seek_request_id_ = 0;
+
+  base::AutoLock auto_lock(seeking_lock_);
+  DCHECK(seeking_);
+  seeking_ = false;
+  doing_browser_seek_ = false;
+  demuxer_client_->DemuxerSeekDone(demuxer_client_id_, browser_seek_time_);
 }
 
 void MediaSourceDelegate::OnDemuxerStopDone() {
@@ -718,8 +777,7 @@ void MediaSourceDelegate::OnNeedKey(const std::string& type,
   if (need_key_cb_.is_null())
     return;
 
-  // TODO(xhwang): Remove |session_id| from media::NeedKeyCB.
-  need_key_cb_.Run("", type, init_data);
+  need_key_cb_.Run(type, init_data);
 }
 
 bool MediaSourceDelegate::HasEncryptedStream() {
@@ -730,14 +788,50 @@ bool MediaSourceDelegate::HasEncryptedStream() {
           video_stream_->video_decoder_config().is_encrypted());
 }
 
-void MediaSourceDelegate::SetSeeking(bool seeking) {
-  base::AutoLock auto_lock(seeking_lock_);
-  seeking_ = seeking;
-}
-
 bool MediaSourceDelegate::IsSeeking() const {
   base::AutoLock auto_lock(seeking_lock_);
   return seeking_;
+}
+
+base::TimeDelta MediaSourceDelegate::FindBufferedBrowserSeekTime_Locked(
+    const base::TimeDelta& seek_time) const {
+  seeking_lock_.AssertAcquired();
+  DCHECK(seeking_);
+  DCHECK(doing_browser_seek_);
+  DCHECK(chunk_demuxer_) << "Browser seek requested, but no chunk demuxer";
+
+  media::Ranges<base::TimeDelta> buffered =
+      chunk_demuxer_->GetBufferedRanges();
+
+  for (size_t i = 0; i < buffered.size(); ++i) {
+    base::TimeDelta range_start = buffered.start(i);
+    base::TimeDelta range_end = buffered.end(i);
+    if (range_start <= seek_time) {
+      if (range_end >= seek_time)
+        return seek_time;
+      continue;
+    }
+
+    // If the start of the next buffered range after |seek_time| is too far
+    // into the future, do not jump forward.
+    if ((range_start - seek_time) > base::TimeDelta::FromMilliseconds(100))
+      break;
+
+    // TODO(wolenetz): Remove possibility that this browser seek jumps
+    // into future when the requested range is unbuffered but there is some
+    // other buffered range after it. See http://crbug.com/304234.
+    return range_start;
+  }
+
+  // We found no range containing |seek_time| or beginning shortly after
+  // |seek_time|. While possible that such data at and beyond the player's
+  // current time have been garbage collected or removed by the web app, this is
+  // unlikely. This may cause unexpected playback stall due to seek pending an
+  // append for a GOP prior to the last GOP demuxed.
+  // TODO(wolenetz): Remove the possibility for this seek to cause unexpected
+  // player stall by replaying cached data since last keyframe in browser player
+  // rather than issuing browser seek. See http://crbug.com/304234.
+  return seek_time;
 }
 
 }  // namespace content

@@ -34,7 +34,7 @@ namespace WebCore {
 static const double timeWithoutMouseMovementBeforeHidingFullscreenControls = 3;
 
 MediaControls::MediaControls(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
     , m_mediaController(0)
     , m_panel(0)
     , m_textDisplayContainer(0)
@@ -268,7 +268,7 @@ void MediaControls::defaultEventHandler(Event* event)
 {
     HTMLDivElement::defaultEventHandler(event);
 
-    if (event->type() == eventNames().mouseoverEvent) {
+    if (event->type() == EventTypeNames::mouseover) {
         if (!containsRelatedTarget(event)) {
             m_isMouseOverControls = true;
             if (!m_mediaController->canPlay()) {
@@ -280,7 +280,7 @@ void MediaControls::defaultEventHandler(Event* event)
         return;
     }
 
-    if (event->type() == eventNames().mouseoutEvent) {
+    if (event->type() == EventTypeNames::mouseout) {
         if (!containsRelatedTarget(event)) {
             m_isMouseOverControls = false;
             stopHideFullscreenControlsTimer();
@@ -288,7 +288,7 @@ void MediaControls::defaultEventHandler(Event* event)
         return;
     }
 
-    if (event->type() == eventNames().mousemoveEvent) {
+    if (event->type() == EventTypeNames::mousemove) {
         if (m_isFullscreen) {
             // When we get a mouse move in fullscreen mode, show the media controls, and start a timer
             // that will hide the media controls after a 3 seconds without a mouse move.
@@ -331,7 +331,7 @@ void MediaControls::stopHideFullscreenControlsTimer()
     m_hideFullscreenControlsTimer.stop();
 }
 
-const AtomicString& MediaControls::part() const
+const AtomicString& MediaControls::pseudo() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls"));
     return id;

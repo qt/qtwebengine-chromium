@@ -31,14 +31,14 @@
 #include "config.h"
 #include "modules/mediasource/SourceBufferList.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/GenericEventQueue.h"
+#include "core/events/Event.h"
+#include "core/events/GenericEventQueue.h"
 #include "modules/mediasource/SourceBuffer.h"
 
 namespace WebCore {
 
-SourceBufferList::SourceBufferList(ScriptExecutionContext* context, GenericEventQueue* asyncEventQueue)
-    : m_scriptExecutionContext(context)
+SourceBufferList::SourceBufferList(ExecutionContext* context, GenericEventQueue* asyncEventQueue)
+    : m_executionContext(context)
     , m_asyncEventQueue(asyncEventQueue)
 {
     ScriptWrappable::init(this);
@@ -52,7 +52,7 @@ SourceBufferList::~SourceBufferList()
 void SourceBufferList::add(PassRefPtr<SourceBuffer> buffer)
 {
     m_list.append(buffer);
-    scheduleEvent(eventNames().addsourcebufferEvent);
+    scheduleEvent(EventTypeNames::addsourcebuffer);
 }
 
 void SourceBufferList::remove(SourceBuffer* buffer)
@@ -61,13 +61,13 @@ void SourceBufferList::remove(SourceBuffer* buffer)
     if (index == kNotFound)
         return;
     m_list.remove(index);
-    scheduleEvent(eventNames().removesourcebufferEvent);
+    scheduleEvent(EventTypeNames::removesourcebuffer);
 }
 
 void SourceBufferList::clear()
 {
     m_list.clear();
-    scheduleEvent(eventNames().removesourcebufferEvent);
+    scheduleEvent(EventTypeNames::removesourcebuffer);
 }
 
 void SourceBufferList::scheduleEvent(const AtomicString& eventName)
@@ -82,22 +82,12 @@ void SourceBufferList::scheduleEvent(const AtomicString& eventName)
 
 const AtomicString& SourceBufferList::interfaceName() const
 {
-    return eventNames().interfaceForSourceBufferList;
+    return EventTargetNames::SourceBufferList;
 }
 
-ScriptExecutionContext* SourceBufferList::scriptExecutionContext() const
+ExecutionContext* SourceBufferList::executionContext() const
 {
-    return m_scriptExecutionContext;
-}
-
-EventTargetData* SourceBufferList::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* SourceBufferList::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return m_executionContext;
 }
 
 } // namespace WebCore

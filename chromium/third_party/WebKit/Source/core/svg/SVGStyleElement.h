@@ -30,7 +30,7 @@ namespace WebCore {
 class SVGStyleElement FINAL : public SVGElement
                             , public StyleElement {
 public:
-    static PassRefPtr<SVGStyleElement> create(const QualifiedName&, Document&, bool createdByParser);
+    static PassRefPtr<SVGStyleElement> create(Document&, bool createdByParser);
     virtual ~SVGStyleElement();
 
     using StyleElement::sheet;
@@ -48,7 +48,7 @@ public:
     void setTitle(const AtomicString&);
 
 private:
-    SVGStyleElement(const QualifiedName&, Document&, bool createdByParser);
+    SVGStyleElement(Document&, bool createdByParser);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -68,11 +68,7 @@ private:
     Timer<SVGElement> m_svgLoadEventTimer;
 };
 
-inline SVGStyleElement* toSVGStyleElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::styleTag));
-    return static_cast<SVGStyleElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGStyleElement, hasTagName(SVGNames::styleTag));
 
 } // namespace WebCore
 

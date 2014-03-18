@@ -52,9 +52,7 @@ class SystemDelayTest : public ::testing::Test {
 };
 
 SystemDelayTest::SystemDelayTest()
-    : handle_(NULL),
-      self_(NULL),
-      samples_per_frame_(0) {
+    : handle_(NULL), self_(NULL), samples_per_frame_(0) {
   // Dummy input data are set with more or less arbitrary non-zero values.
   memset(far_, 1, sizeof(far_));
   memset(near_, 2, sizeof(near_));
@@ -74,7 +72,7 @@ void SystemDelayTest::TearDown() {
 
 // In SWB mode nothing is added to the buffer handling with respect to
 // functionality compared to WB. We therefore only verify behavior in NB and WB.
-static const int kSampleRateHz[] = { 8000, 16000 };
+static const int kSampleRateHz[] = {8000, 16000};
 static const size_t kNumSampleRates =
     sizeof(kSampleRateHz) / sizeof(*kSampleRateHz);
 
@@ -100,8 +98,15 @@ void SystemDelayTest::Init(int sample_rate_hz) {
 
 void SystemDelayTest::RenderAndCapture(int device_buffer_ms) {
   EXPECT_EQ(0, WebRtcAec_BufferFarend(handle_, far_, samples_per_frame_));
-  EXPECT_EQ(0, WebRtcAec_Process(handle_, near_, NULL, out_, NULL,
-                                 samples_per_frame_, device_buffer_ms, 0));
+  EXPECT_EQ(0,
+            WebRtcAec_Process(handle_,
+                              near_,
+                              NULL,
+                              out_,
+                              NULL,
+                              samples_per_frame_,
+                              device_buffer_ms,
+                              0));
 }
 
 int SystemDelayTest::BufferFillUp() {
@@ -128,7 +133,7 @@ void SystemDelayTest::RunStableStartup() {
   for (; process_time_ms < kStableConvergenceMs; process_time_ms += 10) {
     RenderAndCapture(kDeviceBufMs);
     buffer_size += samples_per_frame_;
-    if (self_->ECstartup == 0) {
+    if (self_->startup_phase == 0) {
       // We have left the startup phase.
       break;
     }
@@ -222,7 +227,7 @@ TEST_F(SystemDelayTest, CorrectDelayAfterUnstableStartup) {
       RenderAndCapture(reported_delay_ms);
       buffer_size += samples_per_frame_;
       buffer_offset_ms = -buffer_offset_ms;
-      if (self_->ECstartup == 0) {
+      if (self_->startup_phase == 0) {
         // We have left the startup phase.
         break;
       }
@@ -254,8 +259,15 @@ TEST_F(SystemDelayTest, CorrectDelayAfterStableBufferBuildUp) {
     // can make that assumption since we have a separate stability test.
     int process_time_ms = 0;
     for (; process_time_ms < kStableConvergenceMs; process_time_ms += 10) {
-      EXPECT_EQ(0, WebRtcAec_Process(handle_, near_, NULL, out_, NULL,
-                                     samples_per_frame_, kDeviceBufMs, 0));
+      EXPECT_EQ(0,
+                WebRtcAec_Process(handle_,
+                                  near_,
+                                  NULL,
+                                  out_,
+                                  NULL,
+                                  samples_per_frame_,
+                                  kDeviceBufMs,
+                                  0));
     }
     // Verify that a buffer size has been established.
     EXPECT_EQ(0, self_->checkBuffSize);
@@ -268,7 +280,7 @@ TEST_F(SystemDelayTest, CorrectDelayAfterStableBufferBuildUp) {
     for (; process_time_ms <= kMaxConvergenceMs; process_time_ms += 10) {
       RenderAndCapture(kDeviceBufMs);
       buffer_size += samples_per_frame_;
-      if (self_->ECstartup == 0) {
+      if (self_->startup_phase == 0) {
         // We have left the startup phase.
         break;
       }
@@ -301,8 +313,15 @@ TEST_F(SystemDelayTest, CorrectDelayWhenBufferUnderrun) {
     // |kStableConvergenceMs| in the buffer. Keep on calling Process() until
     // we run out of data and verify that the system delay is non-negative.
     for (int j = 0; j <= kStableConvergenceMs; j += 10) {
-      EXPECT_EQ(0, WebRtcAec_Process(handle_, near_, NULL, out_, NULL,
-                                     samples_per_frame_, kDeviceBufMs, 0));
+      EXPECT_EQ(0,
+                WebRtcAec_Process(handle_,
+                                  near_,
+                                  NULL,
+                                  out_,
+                                  NULL,
+                                  samples_per_frame_,
+                                  kDeviceBufMs,
+                                  0));
       EXPECT_LE(0, WebRtcAec_system_delay(self_->aec));
     }
   }

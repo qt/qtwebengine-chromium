@@ -25,9 +25,11 @@
 
 #include "core/rendering/RenderObject.h"
 #include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
+class AbstractInlineTextBox;
 class InlineTextBox;
 
 class RenderText : public RenderObject {
@@ -52,7 +54,8 @@ public:
     void removeTextBox(InlineTextBox*);
 
     const String& text() const { return m_text; }
-    String textWithoutTranscoding() const;
+    virtual unsigned textStartOffset() const { return 0; }
+    String plainText() const;
 
     InlineTextBox* createInlineTextBox();
     void dirtyLineBoxes(bool fullLayout);
@@ -141,6 +144,8 @@ public:
 
     void removeAndDestroyTextBoxes();
 
+    PassRefPtr<AbstractInlineTextBox> firstAbstractInlineTextBox();
+
 protected:
     virtual void computePreferredLogicalWidths(float leadWidth);
     virtual void willBeDestroyed();
@@ -173,7 +178,6 @@ private:
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
     float widthFromCache(const Font&, int start, int len, float xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
     bool isAllASCII() const { return m_isAllASCII; }
-    void updateNeedsTranscoding();
 
     void secureText(UChar mask);
 
@@ -192,7 +196,6 @@ private:
     bool m_isAllASCII : 1;
     bool m_canUseSimpleFontCodePath : 1;
     mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
-    bool m_needsTranscoding : 1;
 
     float m_minWidth;
     float m_maxWidth;
@@ -219,20 +222,7 @@ inline UChar RenderText::characterAt(unsigned i) const
     return uncheckedCharacterAt(i);
 }
 
-inline RenderText* toRenderText(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
-    return static_cast<RenderText*>(object);
-}
-
-inline const RenderText* toRenderText(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
-    return static_cast<const RenderText*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderText(const RenderText*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderText, isText());
 
 #ifdef NDEBUG
 inline void RenderText::checkConsistency() const

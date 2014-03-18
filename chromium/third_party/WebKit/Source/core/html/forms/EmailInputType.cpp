@@ -24,13 +24,13 @@
 #include "config.h"
 #include "core/html/forms/EmailInputType.h"
 
+#include "InputTypeNames.h"
+#include "bindings/v8/ScriptRegexp.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/platform/text/PlatformLocale.h"
-#include "core/platform/text/RegularExpression.h"
+#include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
@@ -38,7 +38,7 @@
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/states-of-the-type-attribute.html#valid-e-mail-address
 static const char localPartCharacters[] = "abcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+/=?^_`{|}~.-";
@@ -88,7 +88,7 @@ String EmailInputType::convertEmailAddressToUnicode(const String& address) const
         return address;
 
     String languages = chrome()->client().acceptLanguages();
-    String unicodeHost = WebKit::Platform::current()->convertIDNToUnicode(address.substring(atPosition + 1), languages);
+    String unicodeHost = blink::Platform::current()->convertIDNToUnicode(address.substring(atPosition + 1), languages);
     StringBuilder builder;
     builder.append(address, 0, atPosition + 1);
     builder.append(unicodeHost);
@@ -125,7 +125,7 @@ static bool isValidEmailAddress(const String& address)
     if (!addressLength)
         return false;
 
-    DEFINE_STATIC_LOCAL(const RegularExpression, regExp, (emailPattern, TextCaseInsensitive));
+    DEFINE_STATIC_LOCAL(const ScriptRegexp, regExp, (emailPattern, TextCaseInsensitive));
 
     int matchLength;
     int matchOffset = regExp.match(address, 0, &matchLength);
@@ -133,19 +133,27 @@ static bool isValidEmailAddress(const String& address)
     return !matchOffset && matchLength == addressLength;
 }
 
-PassRefPtr<InputType> EmailInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> EmailInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new EmailInputType(element));
 }
 
 void EmailInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeEmail);
+    countUsageIfVisible(UseCounter::InputTypeEmail);
+    bool hasMaxLength = element().fastHasAttribute(HTMLNames::maxlengthAttr);
+    if (hasMaxLength)
+        countUsageIfVisible(UseCounter::InputTypeEmailMaxLength);
+    if (element().multiple()) {
+        countUsageIfVisible(UseCounter::InputTypeEmailMultiple);
+        if (hasMaxLength)
+            countUsageIfVisible(UseCounter::InputTypeEmailMultipleMaxLength);
+    }
 }
 
 const AtomicString& EmailInputType::formControlType() const
 {
-    return InputTypeNames::email();
+    return InputTypeNames::email;
 }
 
 // The return value is an invalid email address string if the specified string
@@ -156,7 +164,7 @@ String EmailInputType::findInvalidAddress(const String& value) const
 {
     if (value.isEmpty())
         return String();
-    if (!element()->multiple())
+    if (!element().multiple())
         return isValidEmailAddress(value) ? String() : value;
     Vector<String> addresses;
     value.split(',', true, addresses);
@@ -175,12 +183,12 @@ bool EmailInputType::typeMismatchFor(const String& value) const
 
 bool EmailInputType::typeMismatch() const
 {
-    return typeMismatchFor(element()->value());
+    return typeMismatchFor(element().value());
 }
 
 String EmailInputType::typeMismatchText() const
 {
-    String invalidAddress = findInvalidAddress(element()->value());
+    String invalidAddress = findInvalidAddress(element().value());
     ASSERT(!invalidAddress.isNull());
     if (invalidAddress.isEmpty())
         return locale().queryString(WebLocalizedString::ValidationTypeMismatchForEmailEmpty);
@@ -212,7 +220,7 @@ String EmailInputType::typeMismatchText() const
         ASSERT(atIndexInUnicode != kNotFound);
         return locale().queryString(WebLocalizedString::ValidationTypeMismatchForEmailInvalidDots, String("."), unicodeAddress.substring(atIndexInUnicode + 1));
     }
-    if (element()->multiple())
+    if (element().multiple())
         return locale().queryString(WebLocalizedString::ValidationTypeMismatchForMultipleEmail);
     return locale().queryString(WebLocalizedString::ValidationTypeMismatchForEmail);
 }
@@ -230,7 +238,7 @@ bool EmailInputType::supportsSelectionAPI() const
 String EmailInputType::sanitizeValue(const String& proposedValue) const
 {
     String noLineBreakValue = proposedValue.removeCharacters(isHTMLLineBreak);
-    if (!element()->multiple())
+    if (!element().multiple())
         return stripLeadingAndTrailingHTMLSpaces(noLineBreakValue);
     Vector<String> addresses;
     noLineBreakValue.split(',', true, addresses);
@@ -246,7 +254,7 @@ String EmailInputType::sanitizeValue(const String& proposedValue) const
 String EmailInputType::convertFromVisibleValue(const String& visibleValue) const
 {
     String sanitizedValue = sanitizeValue(visibleValue);
-    if (!element()->multiple())
+    if (!element().multiple())
         return convertEmailAddressToASCII(sanitizedValue);
     Vector<String> addresses;
     sanitizedValue.split(',', true, addresses);
@@ -262,8 +270,8 @@ String EmailInputType::convertFromVisibleValue(const String& visibleValue) const
 
 String EmailInputType::visibleValue() const
 {
-    String value = element()->value();
-    if (!element()->multiple())
+    String value = element().value();
+    if (!element().multiple())
         return convertEmailAddressToUnicode(value);
 
     Vector<String> addresses;

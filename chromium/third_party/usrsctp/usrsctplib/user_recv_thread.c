@@ -183,7 +183,7 @@ recv_function_route(void *arg)
 			}
 		}
 	}
-	pthread_exit(NULL);
+	return (NULL);
 }
 #endif
 
@@ -266,7 +266,7 @@ recv_function_route(void *arg)
 			}
 		}
 	}
-	pthread_exit(NULL);
+	return (NULL);
 }
 #endif
 
@@ -406,44 +406,44 @@ recv_function_raw(void *arg)
 		
 		/* SCTP does not allow broadcasts or multicasts */
 		if (IN_MULTICAST(ntohl(dst.sin_addr.s_addr))) {
-			return NULL;
+			return (NULL);
 		}
 		if (SCTP_IS_IT_BROADCAST(dst.sin_addr, recvmbuf[0])) {
-			return NULL;
+			return (NULL);
 		}
 
 		port = 0;
 
-#if !defined(SCTP_WITH_NO_CSUM)
+#if defined(SCTP_WITH_NO_CSUM)
+		SCTP_STAT_INCR(sctps_recvnocrc);
+#else
 		if (src.sin_addr.s_addr == dst.sin_addr.s_addr) {
 			compute_crc = 0;
+			SCTP_STAT_INCR(sctps_recvnocrc);
+		} else {
+			SCTP_STAT_INCR(sctps_recvswcrc);
 		}
 #endif
 		SCTPDBG(SCTP_DEBUG_USR, "%s: Received %d bytes.", __func__, n);
 		SCTPDBG(SCTP_DEBUG_USR, " - calling sctp_common_input_processing with off=%d\n", offset);
-
 		sctp_common_input_processing(&recvmbuf[0], sizeof(struct ip), offset, n, 
 		                             (struct sockaddr *)&src,
 		                             (struct sockaddr *)&dst,
 		                             sh, ch,
 #if !defined(SCTP_WITH_NO_CSUM)
 		                             compute_crc,
-#else
-		                             0,
 #endif
 		                             ecn,
 		                             SCTP_DEFAULT_VRFID, port);
+		if (recvmbuf[0]) {
+			m_freem(recvmbuf[0]);
+		}
 	}
 	for (i = 0; i < MAXLEN_MBUF_CHAIN; i++) {
 		m_free(recvmbuf[i]);
 	}
 	/* free the array itself */
 	free(recvmbuf);
-#if defined (__Userspace_os_Windows)
-	ExitThread(0);
-#else
-	pthread_exit(NULL);
-#endif
 	return (NULL);
 }
 #endif
@@ -601,9 +601,14 @@ recv_function_raw6(void *arg)
 		src.sin6_len = sizeof(struct sockaddr_in6);
 #endif
 		src.sin6_port = sh->src_port;
-#if !defined(SCTP_WITH_NO_CSUM)
+#if defined(SCTP_WITH_NO_CSUM)
+		SCTP_STAT_INCR(sctps_recvnocrc);
+#else
 		if (memcmp(&src.sin6_addr, &dst.sin6_addr, sizeof(struct in6_addr)) == 0) {
 			compute_crc = 0;
+			SCTP_STAT_INCR(sctps_recvnocrc);
+		} else {
+			SCTP_STAT_INCR(sctps_recvswcrc);
 		}
 #endif
 		SCTPDBG(SCTP_DEBUG_USR, "%s: Received %d bytes.", __func__, n);
@@ -614,22 +619,18 @@ recv_function_raw6(void *arg)
 		                             sh, ch,
 #if !defined(SCTP_WITH_NO_CSUM)
 		                             compute_crc,
-#else
-		                             0,
 #endif
 		                             0,
 		                             SCTP_DEFAULT_VRFID, 0);
+		if (recvmbuf6[0]) {
+			m_freem(recvmbuf6[0]);
+		}
 	}
 	for (i = 0; i < MAXLEN_MBUF_CHAIN; i++) {
 		m_free(recvmbuf6[i]);
 	}
 	/* free the array itself */
 	free(recvmbuf6);
-#if defined (__Userspace_os_Windows)
-	ExitThread(0);
-#else
-	pthread_exit(NULL);
-#endif
 	return (NULL);
 }
 #endif
@@ -795,10 +796,10 @@ recv_function_udp(void *arg)
 
 		/* SCTP does not allow broadcasts or multicasts */
 		if (IN_MULTICAST(ntohl(dst.sin_addr.s_addr))) {
-			return NULL;
+			return (NULL);
 		}
 		if (SCTP_IS_IT_BROADCAST(dst.sin_addr, udprecvmbuf[0])) {
-			return NULL;
+			return (NULL);
 		}
 
 		/*offset = sizeof(struct sctphdr) + sizeof(struct sctp_chunkhdr);*/
@@ -808,9 +809,14 @@ recv_function_udp(void *arg)
 		port = src.sin_port;
 		src.sin_port = sh->src_port;
 		dst.sin_port = sh->dest_port;
-#if !defined(SCTP_WITH_NO_CSUM)
+#if defined(SCTP_WITH_NO_CSUM)
+		SCTP_STAT_INCR(sctps_recvnocrc);
+#else
 		if (src.sin_addr.s_addr == dst.sin_addr.s_addr) {
 			compute_crc = 0;
+			SCTP_STAT_INCR(sctps_recvnocrc);
+		} else {
+			SCTP_STAT_INCR(sctps_recvswcrc);
 		}
 #endif
 		SCTPDBG(SCTP_DEBUG_USR, "%s: Received %d bytes.", __func__, n);
@@ -821,22 +827,18 @@ recv_function_udp(void *arg)
 		                             sh, ch,
 #if !defined(SCTP_WITH_NO_CSUM)
 		                             compute_crc,
-#else
-		                             0,
 #endif
 		                             0,
 		                             SCTP_DEFAULT_VRFID, port);
+		if (udprecvmbuf[0]) {
+			m_freem(udprecvmbuf[0]);
+		}
 	}
 	for (i = 0; i < MAXLEN_MBUF_CHAIN; i++) {
 		m_free(udprecvmbuf[i]);
 	}
 	/* free the array itself */
 	free(udprecvmbuf);
-#if defined (__Userspace_os_Windows)
-	ExitThread(0);
-#else
-	pthread_exit(NULL);
-#endif
 	return (NULL);
 }
 #endif
@@ -988,7 +990,7 @@ recv_function_udp6(void *arg)
 
 		/* SCTP does not allow broadcasts or multicasts */
 		if (IN6_IS_ADDR_MULTICAST(&dst.sin6_addr)) {
-			return NULL;
+			return (NULL);
 		}
 		
 		sh = mtod(udprecvmbuf6[0], struct sctphdr *);
@@ -998,9 +1000,14 @@ recv_function_udp6(void *arg)
 		port = src.sin6_port;
 		src.sin6_port = sh->src_port;
 		dst.sin6_port = sh->dest_port;
-#if !defined(SCTP_WITH_NO_CSUM)
+#if defined(SCTP_WITH_NO_CSUM)
+		SCTP_STAT_INCR(sctps_recvnocrc);
+#else
 		if ((memcmp(&src.sin6_addr, &dst.sin6_addr, sizeof(struct in6_addr)) == 0)) {
 			compute_crc = 0;
+			SCTP_STAT_INCR(sctps_recvnocrc);
+		} else {
+			SCTP_STAT_INCR(sctps_recvswcrc);
 		}
 #endif
 		SCTPDBG(SCTP_DEBUG_USR, "%s: Received %d bytes.", __func__, n);
@@ -1014,18 +1021,15 @@ recv_function_udp6(void *arg)
 #endif
 		                             0,
 		                             SCTP_DEFAULT_VRFID, port);
-		                             
+		if (udprecvmbuf6[0]) {
+			m_freem(udprecvmbuf6[0]);
+		}
 	}
 	for (i = 0; i < MAXLEN_MBUF_CHAIN; i++) {
 		m_free(udprecvmbuf6[i]);
 	}
 	/* free the array itself */
 	free(udprecvmbuf6);
-#if defined (__Userspace_os_Windows)
-	ExitThread(0);
-#else
-	pthread_exit(NULL);
-#endif
 	return (NULL);
 }
 #endif

@@ -50,6 +50,8 @@ SSL_ExportKeyingMaterial
 SSL_VersionRangeSet
 SSL_GetSRTPCipher
 SSL_SetSRTPCiphers
+SSL_RecommendedCanFalseStart
+SSL_SetCanFalseStartCallback
 
 ; Chromium patches
 SSL_PeerCertificateChain
@@ -58,3 +60,7 @@ SSL_GetPlatformClientAuthDataHook
 SSL_HandshakeResumedSession
 SSL_RestartHandshakeAfterChannelIDReq
 SSL_GetChannelBinding
+SSL_PeerSignedCertTimestamps
+SSL_CipherOrderSet
+SSL_CacheSession
+SSL_CacheSessionUnlocked

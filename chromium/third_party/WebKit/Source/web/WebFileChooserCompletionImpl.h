@@ -32,16 +32,16 @@
 #define WebFileChooserCompletionImpl_h
 
 #include "WebFileChooserCompletion.h"
-#include "core/platform/FileChooser.h"
+#include "platform/FileChooser.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 #include "wtf/PassRefPtr.h"
 
-using WebKit::WebFileChooserCompletion;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebFileChooserCompletion;
+using blink::WebString;
+using blink::WebVector;
 
-namespace WebKit {
+namespace blink {
 
 class WebFileChooserCompletionImpl : public WebFileChooserCompletion {
 public:
@@ -53,6 +53,6 @@ private:
     RefPtr<WebCore::FileChooser> m_fileChooser;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

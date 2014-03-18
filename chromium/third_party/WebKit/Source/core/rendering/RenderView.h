@@ -22,13 +22,12 @@
 #ifndef RenderView_h
 #define RenderView_h
 
-#include "core/page/FrameView.h"
-#include "core/platform/PODFreeListArena.h"
-#include "core/platform/ScrollableArea.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/LayoutIndicator.h"
 #include "core/rendering/LayoutState.h"
 #include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderingConfiguration.h"
+#include "platform/PODFreeListArena.h"
+#include "platform/scroll/ScrollableArea.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -68,13 +67,13 @@ public:
     virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const OVERRIDE;
 
     // The same as the FrameView's layoutHeight/layoutWidth but with null check guards.
-    int viewHeight(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
-    int viewWidth(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
-    int viewLogicalWidth(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const
+    int viewHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewLogicalWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const
     {
         return style()->isHorizontalWritingMode() ? viewWidth(scrollbarInclusion) : viewHeight(scrollbarInclusion);
     }
-    int viewLogicalHeight(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewLogicalHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
 
     float zoomFactor() const;
 
@@ -100,19 +99,14 @@ public:
     void selectionStartEnd(int& startPos, int& endPos) const;
     void repaintSelection() const;
 
-    void updateConfiguration();
-    const RenderingConfiguration& configuration()
-    {
-        // If we're not inLayout(), then the configuration might be out of date.
-        ASSERT(LayoutIndicator::inLayout());
-        return m_configuration;
-    }
-
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const;
 
     void setMaximalOutlineSize(int o);
     int maximalOutlineSize() const { return m_maximalOutlineSize; }
+
+    void setOldMaximalOutlineSize(int o) { m_oldMaximalOutlineSize = o; }
+    int oldMaximalOutlineSize() const { return m_oldMaximalOutlineSize; }
 
     virtual LayoutRect viewRect() const OVERRIDE;
 
@@ -235,7 +229,7 @@ private:
         if (!doingFullRepaint() || m_layoutState->isPaginated() || renderer->hasColumns() || renderer->flowThreadContainingBlock()
             || m_layoutState->lineGrid() || (renderer->style()->lineGrid() != RenderStyle::initialLineGrid() && renderer->isRenderBlockFlow())
             || (renderer->isRenderBlock() && toRenderBlock(renderer)->shapeInsideInfo())
-            || (m_layoutState->shapeInsideInfo() && renderer->isRenderBlock() && !toRenderBlock(renderer)->allowsShapeInsideInfoSharing())
+            || (m_layoutState->shapeInsideInfo() && renderer->isRenderBlock() && !toRenderBlock(renderer)->allowsShapeInsideInfoSharing(m_layoutState->shapeInsideInfo()->owner()))
             ) {
             pushLayoutStateForCurrentFlowThread(renderer);
             m_layoutState = new LayoutState(m_layoutState, renderer, offset, pageHeight, pageHeightChanged, colInfo);
@@ -266,6 +260,9 @@ private:
     void checkLayoutState(const LayoutState&);
 #endif
 
+    void positionDialog(RenderBox*);
+    void positionDialogs();
+
     size_t getRetainedWidgets(Vector<RenderWidget*>&);
     void releaseWidgets(Vector<RenderWidget*>&);
 
@@ -282,13 +279,11 @@ private:
     RenderObject* m_selectionStart;
     RenderObject* m_selectionEnd;
 
-    // Please use the configuration() accessor instead of accessing this member directly.
-    RenderingConfiguration m_configuration;
-
     int m_selectionStartPos;
     int m_selectionEndPos;
 
     int m_maximalOutlineSize; // Used to apply a fudge factor to dirty-rect checks on blocks/tables.
+    int m_oldMaximalOutlineSize; // The fudge factor from the previous layout.
 
     typedef HashSet<RenderWidget*> RenderWidgetSet;
     RenderWidgetSet m_widgets;
@@ -306,25 +301,7 @@ private:
     unsigned m_renderCounterCount;
 };
 
-inline RenderView* toRenderView(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderView());
-    return static_cast<RenderView*>(object);
-}
-
-inline const RenderView* toRenderView(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderView());
-    return static_cast<const RenderView*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderView(const RenderView*);
-
-ALWAYS_INLINE RenderView* Document::renderView() const
-{
-    return toRenderView(renderer());
-}
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
 
 // Stack-based class to assist with LayoutState push/pop
 class LayoutStateMaintainer {

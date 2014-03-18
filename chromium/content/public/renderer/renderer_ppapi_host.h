@@ -14,6 +14,7 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_instance.h"
+#include "url/gurl.h"
 
 namespace base {
 class FilePath;
@@ -33,12 +34,13 @@ class PpapiHost;
 }
 }
 
-namespace WebKit {
+namespace blink {
 class WebPluginContainer;
 }
 
 namespace content {
 class PepperPluginInstance;
+class RenderFrame;
 class RenderView;
 
 // Interface that allows components in the embedder app to talk to the
@@ -70,13 +72,18 @@ class RendererPpapiHost {
   virtual PepperPluginInstance* GetPluginInstance(
       PP_Instance instance) const = 0;
 
+  // Returns the RenderFrame for the given plugin instance, or NULL if the
+  // instance is invalid.
+  virtual RenderFrame* GetRenderFrameForInstance(
+      PP_Instance instance) const = 0;
+
   // Returns the RenderView for the given plugin instance, or NULL if the
   // instance is invalid.
   virtual RenderView* GetRenderViewForInstance(PP_Instance instance) const = 0;
 
   // Returns the WebPluginContainer for the given plugin instance, or NULL if
   // the instance is invalid.
-  virtual WebKit::WebPluginContainer* GetContainerForInstance(
+  virtual blink::WebPluginContainer* GetContainerForInstance(
       PP_Instance instance) const = 0;
 
   // Returns the PID of the child process containing the plugin. If running
@@ -96,10 +103,10 @@ class RendererPpapiHost {
   // routing ID of the fullscreen widget. Returns 0 on failure.
   virtual int GetRoutingIDForWidget(PP_Instance instance) const = 0;
 
-  // Converts the given plugin coordinate to the containing RenderView. This
+  // Converts the given plugin coordinate to the containing RenderFrame. This
   // will take into account the current Flash fullscreen state so will use
   // the fullscreen widget if it's displayed.
-  virtual gfx::Point PluginPointToRenderView(
+  virtual gfx::Point PluginPointToRenderFrame(
       PP_Instance instance,
       const gfx::Point& pt) const = 0;
 
@@ -127,6 +134,13 @@ class RendererPpapiHost {
       PP_Instance instance,
       const std::vector<IPC::Message>& nested_msgs,
       const base::Callback<void(const std::vector<int>&)>& callback) const = 0;
+
+  // Gets the URL of the document containing the given PP_Instance.
+  // Returns an empty URL if the instance is invalid.
+  // TODO(yzshen): Some methods such as this one don't need to be pure virtual.
+  // Instead, they could be directly implemented using other methods in this
+  // interface. Consider changing them to static helpers.
+  virtual GURL GetDocumentURL(PP_Instance instance) const = 0;
 
  protected:
   virtual ~RendererPpapiHost() {}

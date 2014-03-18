@@ -32,7 +32,8 @@
   'includes': [
     'core.gypi',
     '../bindings/bindings.gypi',
-    'features.gypi',
+    '../build/features.gypi',
+    '../build/scripts/scripts.gypi',
   ],
 
   'targets': [
@@ -43,8 +44,13 @@
         {
           'action_name': 'Settings',
           'inputs': [
-            'page/make_settings.pl',
-            'page/Settings.in',
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_settings.py',
+            '../build/scripts/templates/InternalSettingsGenerated.idl.tmpl',
+            '../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl',
+            '../build/scripts/templates/InternalSettingsGenerated.h.tmpl',
+            '../build/scripts/templates/SettingsMacros.h.tmpl',
+            'frame/Settings.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/SettingsMacros.h',
@@ -54,21 +60,20 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
+            '../build/scripts/make_settings.py',
+            'frame/Settings.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'InternalRuntimeFlags',
           'inputs': [
             '<@(scripts_for_in_files)',
-            'scripts/make_internal_runtime_flags.py',
-            'page/RuntimeEnabledFeatures.in',
-            'scripts/templates/InternalRuntimeFlags.h.tmpl',
-            'scripts/templates/InternalRuntimeFlags.idl.tmpl',
+            '../build/scripts/make_internal_runtime_flags.py',
+            '../platform/RuntimeEnabledFeatures.in',
+            '../build/scripts/templates/InternalRuntimeFlags.h.tmpl',
+            '../build/scripts/templates/InternalRuntimeFlags.idl.tmpl',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/InternalRuntimeFlags.idl',
@@ -76,8 +81,8 @@
           ],
           'action': [
             'python',
-            'scripts/make_internal_runtime_flags.py',
-            'page/RuntimeEnabledFeatures.in',
+            '../build/scripts/make_internal_runtime_flags.py',
+            '../platform/RuntimeEnabledFeatures.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -85,19 +90,17 @@
       ]
     },
     {
-      'target_name': 'make_derived_sources',
+      'target_name': 'make_core_derived_sources',
       'type': 'none',
       'hard_dependency': 1,
       'dependencies': [
         'generate_test_support_idls',
+        '../config.gyp:config',
       ],
       'sources': [
         # bison rule
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSGrammar.y',
+        'css/CSSGrammar.y',
         'xml/XPathGrammar.y',
-
-        # gperf rule
-        'platform/ColorData.gperf',
       ],
       'actions': [
         {
@@ -108,15 +111,15 @@
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/V8ArrayBufferViewCustomScript.h',
           ],
-          'msvs_cygwin_shell': 0,
           'action': [
-            '<(perl_exe)',
-            'scripts/xxd.pl',
+            'python',
+            '../build/scripts/xxd.py',
             'V8ArrayBufferViewCustomScript_js',
             '<@(_inputs)',
             '<@(_outputs)'
           ],
           'message': 'Generating V8ArrayBufferViewCustomScript.h from V8ArrayBufferViewCustomScript.js',
+          'msvs_cygwin_shell': 0,
         },
         {
           'action_name': 'generateXMLViewerCSS',
@@ -126,14 +129,14 @@
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/XMLViewerCSS.h',
           ],
-          'msvs_cygwin_shell': 0,
           'action': [
-            '<(perl_exe)',
-            'scripts/xxd.pl',
+            'python',
+            '../build/scripts/xxd.py',
             'XMLViewer_css',
             '<@(_inputs)',
             '<@(_outputs)'
           ],
+          'msvs_cygwin_shell': 0,
         },
         {
           'action_name': 'generateXMLViewerJS',
@@ -143,14 +146,14 @@
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/XMLViewerJS.h',
           ],
-          'msvs_cygwin_shell': 0,
           'action': [
-            '<(perl_exe)',
-            'scripts/xxd.pl',
+            'python',
+            '../build/scripts/xxd.py',
             'XMLViewer_js',
             '<@(_inputs)',
             '<@(_outputs)'
           ],
+          'msvs_cygwin_shell': 0,
         },
         {
           'action_name': 'HTMLEntityTable',
@@ -170,28 +173,6 @@
           ],
         },
         {
-          'action_name': 'RuntimeEnabledFeatures',
-          'inputs': [
-            '<@(scripts_for_in_files)',
-            'scripts/make_runtime_features.py',
-            'scripts/name_utilities.py',
-            'page/RuntimeEnabledFeatures.in',
-            'scripts/templates/RuntimeEnabledFeatures.cpp.tmpl',
-            'scripts/templates/RuntimeEnabledFeatures.h.tmpl',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.h',
-          ],
-          'action': [
-            'python',
-            'scripts/make_runtime_features.py',
-            'page/RuntimeEnabledFeatures.in',
-            '--output_dir',
-            '<(SHARED_INTERMEDIATE_DIR)/blink',
-          ],
-        },
-        {
           'action_name': 'CSSPropertyNames',
           'variables': {
             'in_files': [
@@ -201,7 +182,7 @@
           },
           'inputs': [
             '<@(scripts_for_in_files)',
-            'scripts/make_css_property_names.py',
+            '../build/scripts/make_css_property_names.py',
             '<@(in_files)'
           ],
           'outputs': [
@@ -210,7 +191,7 @@
           ],
           'action': [
             'python',
-            'scripts/make_css_property_names.py',
+            '../build/scripts/make_css_property_names.py',
             '<@(in_files)',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
@@ -222,10 +203,10 @@
           'action_name': 'StylePropertyShorthand',
           'inputs': [
             '<@(scripts_for_in_files)',
-            'scripts/make_style_shorthands.py',
+            '../build/scripts/make_style_shorthands.py',
             'css/CSSShorthands.in',
-            'scripts/templates/StylePropertyShorthand.h.tmpl',
-            'scripts/templates/StylePropertyShorthand.cpp.tmpl',
+            '../build/scripts/templates/StylePropertyShorthand.h.tmpl',
+            '../build/scripts/templates/StylePropertyShorthand.cpp.tmpl',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/StylePropertyShorthand.cpp',
@@ -233,7 +214,7 @@
           ],
           'action': [
             'python',
-            'scripts/make_style_shorthands.py',
+            '../build/scripts/make_style_shorthands.py',
             'css/CSSShorthands.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
@@ -243,11 +224,11 @@
           'action_name': 'StyleBuilder',
           'inputs': [
             '<@(scripts_for_in_files)',
-            'scripts/make_style_builder.py',
+            '../build/scripts/make_style_builder.py',
             'css/CSSProperties.in',
-            'scripts/templates/StyleBuilder.cpp.tmpl',
-            'scripts/templates/StyleBuilderFunctions.h.tmpl',
-            'scripts/templates/StyleBuilderFunctions.cpp.tmpl',
+            '../build/scripts/templates/StyleBuilder.cpp.tmpl',
+            '../build/scripts/templates/StyleBuilderFunctions.h.tmpl',
+            '../build/scripts/templates/StyleBuilderFunctions.cpp.tmpl',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/StyleBuilder.cpp',
@@ -256,7 +237,7 @@
           ],
           'action': [
             'python',
-            'scripts/make_style_builder.py',
+            '../build/scripts/make_style_builder.py',
             'css/CSSProperties.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
@@ -272,7 +253,7 @@
           },
           'inputs': [
             '<@(scripts_for_in_files)',
-            'scripts/make_css_value_keywords.py',
+            '../build/scripts/make_css_value_keywords.py',
             '<@(in_files)'
           ],
           'outputs': [
@@ -280,7 +261,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/blink/CSSValueKeywords.h',
           ],
           'action': [
-             'scripts/make_css_value_keywords.py',
+             '../build/scripts/make_css_value_keywords.py',
              '<@(in_files)',
              '--output_dir',
              '<(SHARED_INTERMEDIATE_DIR)/blink',
@@ -289,93 +270,59 @@
           'msvs_cygwin_shell': 1,
         },
         {
-          'action_name': 'HTMLNames',
+          'action_name': 'HTMLElementFactory',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
+            '<@(make_element_factory_files)',
             'html/HTMLTagNames.in',
             'html/HTMLAttributeNames.in',
           ],
           'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/V8HTMLElementWrapperFactory.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/V8HTMLElementWrapperFactory.h',
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--factory',
-            '--extraDefines', '<(feature_defines)'
+            '../build/scripts/make_element_factory.py',
+            'html/HTMLTagNames.in',
+            'html/HTMLAttributeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
-          'msvs_cygwin_shell': 1,
-        },
-        {
-          'action_name': 'FontFamilyNames',
-          'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
-            'css/FontFamilyNames.in',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.h',
-          ],
-          'action': [
-            'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--fonts',
-          ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'SVGNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
-            'svg/svgtags.in',
-            'svg/svgattrs.in',
+            '<@(make_element_factory_files)',
+            'svg/SVGTagNames.in',
+            'svg/SVGAttributeNames.in',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/SVGElementFactory.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/SVGElementFactory.h',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.h',
             '<(SHARED_INTERMEDIATE_DIR)/blink/V8SVGElementWrapperFactory.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/V8SVGElementWrapperFactory.h',
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--factory',
-            '--extraDefines', '<(feature_defines)'
+            '../build/scripts/make_element_factory.py',
+            'svg/SVGTagNames.in',
+            'svg/SVGAttributeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'EventFactory',
           'inputs': [
-            '<@(scripts_for_in_files)',
-            'scripts/make_event_factory.py',
-            'scripts/name_utilities.py',
+            '<@(make_event_factory_files)',
             '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
-            'dom/EventAliases.in',
+            'events/EventAliases.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/Event.cpp',
@@ -384,9 +331,27 @@
           ],
           'action': [
             'python',
-            'scripts/make_event_factory.py',
+            '../build/scripts/make_event_factory.py',
             '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
-            'dom/EventAliases.in',
+            'events/EventAliases.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
+          'action_name': 'EventNames',
+          'inputs': [
+            '<@(make_names_files)',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_names.py',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -394,10 +359,8 @@
         {
           'action_name': 'EventTargetFactory',
           'inputs': [
-            '<@(scripts_for_in_files)',
-            'scripts/make_event_factory.py',
-            'scripts/name_utilities.py',
-            'dom/EventTargetFactory.in',
+            '<@(make_event_factory_files)',
+            'events/EventTargetFactory.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetHeaders.h',
@@ -405,8 +368,26 @@
           ],
           'action': [
             'python',
-            'scripts/make_event_factory.py',
-            'dom/EventTargetFactory.in',
+            '../build/scripts/make_event_factory.py',
+            'events/EventTargetFactory.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
+          'action_name': 'EventTargetNames',
+          'inputs': [
+            '<@(make_names_files)',
+            'events/EventTargetFactory.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_names.py',
+            'events/EventTargetFactory.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -414,11 +395,9 @@
         {
           'action_name': 'MathMLNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
-            'mathml/mathtags.in',
-            'mathml/mathattrs.in',
+            '<@(make_qualified_names_files)',
+            'html/parser/MathMLTagNames.in',
+            'html/parser/MathMLAttributeNames.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/MathMLNames.cpp',
@@ -426,21 +405,20 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--extraDefines', '<(feature_defines)'
+            '../build/scripts/make_qualified_names.py',
+            'html/parser/MathMLTagNames.in',
+            'html/parser/MathMLAttributeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--defines', '<(feature_defines)'
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'UserAgentStyleSheets',
           'variables': {
             'scripts': [
               'css/make-css-file-arrays.pl',
-              'scripts/preprocessor.pm',
+              '../build/scripts/preprocessor.pm',
             ],
             'stylesheets': [
               'css/html.css',
@@ -457,6 +435,7 @@
               'css/mediaControlsAndroid.css',
               'css/fullscreen.css',
               'css/xhtmlmp.css',
+              'css/viewportAndroid.css',
             ],
           },
           'inputs': [
@@ -469,7 +448,7 @@
           ],
           'action': [
             'python',
-            'scripts/action_useragentstylesheets.py',
+            '../build/scripts/action_useragentstylesheets.py',
             '<@(_outputs)',
             '<@(stylesheets)',
             '--',
@@ -482,9 +461,7 @@
         {
           'action_name': 'FetchInitiatorTypeNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
+            '<@(make_names_files)',
             'fetch/FetchInitiatorTypeNames.in',
           ],
           'outputs': [
@@ -493,80 +470,52 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--resourceTypes',
-          ],
-          'msvs_cygwin_shell': 1,
-        },
-        {
-          'action_name': 'PickerCommon',
-          'inputs': [
-            'Resources/pagepopups/pickerCommon.css',
-            'Resources/pagepopups/pickerCommon.js',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
-          ],
-          'action': [
-            'python',
-            'scripts/make-file-arrays.py',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
-            '<@(_inputs)',
+            '../build/scripts/make_names.py',
+            'fetch/FetchInitiatorTypeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
         },
         {
-          'action_name': 'CalendarPicker',
+          'action_name': 'EventTypeNames',
           'inputs': [
-            'Resources/pagepopups/calendarPicker.css',
-            'Resources/pagepopups/calendarPicker.js',
-            'Resources/pagepopups/chromium/calendarPickerChromium.css',
-            'Resources/pagepopups/chromium/pickerCommonChromium.css',
-            'Resources/pagepopups/suggestionPicker.css',
-            'Resources/pagepopups/suggestionPicker.js',
+            '<@(make_names_files)',
+            'events/EventTypeNames.in',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.h',
           ],
           'action': [
             'python',
-            'scripts/make-file-arrays.py',
-            '--condition=ENABLE(CALENDAR_PICKER)',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
-            '<@(_inputs)',
+            '../build/scripts/make_names.py',
+            'events/EventTypeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
         },
         {
-          'action_name': 'ColorSuggestionPicker',
+          'action_name': 'InputTypeNames',
           'inputs': [
-            'Resources/pagepopups/colorSuggestionPicker.css',
-            'Resources/pagepopups/colorSuggestionPicker.js',
+            '<@(make_names_files)',
+            'html/forms/InputTypeNames.in',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.h',
           ],
           'action': [
             'python',
-            'scripts/make-file-arrays.py',
-            '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
-            '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
-            '<@(_inputs)',
+            '../build/scripts/make_names.py',
+            'html/forms/InputTypeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
         },
         {
           'action_name': 'XLinkNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
+            '<@(make_qualified_names_files)',
             'svg/xlinkattrs.in',
           ],
           'outputs': [
@@ -575,21 +524,16 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--extraDefines', '<(feature_defines)'
+            '../build/scripts/make_qualified_names.py',
+            'svg/xlinkattrs.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'XMLNSNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
+            '<@(make_qualified_names_files)',
             'xml/xmlnsattrs.in',
           ],
           'outputs': [
@@ -598,21 +542,16 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--extraDefines', '<(feature_defines)'
+            '../build/scripts/make_qualified_names.py',
+            'xml/xmlnsattrs.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
-          'msvs_cygwin_shell': 1,
         },
         {
           'action_name': 'XMLNames',
           'inputs': [
-            'scripts/Hasher.pm',
-            'scripts/StaticString.pm',
-            'scripts/make_names.pl',
+            '<@(make_qualified_names_files)',
             'xml/xmlattrs.in',
           ],
           'outputs': [
@@ -621,38 +560,34 @@
           ],
           'action': [
             'python',
-            'scripts/action_makenames.py',
-            '<@(_outputs)',
-            '--',
-            '<@(_inputs)',
-            '--',
-            '--extraDefines', '<(feature_defines)'
-          ],
-          'msvs_cygwin_shell': 1,
-        },
-        {
-          'action_name': 'preprocess_grammar',
-          'inputs': [
-            'css/CSSGrammar.y.in',
-            'css/CSSGrammar.y.includes',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/CSSGrammar.y',
-          ],
-          'action': [
-            '<(perl_exe)',
-            '-Iscripts',
-            'css/makegrammar.pl',
-            '--outputDir',
+            '../build/scripts/make_qualified_names.py',
+            'xml/xmlattrs.in',
+            '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
-            '<@(_inputs)',
           ],
         },
         {
           'action_name': 'MakeTokenMatcher',
           'inputs': [
             '<@(scripts_for_in_files)',
-            '../core/scripts/make_token_matcher.py',
+            '../build/scripts/make_token_matcher.py',
+            '../core/css/CSSTokenizer-in.cpp',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_token_matcher.py',
+            '../core/css/CSSTokenizer-in.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
+          ],
+        },
+        {
+          'action_name': 'MakeParser',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_token_matcher.py',
             '../core/css/CSSParser-in.cpp',
           ],
           'outputs': [
@@ -660,9 +595,47 @@
           ],
           'action': [
             'python',
-            '../core/scripts/make_token_matcher.py',
+            '../build/scripts/make_token_matcher.py',
             '../core/css/CSSParser-in.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/CSSParser.cpp',
+          ],
+        },
+        {
+          'action_name': 'MakeTokenMatcherForViewport',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_token_matcher.py',
+            '../core/html/HTMLMetaElement-in.cpp',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_token_matcher.py',
+            '../core/html/HTMLMetaElement-in.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
+          ],
+        },
+        {
+          'action_name': 'HTMLElementLookupTrie',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_element_lookup_trie.py',
+            '../build/scripts/templates/ElementLookupTrie.cpp.tmpl',
+            '../build/scripts/templates/ElementLookupTrie.h.tmpl',
+            'html/HTMLTagNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_element_lookup_trie.py',
+            'html/HTMLTagNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
         },
       ],
@@ -676,30 +649,12 @@
           ],
           'action': [
             'python',
-            'scripts/rule_bison.py',
+            '../build/scripts/rule_bison.py',
             '<(RULE_INPUT_PATH)',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
             '<(bison_exe)',
           ],
           'msvs_cygwin_shell': 1,
-        },
-        {
-          'rule_name': 'gperf',
-          'extension': 'gperf',
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/<(RULE_INPUT_ROOT).cpp',
-          ],
-          'inputs': [
-            'scripts/make-hash-tools.pl',
-          ],
-          'msvs_cygwin_shell': 0,
-          'action': [
-            '<(perl_exe)',
-            'scripts/make-hash-tools.pl',
-            '<(SHARED_INTERMEDIATE_DIR)/blink',
-            '<(RULE_INPUT_PATH)',
-            '<(gperf_exe)',
-          ],
         },
       ],
     },

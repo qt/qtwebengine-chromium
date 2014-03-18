@@ -74,12 +74,10 @@ IPC_MESSAGE_CONTROL2(FileSystemMsg_DidFail,
 // File system messages sent from the child process to the browser.
 
 // WebFrameClient::openFileSystem() message.
-IPC_MESSAGE_CONTROL5(FileSystemHostMsg_Open,
+IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenFileSystem,
                      int /* request_id */,
                      GURL /* origin_url */,
-                     fileapi::FileSystemType /* type */,
-                     int64 /* requested_size */,
-                     bool /* create */)
+                     fileapi::FileSystemType /* type */)
 
 // WevFrameClient::resolveURL() message.
 IPC_MESSAGE_CONTROL2(FileSystemHostMsg_ResolveURL,
@@ -105,7 +103,7 @@ IPC_MESSAGE_CONTROL3(FileSystemHostMsg_Copy,
                      GURL /* dest path */)
 
 // WebFileSystem::remove() message.
-IPC_MESSAGE_CONTROL3(FileSystemMsg_Remove,
+IPC_MESSAGE_CONTROL3(FileSystemHostMsg_Remove,
                      int /* request_id */,
                      GURL /* path */,
                      bool /* recursive */)
@@ -166,16 +164,6 @@ IPC_MESSAGE_CONTROL2(FileSystemHostMsg_CancelWrite,
                      int /* request id */,
                      int /* id of request to cancel */)
 
-// Pepper's OpenFile message.
-IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenPepperFile,
-                     int /* request id */,
-                     GURL /* file path */,
-                     int /* pp_open_flags */)
-
-// Pepper's NotifyCloseFile message.
-IPC_MESSAGE_CONTROL1(FileSystemHostMsg_NotifyCloseFile,
-                     int /* file_open_id */)
-
 // WebFileSystem::createSnapshotFileAndReadMetadata() message.
 IPC_MESSAGE_CONTROL2(FileSystemHostMsg_CreateSnapshotFile,
                      int /* request_id */,
@@ -191,11 +179,3 @@ IPC_MESSAGE_CONTROL1(FileSystemHostMsg_DidReceiveSnapshotFile,
 IPC_SYNC_MESSAGE_CONTROL1_1(FileSystemHostMsg_SyncGetPlatformPath,
                             GURL /* file path */,
                             base::FilePath /* platform_path */)
-
-// Pre- and post-update notifications for ppapi implementation.
-IPC_MESSAGE_CONTROL1(FileSystemHostMsg_WillUpdate,
-                     GURL /* file_path */)
-
-IPC_MESSAGE_CONTROL2(FileSystemHostMsg_DidUpdate,
-                     GURL /* file_path */,
-                     int64 /* delta */)

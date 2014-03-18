@@ -20,6 +20,9 @@
 
 namespace net {
 
+// Default maximum packet size used in Linux TCP implementations.
+const QuicByteCount kDefaultTCPMSS = 1460;
+
 namespace test {
 class TcpCubicSenderPeer;
 }  // namespace test
@@ -33,37 +36,41 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   virtual ~TcpCubicSender();
 
   // Start implementation of SendAlgorithmInterface.
+  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
+  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
       QuicTime feedback_receive_time,
       const SentPacketsMap& sent_packets) OVERRIDE;
-  virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
+  virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
                              QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) OVERRIDE;
-  virtual void OnIncomingLoss(QuicTime ack_receive_time) OVERRIDE;
-  virtual bool SentPacket(
-      QuicTime sent_time,
-      QuicPacketSequenceNumber sequence_number,
-      QuicByteCount bytes,
-      Retransmission is_retransmission,
-      HasRetransmittableData is_retransmittable) OVERRIDE;
-  virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number,
-                                QuicByteCount abandoned_bytes) OVERRIDE;
+  virtual void OnPacketLost(QuicPacketSequenceNumber largest_loss,
+                            QuicTime ack_receive_time) OVERRIDE;
+  virtual bool OnPacketSent(QuicTime sent_time,
+                            QuicPacketSequenceNumber sequence_number,
+                            QuicByteCount bytes,
+                            TransmissionType transmission_type,
+                            HasRetransmittableData is_retransmittable) OVERRIDE;
+  virtual void OnRetransmissionTimeout() OVERRIDE;
+  virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
+                                 QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
-      Retransmission is_retransmission,
+      TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
-  virtual QuicBandwidth BandwidthEstimate() OVERRIDE;
-  virtual QuicTime::Delta SmoothedRtt() OVERRIDE;
-  virtual QuicTime::Delta RetransmissionDelay() OVERRIDE;
+  virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
+  virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
+  virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:
   friend class test::TcpCubicSenderPeer;
 
-  QuicByteCount AvailableCongestionWindow();
-  QuicByteCount CongestionWindow();
+  QuicByteCount AvailableSendWindow();
+  QuicByteCount SendWindow();
   void Reset();
   void AckAccounting(QuicTime::Delta rtt);
   void CongestionAvoidance(QuicPacketSequenceNumber ack);
@@ -80,7 +87,7 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   int64 congestion_window_count_;
 
   // Receiver side advertised window.
-  QuicByteCount receiver_congestion_window_;
+  QuicByteCount receive_window_;
 
   // Receiver side advertised packet loss.
   int last_received_accumulated_number_of_lost_packets_;
@@ -91,6 +98,15 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   // We need to keep track of the end sequence number of each RTT "burst".
   bool update_end_sequence_number_;
   QuicPacketSequenceNumber end_sequence_number_;
+
+  // Track the largest packet that has been sent.
+  QuicPacketSequenceNumber largest_sent_sequence_number_;
+
+  // Track the largest packet that has been acked.
+  QuicPacketSequenceNumber largest_acked_sequence_number_;
+
+  // Track the largest sequence number outstanding when a CWND cutback occurs.
+  QuicPacketSequenceNumber largest_sent_at_last_cutback_;
 
   // Congestion window in packets.
   QuicTcpCongestionWindow congestion_window_;

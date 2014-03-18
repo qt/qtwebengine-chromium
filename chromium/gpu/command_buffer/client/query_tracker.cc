@@ -8,7 +8,6 @@
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
 
-#include "gpu/command_buffer/client/atomicops.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/mapped_memory.h"
@@ -19,7 +18,7 @@ namespace gles2 {
 
 QuerySyncManager::QuerySyncManager(MappedMemoryManager* manager)
     : mapped_memory_(manager) {
-  GPU_DCHECK(manager);
+  DCHECK(manager);
 }
 
 QuerySyncManager::~QuerySyncManager() {
@@ -31,7 +30,7 @@ QuerySyncManager::~QuerySyncManager() {
 }
 
 bool QuerySyncManager::Alloc(QuerySyncManager::QueryInfo* info) {
-  GPU_DCHECK(info);
+  DCHECK(info);
   if (free_queries_.empty()) {
     int32 shm_id;
     unsigned int shm_offset;
@@ -151,14 +150,14 @@ bool QueryTracker::Query::CheckResultsAvailable(
         helper->IsContextLost()) {
       // Need a MemoryBarrier here so that sync->result read after
       // sync->process_count.
-      gpu::MemoryBarrier();
+      base::subtle::MemoryBarrier();
       switch (target()) {
         case GL_COMMANDS_ISSUED_CHROMIUM:
           result_ = std::min(info_.sync->result,
                              static_cast<uint64>(0xFFFFFFFFL));
           break;
         case GL_LATENCY_QUERY_CHROMIUM:
-          GPU_DCHECK(info_.sync->result >= client_begin_time_us_);
+          DCHECK(info_.sync->result >= client_begin_time_us_);
           result_ = std::min(info_.sync->result - client_begin_time_us_,
                              static_cast<uint64>(0xFFFFFFFFL));
           break;
@@ -187,7 +186,7 @@ bool QueryTracker::Query::CheckResultsAvailable(
 }
 
 uint32 QueryTracker::Query::GetResult() const {
-  GPU_DCHECK(state_ == kComplete || state_ == kUninitialized);
+  DCHECK(state_ == kComplete || state_ == kUninitialized);
   return result_;
 }
 
@@ -207,7 +206,7 @@ QueryTracker::~QueryTracker() {
 }
 
 QueryTracker::Query* QueryTracker::CreateQuery(GLuint id, GLenum target) {
-  GPU_DCHECK_NE(0u, id);
+  DCHECK_NE(0u, id);
   FreeCompletedQueries();
   QuerySyncManager::QueryInfo info;
   if (!query_sync_manager_.Alloc(&info)) {
@@ -216,7 +215,7 @@ QueryTracker::Query* QueryTracker::CreateQuery(GLuint id, GLenum target) {
   Query* query = new Query(id, target, info);
   std::pair<QueryMap::iterator, bool> result =
       queries_.insert(std::make_pair(id, query));
-  GPU_DCHECK(result.second);
+  DCHECK(result.second);
   return query;
 }
 

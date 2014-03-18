@@ -28,7 +28,7 @@ class MFReaderCallback;
 
 class MEDIA_EXPORT VideoCaptureDeviceMFWin
     : public base::NonThreadSafe,
-      public VideoCaptureDevice1 {
+      public VideoCaptureDevice {
  public:
   explicit VideoCaptureDeviceMFWin(const Name& device_name);
   virtual ~VideoCaptureDeviceMFWin();
@@ -38,12 +38,10 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(const VideoCaptureCapability& capture_format,
-                         VideoCaptureDevice::EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const VideoCaptureParams& params,
+                                scoped_ptr<VideoCaptureDevice::Client> client)
+      OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
 
   // Returns true iff the current platform supports the Media Foundation API
   // and that the DLLs are available.  On Vista this API is an optional download
@@ -59,9 +57,7 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
       const uint8* data,
       int length,
       const base::Time& time_stamp,
-      int rotation,
-      bool flip_vert,
-      bool flip_horiz);
+      int rotation);
 
  private:
   void OnError(HRESULT hr);
@@ -71,8 +67,9 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
   scoped_refptr<MFReaderCallback> callback_;
 
   base::Lock lock_;  // Used to guard the below variables.
-  VideoCaptureDevice::EventHandler* observer_;
+  scoped_ptr<VideoCaptureDevice::Client> client_;
   base::win::ScopedComPtr<IMFSourceReader> reader_;
+  VideoCaptureFormat capture_format_;
   bool capture_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureDeviceMFWin);

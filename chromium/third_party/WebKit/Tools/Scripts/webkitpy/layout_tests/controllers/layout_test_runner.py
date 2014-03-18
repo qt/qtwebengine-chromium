@@ -80,6 +80,7 @@ class LayoutTestRunner(object):
         self._expectations = expectations
         self._test_inputs = test_inputs
         self._retrying = retrying
+        self._shards_to_redo = []
 
         # FIXME: rename all variables to test_run_results or some such ...
         run_results = TestRunResults(self._expectations, len(test_inputs) + len(tests_to_skip))
@@ -112,8 +113,14 @@ class LayoutTestRunner(object):
 
         start_time = time.time()
         try:
-            with message_pool.get(self, self._worker_factory, num_workers, self._port.worker_startup_delay_secs(), self._port.host) as pool:
+            with message_pool.get(self, self._worker_factory, num_workers, self._port.host) as pool:
                 pool.run(('test_list', shard.name, shard.test_inputs) for shard in all_shards)
+
+            if self._shards_to_redo:
+                num_workers -= len(self._shards_to_redo)
+                if num_workers > 0:
+                    with message_pool.get(self, self._worker_factory, num_workers, self._port.host) as pool:
+                        pool.run(('test_list', shard.name, shard.test_inputs) for shard in self._shards_to_redo)
         except TestRunInterruptedException, e:
             _log.warning(e.reason)
             run_results.interrupted = True
@@ -171,10 +178,12 @@ class LayoutTestRunner(object):
         exp_str = self._expectations.get_expectations_string(result.test_name)
         got_str = self._expectations.expectation_to_string(result.type)
 
+        if result.device_failed:
+            self._printer.print_finished_test(result, False, exp_str, "Aborted")
+            return
+
         run_results.add(result, expected, self._test_is_slow(result.test_name))
-
         self._printer.print_finished_test(result, expected, exp_str, got_str)
-
         self._interrupt_if_at_failure_limits(run_results)
 
     def handle(self, name, source, *args):
@@ -192,6 +201,10 @@ class LayoutTestRunner(object):
     def _handle_finished_test(self, worker_name, result, log_messages=[]):
         self._update_summary_with_result(self._current_run_results, result)
 
+    def _handle_device_failed(self, worker_name, list_name, remaining_tests):
+        _log.warning("%s has failed" % worker_name)
+        if remaining_tests:
+            self._shards_to_redo.append(TestShard(list_name, remaining_tests))
 
 class Worker(object):
     def __init__(self, caller, results_directory, options):
@@ -226,8 +239,13 @@ class Worker(object):
 
     def handle(self, name, source, test_list_name, test_inputs):
         assert name == 'test_list'
-        for test_input in test_inputs:
-            self._run_test(test_input, test_list_name)
+        for i, test_input in enumerate(test_inputs):
+            device_failed = self._run_test(test_input, test_list_name)
+            if device_failed:
+                self._caller.post('device_failed', test_list_name, test_inputs[i:])
+                self._caller.stop_running()
+                return
+
         self._caller.post('finished_test_list', test_list_name)
 
     def _update_test_input(self, test_input):
@@ -250,12 +268,20 @@ class Worker(object):
         self._update_test_input(test_input)
         test_timeout_sec = self._timeout(test_input)
         start = time.time()
-        self._caller.post('started_test', test_input, test_timeout_sec)
+        device_failed = False
 
         if self._driver and self._driver.has_crashed():
             self._kill_driver()
         if not self._driver:
             self._driver = self._port.create_driver(self._worker_number)
+
+        if not self._driver:
+            # FIXME: Is this the best way to handle a device crashing in the middle of the test, or should we create
+            # a new failure type?
+            device_failed = True
+            return device_failed
+
+        self._caller.post('started_test', test_input, test_timeout_sec)
         result = single_test_runner.run_single_test(self._port, self._options, self._results_directory,
             self._name, self._driver, test_input, stop_when_done)
 
@@ -264,10 +290,9 @@ class Worker(object):
         result.total_run_time = time.time() - start
         result.test_number = self._num_tests
         self._num_tests += 1
-
         self._caller.post('finished_test', result)
-
         self._clean_up_after_test(test_input, result)
+        return result.device_failed
 
     def stop(self):
         _log.debug("%s cleaning up" % self._name)
@@ -352,7 +377,7 @@ class Sharder(object):
             return self._shard_in_two(test_inputs)
         elif fully_parallel:
             return self._shard_every_file(test_inputs)
-        return self._shard_by_directory(test_inputs, num_workers)
+        return self._shard_by_directory(test_inputs)
 
     def _shard_in_two(self, test_inputs):
         """Returns two lists of shards, one with all the tests requiring a lock and one with the rest.
@@ -381,18 +406,30 @@ class Sharder(object):
         This mode gets maximal parallelism at the cost of much higher flakiness."""
         locked_shards = []
         unlocked_shards = []
+        virtual_inputs = []
+
         for test_input in test_inputs:
             # Note that we use a '.' for the shard name; the name doesn't really
             # matter, and the only other meaningful value would be the filename,
             # which would be really redundant.
             if test_input.requires_lock:
                 locked_shards.append(TestShard('.', [test_input]))
+            elif test_input.test_name.startswith('virtual'):
+                # This violates the spirit of sharding every file, but in practice, since the
+                # virtual test suites require a different commandline flag and thus a restart
+                # of content_shell, it's too slow to shard them fully.
+                virtual_inputs.append(test_input)
             else:
                 unlocked_shards.append(TestShard('.', [test_input]))
 
-        return locked_shards, unlocked_shards
+        locked_virtual_shards, unlocked_virtual_shards = self._shard_by_directory(virtual_inputs)
 
-    def _shard_by_directory(self, test_inputs, num_workers):
+        # The locked shards still need to be limited to self._max_locked_shards in order to not
+        # overload the http server for the http tests.
+        return (self._resize_shards(locked_virtual_shards + locked_shards, self._max_locked_shards, 'locked_shard'),
+            unlocked_virtual_shards + unlocked_shards)
+
+    def _shard_by_directory(self, test_inputs):
         """Returns two lists of shards, each shard containing all the files in a directory.
 
         This is the default mode, and gets as much parallelism as we can while

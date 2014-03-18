@@ -26,10 +26,10 @@
 #ifndef LinkHighlight_h
 #define LinkHighlight_h
 
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/Path.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/graphics/GraphicsLayer.h"
+#include "platform/graphics/Path.h"
 #include "public/platform/WebAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebContentLayerClient.h"
@@ -41,7 +41,7 @@ class RenderLayer;
 class Node;
 }
 
-namespace WebKit {
+namespace blink {
 
 struct WebFloatRect;
 struct WebRect;
@@ -61,8 +61,8 @@ public:
     virtual void paintContents(WebCanvas*, const WebRect& clipRect, bool canPaintLCDText, WebFloatRect& opaque) OVERRIDE;
 
     // WebAnimationDelegate implementation.
-    virtual void notifyAnimationStarted(double time) OVERRIDE;
-    virtual void notifyAnimationFinished(double time) OVERRIDE;
+    virtual void notifyAnimationStarted(double wallClockTime, double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
+    virtual void notifyAnimationFinished(double wallClockTime, double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
 
     // LinkHighlightClient inplementation.
     virtual void invalidate() OVERRIDE;
@@ -87,7 +87,6 @@ private:
     WebCore::Path m_path;
 
     RefPtr<WebCore::Node> m_node;
-    OwnPtr<WebAnimation> m_animation;
     WebViewImpl* m_owningWebViewImpl;
     WebCore::GraphicsLayer* m_currentGraphicsLayer;
 
@@ -96,6 +95,6 @@ private:
     double m_startTime;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

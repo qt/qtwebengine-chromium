@@ -23,6 +23,11 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 
+#if defined(OS_ANDROID)
+#include "content/browser/power_save_blocker_impl.h"
+#include "content/public/browser/render_widget_host_view.h"
+#endif
+
 namespace content {
 
 typedef std::vector<RenderViewDevToolsAgentHost*> Instances;
@@ -42,28 +47,6 @@ static RenderViewDevToolsAgentHost* FindAgentHost(RenderViewHost* rvh) {
 }
 
 }  // namespace
-
-class RenderViewDevToolsAgentHost::DevToolsAgentHostRvhObserver
-    : public RenderViewHostObserver {
- public:
-  DevToolsAgentHostRvhObserver(RenderViewHost* rvh,
-                               RenderViewDevToolsAgentHost* agent_host)
-      : RenderViewHostObserver(rvh),
-        agent_host_(agent_host) {
-  }
-  virtual ~DevToolsAgentHostRvhObserver() {}
-
-  // RenderViewHostObserver overrides.
-  virtual void RenderViewHostDestroyed(RenderViewHost* rvh) OVERRIDE {
-    agent_host_->RenderViewHostDestroyed(rvh);
-  }
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
-    return agent_host_->OnRvhMessageReceived(message);
-  }
- private:
-  RenderViewDevToolsAgentHost* agent_host_;
-  DISALLOW_COPY_AND_ASSIGN(DevToolsAgentHostRvhObserver);
-};
 
 // static
 scoped_refptr<DevToolsAgentHost>
@@ -147,9 +130,6 @@ RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(
   overrides_handler_->SetNotifier(notifier);
   tracing_handler_->SetNotifier(notifier);
   g_instances.Get().push_back(this);
-  RenderViewHostDelegate* delegate = render_view_host_->GetDelegate();
-  if (delegate && delegate->GetAsWebContents())
-    WebContentsObserver::Observe(delegate->GetAsWebContents());
   AddRef();  // Balanced in RenderViewHostDestroyed.
 }
 
@@ -193,11 +173,26 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
       render_view_host_->GetProcess()->GetID());
 
   // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
-  // ExtensionProcessManager no longer relies on this notification.
+  // extensions::ProcessManager no longer relies on this notification.
   DevToolsManagerImpl::GetInstance()->NotifyObservers(this, true);
+
+#if defined(OS_ANDROID)
+  power_save_blocker_.reset(
+      static_cast<PowerSaveBlockerImpl*>(
+          PowerSaveBlocker::Create(
+              PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+              "DevTools").release()));
+  if (render_view_host_->GetView()) {
+    power_save_blocker_.get()->
+        InitDisplaySleepBlocker(render_view_host_->GetView()->GetNativeView());
+  }
+#endif
 }
 
 void RenderViewDevToolsAgentHost::OnClientDetached() {
+#if defined(OS_ANDROID)
+  power_save_blocker_.reset();
+#endif
   overrides_handler_->OnClientDetached();
   ClientDetachedFromRenderer();
 }
@@ -224,7 +219,7 @@ void RenderViewDevToolsAgentHost::ClientDetachedFromRenderer() {
   }
 
   // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
-  // ExtensionProcessManager no longer relies on this notification.
+  // extensions::ProcessManager no longer relies on this notification.
   DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
@@ -247,6 +242,28 @@ void RenderViewDevToolsAgentHost::AboutToNavigateRenderView(
     return;
   DisconnectRenderViewHost();
   ConnectRenderViewHost(dest_rvh);
+}
+
+void RenderViewDevToolsAgentHost::RenderViewHostChanged(
+    RenderViewHost* old_host,
+    RenderViewHost* new_host) {
+  if (new_host != render_view_host_) {
+    // AboutToNavigateRenderView was not called for renderer-initiated
+    // navigation.
+    DisconnectRenderViewHost();
+    ConnectRenderViewHost(new_host);
+  }
+}
+
+void RenderViewDevToolsAgentHost::RenderViewDeleted(RenderViewHost* rvh) {
+  if (rvh != render_view_host_)
+    return;
+
+  DCHECK(render_view_host_);
+  scoped_refptr<RenderViewDevToolsAgentHost> protect(this);
+  NotifyCloseListener();
+  ClearRenderViewHost();
+  Release();
 }
 
 void RenderViewDevToolsAgentHost::RenderProcessGone(
@@ -287,7 +304,9 @@ void RenderViewDevToolsAgentHost::Observe(int type,
 void RenderViewDevToolsAgentHost::SetRenderViewHost(RenderViewHost* rvh) {
   DCHECK(!render_view_host_);
   render_view_host_ = rvh;
-  rvh_observer_.reset(new DevToolsAgentHostRvhObserver(rvh, this));
+
+  WebContentsObserver::Observe(WebContents::FromRenderViewHost(rvh));
+
   registrar_.Add(
       this,
       content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
@@ -300,7 +319,6 @@ void RenderViewDevToolsAgentHost::ClearRenderViewHost() {
       this,
       content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
       content::Source<RenderWidgetHost>(render_view_host_));
-  rvh_observer_.reset(NULL);
   render_view_host_ = NULL;
 }
 
@@ -315,15 +333,6 @@ void RenderViewDevToolsAgentHost::DisconnectRenderViewHost() {
   ClearRenderViewHost();
 }
 
-void RenderViewDevToolsAgentHost::RenderViewHostDestroyed(
-    RenderViewHost* rvh) {
-  DCHECK(render_view_host_);
-  scoped_refptr<RenderViewDevToolsAgentHost> protect(this);
-  NotifyCloseListener();
-  ClearRenderViewHost();
-  Release();
-}
-
 void RenderViewDevToolsAgentHost::RenderViewCrashed() {
   scoped_refptr<DevToolsProtocol::Notification> notification =
       DevToolsProtocol::CreateNotification(
@@ -332,8 +341,11 @@ void RenderViewDevToolsAgentHost::RenderViewCrashed() {
       DispatchOnInspectorFrontend(this, notification->Serialize());
 }
 
-bool RenderViewDevToolsAgentHost::OnRvhMessageReceived(
+bool RenderViewDevToolsAgentHost::OnMessageReceived(
     const IPC::Message& msg) {
+  if (!render_view_host_)
+    return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderViewDevToolsAgentHost, msg)
     IPC_MESSAGE_HANDLER(DevToolsClientMsg_DispatchOnInspectorFrontend,
@@ -352,7 +364,17 @@ bool RenderViewDevToolsAgentHost::OnRvhMessageReceived(
 
 void RenderViewDevToolsAgentHost::OnSwapCompositorFrame(
     const IPC::Message& message) {
-  overrides_handler_->OnSwapCompositorFrame(message);
+  ViewHostMsg_SwapCompositorFrame::Param param;
+  if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
+    return;
+  overrides_handler_->OnSwapCompositorFrame(param.b.metadata);
+}
+
+void RenderViewDevToolsAgentHost::SynchronousSwapCompositorFrame(
+    const cc::CompositorFrameMetadata& frame_metadata) {
+  if (!render_view_host_)
+    return;
+  overrides_handler_->OnSwapCompositorFrame(frame_metadata);
 }
 
 void RenderViewDevToolsAgentHost::OnSaveAgentRuntimeState(

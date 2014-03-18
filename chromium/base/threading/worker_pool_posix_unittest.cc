@@ -160,7 +160,6 @@ TEST_F(PosixDynamicThreadPoolTest, Basic) {
 
   EXPECT_EQ(1U, unique_threads_.size()) <<
       "There should be only one thread allocated for one task.";
-  EXPECT_EQ(1, peer_.num_idle_threads());
   EXPECT_EQ(1, counter_);
 }
 

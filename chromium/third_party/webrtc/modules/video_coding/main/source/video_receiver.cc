@@ -40,6 +40,7 @@ VideoReceiver::VideoReceiver(const int32_t id,
       _dualDecodedFrameCallback(_dualTiming, clock_),
       _frameTypeCallback(NULL),
       _receiveStatsCallback(NULL),
+      _decoderTimingCallback(NULL),
       _packetRequestCallback(NULL),
       render_buffer_callback_(NULL),
       _decoder(NULL),
@@ -51,6 +52,7 @@ VideoReceiver::VideoReceiver(const int32_t id,
       _keyRequestMode(kKeyOnError),
       _scheduleKeyRequest(false),
       max_nack_list_size_(0),
+      pre_decode_image_callback_(NULL),
       _codecDataBase(id),
       _receiveStatsTimer(1000, clock_),
       _retransmissionTimer(10, clock_),
@@ -83,6 +85,30 @@ int32_t VideoReceiver::Process() {
       uint32_t frameRate;
       _receiver.ReceiveStatistics(&bitRate, &frameRate);
       _receiveStatsCallback->OnReceiveStatisticsUpdate(bitRate, frameRate);
+    }
+
+    if (_decoderTimingCallback != NULL) {
+      int decode_ms;
+      int max_decode_ms;
+      int current_delay_ms;
+      int target_delay_ms;
+      int jitter_buffer_ms;
+      int min_playout_delay_ms;
+      int render_delay_ms;
+      _timing.GetTimings(&decode_ms,
+                         &max_decode_ms,
+                         &current_delay_ms,
+                         &target_delay_ms,
+                         &jitter_buffer_ms,
+                         &min_playout_delay_ms,
+                         &render_delay_ms);
+      _decoderTimingCallback->OnDecoderTiming(decode_ms,
+                                              max_decode_ms,
+                                              current_delay_ms,
+                                              target_delay_ms,
+                                              jitter_buffer_ms,
+                                              min_playout_delay_ms,
+                                              render_delay_ms);
     }
 
     // Size of render buffer.
@@ -255,6 +281,7 @@ int32_t VideoReceiver::InitializeReceiver() {
   _receiverInited = true;
   _frameTypeCallback = NULL;
   _receiveStatsCallback = NULL;
+  _decoderTimingCallback = NULL;
   _packetRequestCallback = NULL;
   _keyRequestMode = kKeyOnError;
   _scheduleKeyRequest = false;
@@ -275,6 +302,13 @@ int32_t VideoReceiver::RegisterReceiveStatisticsCallback(
     VCMReceiveStatisticsCallback* receiveStats) {
   CriticalSectionScoped cs(process_crit_sect_.get());
   _receiveStatsCallback = receiveStats;
+  return VCM_OK;
+}
+
+int32_t VideoReceiver::RegisterDecoderTimingCallback(
+    VCMDecoderTimingCallback* decoderTiming) {
+  CriticalSectionScoped cs(process_crit_sect_.get());
+  _decoderTimingCallback = decoderTiming;
   return VCM_OK;
 }
 
@@ -366,6 +400,11 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
     // If this frame was too late, we should adjust the delay accordingly
     _timing.UpdateCurrentDelay(frame->RenderTimeMs(),
                                clock_->TimeInMilliseconds());
+
+    if (pre_decode_image_callback_) {
+      EncodedImage encoded_image(frame->EncodedImage());
+      pre_decode_image_callback_->Encoded(encoded_image);
+    }
 
 #ifdef DEBUG_DECODER_BIT_STREAM
     if (_bitStreamBeforeDecoder != NULL) {
@@ -780,6 +819,12 @@ void VideoReceiver::SetNackSettings(size_t max_nack_list_size,
 
 int VideoReceiver::SetMinReceiverDelay(int desired_delay_ms) {
   return _receiver.SetMinReceiverDelay(desired_delay_ms);
+}
+
+void VideoReceiver::RegisterPreDecodeImageCallback(
+    EncodedImageCallback* observer) {
+  CriticalSectionScoped cs(_receiveCritSect);
+  pre_decode_image_callback_ = observer;
 }
 
 }  // namespace vcm

@@ -6,7 +6,6 @@
 
 cr.define('cr.ui', function() {
   /** @const */ var EventTarget = cr.EventTarget;
-  /** @const */ var Event = cr.Event;
   /** @const */ var Menu = cr.ui.Menu;
 
   /**
@@ -14,7 +13,9 @@ cr.define('cr.ui', function() {
    * @constructor
    * @extends {EventTarget}
    */
-  function ContextMenuHandler() {}
+  function ContextMenuHandler() {
+    this.showingEvents_ = new EventTracker();
+  }
 
   ContextMenuHandler.prototype = {
     __proto__: EventTarget.prototype,
@@ -44,14 +45,17 @@ cr.define('cr.ui', function() {
       menu.hidden = false;
       menu.contextElement = e.currentTarget;
 
-      // when the menu is shown we steal all keyboard events.
+      // When the menu is shown we steal a lot of events.
       var doc = menu.ownerDocument;
-      doc.addEventListener('keydown', this, true);
-      doc.addEventListener('mousedown', this, true);
-      doc.addEventListener('focus', this);
-      doc.defaultView.addEventListener('resize', this);
-      menu.addEventListener('contextmenu', this);
-      menu.addEventListener('activate', this);
+      var win = doc.defaultView;
+      this.showingEvents_.add(doc, 'keydown', this, true);
+      this.showingEvents_.add(doc, 'mousedown', this, true);
+      this.showingEvents_.add(doc, 'focus', this);
+      this.showingEvents_.add(win, 'popstate', this);
+      this.showingEvents_.add(win, 'resize', this);
+      this.showingEvents_.add(win, 'blur', this);
+      this.showingEvents_.add(menu, 'contextmenu', this);
+      this.showingEvents_.add(menu, 'activate', this);
       this.positionMenu_(e, menu);
 
       var ev = new Event('show');
@@ -77,13 +81,7 @@ cr.define('cr.ui', function() {
       menu.hidden = true;
       var originalContextElement = menu.contextElement;
       menu.contextElement = null;
-      var doc = menu.ownerDocument;
-      doc.removeEventListener('keydown', this, true);
-      doc.removeEventListener('mousedown', this, true);
-      doc.removeEventListener('focus', this);
-      doc.defaultView.removeEventListener('resize', this);
-      menu.removeEventListener('contextmenu', this);
-      menu.removeEventListener('activate', this);
+      this.showingEvents_.removeAll();
       menu.selectedIndex = -1;
       this.menu_ = null;
 
@@ -184,6 +182,11 @@ cr.define('cr.ui', function() {
             this.hideMenu();
           break;
 
+        case 'blur':
+          this.hideMenu();
+          break;
+
+        case 'popstate':
         case 'resize':
           this.hideMenu();
           break;

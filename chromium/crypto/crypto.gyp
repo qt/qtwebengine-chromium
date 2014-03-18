@@ -75,6 +75,9 @@
               ['exclude', 'signature_verifier_nss\.cc$'],
               ['exclude', 'symmetric_key_nss\.cc$'],
             ],
+            'includes': [
+              '../build/android/cpufeatures.gypi',
+            ],
         }],
         [ 'os_bsd==1', {
           'link_settings': {
@@ -169,7 +172,6 @@
         'capi_util.cc',
         'capi_util.h',
         'crypto_export.h',
-        'crypto_module_blocking_password_delegate.h',
         'cssm_init.cc',
         'cssm_init.h',
         'curve25519.cc',
@@ -201,6 +203,7 @@
         'mock_apple_keychain_mac.cc',
         'p224_spake.cc',
         'p224_spake.h',
+        'nss_crypto_module_delegate.h',
         'nss_util.cc',
         'nss_util.h',
         'nss_util_internal.h',

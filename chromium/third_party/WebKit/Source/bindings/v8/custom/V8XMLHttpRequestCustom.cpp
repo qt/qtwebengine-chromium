@@ -36,6 +36,7 @@
 #include "V8FormData.h"
 #include "V8HTMLDocument.h"
 #include "V8Stream.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
@@ -51,29 +52,29 @@
 
 namespace WebCore {
 
-void V8XMLHttpRequest::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8XMLHttpRequest::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    ScriptExecutionContext* context = getScriptExecutionContext();
+    ExecutionContext* context = getExecutionContext();
 
     RefPtr<SecurityOrigin> securityOrigin;
     if (context->isDocument()) {
-        if (DOMWrapperWorld* world = isolatedWorldForEnteredContext())
+        if (DOMWrapperWorld* world = isolatedWorldForEnteredContext(info.GetIsolate()))
             securityOrigin = world->isolatedWorldSecurityOrigin();
     }
 
     RefPtr<XMLHttpRequest> xmlHttpRequest = XMLHttpRequest::create(context, securityOrigin);
 
-    v8::Handle<v8::Object> wrapper = args.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<V8XMLHttpRequest>(xmlHttpRequest.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
-    args.GetReturnValue().Set(wrapper);
+    v8::Handle<v8::Object> wrapper = info.Holder();
+    V8DOMWrapper::associateObjectWithWrapper<V8XMLHttpRequest>(xmlHttpRequest.release(), &wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Dependent);
+    info.GetReturnValue().Set(wrapper);
 }
 
-void V8XMLHttpRequest::responseTextAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseTextAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
-    ExceptionState es(info.GetIsolate());
-    ScriptValue text = xmlHttpRequest->responseText(es);
-    if (es.throwIfNeeded())
+    ExceptionState exceptionState(ExceptionState::GetterContext, "responseText", "XMLHttpRequest", info.Holder(), info.GetIsolate());
+    ScriptValue text = xmlHttpRequest->responseText(exceptionState);
+    if (exceptionState.throwIfNeeded())
         return;
     if (text.hasNoValue()) {
         v8SetReturnValueString(info, emptyString(), info.GetIsolate());
@@ -82,27 +83,23 @@ void V8XMLHttpRequest::responseTextAttributeGetterCustom(v8::Local<v8::String> n
     v8SetReturnValue(info, text.v8Value());
 }
 
-void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
 
     switch (xmlHttpRequest->responseTypeCode()) {
     case XMLHttpRequest::ResponseTypeDefault:
     case XMLHttpRequest::ResponseTypeText:
-        responseTextAttributeGetterCustom(name, info);
+        responseTextAttributeGetterCustom(info);
         return;
 
     case XMLHttpRequest::ResponseTypeJSON:
         {
             v8::Isolate* isolate = info.GetIsolate();
 
-            ExceptionState es(isolate);
             ScriptString jsonSource = xmlHttpRequest->responseJSONSource();
-            if (es.throwIfNeeded())
-                return;
-
             if (jsonSource.hasNoValue() || !jsonSource.v8Value()->IsString()) {
-                v8SetReturnValue(info, v8NullWithCheck(isolate));
+                v8SetReturnValue(info, v8::Null(isolate));
                 return;
             }
 
@@ -112,7 +109,7 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name,
             v8::Handle<v8::Value> json = v8::JSON::Parse(jsonSource.v8Value().As<v8::String>());
 
             if (exceptionCatcher.HasCaught() || json.IsEmpty())
-                v8SetReturnValue(info, v8NullWithCheck(isolate));
+                v8SetReturnValue(info, v8::Null(isolate));
             else
                 v8SetReturnValue(info, json);
 
@@ -121,9 +118,9 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name,
 
     case XMLHttpRequest::ResponseTypeDocument:
         {
-            ExceptionState es(info.GetIsolate());
-            Document* document = xmlHttpRequest->responseXML(es);
-            if (es.throwIfNeeded())
+            ExceptionState exceptionState(ExceptionState::GetterContext, "response", "XMLHttpRequest", info.Holder(), info.GetIsolate());
+            Document* document = xmlHttpRequest->responseXML(exceptionState);
+            if (exceptionState.throwIfNeeded())
                 return;
             v8SetReturnValueFast(info, document, xmlHttpRequest);
             return;
@@ -147,7 +144,7 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name,
         {
             ArrayBuffer* arrayBuffer = xmlHttpRequest->responseArrayBuffer();
             if (arrayBuffer) {
-                arrayBuffer->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instance());
+                arrayBuffer->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instanceTemplate());
             }
             v8SetReturnValueFast(info, arrayBuffer, xmlHttpRequest);
             return;
@@ -155,7 +152,7 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(v8::Local<v8::String> name,
     }
 }
 
-void V8XMLHttpRequest::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8XMLHttpRequest::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     // Four cases:
     // open(method, url)
@@ -163,93 +160,96 @@ void V8XMLHttpRequest::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value
     // open(method, url, async, user)
     // open(method, url, async, user, passwd)
 
-    if (args.Length() < 2) {
-        throwNotEnoughArgumentsError(args.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "open", "XMLHttpRequest", info.Holder(), info.GetIsolate());
+
+    if (info.Length() < 2) {
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(2, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(args.Holder());
+    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, method, args[0]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, urlstring, args[1]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, method, info[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, urlstring, info[1]);
 
-    ScriptExecutionContext* context = getScriptExecutionContext();
+    ExecutionContext* context = getExecutionContext();
     KURL url = context->completeURL(urlstring);
 
-    ExceptionState es(args.GetIsolate());
+    if (info.Length() >= 3) {
+        bool async = info[2]->BooleanValue();
 
-    if (args.Length() >= 3) {
-        bool async = args[2]->BooleanValue();
+        if (info.Length() >= 4 && !info[3]->IsUndefined()) {
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithNullCheck>, user, info[3]);
 
-        if (args.Length() >= 4 && !args[3]->IsUndefined()) {
-            String user = toWebCoreStringWithNullCheck(args[3]);
-
-            if (args.Length() >= 5 && !args[4]->IsUndefined()) {
-                String passwd = toWebCoreStringWithNullCheck(args[4]);
-                xmlHttpRequest->open(method, url, async, user, passwd, es);
+            if (info.Length() >= 5 && !info[4]->IsUndefined()) {
+                V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithNullCheck>, password, info[4]);
+                xmlHttpRequest->open(method, url, async, user, password, exceptionState);
             } else {
-                xmlHttpRequest->open(method, url, async, user, es);
+                xmlHttpRequest->open(method, url, async, user, exceptionState);
             }
         } else {
-            xmlHttpRequest->open(method, url, async, es);
+            xmlHttpRequest->open(method, url, async, exceptionState);
         }
     } else {
-        xmlHttpRequest->open(method, url, es);
+        xmlHttpRequest->open(method, url, exceptionState);
     }
 
-    es.throwIfNeeded();
+    exceptionState.throwIfNeeded();
 }
 
 static bool isDocumentType(v8::Handle<v8::Value> value, v8::Isolate* isolate, WrapperWorldType currentWorldType)
 {
     // FIXME: add other document types.
-    return V8Document::HasInstance(value, isolate, currentWorldType) || V8HTMLDocument::HasInstance(value, isolate, currentWorldType);
+    return V8Document::hasInstance(value, isolate, currentWorldType) || V8HTMLDocument::hasInstance(value, isolate, currentWorldType);
 }
 
-void V8XMLHttpRequest::sendMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8XMLHttpRequest::sendMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(args.Holder());
+    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toNative(info.Holder());
 
-    InspectorInstrumentation::willSendXMLHttpRequest(xmlHttpRequest->scriptExecutionContext(), xmlHttpRequest->url());
+    InspectorInstrumentation::willSendXMLHttpRequest(xmlHttpRequest->executionContext(), xmlHttpRequest->url());
 
-    ExceptionState es(args.GetIsolate());
-    if (args.Length() < 1)
-        xmlHttpRequest->send(es);
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "send", "XMLHttpRequest", info.Holder(), info.GetIsolate());
+    if (info.Length() < 1)
+        xmlHttpRequest->send(exceptionState);
     else {
-        v8::Handle<v8::Value> arg = args[0];
-        WrapperWorldType currentWorldType = worldType(args.GetIsolate());
-        if (isUndefinedOrNull(arg))
-            xmlHttpRequest->send(es);
-        else if (isDocumentType(arg, args.GetIsolate(), currentWorldType)) {
+        v8::Handle<v8::Value> arg = info[0];
+        WrapperWorldType currentWorldType = worldType(info.GetIsolate());
+        if (isUndefinedOrNull(arg)) {
+            xmlHttpRequest->send(exceptionState);
+        } else if (isDocumentType(arg, info.GetIsolate(), currentWorldType)) {
             v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
             Document* document = V8Document::toNative(object);
             ASSERT(document);
-            xmlHttpRequest->send(document, es);
-        } else if (V8Blob::HasInstance(arg, args.GetIsolate(), currentWorldType)) {
+            xmlHttpRequest->send(document, exceptionState);
+        } else if (V8Blob::hasInstance(arg, info.GetIsolate(), currentWorldType)) {
             v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
             Blob* blob = V8Blob::toNative(object);
             ASSERT(blob);
-            xmlHttpRequest->send(blob, es);
-        } else if (V8FormData::HasInstance(arg, args.GetIsolate(), currentWorldType)) {
+            xmlHttpRequest->send(blob, exceptionState);
+        } else if (V8FormData::hasInstance(arg, info.GetIsolate(), currentWorldType)) {
             v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
             DOMFormData* domFormData = V8FormData::toNative(object);
             ASSERT(domFormData);
-            xmlHttpRequest->send(domFormData, es);
-        } else if (V8ArrayBuffer::HasInstance(arg, args.GetIsolate(), currentWorldType)) {
+            xmlHttpRequest->send(domFormData, exceptionState);
+        } else if (V8ArrayBuffer::hasInstance(arg, info.GetIsolate(), currentWorldType)) {
             v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
             ArrayBuffer* arrayBuffer = V8ArrayBuffer::toNative(object);
             ASSERT(arrayBuffer);
-            xmlHttpRequest->send(arrayBuffer, es);
-        } else if (V8ArrayBufferView::HasInstance(arg, args.GetIsolate(), currentWorldType)) {
+            xmlHttpRequest->send(arrayBuffer, exceptionState);
+        } else if (V8ArrayBufferView::hasInstance(arg, info.GetIsolate(), currentWorldType)) {
             v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
             ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(object);
             ASSERT(arrayBufferView);
-            xmlHttpRequest->send(arrayBufferView, es);
-        } else
-            xmlHttpRequest->send(toWebCoreStringWithNullCheck(arg), es);
+            xmlHttpRequest->send(arrayBufferView, exceptionState);
+        } else {
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithNullCheck>, argString, arg);
+            xmlHttpRequest->send(argString, exceptionState);
+        }
     }
 
-    es.throwIfNeeded();
+    exceptionState.throwIfNeeded();
 }
 
 } // namespace WebCore

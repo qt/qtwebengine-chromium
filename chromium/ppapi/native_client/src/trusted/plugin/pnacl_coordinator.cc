@@ -226,20 +226,14 @@ PnaclCoordinator* PnaclCoordinator::BitcodeToNative(
                            pnacl_options,
                            translate_notify_callback);
   coordinator->pnacl_init_time_ = NaClGetTimeOfDayMicroseconds();
-  coordinator->off_the_record_ =
-      plugin->nacl_interface()->IsOffTheRecord();
-  PLUGIN_PRINTF(("PnaclCoordinator::BitcodeToNative (manifest=%p, "
-                 "off_the_record=%d)\n",
-                 reinterpret_cast<const void*>(coordinator->manifest_.get()),
-                 coordinator->off_the_record_));
+  PLUGIN_PRINTF(("PnaclCoordinator::BitcodeToNative (manifest=%p, ",
+                 reinterpret_cast<const void*>(coordinator->manifest_.get())));
 
-  // First check that PNaCl is installed.
-  pp::CompletionCallback pnacl_installed_cb =
-      coordinator->callback_factory_.NewCallback(
-          &PnaclCoordinator::DidCheckPnaclInstalled);
-  plugin->nacl_interface()->EnsurePnaclInstalled(
-      plugin->pp_instance(),
-      pnacl_installed_cb.pp_completion_callback());
+  // First start a network request for the pexe, to tickle the component
+  // updater's On-Demand resource throttler, and to get Last-Modified/ETag
+  // cache information. We can cancel the request later if there's
+  // a bitcode->nexe cache hit.
+  coordinator->OpenBitcodeStream();
   return coordinator;
 }
 
@@ -257,7 +251,6 @@ PnaclCoordinator::PnaclCoordinator(
     pnacl_options_(pnacl_options),
     is_cache_hit_(PP_FALSE),
     error_already_reported_(false),
-    off_the_record_(false),
     pnacl_init_time_(0),
     pexe_size_(0),
     pexe_bytes_compiled_(0),
@@ -346,7 +339,7 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   // that were delayed (see the delay inserted in BitcodeGotCompiled).
   if (ExpectedProgressKnown()) {
     pexe_bytes_compiled_ = expected_pexe_size_;
-    plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+    plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
                                   pexe_url_,
                                   plugin::Plugin::LENGTH_IS_COMPUTABLE,
                                   pexe_bytes_compiled_,
@@ -428,55 +421,14 @@ void PnaclCoordinator::NexeReadDidOpen(int32_t pp_error) {
   translate_notify_callback_.Run(pp_error);
 }
 
-void PnaclCoordinator::DidCheckPnaclInstalled(int32_t pp_error) {
-  if (pp_error != PP_OK) {
-    ReportNonPpapiError(
-        ERROR_PNACL_RESOURCE_FETCH,
-        nacl::string("The Portable Native Client (pnacl) component is not "
-                     "installed. Please consult chrome://components for more "
-                     "information."));
-    return;
-  }
-
-  // Loading resources (e.g. llc and ld nexes) is done with PnaclResources.
-  resources_.reset(new PnaclResources(plugin_,
-                                      this,
-                                      this->manifest_.get()));
-  CHECK(resources_ != NULL);
-
-  // The first step of loading resources: read the resource info file.
-  pp::CompletionCallback resource_info_read_cb =
-      callback_factory_.NewCallback(
-          &PnaclCoordinator::ResourceInfoWasRead);
-  resources_->ReadResourceInfo(PnaclUrls::GetResourceInfoUrl(),
-                               resource_info_read_cb);
-}
-
-void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
-  PLUGIN_PRINTF(("PluginCoordinator::ResourceInfoWasRead (pp_error=%"
-                NACL_PRId32 ")\n", pp_error));
-  // Second step of loading resources: call StartLoad.
-  pp::CompletionCallback resources_cb =
-      callback_factory_.NewCallback(&PnaclCoordinator::ResourcesDidLoad);
-  resources_->StartLoad(resources_cb);
-}
-
-void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
-  PLUGIN_PRINTF(("PnaclCoordinator::ResourcesDidLoad (pp_error=%"
-                 NACL_PRId32 ")\n", pp_error));
-  if (pp_error != PP_OK) {
-    // Finer-grained error code should have already been reported by
-    // the PnaclResources class.
-    return;
-  }
-
-  OpenBitcodeStream();
-}
-
 void PnaclCoordinator::OpenBitcodeStream() {
   // Now open the pexe stream.
   streaming_downloader_.reset(new FileDownloader());
   streaming_downloader_->Initialize(plugin_);
+  // Mark the request as requesting a PNaCl bitcode file,
+  // so that component updater can detect this user action.
+  streaming_downloader_->set_request_headers(
+      "Accept: application/x-pnacl, */*");
 
   // Even though we haven't started downloading, create the translation
   // thread object immediately. This ensures that any pieces of the file
@@ -509,7 +461,42 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
     return;
   }
 
-  // Get the cache key and try to open an existing entry.
+  // The component updater's resource throttles + OnDemand update/install
+  // should block the URL request until the compiler is present. Now we
+  // can load the resources (e.g. llc and ld nexes).
+  resources_.reset(new PnaclResources(plugin_, this, this->manifest_.get()));
+  CHECK(resources_ != NULL);
+
+  // The first step of loading resources: read the resource info file.
+  pp::CompletionCallback resource_info_read_cb =
+      callback_factory_.NewCallback(&PnaclCoordinator::ResourceInfoWasRead);
+  resources_->ReadResourceInfo(PnaclUrls::GetResourceInfoUrl(),
+                               resource_info_read_cb);
+}
+
+void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
+  PLUGIN_PRINTF(("PluginCoordinator::ResourceInfoWasRead (pp_error=%"
+                NACL_PRId32 ")\n", pp_error));
+  // Second step of loading resources: call StartLoad to load pnacl-llc
+  // and pnacl-ld, based on the filenames found in the resource info file.
+  pp::CompletionCallback resources_cb =
+      callback_factory_.NewCallback(&PnaclCoordinator::ResourcesDidLoad);
+  resources_->StartLoad(resources_cb);
+}
+
+void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
+  PLUGIN_PRINTF(("PnaclCoordinator::ResourcesDidLoad (pp_error=%"
+                 NACL_PRId32 ")\n", pp_error));
+  if (pp_error != PP_OK) {
+    // Finer-grained error code should have already been reported by
+    // the PnaclResources class.
+    return;
+  }
+
+  // Okay, now that we've started the HTTP request for the pexe
+  // and we've ensured that the PNaCl compiler + metadata is installed,
+  // get the cache key from the response headers and from the
+  // compiler's version metadata.
   nacl::string headers = streaming_downloader_->GetResponseHeaders();
   NaClHttpResponseHeaders parser;
   parser.Parse(headers);
@@ -642,14 +629,14 @@ void PnaclCoordinator::BitcodeGotCompiled(int32_t pp_error,
   // that bytes were sent to the compiler.
   if (ExpectedProgressKnown()) {
     if (!ShouldDelayProgressEvent()) {
-      plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+      plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
                                     pexe_url_,
                                     plugin::Plugin::LENGTH_IS_COMPUTABLE,
                                     pexe_bytes_compiled_,
                                     expected_pexe_size_);
     }
   } else {
-    plugin_->EnqueueProgressEvent(plugin::Plugin::kProgressEventProgress,
+    plugin_->EnqueueProgressEvent(PP_NACL_EVENT_PROGRESS,
                                   pexe_url_,
                                   plugin::Plugin::LENGTH_IS_NOT_COMPUTABLE,
                                   pexe_bytes_compiled_,

@@ -23,11 +23,9 @@
 
 #include "core/svg/SVGFESpecularLightingElement.h"
 
-#include "SVGNames.h"
-#include "core/platform/graphics/filters/FilterEffect.h"
+#include "platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -51,20 +49,19 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFESpecularLightingElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFESpecularLightingElement::SVGFESpecularLightingElement(const QualifiedName& tagName, Document& document)
-    : SVGFilterPrimitiveStandardAttributes(tagName, document)
+inline SVGFESpecularLightingElement::SVGFESpecularLightingElement(Document& document)
+    : SVGFilterPrimitiveStandardAttributes(SVGNames::feSpecularLightingTag, document)
     , m_specularConstant(1)
     , m_specularExponent(1)
     , m_surfaceScale(1)
 {
-    ASSERT(hasTagName(SVGNames::feSpecularLightingTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFESpecularLightingElement();
 }
 
-PassRefPtr<SVGFESpecularLightingElement> SVGFESpecularLightingElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFESpecularLightingElement> SVGFESpecularLightingElement::create(Document& document)
 {
-    return adoptRef(new SVGFESpecularLightingElement(tagName, document));
+    return adoptRef(new SVGFESpecularLightingElement(document));
 }
 
 const AtomicString& SVGFESpecularLightingElement::kernelUnitLengthXIdentifier()

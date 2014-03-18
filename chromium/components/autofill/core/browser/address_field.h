@@ -28,17 +28,10 @@ class AddressField : public FormField {
   virtual bool ClassifyField(ServerFieldTypeMap* map) const OVERRIDE;
 
  private:
-  enum AddressType {
-    kGenericAddress = 0,
-    kBillingAddress,
-    kShippingAddress
-  };
-
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseOneLineAddress);
-  FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseOneLineAddressBilling);
-  FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseOneLineAddressShipping);
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseTwoLineAddress);
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseThreeLineAddress);
+  FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseStreetAddressFromTextArea);
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseCity);
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseState);
   FRIEND_TEST_ALL_PREFIXES(AddressFieldTest, ParseZip);
@@ -49,36 +42,22 @@ class AddressField : public FormField {
 
   AddressField();
 
-  static bool ParseCompany(AutofillScanner* scanner,
-                           AddressField* address_field);
-  static bool ParseAddressLines(AutofillScanner* scanner,
-                                AddressField* address_field);
-  static bool ParseCountry(AutofillScanner* scanner,
-                           AddressField* address_field);
-  static bool ParseZipCode(AutofillScanner* scanner,
-                           AddressField* address_field);
-  static bool ParseCity(AutofillScanner* scanner,
-                        AddressField* address_field);
-  static bool ParseState(AutofillScanner* scanner,
-                         AddressField* address_field);
+  bool ParseCompany(AutofillScanner* scanner);
+  bool ParseAddressLines(AutofillScanner* scanner);
+  bool ParseCountry(AutofillScanner* scanner);
+  bool ParseZipCode(AutofillScanner* scanner);
+  bool ParseCity(AutofillScanner* scanner);
+  bool ParseState(AutofillScanner* scanner);
 
-  // Looks for an address type in the given text, which the caller must
-  // convert to lowercase.
-  static AddressType AddressTypeFromText(const base::string16& text);
-
-  // Tries to determine the billing/shipping type of this address.
-  AddressType FindType() const;
-
-  const AutofillField* company_;   // optional
+  const AutofillField* company_;
   const AutofillField* address1_;
-  const AutofillField* address2_;  // optional
+  const AutofillField* address2_;
+  const AutofillField* street_address_;
   const AutofillField* city_;
-  const AutofillField* state_;     // optional
+  const AutofillField* state_;
   const AutofillField* zip_;
-  const AutofillField* zip4_;      // optional ZIP+4; we don't fill this yet
-  const AutofillField* country_;   // optional
-
-  AddressType type_;
+  const AutofillField* zip4_;  // optional ZIP+4; we don't fill this yet.
+  const AutofillField* country_;
 
   DISALLOW_COPY_AND_ASSIGN(AddressField);
 };

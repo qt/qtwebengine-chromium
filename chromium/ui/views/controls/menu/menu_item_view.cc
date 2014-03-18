@@ -311,60 +311,6 @@ MenuItemView* MenuItemView::AppendMenuItemWithIcon(int item_id,
       NORMAL, ui::NORMAL_SEPARATOR);
 }
 
-MenuItemView* MenuItemView::AppendMenuItemFromModel(ui::MenuModel* model,
-                                                    int index,
-                                                    int id) {
-  gfx::Image icon;
-  model->GetIconAt(index, &icon);
-  string16 label, sublabel, minor_text;
-  ui::MenuSeparatorType separator_style = ui::NORMAL_SEPARATOR;
-  MenuItemView::Type type;
-  ui::MenuModel::ItemType menu_type = model->GetTypeAt(index);
-  switch (menu_type) {
-    case ui::MenuModel::TYPE_COMMAND:
-      type = MenuItemView::NORMAL;
-      label = model->GetLabelAt(index);
-      sublabel = model->GetSublabelAt(index);
-      minor_text = model->GetMinorTextAt(index);
-      break;
-    case ui::MenuModel::TYPE_CHECK:
-      type = MenuItemView::CHECKBOX;
-      label = model->GetLabelAt(index);
-      sublabel = model->GetSublabelAt(index);
-      minor_text = model->GetMinorTextAt(index);
-      break;
-    case ui::MenuModel::TYPE_RADIO:
-      type = MenuItemView::RADIO;
-      label = model->GetLabelAt(index);
-      sublabel = model->GetSublabelAt(index);
-      minor_text = model->GetMinorTextAt(index);
-      break;
-    case ui::MenuModel::TYPE_SEPARATOR:
-      icon = gfx::Image();
-      type = MenuItemView::SEPARATOR;
-      separator_style = model->GetSeparatorTypeAt(index);
-      break;
-    case ui::MenuModel::TYPE_SUBMENU:
-      type = MenuItemView::SUBMENU;
-      label = model->GetLabelAt(index);
-      sublabel = model->GetSublabelAt(index);
-      minor_text = model->GetMinorTextAt(index);
-      break;
-    default:
-      NOTREACHED();
-      type = MenuItemView::NORMAL;
-      break;
-  }
-
-  return AppendMenuItemImpl(id,
-      label,
-      sublabel,
-      minor_text,
-      icon.IsEmpty() ? gfx::ImageSkia() : *icon.ToImageSkia(),
-      type,
-      separator_style);
-}
-
 MenuItemView* MenuItemView::AppendMenuItemImpl(
     int item_id,
     const string16& label,
@@ -822,23 +768,23 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 
   // Render the check.
   if (type_ == CHECKBOX && delegate->IsItemChecked(GetCommand())) {
-    const gfx::ImageSkia* check = GetMenuCheckImage();
+    gfx::ImageSkia check = GetMenuCheckImage(IsSelected());
     // Don't use config.check_width here as it's padded
     // to force more padding (AURA).
-    gfx::Rect check_bounds(icon_x, icon_y, check->width(), icon_height);
+    gfx::Rect check_bounds(icon_x, icon_y, check.width(), icon_height);
     AdjustBoundsForRTLUI(&check_bounds);
-    canvas->DrawImageInt(*check, check_bounds.x(), check_bounds.y());
+    canvas->DrawImageInt(check, check_bounds.x(), check_bounds.y());
   } else if (type_ == RADIO) {
-    const gfx::ImageSkia* image =
+    gfx::ImageSkia image =
         GetRadioButtonImage(delegate->IsItemChecked(GetCommand()));
     gfx::Rect radio_bounds(icon_x,
                            top_margin +
                            (height() - top_margin - bottom_margin -
-                            image->height()) / 2,
-                           image->width(),
-                           image->height());
+                               image.height()) / 2,
+                           image.width(),
+                           image.height());
     AdjustBoundsForRTLUI(&radio_bounds);
-    canvas->DrawImageInt(*image, radio_bounds.x(), radio_bounds.y());
+    canvas->DrawImageInt(image, radio_bounds.x(), radio_bounds.y());
   }
 
   // Render the foreground.
@@ -897,7 +843,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                                          config.arrow_width) / 2,
                            config.arrow_width, height());
     AdjustBoundsForRTLUI(&arrow_bounds);
-    canvas->DrawImageInt(*GetSubmenuArrowImage(),
+    canvas->DrawImageInt(GetSubmenuArrowImage(IsSelected()),
                          arrow_bounds.x(), arrow_bounds.y());
   }
 }
@@ -1091,7 +1037,12 @@ int MenuItemView::GetMaxIconViewWidth() const {
   for (int i = 0; i < submenu_->GetMenuItemCount(); ++i) {
     MenuItemView* menu_item = submenu_->GetMenuItemAt(i);
     int temp_width = 0;
-    if (menu_item->HasSubmenu()) {
+    if (menu_item->GetType() == CHECKBOX ||
+        menu_item->GetType() == RADIO) {
+      // If this item has a radio or checkbox, the icon will not affect
+      // alignment of other items.
+      continue;
+    } else if (menu_item->HasSubmenu()) {
       temp_width = menu_item->GetMaxIconViewWidth();
     } else if (menu_item->icon_view()) {
       temp_width = menu_item->icon_view()->GetPreferredSize().width();

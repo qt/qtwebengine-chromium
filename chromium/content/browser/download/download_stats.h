@@ -15,6 +15,7 @@
 #include "content/public/browser/download_interrupt_reasons.h"
 
 namespace base {
+class FilePath;
 class Time;
 class TimeDelta;
 class TimeTicks;
@@ -71,13 +72,18 @@ enum DownloadCountTypes {
   // successful invocation of ScanAndSaveDownloadedFile().
   FILE_MISSING_AFTER_SUCCESSFUL_SCAN_COUNT,
 
-  // Count of downloads that supplies a strong ETag and has a 'Accept-Ranges:
-  // bytes' header. These downloads are candidates for partial resumption.
-  STRONG_ETAG_AND_ACCEPTS_RANGES,
+  // (Deprecated) Count of downloads with a strong ETag and specified
+  // 'Accept-Ranges: bytes'.
+  DOWNLOAD_COUNT_UNUSED_15,
 
   // Count of downloads that didn't have a valid WebContents at the time it was
   // interrupted.
   INTERRUPTED_WITHOUT_WEBCONTENTS,
+
+  // Count of downloads that supplies a strong validator (implying byte-wise
+  // equivalence) and has a 'Accept-Ranges: bytes' header. These downloads are
+  // candidates for partial resumption.
+  STRONG_VALIDATOR_AND_ACCEPTS_RANGES,
 
   DOWNLOAD_COUNT_TYPES_LAST_ENTRY
 };
@@ -128,12 +134,19 @@ void RecordDownloadInterrupted(DownloadInterruptReason reason,
                                int64 received,
                                int64 total);
 
+// Record that a download has been classified as malicious.
+void RecordMaliciousDownloadClassified(DownloadDangerType danger_type);
+
 // Record a dangerous download accept event.
-void RecordDangerousDownloadAccept(DownloadDangerType danger_type);
+void RecordDangerousDownloadAccept(
+    DownloadDangerType danger_type,
+    const base::FilePath& file_path);
 
 // Record a dangerous download discard event.
-void RecordDangerousDownloadDiscard(DownloadDiscardReason reason,
-                                    DownloadDangerType danger_type);
+void RecordDangerousDownloadDiscard(
+    DownloadDiscardReason reason,
+    DownloadDangerType danger_type,
+    const base::FilePath& file_path);
 
 // Records the mime type of the download.
 void RecordDownloadMimeType(const std::string& mime_type);
@@ -160,10 +173,12 @@ void RecordBandwidth(double actual_bandwidth, double potential_bandwidth);
 void RecordOpen(const base::Time& end, bool first);
 
 // Record whether or not the server accepts ranges, and the download size. Also
-// counts if a strong ETag is supplied. The combination of range request support
-// and ETag indicates downloads that are candidates for partial resumption.
-void RecordAcceptsRanges(const std::string& accepts_ranges, int64 download_len,
-                         const std::string& etag);
+// counts if a strong validator is supplied. The combination of range request
+// support and ETag indicates downloads that are candidates for partial
+// resumption.
+void RecordAcceptsRanges(const std::string& accepts_ranges,
+                         int64 download_len,
+                         bool has_strong_validator);
 
 // Record the number of downloads removed by ClearAll.
 void RecordClearAllSize(int size);
@@ -205,6 +220,19 @@ enum SavePackageEvent {
 };
 
 void RecordSavePackageEvent(SavePackageEvent event);
+
+enum OriginStateOnResumption {
+  ORIGIN_STATE_ON_RESUMPTION_ADDITIONAL_REDIRECTS = 1<<0,
+  ORIGIN_STATE_ON_RESUMPTION_VALIDATORS_CHANGED = 1<<1,
+  ORIGIN_STATE_ON_RESUMPTION_CONTENT_DISPOSITION_CHANGED = 1<<2,
+  ORIGIN_STATE_ON_RESUMPTION_MAX = 1<<3
+};
+
+// Record the state of the origin information across a download resumption
+// request. |state| is a combination of values from OriginStateOnResumption
+// enum.
+void RecordOriginStateOnResumption(bool is_partial,
+                                   int state);
 
 }  // namespace content
 

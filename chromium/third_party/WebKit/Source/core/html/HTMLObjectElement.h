@@ -24,28 +24,25 @@
 #define HTMLObjectElement_h
 
 #include "core/html/FormAssociatedElement.h"
-#include "core/html/HTMLPlugInImageElement.h"
+#include "core/html/HTMLPlugInElement.h"
 
 namespace WebCore {
 
 class HTMLFormElement;
 
-class HTMLObjectElement FINAL : public HTMLPlugInImageElement, public FormAssociatedElement {
+class HTMLObjectElement FINAL : public HTMLPlugInElement, public FormAssociatedElement {
 public:
-    static PassRefPtr<HTMLObjectElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtr<HTMLObjectElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
-
-    bool isDocNamedItem() const { return m_docNamedItem; }
 
     const String& classId() const { return m_classId; }
 
+    virtual HTMLFormElement* formOwner() const OVERRIDE;
+
     bool containsJavaApplet() const;
 
-    virtual bool useFallbackContent() const { return m_useFallbackContent; }
+    virtual bool useFallbackContent() const OVERRIDE;
     virtual void renderFallbackContent() OVERRIDE;
-
-    // Implementations of FormAssociatedElement
-    HTMLFormElement* form() const { return FormAssociatedElement::form(); }
 
     virtual bool isFormControlElement() const { return false; }
 
@@ -66,8 +63,10 @@ public:
 
     virtual bool canContainRangeEndPoint() const { return useFallbackContent(); }
 
+    bool isExposed() const;
+
 private:
-    HTMLObjectElement(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
+    HTMLObjectElement(Document&, HTMLFormElement*, bool createdByParser);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -77,7 +76,7 @@ private:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
@@ -88,7 +87,7 @@ private:
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
-    virtual void updateWidget(PluginCreationOption);
+    virtual void updateWidgetInternal() OVERRIDE;
     void updateDocNamedItem();
 
     void reattachFallbackContent();
@@ -104,21 +103,15 @@ private:
 
     virtual void refFormAssociatedElement() { ref(); }
     virtual void derefFormAssociatedElement() { deref(); }
-    virtual HTMLFormElement* virtualForm() const;
 
-    virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return isDocNamedItem(); }
-    virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return isDocNamedItem(); }
+    virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
+    virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }
 
     String m_classId;
-    bool m_docNamedItem : 1;
     bool m_useFallbackContent : 1;
 };
 
-inline HTMLObjectElement* toHTMLObjectElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::objectTag));
-    return static_cast<HTMLObjectElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLObjectElement, hasTagName(HTMLNames::objectTag));
 
 inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement* element)
 {
@@ -127,6 +120,16 @@ inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement*
     // We need to assert after the cast because FormAssociatedElement doesn't
     // have hasTagName.
     ASSERT_WITH_SECURITY_IMPLICATION(!objectElement || objectElement->hasTagName(HTMLNames::objectTag));
+    return objectElement;
+}
+
+inline const HTMLObjectElement& toHTMLObjectElement(const FormAssociatedElement& element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element.isFormControlElement());
+    const HTMLObjectElement& objectElement = static_cast<const HTMLObjectElement&>(element);
+    // We need to assert after the cast because FormAssociatedElement doesn't
+    // have hasTagName.
+    ASSERT_WITH_SECURITY_IMPLICATION(objectElement.hasTagName(HTMLNames::objectTag));
     return objectElement;
 }
 

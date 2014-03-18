@@ -27,7 +27,7 @@
 #define MediaKeys_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -51,7 +51,7 @@ public:
     static PassRefPtr<MediaKeys> create(const String& keySystem, ExceptionState&);
     ~MediaKeys();
 
-    PassRefPtr<MediaKeySession> createSession(ScriptExecutionContext*, const String& mimeType, Uint8Array* initData, ExceptionState&);
+    PassRefPtr<MediaKeySession> createSession(ExecutionContext*, const String& mimeType, Uint8Array* initData, ExceptionState&);
 
     const String& keySystem() const { return m_keySystem; }
 

@@ -32,6 +32,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_request_headers.h"
@@ -87,7 +88,10 @@ class OCSPIOLoop {
       base::AutoLock autolock(lock_);
       DCHECK(base::MessageLoopForIO::current());
       thread_checker_.DetachFromThread();
-      thread_checker_.CalledOnValidThread();
+
+      // CalledOnValidThread is the only available API to reassociate
+      // thread_checker_ with the current thread. Result ignored intentionally.
+      ignore_result(thread_checker_.CalledOnValidThread());
       shutdown_ = false;
       used_ = false;
     }
@@ -393,10 +397,11 @@ class OCSPRequestSession
       g_ocsp_io_loop.Get().AddRequest(this);
     }
 
-    request_ = new URLRequest(url_, this, url_request_context);
+    request_ =
+        new URLRequest(url_, DEFAULT_PRIORITY, this, url_request_context);
     // To meet the privacy requirements of incognito mode.
-    request_->set_load_flags(LOAD_DISABLE_CACHE | LOAD_DO_NOT_SAVE_COOKIES |
-                             LOAD_DO_NOT_SEND_COOKIES);
+    request_->SetLoadFlags(LOAD_DISABLE_CACHE | LOAD_DO_NOT_SAVE_COOKIES |
+                           LOAD_DO_NOT_SEND_COOKIES);
 
     if (http_request_method_ == "POST") {
       DCHECK(!upload_content_.empty());

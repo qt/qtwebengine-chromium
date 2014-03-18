@@ -31,8 +31,8 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceOrientationDispatcher.h"
 
+#include "modules/device_orientation/DeviceOrientationController.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
-#include "modules/device_orientation/NewDeviceOrientationController.h"
 #include "public/platform/Platform.h"
 #include "wtf/TemporaryChange.h"
 
@@ -52,28 +52,28 @@ DeviceOrientationDispatcher::~DeviceOrientationDispatcher()
 {
 }
 
-void DeviceOrientationDispatcher::addDeviceOrientationController(NewDeviceOrientationController* controller)
+void DeviceOrientationDispatcher::addDeviceOrientationController(DeviceOrientationController* controller)
 {
     addController(controller);
 }
 
-void DeviceOrientationDispatcher::removeDeviceOrientationController(NewDeviceOrientationController* controller)
+void DeviceOrientationDispatcher::removeDeviceOrientationController(DeviceOrientationController* controller)
 {
     removeController(controller);
 }
 
 void DeviceOrientationDispatcher::startListening()
 {
-    WebKit::Platform::current()->setDeviceOrientationListener(this);
+    blink::Platform::current()->setDeviceOrientationListener(this);
 }
 
 void DeviceOrientationDispatcher::stopListening()
 {
-    WebKit::Platform::current()->setDeviceOrientationListener(0);
+    blink::Platform::current()->setDeviceOrientationListener(0);
     m_lastDeviceOrientationData.clear();
 }
 
-void DeviceOrientationDispatcher::didChangeDeviceOrientation(const WebKit::WebDeviceOrientationData& motion)
+void DeviceOrientationDispatcher::didChangeDeviceOrientation(const blink::WebDeviceOrientationData& motion)
 {
     m_lastDeviceOrientationData = DeviceOrientationData::create(motion);
 
@@ -83,7 +83,7 @@ void DeviceOrientationDispatcher::didChangeDeviceOrientation(const WebKit::WebDe
         size_t size = m_controllers.size();
         for (size_t i = 0; i < size; ++i) {
             if (m_controllers[i])
-                static_cast<NewDeviceOrientationController*>(m_controllers[i])->didChangeDeviceOrientation(m_lastDeviceOrientationData.get());
+                static_cast<DeviceOrientationController*>(m_controllers[i])->didChangeDeviceOrientation(m_lastDeviceOrientationData.get());
         }
     }
 

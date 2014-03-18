@@ -31,13 +31,14 @@
 #ifndef WebWidgetClient_h
 #define WebWidgetClient_h
 
-#include "../platform/WebCommon.h"
-#include "../platform/WebRect.h"
 #include "WebNavigationPolicy.h"
-#include "WebScreenInfo.h"
-#include "../platform/WebLayerTreeView.h"
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebLayerTreeView.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebScreenInfo.h"
+#include "public/web/WebTouchAction.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebGestureEvent;
 class WebString;
@@ -99,6 +100,11 @@ public:
 
     // Called when a call to WebWidget::animate is required
     virtual void scheduleAnimation() { }
+
+    // Called to query the state of the rendering back-end. Should return true
+    // when scheduleAnimation (or possibly some other cause for another frame)
+    // was called, but before WebWidget::animate actually does a frame.
+    virtual bool isCompositorFramePending() const { return false; }
 
     // Called when the widget acquires or loses focus, respectively.
     virtual void didFocus() { }
@@ -172,13 +178,14 @@ public:
     // Called to update if touch events should be sent.
     virtual void hasTouchEventHandlers(bool) { }
 
-    // Called when WebKit programmatically scrolls.
-    virtual void didProgrammaticallyScroll(const WebPoint& scrollPoint) { }
+    // Called during WebWidget::HandleInputEvent for a TouchStart event to inform the embedder
+    // of the touch actions that are permitted for this touch.
+    virtual void setTouchAction(WebTouchAction touchAction) { }
 
 protected:
     ~WebWidgetClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

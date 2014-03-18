@@ -26,12 +26,13 @@
 #include "config.h"
 #include "core/html/MediaController.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
-#include "core/platform/Clock.h"
+#include "platform/Clock.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/AtomicString.h"
@@ -39,12 +40,12 @@
 using namespace WebCore;
 using namespace std;
 
-PassRefPtr<MediaController> MediaController::create(ScriptExecutionContext* context)
+PassRefPtr<MediaController> MediaController::create(ExecutionContext* context)
 {
     return adoptRef(new MediaController(context));
 }
 
-MediaController::MediaController(ScriptExecutionContext* context)
+MediaController::MediaController(ExecutionContext* context)
     : m_paused(false)
     , m_defaultPlaybackRate(1)
     , m_volume(1)
@@ -56,7 +57,7 @@ MediaController::MediaController(ScriptExecutionContext* context)
     , m_clearPositionTimer(this, &MediaController::clearPositionTimerFired)
     , m_closedCaptionsVisible(false)
     , m_clock(Clock::create())
-    , m_scriptExecutionContext(context)
+    , m_executionContext(context)
     , m_timeupdateTimer(this, &MediaController::timeupdateTimerFired)
     , m_previousTimeupdateTime(0)
 {
@@ -158,7 +159,7 @@ double MediaController::currentTime() const
     return m_position;
 }
 
-void MediaController::setCurrentTime(double time, ExceptionState& es)
+void MediaController::setCurrentTime(double time, ExceptionState& exceptionState)
 {
     // When the user agent is to seek the media controller to a particular new playback position,
     // it must follow these steps:
@@ -174,7 +175,7 @@ void MediaController::setCurrentTime(double time, ExceptionState& es)
 
     // Seek each slaved media element to the new playback position relative to the media element timeline.
     for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->seek(time, es);
+        m_mediaElements[index]->seek(time, exceptionState);
 
     scheduleTimeupdateEvent();
 }
@@ -188,7 +189,7 @@ void MediaController::unpause()
     // the user agent must change the MediaController into a playing media controller,
     m_paused = false;
     // queue a task to fire a simple event named play at the MediaController,
-    scheduleEvent(eventNames().playEvent);
+    scheduleEvent(EventTypeNames::play);
     // and then report the controller state of the MediaController.
     reportControllerState();
 }
@@ -213,7 +214,7 @@ void MediaController::pause()
     // then the user agent must change the MediaController into a paused media controller,
     m_paused = true;
     // queue a task to fire a simple event named pause at the MediaController,
-    scheduleEvent(eventNames().pauseEvent);
+    scheduleEvent(EventTypeNames::pause);
     // and then report the controller state of the MediaController.
     reportControllerState();
 }
@@ -228,7 +229,7 @@ void MediaController::setDefaultPlaybackRate(double rate)
     m_defaultPlaybackRate = rate;
 
     // then queue a task to fire a simple event named ratechange at the MediaController.
-    scheduleEvent(eventNames().ratechangeEvent);
+    scheduleEvent(EventTypeNames::ratechange);
 }
 
 double MediaController::playbackRate() const
@@ -249,10 +250,10 @@ void MediaController::setPlaybackRate(double rate)
         m_mediaElements[index]->updatePlaybackRate();
 
     // then queue a task to fire a simple event named ratechange at the MediaController.
-    scheduleEvent(eventNames().ratechangeEvent);
+    scheduleEvent(EventTypeNames::ratechange);
 }
 
-void MediaController::setVolume(double level, ExceptionState& es)
+void MediaController::setVolume(double level, ExceptionState& exceptionState)
 {
     if (m_volume == level)
         return;
@@ -260,7 +261,7 @@ void MediaController::setVolume(double level, ExceptionState& es)
     // If the new value is outside the range 0.0 to 1.0 inclusive, then, on setting, an
     // IndexSizeError exception must be raised instead.
     if (level < 0 || level > 1) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::failedToSet("volume", "MediaController", "The value provided (" + String::number(level) + ") is not in the range [0.0, 1.0]."));
         return;
     }
 
@@ -269,7 +270,7 @@ void MediaController::setVolume(double level, ExceptionState& es)
     m_volume = level;
 
     // and queue a task to fire a simple event named volumechange at the MediaController.
-    scheduleEvent(eventNames().volumechangeEvent);
+    scheduleEvent(EventTypeNames::volumechange);
 
     for (size_t index = 0; index < m_mediaElements.size(); ++index)
         m_mediaElements[index]->updateVolume();
@@ -285,7 +286,7 @@ void MediaController::setMuted(bool flag)
     m_muted = flag;
 
     // and queue a task to fire a simple event named volumechange at the MediaController.
-    scheduleEvent(eventNames().volumechangeEvent);
+    scheduleEvent(EventTypeNames::volumechange);
 
     for (size_t index = 0; index < m_mediaElements.size(); ++index)
         m_mediaElements[index]->updateVolume();
@@ -334,15 +335,15 @@ static AtomicString eventNameForReadyState(MediaControllerInterface::ReadyState 
 {
     switch (state) {
     case MediaControllerInterface::HAVE_NOTHING:
-        return eventNames().emptiedEvent;
+        return EventTypeNames::emptied;
     case MediaControllerInterface::HAVE_METADATA:
-        return eventNames().loadedmetadataEvent;
+        return EventTypeNames::loadedmetadata;
     case MediaControllerInterface::HAVE_CURRENT_DATA:
-        return eventNames().loadeddataEvent;
+        return EventTypeNames::loadeddata;
     case MediaControllerInterface::HAVE_FUTURE_DATA:
-        return eventNames().canplayEvent;
+        return EventTypeNames::canplay;
     case MediaControllerInterface::HAVE_ENOUGH_DATA:
-        return eventNames().canplaythroughEvent;
+        return EventTypeNames::canplaythrough;
     default:
         ASSERT_NOT_REACHED();
         return nullAtom;
@@ -433,7 +434,7 @@ void MediaController::updatePlaybackState()
             m_paused = true;
 
             // and then fires a simple event named pause at the MediaController object.
-            scheduleEvent(eventNames().pauseEvent);
+            scheduleEvent(EventTypeNames::pause);
         }
     }
 
@@ -443,17 +444,17 @@ void MediaController::updatePlaybackState()
     AtomicString eventName;
     switch (newPlaybackState) {
     case WAITING:
-        eventName = eventNames().waitingEvent;
+        eventName = EventTypeNames::waiting;
         m_clock->stop();
         m_timeupdateTimer.stop();
         break;
     case ENDED:
-        eventName = eventNames().endedEvent;
+        eventName = EventTypeNames::ended;
         m_clock->stop();
         m_timeupdateTimer.stop();
         break;
     case PLAYING:
-        eventName = eventNames().playingEvent;
+        eventName = EventTypeNames::playing;
         m_clock->start();
         startTimeupdateTimer();
         break;
@@ -629,7 +630,7 @@ bool MediaController::hasCurrentSrc() const
 
 const AtomicString& MediaController::interfaceName() const
 {
-    return eventNames().interfaceForMediaController;
+    return EventTargetNames::MediaController;
 }
 
 // The spec says to fire periodic timeupdate events (those sent while playing) every
@@ -657,6 +658,6 @@ void MediaController::scheduleTimeupdateEvent()
     if (timedelta < maxTimeupdateEventFrequency)
         return;
 
-    scheduleEvent(eventNames().timeupdateEvent);
+    scheduleEvent(EventTypeNames::timeupdate);
     m_previousTimeupdateTime = now;
 }

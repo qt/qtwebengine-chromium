@@ -20,9 +20,9 @@ void TestBrowserPluginGuestDelegate::ResetStates() {
 
 void TestBrowserPluginGuestDelegate::AddMessageToConsole(
     int32 level,
-    const string16& message,
+    const base::string16& message,
     int32 line_no,
-    const string16& source_id) {
+    const base::string16& source_id) {
 }
 
 void TestBrowserPluginGuestDelegate::Close() {
@@ -53,10 +53,12 @@ void TestBrowserPluginGuestDelegate::RendererUnresponsive() {
 bool TestBrowserPluginGuestDelegate::RequestPermission(
     BrowserPluginPermissionType permission_type,
     const base::DictionaryValue& request_info,
-    const PermissionResponseCallback& callback) {
+    const PermissionResponseCallback& callback,
+    bool allowed_by_default) {
   return BrowserPluginGuestDelegate::RequestPermission(permission_type,
                                                        request_info,
-                                                       callback);
+                                                       callback,
+                                                       allowed_by_default);
 }
 
 void TestBrowserPluginGuestDelegate::SizeChanged(const gfx::Size& old_size,

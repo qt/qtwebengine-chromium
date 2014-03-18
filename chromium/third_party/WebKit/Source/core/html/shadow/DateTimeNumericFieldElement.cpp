@@ -29,16 +29,13 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "core/dom/KeyboardEvent.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/text/PlatformLocale.h"
-#include "wtf/text/StringBuilder.h"
+#include "core/events/KeyboardEvent.h"
+#include "platform/fonts/Font.h"
+#include "platform/text/PlatformLocale.h"
 
 using namespace WTF::Unicode;
 
 namespace WebCore {
-
-static const DOMTimeStamp typeAheadTimeout = 1000;
 
 int DateTimeNumericFieldElement::Range::clampValue(int value) const
 {
@@ -54,7 +51,6 @@ bool DateTimeNumericFieldElement::Range::isInRange(int value) const
 
 DateTimeNumericFieldElement::DateTimeNumericFieldElement(Document& document, FieldOwner& fieldOwner, const Range& range, const Range& hardLimits, const String& placeholder, const DateTimeNumericFieldElement::Step& step)
     : DateTimeFieldElement(document, fieldOwner)
-    , m_lastDigitCharTime(0)
     , m_placeholder(placeholder)
     , m_range(range)
     , m_hardLimits(hardLimits)
@@ -117,7 +113,7 @@ String DateTimeNumericFieldElement::formatValue(int value) const
 void DateTimeNumericFieldElement::handleKeyboardEvent(KeyboardEvent* keyboardEvent)
 {
     ASSERT(!isDisabled());
-    if (keyboardEvent->type() != eventNames().keypressEvent)
+    if (keyboardEvent->type() != EventTypeNames::keypress)
         return;
 
     UChar charCode = static_cast<UChar>(keyboardEvent->charCode());
@@ -126,13 +122,7 @@ void DateTimeNumericFieldElement::handleKeyboardEvent(KeyboardEvent* keyboardEve
     if (digit < 0 || digit > 9)
         return;
 
-    DOMTimeStamp delta = keyboardEvent->timeStamp() - m_lastDigitCharTime;
-    m_lastDigitCharTime = keyboardEvent->timeStamp();
-
-    if (delta > typeAheadTimeout)
-        m_typeAheadBuffer.clear();
     m_typeAheadBuffer.append(number);
-
     int newValue = typeAheadValue();
     if (newValue >= m_hardLimits.minimum)
         setValueAsInteger(newValue, DispatchEvent);

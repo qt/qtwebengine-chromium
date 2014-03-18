@@ -138,19 +138,6 @@ void SetupWatchCallback(const FilePath& target,
   completion->Signal();
 }
 
-void QuitLoopWatchCallback(MessageLoop* loop,
-                           const FilePath& expected_path,
-                           bool expected_error,
-                           bool* flag,
-                           const FilePath& path,
-                           bool error) {
-  ASSERT_TRUE(flag);
-  *flag = true;
-  EXPECT_EQ(expected_path, path);
-  EXPECT_EQ(expected_error, error);
-  loop->PostTask(FROM_HERE, loop->QuitWhenIdleClosure());
-}
-
 class FilePathWatcherTest : public testing::Test {
  public:
   FilePathWatcherTest()
@@ -352,7 +339,7 @@ TEST_F(FilePathWatcherTest, NonExistentDirectory) {
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   ASSERT_TRUE(SetupWatch(file, &watcher, delegate.get(), false));
 
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
 
   ASSERT_TRUE(WriteFile(file, "content"));
 
@@ -389,7 +376,7 @@ TEST_F(FilePathWatcherTest, DirectoryChain) {
   for (std::vector<std::string>::const_iterator d(dir_names.begin());
        d != dir_names.end(); ++d) {
     sub_path = sub_path.AppendASCII(*d);
-    ASSERT_TRUE(file_util::CreateDirectory(sub_path));
+    ASSERT_TRUE(base::CreateDirectory(sub_path));
   }
   VLOG(1) << "Create File";
   ASSERT_TRUE(WriteFile(file, "content"));
@@ -410,7 +397,7 @@ TEST_F(FilePathWatcherTest, DisappearingDirectory) {
   FilePathWatcher watcher;
   FilePath dir(temp_dir_.path().AppendASCII("dir"));
   FilePath file(dir.AppendASCII("file"));
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
   ASSERT_TRUE(WriteFile(file, "content"));
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   ASSERT_TRUE(SetupWatch(file, &watcher, delegate.get(), false));
@@ -445,7 +432,7 @@ TEST_F(FilePathWatcherTest, WatchDirectory) {
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   ASSERT_TRUE(SetupWatch(dir, &watcher, delegate.get(), false));
 
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
   VLOG(1) << "Waiting for directory creation";
   ASSERT_TRUE(WaitForEvents());
 
@@ -484,7 +471,7 @@ TEST_F(FilePathWatcherTest, MoveParent) {
                          false));
 
   // Setup a directory hierarchy.
-  ASSERT_TRUE(file_util::CreateDirectory(subdir));
+  ASSERT_TRUE(base::CreateDirectory(subdir));
   ASSERT_TRUE(WriteFile(file, "content"));
   VLOG(1) << "Waiting for file creation";
   ASSERT_TRUE(WaitForEvents());
@@ -505,7 +492,7 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
   ASSERT_TRUE(SetupWatch(dir, &watcher, delegate.get(), true));
 
   // Main directory("dir") creation.
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
   ASSERT_TRUE(WaitForEvents());
 
   // Create "$dir/file1".
@@ -515,7 +502,7 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
 
   // Create "$dir/subdir".
   FilePath subdir(dir.AppendASCII("subdir"));
-  ASSERT_TRUE(file_util::CreateDirectory(subdir));
+  ASSERT_TRUE(base::CreateDirectory(subdir));
   ASSERT_TRUE(WaitForEvents());
 
   // Create "$dir/subdir/subdir_file1".
@@ -525,7 +512,7 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
 
   // Create "$dir/subdir/subdir_child_dir".
   FilePath subdir_child_dir(subdir.AppendASCII("subdir_child_dir"));
-  ASSERT_TRUE(file_util::CreateDirectory(subdir_child_dir));
+  ASSERT_TRUE(base::CreateDirectory(subdir_child_dir));
   ASSERT_TRUE(WaitForEvents());
 
   // Create "$dir/subdir/subdir_child_dir/child_dir_file1".
@@ -572,7 +559,7 @@ TEST_F(FilePathWatcherTest, MoveChild) {
   FilePath dest_file(dest_subdir.AppendASCII("file"));
 
   // Setup a directory hierarchy.
-  ASSERT_TRUE(file_util::CreateDirectory(source_subdir));
+  ASSERT_TRUE(base::CreateDirectory(source_subdir));
   ASSERT_TRUE(WriteFile(source_file, "content"));
 
   scoped_ptr<TestDelegate> file_delegate(new TestDelegate(collector()));
@@ -618,7 +605,7 @@ TEST_F(FilePathWatcherTest, CreateLink) {
 
   // Now make sure we get notified if the link is created.
   // Note that test_file() doesn't have to exist.
-  ASSERT_TRUE(file_util::CreateSymbolicLink(test_file(), test_link()));
+  ASSERT_TRUE(CreateSymbolicLink(test_file(), test_link()));
   ASSERT_TRUE(WaitForEvents());
   DeleteDelegateOnFileThread(delegate.release());
 }
@@ -628,7 +615,7 @@ TEST_F(FilePathWatcherTest, DeleteLink) {
   // Unfortunately this test case only works if the link target exists.
   // TODO(craig) fix this as part of crbug.com/91561.
   ASSERT_TRUE(WriteFile(test_file(), "content"));
-  ASSERT_TRUE(file_util::CreateSymbolicLink(test_file(), test_link()));
+  ASSERT_TRUE(CreateSymbolicLink(test_file(), test_link()));
   FilePathWatcher watcher;
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   ASSERT_TRUE(SetupWatch(test_link(), &watcher, delegate.get(), false));
@@ -643,7 +630,7 @@ TEST_F(FilePathWatcherTest, DeleteLink) {
 // when we are watching the link is caught.
 TEST_F(FilePathWatcherTest, ModifiedLinkedFile) {
   ASSERT_TRUE(WriteFile(test_file(), "content"));
-  ASSERT_TRUE(file_util::CreateSymbolicLink(test_file(), test_link()));
+  ASSERT_TRUE(CreateSymbolicLink(test_file(), test_link()));
   FilePathWatcher watcher;
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   // Note that we are watching the symlink.
@@ -658,7 +645,7 @@ TEST_F(FilePathWatcherTest, ModifiedLinkedFile) {
 // Verify that creating a target file that a link is pointing to
 // when we are watching the link is caught.
 TEST_F(FilePathWatcherTest, CreateTargetLinkedFile) {
-  ASSERT_TRUE(file_util::CreateSymbolicLink(test_file(), test_link()));
+  ASSERT_TRUE(CreateSymbolicLink(test_file(), test_link()));
   FilePathWatcher watcher;
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   // Note that we are watching the symlink.
@@ -674,7 +661,7 @@ TEST_F(FilePathWatcherTest, CreateTargetLinkedFile) {
 // when we are watching the link is caught.
 TEST_F(FilePathWatcherTest, DeleteTargetLinkedFile) {
   ASSERT_TRUE(WriteFile(test_file(), "content"));
-  ASSERT_TRUE(file_util::CreateSymbolicLink(test_file(), test_link()));
+  ASSERT_TRUE(CreateSymbolicLink(test_file(), test_link()));
   FilePathWatcher watcher;
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   // Note that we are watching the symlink.
@@ -696,12 +683,12 @@ TEST_F(FilePathWatcherTest, LinkedDirectoryPart1) {
   FilePath linkfile(link_dir.AppendASCII("file"));
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   // dir/file should exist.
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
   ASSERT_TRUE(WriteFile(file, "content"));
   // Note that we are watching dir.lnk/file which doesn't exist yet.
   ASSERT_TRUE(SetupWatch(linkfile, &watcher, delegate.get(), false));
 
-  ASSERT_TRUE(file_util::CreateSymbolicLink(dir, link_dir));
+  ASSERT_TRUE(CreateSymbolicLink(dir, link_dir));
   VLOG(1) << "Waiting for link creation";
   ASSERT_TRUE(WaitForEvents());
 
@@ -726,11 +713,11 @@ TEST_F(FilePathWatcherTest, LinkedDirectoryPart2) {
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
   // Now create the link from dir.lnk pointing to dir but
   // neither dir nor dir/file exist yet.
-  ASSERT_TRUE(file_util::CreateSymbolicLink(dir, link_dir));
+  ASSERT_TRUE(CreateSymbolicLink(dir, link_dir));
   // Note that we are watching dir.lnk/file.
   ASSERT_TRUE(SetupWatch(linkfile, &watcher, delegate.get(), false));
 
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
   ASSERT_TRUE(WriteFile(file, "content"));
   VLOG(1) << "Waiting for dir/file creation";
   ASSERT_TRUE(WaitForEvents());
@@ -754,8 +741,8 @@ TEST_F(FilePathWatcherTest, LinkedDirectoryPart3) {
   FilePath file(dir.AppendASCII("file"));
   FilePath linkfile(link_dir.AppendASCII("file"));
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
-  ASSERT_TRUE(file_util::CreateDirectory(dir));
-  ASSERT_TRUE(file_util::CreateSymbolicLink(dir, link_dir));
+  ASSERT_TRUE(base::CreateDirectory(dir));
+  ASSERT_TRUE(CreateSymbolicLink(dir, link_dir));
   // Note that we are watching dir.lnk/file but the file doesn't exist yet.
   ASSERT_TRUE(SetupWatch(linkfile, &watcher, delegate.get(), false));
 
@@ -781,8 +768,8 @@ enum Permission {
   Execute
 };
 
+#if defined(OS_MACOSX)
 bool ChangeFilePermissions(const FilePath& path, Permission perm, bool allow) {
-#if defined(OS_POSIX)
   struct stat stat_buf;
 
   if (stat(path.value().c_str(), &stat_buf) != 0)
@@ -809,61 +796,8 @@ bool ChangeFilePermissions(const FilePath& path, Permission perm, bool allow) {
     stat_buf.st_mode &= ~mode;
   }
   return chmod(path.value().c_str(), stat_buf.st_mode) == 0;
-
-#elif defined(OS_WIN)
-  PACL old_dacl;
-  PSECURITY_DESCRIPTOR security_descriptor;
-  if (GetNamedSecurityInfo(const_cast<wchar_t*>(path.value().c_str()),
-                           SE_FILE_OBJECT,
-                           DACL_SECURITY_INFORMATION, NULL, NULL, &old_dacl,
-                           NULL, &security_descriptor) != ERROR_SUCCESS)
-    return false;
-
-  DWORD mode = 0;
-  switch (perm) {
-    case Read:
-      mode = GENERIC_READ;
-      break;
-    case Write:
-      mode = GENERIC_WRITE;
-      break;
-    case Execute:
-      mode = GENERIC_EXECUTE;
-      break;
-    default:
-      ADD_FAILURE() << "unknown perm " << perm;
-      return false;
-  }
-
-  // Deny Read access for the current user.
-  EXPLICIT_ACCESS change;
-  change.grfAccessPermissions = mode;
-  change.grfAccessMode = allow ? GRANT_ACCESS : DENY_ACCESS;
-  change.grfInheritance = 0;
-  change.Trustee.pMultipleTrustee = NULL;
-  change.Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
-  change.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
-  change.Trustee.TrusteeType = TRUSTEE_IS_USER;
-  change.Trustee.ptstrName = L"CURRENT_USER";
-
-  PACL new_dacl;
-  if (SetEntriesInAcl(1, &change, old_dacl, &new_dacl) != ERROR_SUCCESS) {
-    LocalFree(security_descriptor);
-    return false;
-  }
-
-  DWORD rc = SetNamedSecurityInfo(const_cast<wchar_t*>(path.value().c_str()),
-                                  SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-                                  NULL, NULL, new_dacl, NULL);
-  LocalFree(security_descriptor);
-  LocalFree(new_dacl);
-
-  return rc == ERROR_SUCCESS;
-#else
-  NOTIMPLEMENTED();
-  return false;
-#endif
 }
+#endif  // defined(OS_MACOSX)
 
 #if defined(OS_MACOSX)
 // Linux implementation of FilePathWatcher doesn't catch attribute changes.
@@ -878,8 +812,8 @@ TEST_F(FilePathWatcherTest, DirAttributesChanged) {
   FilePath test_dir2(test_dir1.AppendASCII("DirAttributesChangedDir2"));
   FilePath test_file(test_dir2.AppendASCII("DirAttributesChangedFile"));
   // Setup a directory hierarchy.
-  ASSERT_TRUE(file_util::CreateDirectory(test_dir1));
-  ASSERT_TRUE(file_util::CreateDirectory(test_dir2));
+  ASSERT_TRUE(base::CreateDirectory(test_dir1));
+  ASSERT_TRUE(base::CreateDirectory(test_dir2));
   ASSERT_TRUE(WriteFile(test_file, "content"));
 
   FilePathWatcher watcher;

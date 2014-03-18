@@ -49,7 +49,7 @@ public:
     explicit DOMDataStore(WrapperWorldType);
     ~DOMDataStore();
 
-    static DOMDataStore* current(v8::Isolate*);
+    static DOMDataStore& current(v8::Isolate*);
 
     template<typename V8T, typename T, typename Wrappable>
     static bool setReturnValueFromWrapperFast(v8::ReturnValue<v8::Value> returnValue, T* object, v8::Local<v8::Object> holder, Wrappable* wrappable)
@@ -63,9 +63,9 @@ public:
         if ((!DOMWrapperWorld::isolatedWorldsExist() && !canExistInWorker(object)) || holderContainsWrapper(holder, wrappable)) {
             if (ScriptWrappable::wrapperCanBeStoredInObject(object))
                 return ScriptWrappable::setReturnValueWithSecurityCheck<V8T>(returnValue, object);
-            return mainWorldStore()->m_wrapperMap.setReturnValueFrom(returnValue, V8T::toInternalPointer(object));
+            return mainWorldStore().m_wrapperMap.setReturnValueFrom(returnValue, V8T::toInternalPointer(object));
         }
-        return current(returnValue.GetIsolate())->template setReturnValueFrom<V8T>(returnValue, object);
+        return current(returnValue.GetIsolate()).template setReturnValueFrom<V8T>(returnValue, object);
     }
 
     template<typename V8T, typename T>
@@ -75,7 +75,7 @@ public:
             if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist()))
                 return ScriptWrappable::setReturnValueWithSecurityCheck<V8T>(returnValue, object);
         }
-        return current(returnValue.GetIsolate())->template setReturnValueFrom<V8T>(returnValue, object);
+        return current(returnValue.GetIsolate()).template setReturnValueFrom<V8T>(returnValue, object);
     }
 
     template<typename V8T, typename T>
@@ -83,7 +83,7 @@ public:
     {
         if (ScriptWrappable::wrapperCanBeStoredInObject(object))
             return ScriptWrappable::setReturnValue(returnValue, object);
-        return mainWorldStore()->m_wrapperMap.setReturnValueFrom(returnValue, V8T::toInternalPointer(object));
+        return mainWorldStore().m_wrapperMap.setReturnValueFrom(returnValue, V8T::toInternalPointer(object));
     }
 
     template<typename V8T, typename T>
@@ -97,7 +97,21 @@ public:
                 return result;
             }
         }
-        return current(isolate)->template get<V8T>(object, isolate);
+        return current(isolate).template get<V8T>(object, isolate);
+    }
+
+    template<typename V8T, typename T>
+    static void setWrapperReference(const v8::Persistent<v8::Object>& parent, T* child, v8::Isolate* isolate)
+    {
+        if (ScriptWrappable::wrapperCanBeStoredInObject(child) && !canExistInWorker(child)) {
+            if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist())) {
+                UnsafePersistent<v8::Object> unsafePersistent = ScriptWrappable::getUnsafeWrapperFromObject(child);
+                // Security: always guard against malicious tampering.
+                RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(unsafePersistent.isEmpty() || unsafePersistent.value()->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex) == V8T::toInternalPointer(child));
+                unsafePersistent.setReferenceFrom(parent, isolate);
+            }
+        }
+        current(isolate).template setReference<V8T>(parent, child, isolate);
     }
 
     template<typename V8T, typename T>
@@ -109,13 +123,13 @@ public:
                 return;
             }
         }
-        return current(isolate)->template set<V8T>(object, wrapper, isolate, configuration);
+        return current(isolate).template set<V8T>(object, wrapper, isolate, configuration);
     }
 
     template<typename V8T, typename T>
     static bool containsWrapper(T* object, v8::Isolate* isolate)
     {
-        return current(isolate)->template containsWrapper<V8T>(object);
+        return current(isolate).template containsWrapper<V8T>(object);
     }
 
     template<typename V8T, typename T>
@@ -124,6 +138,16 @@ public:
         if (ScriptWrappable::wrapperCanBeStoredInObject(object) && m_type == MainWorld)
             return ScriptWrappable::getUnsafeWrapperFromObject(object).newLocal(isolate);
         return m_wrapperMap.newLocal(V8T::toInternalPointer(object), isolate);
+    }
+
+    template<typename V8T, typename T>
+    inline void setReference(const v8::Persistent<v8::Object>& parent, T* child, v8::Isolate* isolate)
+    {
+        if (ScriptWrappable::wrapperCanBeStoredInObject(child) && m_type == MainWorld) {
+            ScriptWrappable::getUnsafeWrapperFromObject(child).setReferenceFrom(parent, isolate);
+            return;
+        }
+        m_wrapperMap.setReference(parent, V8T::toInternalPointer(child), isolate);
     }
 
     template<typename V8T, typename T>
@@ -155,7 +179,7 @@ private:
         m_wrapperMap.set(V8T::toInternalPointer(object), wrapper, configuration);
     }
 
-    static DOMDataStore* mainWorldStore();
+    static DOMDataStore& mainWorldStore();
 
     static bool canExistInWorker(void*) { return true; }
     static bool canExistInWorker(Node*) { return false; }
@@ -168,9 +192,9 @@ private:
     static bool holderContainsWrapper(v8::Local<v8::Object> holder, ScriptWrappable* wrappable)
     {
         // Verify our assumptions about the main world.
-        v8::Persistent<v8::Object>* persistent = wrappable->unsafePersistent().persistent();
-        ASSERT(wrappable->unsafePersistent().isEmpty() || !(holder == *persistent) || current(v8::Isolate::GetCurrent())->m_type == MainWorld);
-        return holder == *persistent;
+        UnsafePersistent<v8::Object> unsafePersistent = wrappable->unsafePersistent();
+        ASSERT(unsafePersistent.isEmpty() || !(holder == *unsafePersistent.persistent()) || current(v8::Isolate::GetCurrent()).m_type == MainWorld);
+        return holder == *unsafePersistent.persistent();
     }
 
     WrapperWorldType m_type;

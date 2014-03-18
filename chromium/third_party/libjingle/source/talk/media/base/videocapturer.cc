@@ -373,7 +373,7 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
   // TODO(fbarchard): Avoid scale and convert if muted.
   // Temporary buffer is scoped here so it will persist until i420_frame.Init()
   // makes a copy of the frame, converting to I420.
-  talk_base::scoped_array<uint8> temp_buffer;
+  talk_base::scoped_ptr<uint8[]> temp_buffer;
   // YUY2 can be scaled vertically using an ARGB scaler.  Aspect ratio is only
   // a problem on OSX.  OSX always converts webcams to YUY2 or UYVY.
   bool can_scale =
@@ -468,21 +468,32 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
   }
 
   VIDEO_FRAME_NAME i420_frame;
-  if (!i420_frame.Init(captured_frame, desired_width, desired_height)) {
+  if (!i420_frame.Alias(captured_frame, desired_width, desired_height)) {
     // TODO(fbarchard): LOG more information about captured frame attributes.
     LOG(LS_ERROR) << "Couldn't convert to I420! "
                   << "From " << ToString(captured_frame) << " To "
                   << desired_width << " x " << desired_height;
     return;
   }
-  if (!muted_ && !ApplyProcessors(&i420_frame)) {
+
+  VideoFrame* adapted_frame = &i420_frame;
+  if (!SignalAdaptFrame.is_empty() && !IsScreencast()) {
+    VideoFrame* out_frame = NULL;
+    SignalAdaptFrame(this, adapted_frame, &out_frame);
+    if (!out_frame) {
+      return;  // VideoAdapter dropped the frame.
+    }
+    adapted_frame = out_frame;
+  }
+
+  if (!muted_ && !ApplyProcessors(adapted_frame)) {
     // Processor dropped the frame.
     return;
   }
   if (muted_) {
-    i420_frame.SetToBlack();
+    adapted_frame->SetToBlack();
   }
-  SignalVideoFrame(this, &i420_frame);
+  SignalVideoFrame(this, adapted_frame);
 #endif  // VIDEO_FRAME_NAME
 }
 

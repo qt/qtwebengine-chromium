@@ -93,6 +93,9 @@ cr.define('cr.ui.dialogs', function() {
     // Handle Escape.
     if (event.keyCode == 27 && !this.cancelButton_.disabled) {
       this.onCancelClick_(event);
+      event.stopPropagation();
+      // Prevent the event from being handled by the container of the dialog.
+      // e.g. Prevent the parent container from closing at the same time.
       event.preventDefault();
     }
   };
@@ -150,7 +153,11 @@ cr.define('cr.ui.dialogs', function() {
     for (var i = 0; i < iframes.length; i++) {
       // Some iframes have an undefined contentDocument for security reasons,
       // such as chrome://terms (which is used in the chromeos OOBE screens).
-      var contentDoc = iframes[i].contentDocument;
+      var iframe = iframes[i];
+      var contentDoc;
+      try {
+        contentDoc = iframe.contentDocument;
+      } catch(e) {} // ignore SecurityError
       if (contentDoc)
         elements = elements.concat(this.findFocusableElements_(contentDoc));
     }

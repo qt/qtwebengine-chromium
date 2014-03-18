@@ -23,18 +23,18 @@
 #define FilterOperationResolver_h
 
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/platform/graphics/filters/FilterOperations.h"
+#include "platform/graphics/filters/FilterOperations.h"
 
 namespace WebCore {
 
+class CSSToLengthConversionData;
 class CSSValue;
-class RenderStyle;
 
 class FilterOperationResolver {
 private:
     FilterOperationResolver();
 public:
-    static bool createFilterOperations(CSSValue* inValue, const RenderStyle* inStyle, const RenderStyle* rootStyle, FilterOperations& outOperations, StyleResolverState&);
+    static bool createFilterOperations(CSSValue* inValue, const CSSToLengthConversionData&, FilterOperations& outOperations, StyleResolverState&);
 };
 
 } // namespace WebCore

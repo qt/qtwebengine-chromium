@@ -30,7 +30,9 @@ import logging
 import re
 
 from webkitpy.common.webkit_finder import WebKitFinder
-from webkitpy.layout_tests.port import chromium
+from webkitpy.layout_tests.breakpad.dump_reader_multipart import DumpReaderLinux
+from webkitpy.layout_tests.models import test_run_results
+from webkitpy.layout_tests.port import base
 from webkitpy.layout_tests.port import win
 from webkitpy.layout_tests.port import config
 
@@ -38,7 +40,7 @@ from webkitpy.layout_tests.port import config
 _log = logging.getLogger(__name__)
 
 
-class LinuxPort(chromium.ChromiumPort):
+class LinuxPort(base.Port):
     port_name = 'linux'
 
     SUPPORTED_VERSIONS = ('x86', 'x86_64')
@@ -46,14 +48,15 @@ class LinuxPort(chromium.ChromiumPort):
     FALLBACK_PATHS = { 'x86_64': [ 'linux' ] + win.WinPort.latest_platform_fallback_path() }
     FALLBACK_PATHS['x86'] = ['linux-x86'] + FALLBACK_PATHS['x86_64']
 
-    DEFAULT_BUILD_DIRECTORIES = ('sconsbuild', 'out')
+    DEFAULT_BUILD_DIRECTORIES = ('out',)
 
     @classmethod
     def _determine_driver_path_statically(cls, host, options):
         config_object = config.Config(host.executive, host.filesystem)
         build_directory = getattr(options, 'build_directory', None)
-        webkit_base = WebKitFinder(host.filesystem).webkit_base()
-        chromium_base = cls._chromium_base_dir(host.filesystem)
+        finder = WebKitFinder(host.filesystem)
+        webkit_base = finder.webkit_base()
+        chromium_base = finder.chromium_base()
         driver_name = getattr(options, 'driver_name', None)
         if driver_name is None:
             driver_name = cls.CONTENT_SHELL_NAME
@@ -61,7 +64,7 @@ class LinuxPort(chromium.ChromiumPort):
             configuration = options.configuration
         else:
             configuration = config_object.default_configuration()
-        return cls._static_build_path(host.filesystem, build_directory, chromium_base, webkit_base, configuration, [driver_name])
+        return cls._static_build_path(host.filesystem, build_directory, chromium_base, configuration, [driver_name])
 
     @staticmethod
     def _determine_architecture(filesystem, executive, driver_path):
@@ -90,19 +93,20 @@ class LinuxPort(chromium.ChromiumPort):
         return port_name
 
     def __init__(self, host, port_name, **kwargs):
-        chromium.ChromiumPort.__init__(self, host, port_name, **kwargs)
+        super(LinuxPort, self).__init__(host, port_name, **kwargs)
         (base, arch) = port_name.rsplit('-', 1)
         assert base == 'linux'
         assert arch in self.SUPPORTED_VERSIONS
         assert port_name in ('linux', 'linux-x86', 'linux-x86_64')
         self._version = 'lucid'  # We only support lucid right now.
         self._architecture = arch
+        if not self.get_option('disable_breakpad'):
+            self._dump_reader = DumpReaderLinux(host, self._build_path())
 
     def additional_drt_flag(self):
         flags = super(LinuxPort, self).additional_drt_flag()
-        # FIXME: Temporarily disable the sandbox on Linux until we can get
-        # stacktraces via breakpad. http://crbug.com/247431
-        flags += ['--no-sandbox']
+        if not self.get_option('disable_breakpad'):
+            flags += ['--enable-crash-reporter', '--crash-dumps-dir=%s' % self._dump_reader.crash_dumps_directory()]
         return flags
 
     def default_baseline_search_path(self):
@@ -113,15 +117,34 @@ class LinuxPort(chromium.ChromiumPort):
         return [self._build_path('libffmpegsumo.so')]
 
     def check_build(self, needs_http, printer):
-        result = chromium.ChromiumPort.check_build(self, needs_http, printer)
-        if not result:
+        result = super(LinuxPort, self).check_build(needs_http, printer)
+
+        if result:
             _log.error('For complete Linux build requirements, please see:')
             _log.error('')
             _log.error('    http://code.google.com/p/chromium/wiki/LinuxBuildInstructions')
         return result
 
+    def look_for_new_crash_logs(self, crashed_processes, start_time):
+        if self.get_option('disable_breakpad'):
+            return None
+        return self._dump_reader.look_for_new_crash_logs(crashed_processes, start_time)
+
+    def clobber_old_port_specific_results(self):
+        if not self.get_option('disable_breakpad'):
+            self._dump_reader.clobber_old_results()
+
     def operating_system(self):
         return 'linux'
+
+    def virtual_test_suites(self):
+        result = super(LinuxPort, self).virtual_test_suites()
+        result.extend([
+            base.VirtualTestSuite('linux-subpixel',
+                                  'platform/linux/fast/text/subpixel',
+                                  ['--enable-webkit-text-subpixel-positioning']),
+        ])
+        return result
 
     #
     # PROTECTED METHODS

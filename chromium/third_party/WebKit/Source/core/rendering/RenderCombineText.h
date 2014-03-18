@@ -21,8 +21,8 @@
 #ifndef RenderCombineText_h
 #define RenderCombineText_h
 
-#include "core/platform/graphics/Font.h"
 #include "core/rendering/RenderText.h"
+#include "platform/fonts/Font.h"
 
 namespace WebCore {
 
@@ -49,20 +49,7 @@ private:
     bool m_needsFontUpdate : 1;
 };
 
-inline RenderCombineText* toRenderCombineText(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isCombineText());
-    return static_cast<RenderCombineText*>(object);
-}
-
-inline const RenderCombineText* toRenderCombineText(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isCombineText());
-    return static_cast<const RenderCombineText*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderCombineText(const RenderCombineText*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderCombineText, isCombineText());
 
 } // namespace WebCore
 

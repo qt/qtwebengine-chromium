@@ -8,7 +8,7 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=188423
+CLANG_REVISION=193323
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -130,47 +130,19 @@ fi
 # To always force a new build if someone interrupts their build half way.
 rm -f "${STAMP_FILE}"
 
-# Clobber pch files, since they only work with the compiler version that
-# created them. Also clobber .o files, to make sure everything will be built
-# with the new compiler.
-if [[ "${OS}" = "Darwin" ]]; then
-  XCODEBUILD_DIR="${THIS_DIR}/../../../xcodebuild"
 
-  # Xcode groups .o files by project first, configuration second.
-  if [[ -d "${XCODEBUILD_DIR}" ]]; then
-    echo "Clobbering .o files for Xcode build"
-    find "${XCODEBUILD_DIR}" -name '*.o' -exec rm {} +
-  fi
-fi
-
+# Clobber build files. PCH files only work with the compiler that created them.
+# We delete .o files to make sure all files are built with the new compiler.
+echo "Clobbering build files"
 MAKE_DIR="${THIS_DIR}/../../../out"
-
-for CONFIG in Debug Release; do
-  if [[ -d "${MAKE_DIR}/${CONFIG}/obj.target" ||
-        -d "${MAKE_DIR}/${CONFIG}/obj.host" ]]; then
-    echo "Clobbering ${CONFIG} PCH and .o files for make build"
-    if [[ -d "${MAKE_DIR}/${CONFIG}/obj.target" ]]; then
-      find "${MAKE_DIR}/${CONFIG}/obj.target" -name '*.gch' -exec rm {} +
-      find "${MAKE_DIR}/${CONFIG}/obj.target" -name '*.o' -exec rm {} +
-    fi
-    if [[ -d "${MAKE_DIR}/${CONFIG}/obj.host" ]]; then
-      find "${MAKE_DIR}/${CONFIG}/obj.host" -name '*.o' -exec rm {} +
-    fi
-  fi
-
-  # ninja puts its output below ${MAKE_DIR} as well.
-  if [[ -d "${MAKE_DIR}/${CONFIG}/obj" ]]; then
-    echo "Clobbering ${CONFIG} PCH and .o files for ninja build"
-    find "${MAKE_DIR}/${CONFIG}/obj" -name '*.gch' -exec rm {} +
-    find "${MAKE_DIR}/${CONFIG}/obj" -name '*.o' -exec rm {} +
-    find "${MAKE_DIR}/${CONFIG}/obj" -name '*.o.d' -exec rm {} +
-  fi
-
-  if [[ "${OS}" = "Darwin" ]]; then
-    if [[ -d "${XCODEBUILD_DIR}/${CONFIG}/SharedPrecompiledHeaders" ]]; then
-      echo "Clobbering ${CONFIG} PCH files for Xcode build"
-      rm -rf "${XCODEBUILD_DIR}/${CONFIG}/SharedPrecompiledHeaders"
-    fi
+XCODEBUILD_DIR="${THIS_DIR}/../../../xcodebuild"
+for DIR in "${XCODEBUILD_DIR}" "${MAKE_DIR}/Debug" "${MAKE_DIR}/Release"; do
+  if [[ -d "${DIR}" ]]; then
+    find "${DIR}" -name '*.o' -exec rm {} +
+    find "${DIR}" -name '*.o.d' -exec rm {} +
+    find "${DIR}" -name '*.gch' -exec rm {} +
+    find "${DIR}" -name '*.dylib' -exec rm -rf {} +
+    find "${DIR}" -name 'SharedPrecompiledHeaders' -exec rm -rf {} +
   fi
 done
 

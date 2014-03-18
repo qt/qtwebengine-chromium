@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
-#include "cc/layers/delegated_renderer_layer_client.h"
+#include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/output/begin_frame_args.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
@@ -24,6 +24,7 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "ui/base/android/window_android_observer.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -34,13 +35,14 @@ struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 
 namespace cc {
 class CopyOutputResult;
+class DelegatedFrameProvider;
 class DelegatedRendererLayer;
 class Layer;
 class SingleReleaseCallback;
 class TextureLayer;
 }
 
-namespace WebKit {
+namespace blink {
 class WebExternalTextureLayer;
 class WebTouchEvent;
 class WebMouseEvent;
@@ -51,7 +53,6 @@ class ContentViewCoreImpl;
 class OverscrollGlow;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
-class SurfaceTextureTransportClient;
 struct NativeWebKeyboardEvent;
 
 // -----------------------------------------------------------------------------
@@ -60,9 +61,9 @@ struct NativeWebKeyboardEvent;
 class RenderWidgetHostViewAndroid
     : public RenderWidgetHostViewBase,
       public BrowserAccessibilityDelegate,
-      public cc::TextureLayerClient,
-      public cc::DelegatedRendererLayerClient,
-      public ImageTransportFactoryAndroidObserver {
+      public cc::DelegatedFrameResourceCollectionClient,
+      public ImageTransportFactoryAndroidObserver,
+      public ui::WindowAndroidObserver {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -110,8 +111,8 @@ class RenderWidgetHostViewAndroid
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const string16& text,
+  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
+  virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
@@ -119,6 +120,8 @@ class RenderWidgetHostViewAndroid
   virtual void ScrollOffsetChanged() OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
       int gpu_host_id) OVERRIDE;
@@ -138,7 +141,7 @@ class RenderWidgetHostViewAndroid
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
@@ -148,9 +151,10 @@ class RenderWidgetHostViewAndroid
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual void UnhandledWheelEvent(
-      const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
-      const WebKit::WebInputEvent& input_event) OVERRIDE;
+      const blink::WebInputEvent& input_event) OVERRIDE;
+  virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void OnAccessibilityEvents(
@@ -166,12 +170,8 @@ class RenderWidgetHostViewAndroid
                               gfx::Vector2dF current_fling_velocity) OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
-  virtual SyntheticGesture* CreateSmoothScrollGesture(
-      bool scroll_down, int pixels_to_scroll, int mouse_event_x,
-      int mouse_event_y) OVERRIDE;
-  virtual SyntheticGesture* CreatePinchGesture(
-      bool zoom_in, int pixels_to_move, int anchor_x,
-      int anchor_y) OVERRIDE;
+  virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
+      OVERRIDE;
 
   // Implementation of BrowserAccessibilityDelegate:
   virtual void SetAccessibilityFocus(int acc_obj_id) OVERRIDE;
@@ -185,16 +185,13 @@ class RenderWidgetHostViewAndroid
   virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
   virtual void FatalAccessibilityTreeError() OVERRIDE;
 
-  // cc::TextureLayerClient implementation.
-  virtual unsigned PrepareTexture() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(
-      cc::TextureMailbox* mailbox,
-      scoped_ptr<cc::SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) OVERRIDE;
+  // cc::DelegatedFrameResourceCollectionClient implementation.
+  virtual void UnusedResourcesAreAvailable() OVERRIDE;
 
-  // cc::DelegatedRendererLayerClient implementation.
-  virtual void DidCommitFrameData() OVERRIDE;
+  // ui::WindowAndroidObserver implementation.
+  virtual void OnCompositingDidCommit() OVERRIDE;
+  virtual void OnAttachCompositor() OVERRIDE {}
+  virtual void OnDetachCompositor() OVERRIDE;
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -203,23 +200,23 @@ class RenderWidgetHostViewAndroid
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);
   SkColor GetCachedBackgroundColor() const;
   void SendKeyEvent(const NativeWebKeyboardEvent& event);
-  void SendTouchEvent(const WebKit::WebTouchEvent& event);
-  void SendMouseEvent(const WebKit::WebMouseEvent& event);
-  void SendMouseWheelEvent(const WebKit::WebMouseWheelEvent& event);
-  void SendGestureEvent(const WebKit::WebGestureEvent& event);
+  void SendTouchEvent(const blink::WebTouchEvent& event);
+  void SendMouseEvent(const blink::WebMouseEvent& event);
+  void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
+  void SendGestureEvent(const blink::WebGestureEvent& event);
   void SendBeginFrame(const cc::BeginFrameArgs& args);
 
   void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
-  void OnProcessImeBatchStateAck(bool is_begin);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
+  void OnSmartClipDataExtracted(const string16& result);
 
   int GetNativeImeAdapter();
 
   void WasResized();
 
-  WebKit::WebGLId GetScaledContentTexture(float scale, gfx::Size* out_size);
+  blink::WebGLId GetScaledContentTexture(float scale, gfx::Size* out_size);
   bool PopulateBitmapWithContents(jobject jbitmap);
 
   bool HasValidFrame() const;
@@ -246,6 +243,7 @@ class RenderWidgetHostViewAndroid
 
   void RunAckCallbacks();
 
+  void DestroyDelegatedContent();
   void SwapDelegatedFrame(uint32 output_surface_id,
                           scoped_ptr<cc::DelegatedFrameData> frame_data);
   void SendDelegatedFrameAck(uint32 output_surface_id);
@@ -259,9 +257,7 @@ class RenderWidgetHostViewAndroid
   void AttachLayers();
   void RemoveLayers();
 
-  void CreateOverscrollEffectIfNecessary();
   void UpdateAnimationSize(const cc::CompositorFrameMetadata& frame_metadata);
-  void ScheduleAnimationIfNecessary();
 
   // Called after async screenshot task completes. Scales and crops the result
   // of the copy.
@@ -273,6 +269,12 @@ class RenderWidgetHostViewAndroid
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
+
+  // DevTools ScreenCast support for Android WebView.
+  void SynchronousCopyContents(
+      const gfx::Rect& src_subrect_in_pixel,
+      const gfx::Size& dst_size_in_pixel,
+      const base::Callback<void(bool, const SkBitmap&)>& callback);
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -297,6 +299,8 @@ class RenderWidgetHostViewAndroid
   // The texture layer for this view when using browser-side compositing.
   scoped_refptr<cc::TextureLayer> texture_layer_;
 
+  scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection_;
+  scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
 
   // The layer used for rendering the contents of this view.
@@ -313,20 +317,29 @@ class RenderWidgetHostViewAndroid
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
 
-  // Used for image transport when needing to share resources across threads.
-  scoped_ptr<SurfaceTextureTransportClient> surface_texture_transport_;
-
   // The mailbox of the previously received frame.
   gpu::Mailbox current_mailbox_;
-  uint32_t current_mailbox_output_surface_id_;
+
+  // The output surface id of the last received frame.
+  uint32_t last_output_surface_id_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_;
 
   std::queue<base::Closure> ack_callbacks_;
 
+  const bool overscroll_effect_enabled_;
   // Used to render overscroll overlays.
-  bool overscroll_effect_enabled_;
+  // Note: |overscroll_effect_| will never be NULL, even if it's never enabled.
   scoped_ptr<OverscrollGlow> overscroll_effect_;
+
+  bool flush_input_requested_;
+
+  int accelerated_surface_route_id_;
+
+  // Size to use if we have no backing ContentViewCore
+  gfx::Size default_size_;
+
+  const bool using_synchronous_compositor_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);
 };

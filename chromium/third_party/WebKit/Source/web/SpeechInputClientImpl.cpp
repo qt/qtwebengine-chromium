@@ -32,17 +32,16 @@
 #include "SpeechInputClientImpl.h"
 
 #include "public/platform/WebString.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 #include "WebSecurityOrigin.h"
 #include "WebSpeechInputController.h"
 #include "WebViewClient.h"
-#include "core/page/SpeechInputListener.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/speech/SpeechInputListener.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 #if ENABLE(INPUT_SPEECH)
 
-namespace WebKit {
+namespace blink {
 
 PassOwnPtr<SpeechInputClientImpl> SpeechInputClientImpl::create(WebViewClient* client)
 {
@@ -103,6 +102,6 @@ void SpeechInputClientImpl::setRecognitionResult(int requestId, const WebSpeechI
     m_listener->setRecognitionResult(requestId, webcoreResults);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // ENABLE(INPUT_SPEECH)

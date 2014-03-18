@@ -32,31 +32,31 @@
 #include "config.h"
 #include "core/html/forms/SubmitInputType.h"
 
-#include "core/dom/Event.h"
+#include "InputTypeNames.h"
+#include "core/events/Event.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/LocalizedStrings.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> SubmitInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> SubmitInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new SubmitInputType(element));
 }
 
 const AtomicString& SubmitInputType::formControlType() const
 {
-    return InputTypeNames::submit();
+    return InputTypeNames::submit;
 }
 
 bool SubmitInputType::appendFormData(FormDataList& encoding, bool) const
 {
-    if (!element()->isActivatedSubmit())
+    if (!element().isActivatedSubmit())
         return false;
-    encoding.appendData(element()->name(), element()->valueWithDefault());
+    encoding.appendData(element().name(), element().valueWithDefault());
     return true;
 }
 
@@ -67,7 +67,7 @@ bool SubmitInputType::supportsRequired() const
 
 void SubmitInputType::handleDOMActivateEvent(Event* event)
 {
-    RefPtr<HTMLInputElement> element = this->element();
+    RefPtr<HTMLInputElement> element(this->element());
     if (element->isDisabledFormControl() || !element->form())
         return;
     element->setActivatedSubmit(true);
@@ -83,7 +83,7 @@ bool SubmitInputType::canBeSuccessfulSubmitButton()
 
 String SubmitInputType::defaultValue() const
 {
-    return submitButtonDefaultLabel();
+    return locale().queryString(blink::WebLocalizedString::SubmitButtonDefaultLabel);
 }
 
 bool SubmitInputType::isSubmitButton() const

@@ -304,18 +304,18 @@ public:
     void setFilterLevel(FilterLevel);
 
     /**
-     *  DEPRECATED: use setFilterLevel instead.
      *  If the predicate is true, set the filterLevel to Low, else set it to
      *  None.
      */
+    SK_ATTR_DEPRECATED("use setFilterLevel")
     void setFilterBitmap(bool doFilter) {
         this->setFilterLevel(doFilter ? kLow_FilterLevel : kNone_FilterLevel);
     }
 
     /**
-     *  DEPRECATED: call getFilterLevel() instead.
      *  Returns true if getFilterLevel() returns anything other than None.
      */
+    SK_ATTR_DEPRECATED("use getFilterLevel")
     bool isFilterBitmap() const {
         return kNone_FilterLevel != this->getFilterLevel();
     }
@@ -639,9 +639,8 @@ public:
      *  Returns true if there is an annotation installed on this paint, and
      *  the annotation specifics no-drawing.
      */
-    bool isNoDrawAnnotation() const {
-        return SkToBool(fPrivFlags & kNoDrawAnnotation_PrivFlag);
-    }
+    SK_ATTR_DEPRECATED("use getAnnotation and check for non-null")
+    bool isNoDrawAnnotation() const { return this->getAnnotation() != NULL; }
 
     /**
      *  Return the paint's SkDrawLooper (if any). Does not affect the looper's
@@ -1006,11 +1005,8 @@ private:
     unsigned        fStyle : 2;
     unsigned        fTextEncoding : 2;  // 3 values
     unsigned        fHinting : 2;
-    unsigned        fPrivFlags : 4; // these are not flattened/unflattened
+    //unsigned      fFreeBits : 4;
 
-    enum PrivFlags {
-        kNoDrawAnnotation_PrivFlag  = 1 << 0,
-    };
 
     SkDrawCacheProc    getDrawCacheProc() const;
     SkMeasureCacheProc getMeasureCacheProc(TextBufferDirection dir,

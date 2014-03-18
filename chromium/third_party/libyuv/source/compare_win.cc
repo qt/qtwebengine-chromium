@@ -26,13 +26,13 @@ uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count) {
     mov        ecx, [esp + 12]   // count
     pxor       xmm0, xmm0
     pxor       xmm5, xmm5
-    sub        edx, eax
 
-    align      16
+    align      4
   wloop:
     movdqa     xmm1, [eax]
-    movdqa     xmm2, [eax + edx]
     lea        eax,  [eax + 16]
+    movdqa     xmm2, [edx]
+    lea        edx,  [edx + 16]
     sub        ecx, 16
     movdqa     xmm3, xmm1  // abs trick
     psubusb    xmm1, xmm2
@@ -70,7 +70,7 @@ uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count) {
     vpxor      ymm5, ymm5, ymm5  // constant 0 for unpck
     sub        edx, eax
 
-    align      16
+    align      4
   wloop:
     vmovdqu    ymm1, [eax]
     vmovdqu    ymm2, [eax + edx]
@@ -101,26 +101,26 @@ uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count) {
 #endif  // _MSC_VER >= 1700
 
 #define HAS_HASHDJB2_SSE41
-static const uvec32 kHash16x33 = { 0x92d9e201, 0, 0, 0 };  // 33 ^ 16
-static const uvec32 kHashMul0 = {
+static uvec32 kHash16x33 = { 0x92d9e201, 0, 0, 0 };  // 33 ^ 16
+static uvec32 kHashMul0 = {
   0x0c3525e1,  // 33 ^ 15
   0xa3476dc1,  // 33 ^ 14
   0x3b4039a1,  // 33 ^ 13
   0x4f5f0981,  // 33 ^ 12
 };
-static const uvec32 kHashMul1 = {
+static uvec32 kHashMul1 = {
   0x30f35d61,  // 33 ^ 11
   0x855cb541,  // 33 ^ 10
   0x040a9121,  // 33 ^ 9
   0x747c7101,  // 33 ^ 8
 };
-static const uvec32 kHashMul2 = {
+static uvec32 kHashMul2 = {
   0xec41d4e1,  // 33 ^ 7
   0x4cfa3cc1,  // 33 ^ 6
   0x025528a1,  // 33 ^ 5
   0x00121881,  // 33 ^ 4
 };
-static const uvec32 kHashMul3 = {
+static uvec32 kHashMul3 = {
   0x00008c61,  // 33 ^ 3
   0x00000441,  // 33 ^ 2
   0x00000021,  // 33 ^ 1
@@ -145,7 +145,7 @@ uint32 HashDjb2_SSE41(const uint8* src, int count, uint32 seed) {
     pxor       xmm7, xmm7        // constant 0 for unpck
     movdqa     xmm6, kHash16x33
 
-    align      16
+    align      4
   wloop:
     movdqu     xmm1, [eax]       // src[0-15]
     lea        eax, [eax + 16]
@@ -184,6 +184,46 @@ uint32 HashDjb2_SSE41(const uint8* src, int count, uint32 seed) {
     ret
   }
 }
+
+// Visual C 2012 required for AVX2.
+#if _MSC_VER >= 1700
+__declspec(naked) __declspec(align(16))
+uint32 HashDjb2_AVX2(const uint8* src, int count, uint32 seed) {
+  __asm {
+    mov        eax, [esp + 4]    // src
+    mov        ecx, [esp + 8]    // count
+    movd       xmm0, [esp + 12]  // seed
+    movdqa     xmm6, kHash16x33
+
+    align      4
+  wloop:
+    vpmovzxbd  xmm3, dword ptr [eax]  // src[0-3]
+    pmulld     xmm0, xmm6  // hash *= 33 ^ 16
+    vpmovzxbd  xmm4, dword ptr [eax + 4]  // src[4-7]
+    pmulld     xmm3, kHashMul0
+    vpmovzxbd  xmm2, dword ptr [eax + 8]  // src[8-11]
+    pmulld     xmm4, kHashMul1
+    vpmovzxbd  xmm1, dword ptr [eax + 12]  // src[12-15]
+    pmulld     xmm2, kHashMul2
+    lea        eax, [eax + 16]
+    pmulld     xmm1, kHashMul3
+    paddd      xmm3, xmm4        // add 16 results
+    paddd      xmm1, xmm2
+    sub        ecx, 16
+    paddd      xmm1, xmm3
+    pshufd     xmm2, xmm1, 0x0e  // upper 2 dwords
+    paddd      xmm1, xmm2
+    pshufd     xmm2, xmm1, 0x01
+    paddd      xmm1, xmm2
+    paddd      xmm0, xmm1
+    jg         wloop
+
+    movd       eax, xmm0         // return hash
+    ret
+  }
+}
+#endif  // _MSC_VER >= 1700
+
 #endif  // !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER)
 
 #ifdef __cplusplus

@@ -14,6 +14,7 @@
 #include "media/base/media_switches.h"
 #include "media/base/test_data_util.h"
 #include "media/cdm/aes_decryptor.h"
+#include "media/cdm/json_web_key.h"
 #include "media/filters/chunk_demuxer.h"
 
 using testing::AnyNumber;
@@ -21,51 +22,53 @@ using testing::AtMost;
 
 namespace media {
 
-static const char kSourceId[] = "SourceId";
-static const char kClearKeySystem[] = "org.w3.clearkey";
-static const uint8 kInitData[] = { 0x69, 0x6e, 0x69, 0x74 };
+const char kSourceId[] = "SourceId";
+const uint8 kInitData[] = { 0x69, 0x6e, 0x69, 0x74 };
 
-static const char kWebM[] = "video/webm; codecs=\"vp8,vorbis\"";
-static const char kWebMVP9[] = "video/webm; codecs=\"vp9\"";
-static const char kAudioOnlyWebM[] = "video/webm; codecs=\"vorbis\"";
-static const char kOpusAudioOnlyWebM[] = "video/webm; codecs=\"opus\"";
-static const char kVideoOnlyWebM[] = "video/webm; codecs=\"vp8\"";
-static const char kMP4[] = "video/mp4; codecs=\"avc1.4D4041,mp4a.40.2\"";
-static const char kMP4Video[] = "video/mp4; codecs=\"avc1.4D4041\"";
-static const char kMP4Audio[] = "audio/mp4; codecs=\"mp4a.40.2\"";
-static const char kMP4AudioType[] = "audio/mp4";
-static const char kMP4VideoType[] = "video/mp4";
-static const char kMP3[] = "audio/mpeg";
+const char kWebM[] = "video/webm; codecs=\"vp8,vorbis\"";
+const char kWebMVP9[] = "video/webm; codecs=\"vp9\"";
+const char kAudioOnlyWebM[] = "video/webm; codecs=\"vorbis\"";
+const char kOpusAudioOnlyWebM[] = "video/webm; codecs=\"opus\"";
+const char kVideoOnlyWebM[] = "video/webm; codecs=\"vp8\"";
+const char kMP4VideoType[] = "video/mp4";
+const char kMP4AudioType[] = "audio/mp4";
+#if defined(USE_PROPRIETARY_CODECS)
+const char kMP4[] = "video/mp4; codecs=\"avc1.4D4041,mp4a.40.2\"";
+const char kMP4Video[] = "video/mp4; codecs=\"avc1.4D4041\"";
+const char kMP4VideoAVC3[] = "video/mp4; codecs=\"avc3.64001f\"";
+const char kMP4Audio[] = "audio/mp4; codecs=\"mp4a.40.2\"";
+const char kMP3[] = "audio/mpeg";
+#endif  // defined(USE_PROPRIETARY_CODECS)
 
 // Key used to encrypt test files.
-static const uint8 kSecretKey[] = {
+const uint8 kSecretKey[] = {
   0xeb, 0xdd, 0x62, 0xf1, 0x68, 0x14, 0xd2, 0x7b,
   0x68, 0xef, 0x12, 0x2a, 0xfc, 0xe4, 0xae, 0x3c
 };
 
 // The key ID for all encrypted files.
-static const uint8 kKeyId[] = {
+const uint8 kKeyId[] = {
   0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
   0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35
 };
 
-static const int kAppendWholeFile = -1;
+const int kAppendWholeFile = -1;
 
 // Constants for the Media Source config change tests.
-static const int kAppendTimeSec = 1;
-static const int kAppendTimeMs = kAppendTimeSec * 1000;
-static const int k320WebMFileDurationMs = 2737;
-static const int k640WebMFileDurationMs = 2763;
-static const int k640IsoFileDurationMs = 2737;
-static const int k640IsoCencFileDurationMs = 2736;
-static const int k1280IsoFileDurationMs = 2736;
-static const int kOpusEndTrimmingWebMFileDurationMs = 2771;
-static const uint32 kOpusEndTrimmingWebMFileAudioBytes = 528676;
-static const int kVP9WebMFileDurationMs = 2735;
-static const int kVP8AWebMFileDurationMs = 2700;
+const int kAppendTimeSec = 1;
+const int kAppendTimeMs = kAppendTimeSec * 1000;
+const int k320WebMFileDurationMs = 2737;
+const int k640WebMFileDurationMs = 2763;
+const int kOpusEndTrimmingWebMFileDurationMs = 2771;
+const int kVP9WebMFileDurationMs = 2735;
+const int kVP8AWebMFileDurationMs = 2700;
 
-// Command line switch for runtime adjustment of audio file to be benchmarked.
-static const char kBenchmarkAudioFile[] = "benchmark-audio-file";
+#if defined(USE_PROPRIETARY_CODECS)
+const int k640IsoFileDurationMs = 2737;
+const int k640IsoCencFileDurationMs = 2736;
+const int k1280IsoFileDurationMs = 2736;
+const int k1280IsoAVC3FileDurationMs = 2735;
+#endif  // defined(USE_PROPRIETARY_CODECS)
 
 // Note: Tests using this class only exercise the DecryptingDemuxerStream path.
 // They do not exercise the Decrypting{Audio|Video}Decoder path.
@@ -76,60 +79,74 @@ class FakeEncryptedMedia {
    public:
     virtual ~AppBase() {}
 
-    virtual void KeyAdded(const std::string& session_id) = 0;
+    virtual void OnSessionCreated(uint32 session_id,
+                                  const std::string& web_session_id) = 0;
+
+    virtual void OnSessionMessage(uint32 session_id,
+                                  const std::vector<uint8>& message,
+                                  const std::string& destination_url) = 0;
+
+    virtual void OnSessionReady(uint32 session_id) = 0;
+
+    virtual void OnSessionClosed(uint32 session_id) = 0;
 
     // Errors are not expected unless overridden.
-    virtual void KeyError(const std::string& session_id,
-                          MediaKeys::KeyError error_code,
-                          int system_code) {
+    virtual void OnSessionError(uint32 session_id,
+                                MediaKeys::KeyError error_code,
+                                int system_code) {
       FAIL() << "Unexpected Key Error";
     }
 
-    virtual void KeyMessage(const std::string& session_id,
-                            const std::vector<uint8>& message,
-                            const std::string& default_url) = 0;
-
-    virtual void NeedKey(const std::string& session_id,
-                         const std::string& type,
+    virtual void NeedKey(const std::string& type,
                          const std::vector<uint8>& init_data,
                          AesDecryptor* decryptor) = 0;
   };
 
   FakeEncryptedMedia(AppBase* app)
-      : decryptor_(base::Bind(&FakeEncryptedMedia::KeyAdded,
+      : decryptor_(base::Bind(&FakeEncryptedMedia::OnSessionCreated,
                               base::Unretained(this)),
-                   base::Bind(&FakeEncryptedMedia::KeyError,
+                   base::Bind(&FakeEncryptedMedia::OnSessionMessage,
                               base::Unretained(this)),
-                   base::Bind(&FakeEncryptedMedia::KeyMessage,
+                   base::Bind(&FakeEncryptedMedia::OnSessionReady,
+                              base::Unretained(this)),
+                   base::Bind(&FakeEncryptedMedia::OnSessionClosed,
+                              base::Unretained(this)),
+                   base::Bind(&FakeEncryptedMedia::OnSessionError,
                               base::Unretained(this))),
-        app_(app) {
-  }
+        app_(app) {}
 
   AesDecryptor* decryptor() {
     return &decryptor_;
   }
 
-  // Callbacks for firing key events. Delegate to |app_|.
-  void KeyAdded(const std::string& session_id) {
-    app_->KeyAdded(session_id);
+  // Callbacks for firing session events. Delegate to |app_|.
+  void OnSessionCreated(uint32 session_id, const std::string& web_session_id) {
+    app_->OnSessionCreated(session_id, web_session_id);
   }
 
-  void KeyError(const std::string& session_id,
-                MediaKeys::KeyError error_code,
-                int system_code) {
-    app_->KeyError(session_id, error_code, system_code);
+  void OnSessionMessage(uint32 session_id,
+                        const std::vector<uint8>& message,
+                        const std::string& destination_url) {
+    app_->OnSessionMessage(session_id, message, destination_url);
   }
 
-  void KeyMessage(const std::string& session_id,
-                  const std::vector<uint8>& message,
-                  const std::string& default_url) {
-    app_->KeyMessage(session_id, message, default_url);
+  void OnSessionReady(uint32 session_id) {
+    app_->OnSessionReady(session_id);
   }
 
-  void NeedKey(const std::string& session_id,
-               const std::string& type,
+  void OnSessionClosed(uint32 session_id) {
+    app_->OnSessionClosed(session_id);
+  }
+
+  void OnSessionError(uint32 session_id,
+                      MediaKeys::KeyError error_code,
+                      int system_code) {
+    app_->OnSessionError(session_id, error_code, system_code);
+  }
+
+  void NeedKey(const std::string& type,
                const std::vector<uint8>& init_data) {
-    app_->NeedKey(session_id, type, init_data, &decryptor_);
+    app_->NeedKey(type, init_data, &decryptor_);
   }
 
  private:
@@ -140,31 +157,40 @@ class FakeEncryptedMedia {
 // Provides |kSecretKey| in response to needkey.
 class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
  public:
-  virtual void KeyAdded(const std::string& session_id) OVERRIDE {
-    EXPECT_FALSE(session_id.empty());
+  KeyProvidingApp() : current_session_id_(0) {}
+
+  virtual void OnSessionCreated(uint32 session_id,
+                                const std::string& web_session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+    EXPECT_FALSE(web_session_id.empty());
   }
 
-  virtual void KeyMessage(const std::string& session_id,
-                          const std::vector<uint8>& message,
-                          const std::string& default_url) OVERRIDE {
-    EXPECT_FALSE(session_id.empty());
+  virtual void OnSessionMessage(uint32 session_id,
+                                const std::vector<uint8>& message,
+                                const std::string& default_url) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
     EXPECT_FALSE(message.empty());
 
     current_session_id_ = session_id;
   }
 
-  virtual void NeedKey(const std::string& session_id,
-                       const std::string& type,
+  virtual void OnSessionReady(uint32 session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+  }
+
+  virtual void OnSessionClosed(uint32 session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+  }
+
+  virtual void NeedKey(const std::string& type,
                        const std::vector<uint8>& init_data,
                        AesDecryptor* decryptor) OVERRIDE {
-    current_session_id_ = session_id;
-
-    if (current_session_id_.empty()) {
-      EXPECT_TRUE(decryptor->GenerateKeyRequest(type, kInitData,
-                                                arraysize(kInitData)));
+    if (current_session_id_ == 0u) {
+      EXPECT_TRUE(
+          decryptor->CreateSession(12, type, kInitData, arraysize(kInitData)));
     }
 
-    EXPECT_FALSE(current_session_id_.empty());
+    EXPECT_EQ(current_session_id_, 12u);
 
     // Clear Key really needs the key ID in |init_data|. For WebM, they are the
     // same, but this is not the case for ISO CENC. Therefore, provide the
@@ -176,31 +202,45 @@ class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
       key_id_length = arraysize(kKeyId);
     }
 
-    decryptor->AddKey(kSecretKey, arraysize(kSecretKey),
-                      key_id, key_id_length, current_session_id_);
+    // Convert key into a JSON structure and then add it.
+    std::string jwk = GenerateJWKSet(
+        kSecretKey, arraysize(kSecretKey), key_id, key_id_length);
+    decryptor->UpdateSession(current_session_id_,
+                             reinterpret_cast<const uint8*>(jwk.data()),
+                             jwk.size());
   }
 
-  std::string current_session_id_;
+  uint32 current_session_id_;
 };
 
 // Ignores needkey and does not perform a license request
 class NoResponseApp : public FakeEncryptedMedia::AppBase {
  public:
-  virtual void KeyAdded(const std::string& session_id) OVERRIDE {
-    EXPECT_FALSE(session_id.empty());
-    FAIL() << "Unexpected KeyAdded";
+  virtual void OnSessionCreated(uint32 session_id,
+                                const std::string& web_session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+    EXPECT_FALSE(web_session_id.empty());
   }
 
-  virtual void KeyMessage(const std::string& session_id,
-                          const std::vector<uint8>& message,
-                          const std::string& default_url) OVERRIDE {
-    EXPECT_FALSE(session_id.empty());
+  virtual void OnSessionMessage(uint32 session_id,
+                                const std::vector<uint8>& message,
+                                const std::string& default_url) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
     EXPECT_FALSE(message.empty());
     FAIL() << "Unexpected KeyMessage";
   }
 
-  virtual void NeedKey(const std::string& session_id,
-                       const std::string& type,
+  virtual void OnSessionReady(uint32 session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+    FAIL() << "Unexpected Ready";
+  }
+
+  virtual void OnSessionClosed(uint32 session_id) OVERRIDE {
+    EXPECT_GT(session_id, 0u);
+    FAIL() << "Unexpected Closed";
+  }
+
+  virtual void NeedKey(const std::string& type,
                        const std::vector<uint8>& init_data,
                        AesDecryptor* decryptor) OVERRIDE {
   }
@@ -221,8 +261,6 @@ class MockMediaSource {
                        base::Unretained(this)),
             base::Bind(&MockMediaSource::DemuxerNeedKey,
                        base::Unretained(this)),
-            base::Bind(&MockMediaSource::OnTextTrack,
-                       base::Unretained(this)),
             LogCB())),
         owned_chunk_demuxer_(chunk_demuxer_) {
 
@@ -239,7 +277,7 @@ class MockMediaSource {
 
   scoped_ptr<Demuxer> GetDemuxer() { return owned_chunk_demuxer_.Pass(); }
 
-  void set_need_key_cb(const NeedKeyCB& need_key_cb) {
+  void set_need_key_cb(const Demuxer::NeedKeyCB& need_key_cb) {
     need_key_cb_ = need_key_cb;
   }
 
@@ -321,13 +359,7 @@ class MockMediaSource {
                       const std::vector<uint8>& init_data) {
     DCHECK(!init_data.empty());
     CHECK(!need_key_cb_.is_null());
-    need_key_cb_.Run(std::string(), type, init_data);
-  }
-
-  scoped_ptr<TextTrack> OnTextTrack(TextKind kind,
-                                    const std::string& label,
-                                    const std::string& language) {
-    return scoped_ptr<TextTrack>();
+    need_key_cb_.Run(type, init_data);
   }
 
  private:
@@ -338,7 +370,7 @@ class MockMediaSource {
   std::string mimetype_;
   ChunkDemuxer* chunk_demuxer_;
   scoped_ptr<Demuxer> owned_chunk_demuxer_;
-  NeedKeyCB need_key_cb_;
+  Demuxer::NeedKeyCB need_key_cb_;
 };
 
 class PipelineIntegrationTest
@@ -360,6 +392,11 @@ class PipelineIntegrationTest
         base::Closure());
 
     message_loop_.Run();
+  }
+
+  void StartHashedPipelineWithMediaSource(MockMediaSource* source) {
+    hashing_enabled_ = true;
+    StartPipelineWithMediaSource(source);
   }
 
   void StartPipelineWithEncryptedMedia(
@@ -435,28 +472,6 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
 
   EXPECT_EQ("f0be120a90a811506777c99a2cdf7cc1", GetVideoHash());
   EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
-}
-
-TEST_F(PipelineIntegrationTest, AudioPlaybackBenchmark) {
-  // Audio-only files are all that is allowed for clockless playback.
-  // Audio file can be specified on the command line
-  // (--benchmark-audio-file=id3_png_test.mp3), so check for it.
-  std::string filename(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-      kBenchmarkAudioFile));
-  if (filename.empty())
-    filename = "sfx_f32le.wav";
-
-  ASSERT_TRUE(Start(GetTestDataFilePath(filename), PIPELINE_OK, kClockless));
-
-  Play();
-
-  ASSERT_TRUE(WaitUntilOnEnded());
-
-  // Call Stop() to ensure that the rendering is complete.
-  Stop();
-  printf("Clockless playback of %s took %.2f ms.\n",
-         filename.c_str(),
-         GetAudioTime().InMillisecondsF());
 }
 
 TEST_F(PipelineIntegrationTest, F32PlaybackHashed) {
@@ -551,8 +566,36 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_Opus_WebM) {
   Play();
 
   ASSERT_TRUE(WaitUntilOnEnded());
-  EXPECT_EQ(kOpusEndTrimmingWebMFileAudioBytes,
-            pipeline_->GetStatistics().audio_bytes_decoded);
+  source.Abort();
+  Stop();
+}
+
+// Flaky. http://crbug.com/304776
+TEST_F(PipelineIntegrationTest, DISABLED_MediaSource_Opus_Seeking_WebM) {
+  EXPECT_CALL(*this, OnSetOpaque(false)).Times(AnyNumber());
+  MockMediaSource source("bear-opus-end-trimming.webm", kOpusAudioOnlyWebM,
+                         kAppendWholeFile);
+  StartHashedPipelineWithMediaSource(&source);
+
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  base::TimeDelta start_seek_time = base::TimeDelta::FromMilliseconds(1000);
+  base::TimeDelta seek_time = base::TimeDelta::FromMilliseconds(2000);
+
+  Play();
+  ASSERT_TRUE(WaitUntilCurrentTimeIsAfter(start_seek_time));
+  source.Seek(seek_time, 0x1D5, 34017);
+  source.EndOfStream();
+  ASSERT_TRUE(Seek(seek_time));
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  EXPECT_EQ("0.76,0.20,-0.82,-0.58,-1.29,-0.29,", GetAudioHash());
+
   source.Abort();
   Stop();
 }
@@ -930,6 +973,25 @@ TEST_F(PipelineIntegrationTest,
   source.Abort();
   Stop();
 }
+
+TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VideoOnly_MP4_AVC3) {
+  MockMediaSource source("bear-1280x720-v_frag-avc3.mp4", kMP4VideoAVC3,
+                         kAppendWholeFile);
+  StartPipelineWithMediaSource(&source);
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(k1280IsoAVC3FileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Abort();
+  Stop();
+}
+
 #endif
 
 // TODO(acolwell): Fix flakiness http://crbug.com/117921
@@ -996,8 +1058,12 @@ TEST_F(PipelineIntegrationTest, ChunkDemuxerAbortRead_VideoOnly) {
 
 // Verify that Opus audio in WebM containers can be played back.
 TEST_F(PipelineIntegrationTest, BasicPlayback_AudioOnly_Opus_WebM) {
-  ASSERT_TRUE(Start(GetTestDataFilePath("bear-opus.webm"),
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-opus-end-trimming.webm"),
                     PIPELINE_OK));
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kOpusEndTrimmingWebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
 }
@@ -1033,8 +1099,19 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_VP8A_WebM) {
   EXPECT_EQ(last_video_frame_format_, VideoFrame::YV12A);
 }
 
+// Verify that VP8A video with odd width/height can be played back.
+TEST_F(PipelineIntegrationTest, BasicPlayback_VP8A_Odd_WebM) {
+  EXPECT_CALL(*this, OnSetOpaque(false)).Times(AnyNumber());
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp8a-odd-dimensions.webm"),
+                    PIPELINE_OK));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+  EXPECT_EQ(last_video_frame_format_, VideoFrame::YV12A);
+}
+
 // Verify that VP8 video with inband text track can be played back.
-TEST_F(PipelineIntegrationTest, BasicPlayback_VP8_WebVTT_WebM) {
+TEST_F(PipelineIntegrationTest,
+       BasicPlayback_VP8_WebVTT_WebM) {
   ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp8-webvtt.webm"),
                     PIPELINE_OK));
   Play();

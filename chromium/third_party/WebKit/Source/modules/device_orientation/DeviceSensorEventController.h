@@ -26,14 +26,15 @@
 #ifndef DeviceSensorEventController_h
 #define DeviceSensorEventController_h
 
-#include "core/dom/Event.h"
-#include "core/platform/Timer.h"
+#include "core/events/Event.h"
+#include "core/page/PageLifecycleObserver.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
 class Document;
 
-class DeviceSensorEventController {
+class DeviceSensorEventController : public PageLifecycleObserver {
 
 public:
     void startUpdating();
@@ -51,7 +52,12 @@ protected:
     virtual void unregisterWithDispatcher() = 0;
     virtual bool isNullEvent(Event*) = 0;
 
+    bool m_hasEventListener;
+
 private:
+    // Inherited from PageLifecycleObserver.
+    virtual void pageVisibilityChanged() OVERRIDE;
+
     void fireDeviceEvent(Timer<DeviceSensorEventController>*);
 
     Document* m_document;

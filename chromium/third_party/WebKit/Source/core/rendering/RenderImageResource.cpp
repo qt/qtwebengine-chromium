@@ -28,8 +28,7 @@
 #include "config.h"
 #include "core/rendering/RenderImageResource.h"
 
-#include "core/fetch/ImageResource.h"
-#include "core/platform/graphics/Image.h"
+#include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -101,6 +100,16 @@ void RenderImageResource::setContainerSizeForRenderer(const IntSize& imageContai
 Image* RenderImageResource::nullImage()
 {
     return Image::nullImage();
+}
+
+LayoutSize RenderImageResource::getImageSize(float multiplier, ImageResource::SizeType type) const
+{
+    if (!m_cachedImage)
+        return LayoutSize();
+    LayoutSize size = m_cachedImage->imageSizeForRenderer(m_renderer, multiplier, type);
+    if (m_renderer && m_renderer->isRenderImage())
+        size.scale(toRenderImage(m_renderer)->imageDevicePixelRatio());
+    return size;
 }
 
 } // namespace WebCore

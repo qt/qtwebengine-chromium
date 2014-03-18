@@ -5,16 +5,15 @@
 #include <gtest/gtest.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "media/cast/rtp_common/rtp_defines.h"
 #include "media/cast/rtp_receiver/rtp_parser/rtp_parser.h"
 #include "media/cast/rtp_receiver/rtp_parser/test/rtp_packet_builder.h"
 #include "media/cast/rtp_receiver/rtp_receiver.h"
+#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
 
-static const int kPacketLength = 1500;
-static const int kCastRtpLength = 7;
+static const size_t kPacketLength = 1500;
 static const int kTestPayloadType = 127;
 static const uint32 kTestSsrc = 1234;
 static const uint32 kTestTimestamp = 111111;
@@ -27,18 +26,17 @@ class RtpDataTest : public RtpData {
     expected_header_.reset(new RtpCastHeader());
   }
 
-  ~RtpDataTest() {}
+  virtual ~RtpDataTest() {}
 
   void SetExpectedHeader(const RtpCastHeader& cast_header) {
     memcpy(expected_header_.get(), &cast_header, sizeof(RtpCastHeader));
   }
 
-  void OnReceivedPayloadData(const uint8* payloadData,
-                             int payloadSize,
-                             const RtpCastHeader* rtpHeader) {
+  virtual void OnReceivedPayloadData(const uint8* payloadData,
+                                     size_t payloadSize,
+                                     const RtpCastHeader* rtpHeader) OVERRIDE {
     VerifyCommonHeader(*rtpHeader);
     VerifyCastHeader(*rtpHeader);
-    // TODO(mikhal): Add data verification.
   }
 
   void VerifyCommonHeader(const RtpCastHeader& parsed_header) {
@@ -69,10 +67,9 @@ class RtpParserTest : public ::testing::Test {
     rtp_parser_.reset(new RtpParser(rtp_data_.get(), config_));
   }
 
-  ~RtpParserTest() {}
+  virtual ~RtpParserTest() {}
 
   virtual void SetUp() {
-    cast_header_.InitRTPVideoHeaderCast();
     cast_header_.is_reference = true;
     cast_header_.reference_frame_id = kRefFrameId;
     packet_builder_.SetSsrc(kTestSsrc);

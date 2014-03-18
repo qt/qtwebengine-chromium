@@ -399,14 +399,13 @@ function ObservedArrayPop(n) {
   n--;
   var value = this[n];
 
-  EnqueueSpliceRecord(this, n, [value], 0);
-
   try {
     BeginPerformSplice(this);
     delete this[n];
     this.length = n;
   } finally {
     EndPerformSplice(this);
+    EnqueueSpliceRecord(this, n, [value], 0);
   }
 
   return value;
@@ -426,12 +425,17 @@ function ArrayPop() {
     return;
   }
 
+  if ($Object.isSealed(this)) {
+    throw MakeTypeError("array_functions_change_sealed",
+                        ["Array.prototype.pop"]);
+  }
+
   if (%IsObserved(this))
     return ObservedArrayPop.call(this, n);
 
   n--;
   var value = this[n];
-  delete this[n];
+  Delete(this, ToName(n), true);
   this.length = n;
   return value;
 }
@@ -441,8 +445,6 @@ function ObservedArrayPush() {
   var n = TO_UINT32(this.length);
   var m = %_ArgumentsLength();
 
-  EnqueueSpliceRecord(this, n, [], m);
-
   try {
     BeginPerformSplice(this);
     for (var i = 0; i < m; i++) {
@@ -451,6 +453,7 @@ function ObservedArrayPush() {
     this.length = n + m;
   } finally {
     EndPerformSplice(this);
+    EnqueueSpliceRecord(this, n, [], m);
   }
 
   return this.length;
@@ -464,11 +467,16 @@ function ArrayPush() {
                         ["Array.prototype.push"]);
   }
 
+  var n = TO_UINT32(this.length);
+  var m = %_ArgumentsLength();
+  if (m > 0 && $Object.isSealed(this)) {
+    throw MakeTypeError("array_functions_change_sealed",
+                        ["Array.prototype.push"]);
+  }
+
   if (%IsObserved(this))
     return ObservedArrayPush.apply(this, arguments);
 
-  var n = TO_UINT32(this.length);
-  var m = %_ArgumentsLength();
   for (var i = 0; i < m; i++) {
     this[i+n] = %_Arguments(i);
   }
@@ -581,14 +589,13 @@ function ArrayReverse() {
 function ObservedArrayShift(len) {
   var first = this[0];
 
-  EnqueueSpliceRecord(this, 0, [first], 0);
-
   try {
     BeginPerformSplice(this);
     SimpleMove(this, 0, 1, len, 0);
     this.length = len - 1;
   } finally {
     EndPerformSplice(this);
+    EnqueueSpliceRecord(this, 0, [first], 0);
   }
 
   return first;
@@ -605,6 +612,11 @@ function ArrayShift() {
   if (len === 0) {
     this.length = 0;
     return;
+  }
+
+  if ($Object.isSealed(this)) {
+    throw MakeTypeError("array_functions_change_sealed",
+                        ["Array.prototype.shift"]);
   }
 
   if (%IsObserved(this))
@@ -627,8 +639,6 @@ function ObservedArrayUnshift() {
   var len = TO_UINT32(this.length);
   var num_arguments = %_ArgumentsLength();
 
-  EnqueueSpliceRecord(this, 0, [], num_arguments);
-
   try {
     BeginPerformSplice(this);
     SimpleMove(this, 0, 0, len, num_arguments);
@@ -638,6 +648,7 @@ function ObservedArrayUnshift() {
     this.length = len + num_arguments;
   } finally {
     EndPerformSplice(this);
+    EnqueueSpliceRecord(this, 0, [], num_arguments);
   }
 
   return len + num_arguments;
@@ -649,15 +660,32 @@ function ArrayUnshift(arg1) {  // length == 1
                         ["Array.prototype.unshift"]);
   }
 
+  var len = TO_UINT32(this.length);
+  var num_arguments = %_ArgumentsLength();
+  var is_sealed = $Object.isSealed(this);
+
+  if (num_arguments > 0 && is_sealed) {
+    throw MakeTypeError("array_functions_change_sealed",
+                        ["Array.prototype.unshift"]);
+  }
+
   if (%IsObserved(this))
     return ObservedArrayUnshift.apply(this, arguments);
 
-  var len = TO_UINT32(this.length);
-  var num_arguments = %_ArgumentsLength();
-
-  if (IS_ARRAY(this)) {
+  if (IS_ARRAY(this) && !is_sealed) {
     SmartMove(this, 0, 0, len, num_arguments);
   } else {
+    if (num_arguments == 0 && $Object.isFrozen(this)) {
+      // In the zero argument case, values from the prototype come into the
+      // object. This can't be allowed on frozen arrays.
+      for (var i = 0; i < len; i++) {
+        if (!this.hasOwnProperty(i) && !IS_UNDEFINED(this[i])) {
+          throw MakeTypeError("array_functions_on_frozen",
+                              ["Array.prototype.shift"]);
+        }
+      }
+    }
+
     SimpleMove(this, 0, 0, len, num_arguments);
   }
 
@@ -667,7 +695,7 @@ function ArrayUnshift(arg1) {  // length == 1
 
   this.length = len + num_arguments;
 
-  return len + num_arguments;
+  return this.length;
 }
 
 
@@ -681,7 +709,7 @@ function ArraySlice(start, end) {
   var start_i = TO_INTEGER(start);
   var end_i = len;
 
-  if (end !== void 0) end_i = TO_INTEGER(end);
+  if (!IS_UNDEFINED(end)) end_i = TO_INTEGER(end);
 
   if (start_i < 0) {
     start_i += len;
@@ -805,6 +833,14 @@ function ArraySplice(start, delete_count) {
   var deleted_elements = [];
   deleted_elements.length = del_count;
   var num_elements_to_add = num_arguments > 2 ? num_arguments - 2 : 0;
+
+  if (del_count != num_elements_to_add && $Object.isSealed(this)) {
+    throw MakeTypeError("array_functions_change_sealed",
+                        ["Array.prototype.splice"]);
+  } else if (del_count > 0 && $Object.isFrozen(this)) {
+    throw MakeTypeError("array_functions_on_frozen",
+                        ["Array.prototype.splice"]);
+  }
 
   var use_simple_splice = true;
   if (IS_ARRAY(this) &&
@@ -1020,7 +1056,7 @@ function ArraySort(comparefn) {
         var proto_length = indices;
         for (var i = from; i < proto_length; i++) {
           if (proto.hasOwnProperty(i)) {
-            obj[i] = void 0;
+            obj[i] = UNDEFINED;
           }
         }
       } else {
@@ -1028,7 +1064,7 @@ function ArraySort(comparefn) {
           var index = indices[i];
           if (!IS_UNDEFINED(index) && from <= index &&
               proto.hasOwnProperty(index)) {
-            obj[index] = void 0;
+            obj[index] = UNDEFINED;
           }
         }
       }
@@ -1065,7 +1101,7 @@ function ArraySort(comparefn) {
       if (first_undefined < last_defined) {
         // Fill in hole or undefined.
         obj[first_undefined] = obj[last_defined];
-        obj[last_defined] = void 0;
+        obj[last_defined] = UNDEFINED;
       }
     }
     // If there were any undefineds in the entire array, first_undefined
@@ -1077,12 +1113,12 @@ function ArraySort(comparefn) {
     // an undefined should be and vice versa.
     var i;
     for (i = first_undefined; i < length - num_holes; i++) {
-      obj[i] = void 0;
+      obj[i] = UNDEFINED;
     }
     for (i = length - num_holes; i < length; i++) {
       // For compatability with Webkit, do not expose elements in the prototype.
       if (i in %GetPrototype(obj)) {
-        obj[i] = void 0;
+        obj[i] = UNDEFINED;
       } else {
         delete obj[i];
       }

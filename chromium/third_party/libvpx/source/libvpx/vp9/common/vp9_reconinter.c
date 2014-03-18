@@ -20,35 +20,42 @@
 #include "vp9/common/vp9_reconinter.h"
 #include "vp9/common/vp9_reconintra.h"
 
-
 void vp9_setup_interp_filters(MACROBLOCKD *xd,
-                              INTERPOLATIONFILTERTYPE mcomp_filter_type,
+                              INTERPOLATION_TYPE mcomp_filter_type,
                               VP9_COMMON *cm) {
-  if (xd->mi_8x8 && xd->this_mi) {
-    MB_MODE_INFO * mbmi = &xd->this_mi->mbmi;
+  if (xd->mi_8x8 && xd->mi_8x8[0]) {
+    MB_MODE_INFO *const mbmi = &xd->mi_8x8[0]->mbmi;
 
-    set_scale_factors(xd, mbmi->ref_frame[0] - 1, mbmi->ref_frame[1] - 1,
-                      cm->active_ref_scale);
+    set_scale_factors(xd, mbmi->ref_frame[0] - LAST_FRAME,
+                          mbmi->ref_frame[1] - LAST_FRAME,
+                          cm->active_ref_scale);
   } else {
     set_scale_factors(xd, -1, -1, cm->active_ref_scale);
   }
 
-  switch (mcomp_filter_type) {
-    case EIGHTTAP:
-    case SWITCHABLE:
-      xd->subpix.filter_x = xd->subpix.filter_y = vp9_sub_pel_filters_8;
-      break;
-    case EIGHTTAP_SMOOTH:
-      xd->subpix.filter_x = xd->subpix.filter_y = vp9_sub_pel_filters_8lp;
-      break;
-    case EIGHTTAP_SHARP:
-      xd->subpix.filter_x = xd->subpix.filter_y = vp9_sub_pel_filters_8s;
-      break;
-    case BILINEAR:
-      xd->subpix.filter_x = xd->subpix.filter_y = vp9_bilinear_filters;
-      break;
-  }
+  xd->subpix.filter_x = xd->subpix.filter_y =
+      vp9_get_filter_kernel(mcomp_filter_type == SWITCHABLE ?
+                               EIGHTTAP : mcomp_filter_type);
+
   assert(((intptr_t)xd->subpix.filter_x & 0xff) == 0);
+}
+
+static void inter_predictor(const uint8_t *src, int src_stride,
+                            uint8_t *dst, int dst_stride,
+                            const MV32 *mv,
+                            const struct scale_factors *scale,
+                            int w, int h, int ref,
+                            const struct subpix_fn_table *subpix,
+                            int xs, int ys) {
+  const int subpel_x = mv->col & SUBPEL_MASK;
+  const int subpel_y = mv->row & SUBPEL_MASK;
+
+  src += (mv->row >> SUBPEL_BITS) * src_stride + (mv->col >> SUBPEL_BITS);
+  scale->sfc->predict[subpel_x != 0][subpel_y != 0][ref](
+      src, src_stride, dst, dst_stride,
+      subpix->filter_x[subpel_x], xs,
+      subpix->filter_y[subpel_y], ys,
+      w, h);
 }
 
 void vp9_build_inter_predictor(const uint8_t *src, int src_stride,
@@ -59,18 +66,13 @@ void vp9_build_inter_predictor(const uint8_t *src, int src_stride,
                                const struct subpix_fn_table *subpix,
                                enum mv_precision precision) {
   const int is_q4 = precision == MV_PRECISION_Q4;
-  const MV mv_q4 = { is_q4 ? src_mv->row : src_mv->row << 1,
-                     is_q4 ? src_mv->col : src_mv->col << 1 };
-  const MV32 mv = scale->scale_mv(&mv_q4, scale);
-  const int subpel_x = mv.col & SUBPEL_MASK;
-  const int subpel_y = mv.row & SUBPEL_MASK;
+  const MV mv_q4 = { is_q4 ? src_mv->row : src_mv->row * 2,
+                     is_q4 ? src_mv->col : src_mv->col * 2 };
+  const struct scale_factors_common *sfc = scale->sfc;
+  const MV32 mv = sfc->scale_mv(&mv_q4, scale);
 
-  src += (mv.row >> SUBPEL_BITS) * src_stride + (mv.col >> SUBPEL_BITS);
-  scale->predict[subpel_x != 0][subpel_y != 0][ref](
-      src, src_stride, dst, dst_stride,
-      subpix->filter_x[subpel_x], scale->x_step_q4,
-      subpix->filter_y[subpel_y], scale->y_step_q4,
-      w, h);
+  inter_predictor(src, src_stride, dst, dst_stride, &mv, scale,
+                  w, h, ref, subpix, sfc->x_step_q4, sfc->y_step_q4);
 }
 
 static INLINE int round_mv_comp_q4(int value) {
@@ -100,16 +102,17 @@ MV clamp_mv_to_umv_border_sb(const MACROBLOCKD *xd, const MV *src_mv,
   const int spel_top = (VP9_INTERP_EXTEND + bh) << SUBPEL_BITS;
   const int spel_bottom = spel_top - SUBPEL_SHIFTS;
   MV clamped_mv = {
-    src_mv->row << (1 - ss_y),
-    src_mv->col << (1 - ss_x)
+    src_mv->row * (1 << (1 - ss_y)),
+    src_mv->col * (1 << (1 - ss_x))
   };
   assert(ss_x <= 1);
   assert(ss_y <= 1);
 
-  clamp_mv(&clamped_mv, (xd->mb_to_left_edge << (1 - ss_x)) - spel_left,
-                        (xd->mb_to_right_edge << (1 - ss_x)) + spel_right,
-                        (xd->mb_to_top_edge << (1 - ss_y)) - spel_top,
-                        (xd->mb_to_bottom_edge << (1 - ss_y)) + spel_bottom);
+  clamp_mv(&clamped_mv,
+           xd->mb_to_left_edge * (1 << (1 - ss_x)) - spel_left,
+           xd->mb_to_right_edge * (1 << (1 - ss_x)) + spel_right,
+           xd->mb_to_top_edge * (1 << (1 - ss_y)) - spel_top,
+           xd->mb_to_bottom_edge * (1 << (1 - ss_y)) + spel_bottom);
 
   return clamped_mv;
 }
@@ -130,8 +133,8 @@ static void build_inter_predictors(int plane, int block, BLOCK_SIZE bsize,
   const int bh = plane_block_height(bsize, pd);
   const int x = 4 * (block & ((1 << bwl) - 1));
   const int y = 4 * (block >> bwl);
-  const MODE_INFO *mi = xd->this_mi;
-  const int use_second_ref = mi->mbmi.ref_frame[1] > 0;
+  const MODE_INFO *mi = xd->mi_8x8[0];
+  const int is_compound = has_second_ref(&mi->mbmi);
   int ref;
 
   assert(x < bw);
@@ -139,14 +142,10 @@ static void build_inter_predictors(int plane, int block, BLOCK_SIZE bsize,
   assert(mi->mbmi.sb_type < BLOCK_8X8 || 4 << pred_w == bw);
   assert(mi->mbmi.sb_type < BLOCK_8X8 || 4 << pred_h == bh);
 
-  for (ref = 0; ref < 1 + use_second_ref; ++ref) {
+  for (ref = 0; ref < 1 + is_compound; ++ref) {
     struct scale_factors *const scale = &xd->scale_factor[ref];
     struct buf_2d *const pre_buf = &pd->pre[ref];
     struct buf_2d *const dst_buf = &pd->dst;
-
-    const uint8_t *const pre = pre_buf->buf + scaled_buffer_offset(x, y,
-                               pre_buf->stride, scale);
-
     uint8_t *const dst = dst_buf->buf + dst_buf->stride * y + x;
 
     // TODO(jkoleszar): All chroma MVs in SPLITMV mode are taken as the
@@ -162,15 +161,32 @@ static void build_inter_predictors(int plane, int block, BLOCK_SIZE bsize,
     // scaling case. It needs to be done on the scaled MV, not the pre-scaling
     // MV. Note however that it performs the subsampling aware scaling so
     // that the result is always q4.
-    const MV res_mv = clamp_mv_to_umv_border_sb(xd, &mv, bw, bh,
-                                                pd->subsampling_x,
-                                                pd->subsampling_y);
+    // mv_precision precision is MV_PRECISION_Q4.
+    const MV mv_q4 = clamp_mv_to_umv_border_sb(xd, &mv, bw, bh,
+                                               pd->subsampling_x,
+                                               pd->subsampling_y);
 
-    scale->set_scaled_offsets(scale, arg->y + y, arg->x + x);
-    vp9_build_inter_predictor(pre, pre_buf->stride, dst, dst_buf->stride,
-                              &res_mv, scale,
-                              4 << pred_w, 4 << pred_h, ref,
-                              &xd->subpix, MV_PRECISION_Q4);
+    uint8_t *pre;
+    MV32 scaled_mv;
+    int xs, ys;
+
+    if (vp9_is_scaled(scale->sfc)) {
+      pre = pre_buf->buf + scaled_buffer_offset(x, y, pre_buf->stride, scale);
+      scale->sfc->set_scaled_offsets(scale, arg->y + y, arg->x + x);
+      scaled_mv = scale->sfc->scale_mv(&mv_q4, scale);
+      xs = scale->sfc->x_step_q4;
+      ys = scale->sfc->y_step_q4;
+    } else {
+      pre = pre_buf->buf + (y * pre_buf->stride + x);
+      scaled_mv.row = mv_q4.row;
+      scaled_mv.col = mv_q4.col;
+      xs = ys = 16;
+    }
+
+    inter_predictor(pre, pre_buf->stride, dst, dst_buf->stride,
+                    &scaled_mv, scale,
+                    4 << pred_w, 4 << pred_h, ref,
+                    &xd->subpix, xs, ys);
   }
 }
 
@@ -184,36 +200,17 @@ typedef void (*foreach_predicted_block_visitor)(int plane, int block,
 static INLINE void foreach_predicted_block_in_plane(
     const MACROBLOCKD* const xd, BLOCK_SIZE bsize, int plane,
     foreach_predicted_block_visitor visit, void *arg) {
-  int i, x, y;
-
-  // block sizes in number of 4x4 blocks log 2 ("*_b")
-  // 4x4=0, 8x8=2, 16x16=4, 32x32=6, 64x64=8
-  // subsampled size of the block
   const int bwl = b_width_log2(bsize) - xd->plane[plane].subsampling_x;
   const int bhl = b_height_log2(bsize) - xd->plane[plane].subsampling_y;
 
-  // size of the predictor to use.
-  int pred_w, pred_h;
-
-  if (xd->this_mi->mbmi.sb_type < BLOCK_8X8) {
+  if (xd->mi_8x8[0]->mbmi.sb_type < BLOCK_8X8) {
+    int i = 0, x, y;
     assert(bsize == BLOCK_8X8);
-    pred_w = 0;
-    pred_h = 0;
+    for (y = 0; y < 1 << bhl; ++y)
+      for (x = 0; x < 1 << bwl; ++x)
+        visit(plane, i++, bsize, 0, 0, arg);
   } else {
-    pred_w = bwl;
-    pred_h = bhl;
-  }
-  assert(pred_w <= bwl);
-  assert(pred_h <= bhl);
-
-  // visit each subblock in raster order
-  i = 0;
-  for (y = 0; y < 1 << bhl; y += 1 << pred_h) {
-    for (x = 0; x < 1 << bwl; x += 1 << pred_w) {
-      visit(plane, i, bsize, pred_w, pred_h, arg);
-      i += 1 << pred_w;
-    }
-    i += (1 << (bwl + pred_h)) - (1 << bwl);
+    visit(plane, 0, bsize, bwl, bhl, arg);
   }
 }
 
@@ -249,15 +246,17 @@ void vp9_build_inter_predictors_sb(MACROBLOCKD *xd, int mi_row, int mi_col,
 void vp9_setup_scale_factors(VP9_COMMON *cm, int i) {
   const int ref = cm->active_ref_idx[i];
   struct scale_factors *const sf = &cm->active_ref_scale[i];
+  struct scale_factors_common *const sfc = &cm->active_ref_scale_comm[i];
   if (ref >= NUM_YV12_BUFFERS) {
     vp9_zero(*sf);
+    vp9_zero(*sfc);
   } else {
     YV12_BUFFER_CONFIG *const fb = &cm->yv12_fb[ref];
-    vp9_setup_scale_factors_for_frame(sf,
+    vp9_setup_scale_factors_for_frame(sf, sfc,
                                       fb->y_crop_width, fb->y_crop_height,
                                       cm->width, cm->height);
 
-    if (vp9_is_scaled(sf))
+    if (vp9_is_scaled(sfc))
       vp9_extend_frame_borders(fb, cm->subsampling_x, cm->subsampling_y);
   }
 }

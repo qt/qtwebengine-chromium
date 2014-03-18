@@ -31,16 +31,14 @@
 #ifndef FileCallback_h
 #define FileCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
 class File;
 
-class FileCallback : public RefCounted<FileCallback> {
+class FileCallback {
 public:
     virtual ~FileCallback() { }
-    virtual bool handleEvent(File*) = 0;
+    virtual void handleEvent(File*) = 0;
 };
 
 } // namespace

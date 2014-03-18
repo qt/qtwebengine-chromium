@@ -29,6 +29,7 @@ class SiteInstance;
 }
 
 namespace gfx {
+class ImageSkia;
 class Rect;
 }
 
@@ -68,6 +69,7 @@ class VIEWS_EXPORT ViewsDelegate {
   // Retrieves the saved position and size and "show" state for the window with
   // the specified name.
   virtual bool GetSavedWindowPlacement(
+      const Widget* widget,
       const std::string& window_name,
       gfx::Rect* bounds,
       ui::WindowShowState* show_state) const = 0;
@@ -87,6 +89,11 @@ class VIEWS_EXPORT ViewsDelegate {
 #if defined(OS_WIN)
   // Retrieves the default window icon to use for windows if none is specified.
   virtual HICON GetDefaultWindowIcon() const = 0;
+  // Returns true if the window passed in is in the Windows 8 metro
+  // environment.
+  virtual bool IsWindowInMetro(gfx::NativeWindow window) const = 0;
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  virtual gfx::ImageSkia* GetDefaultWindowIcon() const = 0;
 #endif
 
   // Creates a default NonClientFrameView to be used for windows that don't

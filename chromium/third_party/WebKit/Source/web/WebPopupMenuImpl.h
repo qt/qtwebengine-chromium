@@ -32,7 +32,7 @@
 #define WebPopupMenuImpl_h
 
 #include "WebPopupMenu.h"
-#include "core/platform/chromium/FramelessScrollViewClient.h"
+#include "platform/scroll/FramelessScrollViewClient.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
 #include "wtf/OwnPtr.h"
@@ -48,7 +48,7 @@ class Range;
 class Widget;
 }
 
-namespace WebKit {
+namespace blink {
 class WebGestureEvent;
 class WebKeyboardEvent;
 class WebMouseEvent;
@@ -86,6 +86,7 @@ public:
     virtual bool caretOrSelectionRange(size_t* location, size_t* length) OVERRIDE;
     virtual void setTextDirection(WebTextDirection) OVERRIDE;
     virtual bool isAcceleratedCompositingActive() const OVERRIDE { return false; }
+    virtual bool isPopupMenu() const OVERRIDE { return true; }
 
     // WebPopupMenuImpl
     void initialize(WebCore::FramelessScrollView* widget, const WebRect& bounds);
@@ -119,7 +120,6 @@ public:
     virtual WebCore::IntPoint screenToRootView(const WebCore::IntPoint&) const OVERRIDE;
     virtual WebCore::IntRect rootViewToScreen(const WebCore::IntRect&) const OVERRIDE;
     virtual WebScreenInfo screenInfo() const OVERRIDE;
-    virtual void setCursor(const WebCore::Cursor&) OVERRIDE;
 
     // WebCore::FramelessScrollViewClient methods:
     virtual void popupClosed(WebCore::FramelessScrollView*) OVERRIDE;
@@ -134,6 +134,19 @@ public:
     WebCore::FramelessScrollView* m_widget;
 };
 
-} // namespace WebKit
+inline WebPopupMenuImpl* toWebPopupMenuImpl(WebWidget* widget)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isPopupMenu());
+    return static_cast<WebPopupMenuImpl*>(widget);
+}
+
+inline WebPopupMenuImpl* toWebPopupMenuImpl(WebCore::FramelessScrollViewClient* client)
+{
+    // WebPopupMenuImpl is the only implementation of FramelessScrollViewClient,
+    // so no need for further checking.
+    return static_cast<WebPopupMenuImpl*>(client);
+}
+
+} // namespace blink
 
 #endif

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/format_macros.h"
+#include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "media/base/buffers.h"
@@ -46,40 +47,41 @@ void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
   ASSERT_EQ(VideoFrame::YV12, yv12_frame->format());
   ASSERT_EQ(yv12_frame->stride(VideoFrame::kUPlane),
             yv12_frame->stride(VideoFrame::kVPlane));
+  ASSERT_EQ(
+      yv12_frame->coded_size().width() & (VideoFrame::kFrameSizeAlignment - 1),
+      0);
+  ASSERT_EQ(
+      yv12_frame->coded_size().height() & (VideoFrame::kFrameSizeAlignment - 1),
+      0);
 
-  scoped_refptr<media::VideoFrame> rgb_frame;
-  rgb_frame = media::VideoFrame::CreateFrame(VideoFrame::RGB32,
-                                             yv12_frame->coded_size(),
-                                             yv12_frame->visible_rect(),
-                                             yv12_frame->natural_size(),
-                                             yv12_frame->GetTimestamp());
-
-  ASSERT_EQ(yv12_frame->coded_size().width(),
-      rgb_frame->coded_size().width());
-  ASSERT_EQ(yv12_frame->coded_size().height(),
-      rgb_frame->coded_size().height());
+  size_t bytes_per_row = yv12_frame->coded_size().width() * 4u;
+  uint8* rgb_data = reinterpret_cast<uint8*>(
+      base::AlignedAlloc(bytes_per_row * yv12_frame->coded_size().height() +
+                             VideoFrame::kFrameSizePadding,
+                         VideoFrame::kFrameAddressAlignment));
 
   media::ConvertYUVToRGB32(yv12_frame->data(VideoFrame::kYPlane),
                            yv12_frame->data(VideoFrame::kUPlane),
                            yv12_frame->data(VideoFrame::kVPlane),
-                           rgb_frame->data(VideoFrame::kRGBPlane),
-                           rgb_frame->coded_size().width(),
-                           rgb_frame->coded_size().height(),
+                           rgb_data,
+                           yv12_frame->coded_size().width(),
+                           yv12_frame->coded_size().height(),
                            yv12_frame->stride(VideoFrame::kYPlane),
                            yv12_frame->stride(VideoFrame::kUPlane),
-                           rgb_frame->stride(VideoFrame::kRGBPlane),
+                           bytes_per_row,
                            media::YV12);
 
-  for (int row = 0; row < rgb_frame->coded_size().height(); ++row) {
+  for (int row = 0; row < yv12_frame->coded_size().height(); ++row) {
     uint32* rgb_row_data = reinterpret_cast<uint32*>(
-        rgb_frame->data(VideoFrame::kRGBPlane) +
-        (rgb_frame->stride(VideoFrame::kRGBPlane) * row));
-    for (int col = 0; col < rgb_frame->coded_size().width(); ++col) {
+        rgb_data + (bytes_per_row * row));
+    for (int col = 0; col < yv12_frame->coded_size().width(); ++col) {
       SCOPED_TRACE(
           base::StringPrintf("Checking (%d, %d)", row, col));
       EXPECT_EQ(expect_rgb_color, rgb_row_data[col]);
     }
   }
+
+  base::AlignedFree(rgb_data);
 }
 
 // Fill each plane to its reported extents and verify accessors report non
@@ -157,8 +159,8 @@ TEST(VideoFrame, CreateFrame) {
   EXPECT_EQ(MD5DigestToBase16(digest), "911991d51438ad2e1a40ed5f6fc7c796");
 
   // Test an empty frame.
-  frame = VideoFrame::CreateEmptyFrame();
-  EXPECT_TRUE(frame->IsEndOfStream());
+  frame = VideoFrame::CreateEOSFrame();
+  EXPECT_TRUE(frame->end_of_stream());
 }
 
 TEST(VideoFrame, CreateBlackFrame) {
@@ -173,7 +175,7 @@ TEST(VideoFrame, CreateBlackFrame) {
 
   // Test basic properties.
   EXPECT_EQ(0, frame->GetTimestamp().InMicroseconds());
-  EXPECT_FALSE(frame->IsEndOfStream());
+  EXPECT_FALSE(frame->end_of_stream());
 
   // Test |frame| properties.
   EXPECT_EQ(VideoFrame::YV12, frame->format());
@@ -204,8 +206,6 @@ TEST(VideoFrame, CheckFrameExtents) {
   // and the expected hash of all planes if filled with kFillByte (defined in
   // ExpectFrameExtents).
   ExpectFrameExtents(
-      VideoFrame::RGB32,  1, 4, "de6d3d567e282f6a38d478f04fc81fb0");
-  ExpectFrameExtents(
       VideoFrame::YV12,   3, 1, "71113bdfd4c0de6cf62f48fb74f7a0b1");
   ExpectFrameExtents(
       VideoFrame::YV16,   3, 1, "9bb99ac3ff350644ebff4d28dc01b461");
@@ -223,17 +223,17 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        new VideoFrame::MailboxHolder(
+        make_scoped_ptr(new VideoFrame::MailboxHolder(
             gpu::Mailbox(),
             sync_point,
-            base::Bind(&TextureCallback, &called_sync_point)),
-        5,  // texture_target
-        gfx::Size(10, 10),  // coded_size
-        gfx::Rect(10, 10),  // visible_rect
-        gfx::Size(10, 10),  // natural_size
-        base::TimeDelta(),  // timestamp
+            base::Bind(&TextureCallback, &called_sync_point))),
+        5,                                        // texture_target
+        gfx::Size(10, 10),                        // coded_size
+        gfx::Rect(10, 10),                        // visible_rect
+        gfx::Size(10, 10),                        // natural_size
+        base::TimeDelta(),                        // timestamp
         base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-        base::Closure());  // no_longer_needed_cb
+        base::Closure());                         // no_longer_needed_cb
 
     EXPECT_EQ(0u, called_sync_point);
   }
@@ -241,7 +241,7 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
 }
 
 // Verify the TextureNoLongerNeededCallback is called when VideoFrame is
-// destroyed with the new sync point, when the mailbox is taken by a caller.
+// destroyed with the new sync point, when the mailbox is accessed by a caller.
 TEST(VideoFrame, TextureNoLongerNeededCallbackAfterTakingAndReleasingMailbox) {
   uint32 called_sync_point = 0;
 
@@ -252,173 +252,28 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackAfterTakingAndReleasingMailbox) {
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        new VideoFrame::MailboxHolder(
+        make_scoped_ptr(new VideoFrame::MailboxHolder(
             mailbox,
             sync_point,
-            base::Bind(&TextureCallback, &called_sync_point)),
+            base::Bind(&TextureCallback, &called_sync_point))),
         target,
-        gfx::Size(10, 10),  // coded_size
-        gfx::Rect(10, 10),  // visible_rect
-        gfx::Size(10, 10),  // natural_size
-        base::TimeDelta(),  // timestamp
+        gfx::Size(10, 10),                        // coded_size
+        gfx::Rect(10, 10),                        // visible_rect
+        gfx::Size(10, 10),                        // natural_size
+        base::TimeDelta(),                        // timestamp
         base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-        base::Closure());  // no_longer_needed_cb
+        base::Closure());                         // no_longer_needed_cb
 
-    {
-      scoped_refptr<VideoFrame::MailboxHolder> mailbox_holder =
-          frame->texture_mailbox();
-
-      EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox().name[0]);
-      EXPECT_EQ(sync_point, mailbox_holder->sync_point());
-      EXPECT_EQ(target, frame->texture_target());
-
-      // Misuse the callback.
-      sync_point = 12;
-      mailbox_holder->Return(sync_point);
-      EXPECT_EQ(0u, called_sync_point);
-
-      // Finish using the mailbox_holder and drop our reference.
-      sync_point = 10;
-      mailbox_holder->Return(sync_point);
-    }
-    EXPECT_EQ(0u, called_sync_point);
-  }
-  EXPECT_EQ(sync_point, called_sync_point);
-}
-
-// If a caller has taken ownership of the texture mailbox, it should
-// not be released when the VideoFrame is destroyed, but should when
-// the TextureNoLongerNeededCallback is called.
-TEST(VideoFrame,
-     TextureNoLongerNeededCallbackAfterTakingMailboxWithDestroyedFrame) {
-  uint32 called_sync_point = 0;
-
-  gpu::Mailbox mailbox;
-  mailbox.name[0] = 50;
-  uint32 sync_point = 7;
-  uint32 target = 9;
-
-  {
-    scoped_refptr<VideoFrame::MailboxHolder> mailbox_holder;
-
-    {
-      scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-          new VideoFrame::MailboxHolder(
-              mailbox,
-              sync_point,
-              base::Bind(&TextureCallback, &called_sync_point)),
-          target,
-          gfx::Size(10, 10),  // coded_size
-          gfx::Rect(10, 10),  // visible_rect
-          gfx::Size(10, 10),  // natural_size
-          base::TimeDelta(),  // timestamp
-          base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-          base::Closure());  // no_longer_needed_cb
-
-      mailbox_holder = frame->texture_mailbox();
-
-      EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox().name[0]);
-      EXPECT_EQ(sync_point, mailbox_holder->sync_point());
-      EXPECT_EQ(target, frame->texture_target());
-
-      // Keep a ref on the mailbox_holder after the VideoFrame is dropped.
-    }
-    EXPECT_EQ(0u, called_sync_point);
-
-    // Misuse the callback.
-    sync_point = 12;
-    mailbox_holder->Return(sync_point);
-    EXPECT_EQ(0u, called_sync_point);
-
-    // Finish using the mailbox_holder and drop our ref.
-    sync_point = 10;
-    mailbox_holder->Return(sync_point);
-  }
-  EXPECT_EQ(sync_point, called_sync_point);
-}
-
-// If a caller has taken ownership of the texture mailbox, but does
-// not call the callback, it should still happen with the original
-// sync point.
-TEST(VideoFrame,
-     TextureNoLongerNeededCallbackWhenNotCallingAndFrameDestroyed) {
-  uint32 called_sync_point = 0;
-
-  gpu::Mailbox mailbox;
-  mailbox.name[0] = 50;
-  uint32 sync_point = 7;
-  uint32 target = 9;
-
-  {
-    scoped_refptr<VideoFrame::MailboxHolder> mailbox_holder;
-
-    {
-      scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-          new VideoFrame::MailboxHolder(
-              mailbox,
-              sync_point,
-              base::Bind(&TextureCallback, &called_sync_point)),
-          target,
-          gfx::Size(10, 10),  // coded_size
-          gfx::Rect(10, 10),  // visible_rect
-          gfx::Size(10, 10),  // natural_size
-          base::TimeDelta(),  // timestamp
-          base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-          base::Closure());  // no_longer_needed_cb
-
-      mailbox_holder = frame->texture_mailbox();
-
-      EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox().name[0]);
-      EXPECT_EQ(sync_point, mailbox_holder->sync_point());
-      EXPECT_EQ(target, frame->texture_target());
-
-      // Destroy the video frame.
-    }
-    EXPECT_EQ(0u, called_sync_point);
-
-    // Drop the reference on the mailbox without using it at all.
-  }
-  EXPECT_EQ(sync_point, called_sync_point);
-}
-
-// If a caller has taken ownership of the texture mailbox, but does
-// not call the callback, it should still happen with the original
-// sync point.
-TEST(VideoFrame,
-     TextureNoLongerNeededCallbackAfterTakingMailboxAndNotCalling) {
-  uint32 called_sync_point = 0;
-
-  gpu::Mailbox mailbox;
-  mailbox.name[0] = 50;
-  uint32 sync_point = 7;
-  uint32 target = 9;
-
-  {
-    scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        new VideoFrame::MailboxHolder(
-            mailbox,
-            sync_point,
-            base::Bind(&TextureCallback, &called_sync_point)),
-        target,
-        gfx::Size(10, 10),  // coded_size
-        gfx::Rect(10, 10),  // visible_rect
-        gfx::Size(10, 10),  // natural_size
-        base::TimeDelta(),  // timestamp
-        base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-        base::Closure());  // no_longer_needed_cb
-
-    scoped_refptr<VideoFrame::MailboxHolder> mailbox_holder =
-        frame->texture_mailbox();
+    VideoFrame::MailboxHolder* mailbox_holder = frame->texture_mailbox();
 
     EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox().name[0]);
     EXPECT_EQ(sync_point, mailbox_holder->sync_point());
     EXPECT_EQ(target, frame->texture_target());
 
-    EXPECT_EQ(0u, called_sync_point);
-
-    // Don't use the mailbox at all and drop our ref on it.
+    // Finish using the mailbox_holder and drop our reference.
+    sync_point = 10;
+    mailbox_holder->Resync(sync_point);
   }
-  // The VideoFrame is destroyed, it should call the callback.
   EXPECT_EQ(sync_point, called_sync_point);
 }
 

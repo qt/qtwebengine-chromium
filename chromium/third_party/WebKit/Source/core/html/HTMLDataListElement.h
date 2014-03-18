@@ -39,21 +39,19 @@ namespace WebCore {
 
 class HTMLDataListElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLDataListElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLDataListElement> create(Document&);
 
     PassRefPtr<HTMLCollection> options();
 
     void optionElementChildrenChanged();
 
 private:
-    HTMLDataListElement(const QualifiedName&, Document&);
+    HTMLDataListElement(Document&);
+    virtual void childrenChanged(bool, Node*, Node*, int) OVERRIDE;
+    virtual void finishParsingChildren() OVERRIDE;
 };
 
-inline HTMLDataListElement* toHTMLDataListElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::datalistTag));
-    return static_cast<HTMLDataListElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLDataListElement, hasTagName(HTMLNames::datalistTag));
 
 } // namespace WebCore
 

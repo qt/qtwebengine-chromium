@@ -35,6 +35,8 @@ class InterfaceList {
   // using to keep honest plugins honest.
   static PPAPI_PROXY_EXPORT void SetProcessGlobalPermissions(
       const PpapiPermissions& permissions);
+  static PPAPI_PROXY_EXPORT void SetSupportsDevChannel(
+      bool supports_dev_channel);
 
   // Looks up the ID for the given interface name. Returns API_ID_NONE if
   // the interface string is not found.
@@ -85,7 +87,6 @@ class InterfaceList {
 
   // Old-style add functions. These should be removed when the rest of the
   // proxies are converted over to using the new system.
-  void AddPPB(const InterfaceProxy::Info* info, Permission perm);
   void AddPPP(const InterfaceProxy::Info* info);
 
   PpapiPermissions permissions_;

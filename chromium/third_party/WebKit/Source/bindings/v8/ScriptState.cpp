@@ -36,7 +36,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/WorkerScriptController.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include <v8.h>
 #include "wtf/Assertions.h"
@@ -47,7 +47,7 @@ ScriptState::ScriptState(v8::Handle<v8::Context> context)
     : m_context(context->GetIsolate(), context)
     , m_isolate(context->GetIsolate())
 {
-    m_context.makeWeak(this, &makeWeakCallback);
+    m_context.setWeak(this, &setWeakCallback);
 }
 
 ScriptState::~ScriptState()
@@ -60,10 +60,10 @@ DOMWindow* ScriptState::domWindow() const
     return toDOMWindow(m_context.newLocal(m_isolate));
 }
 
-ScriptExecutionContext* ScriptState::scriptExecutionContext() const
+ExecutionContext* ScriptState::executionContext() const
 {
     v8::HandleScope handleScope(m_isolate);
-    return toScriptExecutionContext(m_context.newLocal(m_isolate));
+    return toExecutionContext(m_context.newLocal(m_isolate));
 }
 
 ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
@@ -77,7 +77,7 @@ ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
         return static_cast<ScriptState*>(v8::External::Cast(*scriptStateWrapper)->Value());
 
     ScriptState* scriptState = new ScriptState(context);
-    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()), v8::External::New(scriptState));
+    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()), v8::External::New(context->GetIsolate(), scriptState));
     return scriptState;
 }
 
@@ -90,9 +90,9 @@ ScriptState* ScriptState::current()
     return ScriptState::forContext(context);
 }
 
-void ScriptState::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Context>* object, ScriptState* scriptState)
+void ScriptState::setWeakCallback(const v8::WeakCallbackData<v8::Context, ScriptState>& data)
 {
-    delete scriptState;
+    delete data.GetParameter();
 }
 
 bool ScriptState::evalEnabled() const
@@ -110,7 +110,7 @@ void ScriptState::setEvalEnabled(bool enabled)
 ScriptState* mainWorldScriptState(Frame* frame)
 {
     v8::HandleScope handleScope(toIsolate(frame));
-    return ScriptState::forContext(frame->script()->mainWorldContext());
+    return ScriptState::forContext(frame->script().mainWorldContext());
 }
 
 ScriptState* scriptStateFromWorkerGlobalScope(WorkerGlobalScope* workerGlobalScope)

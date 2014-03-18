@@ -33,8 +33,8 @@
 
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8CustomElementLifecycleCallbacks.h"
-#include "core/dom/CustomElementLifecycleCallbacks.h"
 #include "core/dom/QualifiedName.h"
+#include "core/dom/custom/CustomElementLifecycleCallbacks.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -51,7 +51,7 @@ class ExceptionState;
 class QualifiedName;
 class ScriptState;
 class V8PerContextData;
-class WrapperTypeInfo;
+struct WrapperTypeInfo;
 
 // Handles the scripting-specific parts of the Custom Elements element
 // registration algorithm and constructor generation algorithm. It is
@@ -78,14 +78,14 @@ public:
     ScriptValue bindingsReturnValue() const;
 
 private:
-    bool hasValidPrototypeChainFor(WrapperTypeInfo*) const;
+    bool hasValidPrototypeChainFor(const WrapperTypeInfo*) const;
     bool prototypeIsValid(const AtomicString& type, ExceptionState&) const;
     v8::Handle<v8::Function> retrieveCallback(v8::Isolate*, const char* name);
 
     v8::Handle<v8::Context> m_context;
     const Dictionary* m_options;
     v8::Handle<v8::Object> m_prototype;
-    WrapperTypeInfo* m_wrapperType;
+    const WrapperTypeInfo* m_wrapperType;
     v8::Handle<v8::Function> m_constructor;
     RefPtr<V8CustomElementLifecycleCallbacks> m_callbacks;
 };

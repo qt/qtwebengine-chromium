@@ -32,59 +32,39 @@
 #define WebSharedWorkerClient_h
 
 #include "../platform/WebMessagePortChannel.h"
-#include "WebCommonWorkerClient.h"
 
-namespace WebKit {
+namespace blink {
 
+class WebApplicationCacheHost;
+class WebApplicationCacheHostClient;
 class WebNotificationPresenter;
+class WebSecurityOrigin;
 class WebString;
 class WebWorker;
+class WebWorkerPermissionClientProxy;
 
 // Provides an interface back to the in-page script object for a worker.
 // All functions are expected to be called back on the thread that created
 // the Worker object, unless noted.
-class WebSharedWorkerClient : public WebCommonWorkerClient {
+class WebSharedWorkerClient {
 public:
-    virtual void postMessageToWorkerObject(
-        const WebString&,
-        const WebMessagePortChannelArray&) = 0;
-
-    virtual void confirmMessageFromWorkerObject(bool hasPendingActivity) = 0;
-    virtual void reportPendingActivity(bool hasPendingActivity) = 0;
-
-    virtual void postExceptionToWorkerObject(
-        const WebString& errorString, int lineNumber,
-        const WebString& sourceURL) = 0;
-
-    // FIXME: the two below are for compatibility only and should be removed
-    // once Chromium is updated to remove message destination parameter
-    // <http://webkit.org/b/37155> and the message type parameter
-    // <http://webkit.org/b/66371>.
-    virtual void postConsoleMessageToWorkerObject(int, int sourceIdentifier, int, int messageLevel,
-                                                  const WebString& message, int lineNumber, const WebString& sourceURL) = 0;
-    virtual void postConsoleMessageToWorkerObject(int sourceIdentifier, int, int messageLevel,
-                                                  const WebString& message, int lineNumber, const WebString& sourceURL)
-    {
-        postConsoleMessageToWorkerObject(0, sourceIdentifier, 0, messageLevel,
-                                         message, lineNumber, sourceURL);
-    }
-
-    virtual void postConsoleMessageToWorkerObject(int sourceIdentifier, int messageLevel,
-                                                  const WebString& message, int lineNumber, const WebString& sourceURL)
-    {
-        postConsoleMessageToWorkerObject(0, sourceIdentifier, messageLevel,
-                                         message, lineNumber, sourceURL);
-    }
-
     virtual void workerContextClosed() = 0;
     virtual void workerContextDestroyed() = 0;
 
     // Returns the notification presenter for this worker context. Pointer
-    // is owned by the object implementing WebCommonWorkerClient.
+    // is owned by the object implementing WebSharedWorkerClient.
     virtual WebNotificationPresenter* notificationPresenter() = 0;
 
-    // Called on the main webkit thread in the worker process during initialization.
+    // Called on the main webkit thread in the worker process during
+    // initialization.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebApplicationCacheHostClient*) = 0;
+
+    // Called on the main webkit thread in the worker process during
+    // initialization.
+    // WebWorkerPermissionClientProxy should not retain the given
+    // WebSecurityOrigin, as the proxy instance is passed to worker thread
+    // while WebSecurityOrigin is not thread safe.
+    virtual WebWorkerPermissionClientProxy* createWorkerPermissionClientProxy(const WebSecurityOrigin&) { return 0; }
 
     virtual void dispatchDevToolsMessage(const WebString&) { }
     virtual void saveDevToolsAgentState(const WebString&) { }
@@ -93,6 +73,6 @@ protected:
     ~WebSharedWorkerClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

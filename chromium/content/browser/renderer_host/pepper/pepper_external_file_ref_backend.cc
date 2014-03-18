@@ -100,6 +100,10 @@ fileapi::FileSystemURL PepperExternalFileRefBackend::GetFileSystemURL() const {
   return fileapi::FileSystemURL();
 }
 
+base::FilePath PepperExternalFileRefBackend::GetExternalFilePath() const {
+  return path_;
+}
+
 int32_t PepperExternalFileRefBackend::CanRead() const {
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
           CanReadFile(render_process_id_, path_)) {
@@ -109,26 +113,18 @@ int32_t PepperExternalFileRefBackend::CanRead() const {
 }
 
 int32_t PepperExternalFileRefBackend::CanWrite() const {
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
-          CanWriteFile(render_process_id_, path_)) {
-    return PP_ERROR_NOACCESS;
-  }
-  return PP_OK;
+  // Platform files have coarse-grained grants in ChildProcessSecurityPolicy.
+  return CanReadWrite();
 }
 
 int32_t PepperExternalFileRefBackend::CanCreate() const {
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
-          CanCreateFile(render_process_id_, path_)) {
-    return PP_ERROR_NOACCESS;
-  }
-  return PP_OK;
+  // Platform files have coarse-grained grants in ChildProcessSecurityPolicy.
+  return CanReadWrite();
 }
 
 int32_t PepperExternalFileRefBackend::CanReadWrite() const {
-  ChildProcessSecurityPolicyImpl* policy =
-        ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanReadFile(render_process_id_, path_) ||
-      !policy->CanWriteFile(render_process_id_, path_)) {
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          CanCreateReadWriteFile(render_process_id_, path_)) {
     return PP_ERROR_NOACCESS;
   }
   return PP_OK;

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
@@ -22,7 +23,7 @@ class NotificationDelegate;
 class MessageCenterImpl;
 
 namespace internal {
-struct NotificationQueueItem;
+class ChangeQueue;
 class PopupTimersController;
 
 // A class that manages timeout behavior for notification popups.  One instance
@@ -145,14 +146,15 @@ class MessageCenterImpl : public MessageCenter,
   virtual void AddNotificationBlocker(NotificationBlocker* blocker) OVERRIDE;
   virtual void RemoveNotificationBlocker(NotificationBlocker* blocker) OVERRIDE;
   virtual void SetVisibility(Visibility visible) OVERRIDE;
-  virtual bool IsMessageCenterVisible() OVERRIDE;
+  virtual bool IsMessageCenterVisible() const OVERRIDE;
   virtual size_t NotificationCount() const OVERRIDE;
   virtual size_t UnreadNotificationCount() const OVERRIDE;
   virtual bool HasPopupNotifications() const OVERRIDE;
   virtual bool HasNotification(const std::string& id) OVERRIDE;
   virtual bool IsQuietMode() const OVERRIDE;
   virtual bool HasClickedListener(const std::string& id) OVERRIDE;
-  virtual const NotificationList::Notifications& GetNotifications() OVERRIDE;
+  virtual const NotificationList::Notifications& GetVisibleNotifications()
+      OVERRIDE;
   virtual NotificationList::PopupNotifications GetPopupNotifications() OVERRIDE;
   virtual void AddNotification(scoped_ptr<Notification> notification) OVERRIDE;
   virtual void UpdateNotification(const std::string& old_id,
@@ -160,6 +162,7 @@ class MessageCenterImpl : public MessageCenter,
       OVERRIDE;
   virtual void RemoveNotification(const std::string& id, bool by_user) OVERRIDE;
   virtual void RemoveAllNotifications(bool by_user) OVERRIDE;
+  virtual void RemoveAllVisibleNotifications(bool by_user) OVERRIDE;
   virtual void SetNotificationIcon(const std::string& notification_id,
                                    const gfx::Image& image) OVERRIDE;
   virtual void SetNotificationImage(const std::string& notification_id,
@@ -186,22 +189,35 @@ class MessageCenterImpl : public MessageCenter,
   virtual void PausePopupTimers() OVERRIDE;
 
   // NotificationBlocker::Observer overrides:
-  virtual void OnBlockingStateChanged() OVERRIDE;
+  virtual void OnBlockingStateChanged(NotificationBlocker* blocker) OVERRIDE;
 
  protected:
   virtual void DisableTimersForTest() OVERRIDE;
 
  private:
+  struct NotificationCache {
+    NotificationCache();
+    ~NotificationCache();
+    void Rebuild(const NotificationList::Notifications& notificaitons);
+    void RecountUnread();
+
+    NotificationList::Notifications visible_notifications;
+    size_t unread_count;
+  };
+
+  void RemoveNotifications(bool by_user, const NotificationBlockers& blockers);
+
   scoped_ptr<NotificationList> notification_list_;
+  NotificationCache notification_cache_;
   ObserverList<MessageCenterObserver> observer_list_;
   scoped_ptr<internal::PopupTimersController> popup_timers_controller_;
   scoped_ptr<base::OneShotTimer<MessageCenterImpl> > quiet_mode_timer_;
   NotifierSettingsProvider* settings_provider_;
   std::vector<NotificationBlocker*> blockers_;
 
-  // queue for the notifications to delay the addition/updates when the message
+  // Queue for the notifications to delay the addition/updates when the message
   // center is visible.
-  std::list<internal::NotificationQueueItem> notification_queue_;
+  scoped_ptr<internal::ChangeQueue> notification_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageCenterImpl);
 };

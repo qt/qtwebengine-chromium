@@ -14,6 +14,10 @@ function hideKeyboard() {
   chrome.send('hideKeyboard');
 }
 
+function keyboardLoaded() {
+  chrome.send('keyboardLoaded');
+}
+
 (function(exports) {
   /**
    * An array to save callbacks of each request.
@@ -34,7 +38,10 @@ function hideKeyboard() {
    *     "text" are supported.
    */
   function OnTextInputBoxFocused(inputContext) {
-    keyboard.inputType = inputContext.type;
+    // Do not want to use the system keyboard for passwords in webui.
+    if (inputContext.type == 'password')
+      inputContext.type = 'text';
+    keyboard.inputTypeValue = inputContext.type;
   }
 
   /**

@@ -5,7 +5,10 @@
 #ifndef CONTENT_PUBLIC_BROWSER_TRACING_CONTROLLER_H_
 #define CONTENT_PUBLIC_BROWSER_TRACING_CONTROLLER_H_
 
-#include "base/debug/trace_event.h"
+#include <set>
+#include <string>
+
+#include "base/callback.h"
 #include "content/common/content_export.h"
 
 namespace base {
@@ -23,8 +26,10 @@ class TracingController;
 class TracingController {
  public:
   enum Options {
+    DEFAULT_OPTIONS = 0,
     ENABLE_SYSTRACE = 1 << 0,
     ENABLE_SAMPLING = 1 << 1,
+    RECORD_CONTINUOUSLY = 1 << 2,  // For EnableRecording() only.
   };
 
   CONTENT_EXPORT static TracingController* GetInstance();
@@ -37,7 +42,7 @@ class TracingController {
   // groups.
   typedef base::Callback<void(const std::set<std::string>&)>
       GetCategoriesDoneCallback;
-  virtual void GetCategories(
+  virtual bool GetCategories(
       const GetCategoriesDoneCallback& callback) = 0;
 
   // Start recording on all processes.
@@ -48,8 +53,8 @@ class TracingController {
   // Once all child processes have acked to the EnableRecording request,
   // EnableRecordingDoneCallback will be called back.
   //
-  // |filter| is a filter to control what category groups should be traced.
-  // A filter can have an optional '-' prefix to exclude category groups
+  // |category_filter| is a filter to control what category groups should be
+  // traced. A filter can have an optional '-' prefix to exclude category groups
   // that contain a matching category. Having both included and excluded
   // category patterns in the same list would not be supported.
   //
@@ -59,8 +64,8 @@ class TracingController {
   //
   // |options| controls what kind of tracing is enabled.
   typedef base::Callback<void()> EnableRecordingDoneCallback;
-  virtual void EnableRecording(
-      const base::debug::CategoryFilter& filter,
+  virtual bool EnableRecording(
+      const std::string& category_filter,
       TracingController::Options options,
       const EnableRecordingDoneCallback& callback) = 0;
 
@@ -75,9 +80,16 @@ class TracingController {
   // Once all child processes have acked to the DisableRecording request,
   // TracingFileResultCallback will be called back with a file that contains
   // the traced data.
-  typedef base::Callback<void(scoped_ptr<base::FilePath>)>
-      TracingFileResultCallback;
-  virtual void DisableRecording(const TracingFileResultCallback& callback) = 0;
+  //
+  // Trace data will be written into |result_file_path| if it is not empty, or
+  // into a temporary file. The actual file path will be passed to |callback| if
+  // it's not null.
+  //
+  // If |result_file_path| is empty and |callback| is null, trace data won't be
+  // written to any file.
+  typedef base::Callback<void(const base::FilePath&)> TracingFileResultCallback;
+  virtual bool DisableRecording(const base::FilePath& result_file_path,
+                                const TracingFileResultCallback& callback) = 0;
 
   // Start monitoring on all processes.
   //
@@ -87,11 +99,13 @@ class TracingController {
   // Once all child processes have acked to the EnableMonitoring request,
   // EnableMonitoringDoneCallback will be called back.
   //
-  // |filter| is a filter to control what category groups should be traced.
+  // |category_filter| is a filter to control what category groups should be
+  // traced.
   //
   // |options| controls what kind of tracing is enabled.
   typedef base::Callback<void()> EnableMonitoringDoneCallback;
-  virtual void EnableMonitoring(const base::debug::CategoryFilter& filter,
+  virtual bool EnableMonitoring(
+      const std::string& category_filter,
       TracingController::Options options,
       const EnableMonitoringDoneCallback& callback) = 0;
 
@@ -100,13 +114,13 @@ class TracingController {
   // Once all child processes have acked to the DisableMonitoring request,
   // DisableMonitoringDoneCallback is called back.
   typedef base::Callback<void()> DisableMonitoringDoneCallback;
-  virtual void DisableMonitoring(
+  virtual bool DisableMonitoring(
       const DisableMonitoringDoneCallback& callback) = 0;
 
   // Get the current monitoring configuration.
   virtual void GetMonitoringStatus(bool* out_enabled,
-      base::debug::CategoryFilter* out_filter,
-      TracingController::Options* out_options) = 0;
+                                   std::string* out_category_filter,
+                                   TracingController::Options* out_options) = 0;
 
   // Get the current monitoring traced data.
   //
@@ -116,11 +130,36 @@ class TracingController {
   // to avoid much runtime overhead of tracing. So, to end tracing, we must
   // asynchronously ask all child processes to flush any pending trace data.
   //
-  // Once all child processes have acked to the CaptureCurrentMonitoringSnapshot
+  // Once all child processes have acked to the CaptureMonitoringSnapshot
   // request, TracingFileResultCallback will be called back with a file that
   // contains the traced data.
-  virtual void CaptureCurrentMonitoringSnapshot(
+  //
+  // Trace data will be written into |result_file_path| if it is not empty, or
+  // into a temporary file. The actual file path will be passed to |callback|.
+  //
+  // If |result_file_path| is empty and |callback| is null, trace data won't be
+  // written to any file.
+  virtual bool CaptureMonitoringSnapshot(
+      const base::FilePath& result_file_path,
       const TracingFileResultCallback& callback) = 0;
+
+  // Get the maximum across processes of trace buffer percent full state.
+  // When the TraceBufferPercentFull value is determined, the callback is
+  // called.
+  typedef base::Callback<void(float)> GetTraceBufferPercentFullCallback;
+  virtual bool GetTraceBufferPercentFull(
+      const GetTraceBufferPercentFullCallback& callback) = 0;
+
+  // |callback| will will be called every time the given event occurs on any
+  // process.
+  typedef base::Callback<void()> WatchEventCallback;
+  virtual bool SetWatchEvent(const std::string& category_name,
+                             const std::string& event_name,
+                             const WatchEventCallback& callback) = 0;
+
+  // Cancel the watch event. If tracing is enabled, this may race with the
+  // watch event callback.
+  virtual bool CancelWatchEvent() = 0;
 
  protected:
   virtual ~TracingController() {}

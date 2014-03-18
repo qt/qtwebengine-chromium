@@ -19,8 +19,7 @@
       ], # source
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:test_support_base',
-        'rtp_parser/rtp_parser.gypi:*',
+        'rtp_parser/rtp_parser.gyp:*',
       ],
     },
   ],

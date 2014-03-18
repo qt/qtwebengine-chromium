@@ -28,10 +28,10 @@
  */
 
 [
-    NoInterfaceObject,
-    EnabledAtRuntime=CSSRegions,
+    GenerateVisitDOMWrapper=ownerNode,
     ImplementedAs=NamedFlow,
-    GenerateIsReachable=ownerNode
+    NoInterfaceObject,
+    RuntimeEnabled=CSSRegions,
 ] interface WebKitNamedFlow : EventTarget {
     readonly attribute DOMString name;
     readonly attribute boolean overset;

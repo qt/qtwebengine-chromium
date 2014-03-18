@@ -56,7 +56,8 @@ bool injectKey(PassRefPtr<IDBKey> key, ScriptValue& value, const String& keyPath
 {
     IDBKeyPath idbKeyPath(keyPath);
     EXPECT_TRUE(idbKeyPath.isValid());
-    return injectIDBKeyIntoScriptValue(0, key, value, idbKeyPath);
+    ScriptValue keyValue = idbKeyToScriptValue(0, key);
+    return injectV8KeyIntoV8Value(keyValue.v8Value(), value.v8Value(), idbKeyPath, v8::Isolate::GetCurrent());
 }
 
 void checkInjection(PassRefPtr<IDBKey> prpKey, ScriptValue& value, const String& keyPath)
@@ -105,7 +106,7 @@ private:
 TEST_F(IDBKeyFromValueAndKeyPathTest, TopLevelPropertyStringValue)
 {
     v8::Local<v8::Object> object = v8::Object::New();
-    object->Set(v8::String::New("foo"), v8::String::New("zoo"));
+    object->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "foo"), v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "zoo"));
 
     ScriptValue scriptValue(object, v8::Isolate::GetCurrent());
 
@@ -116,7 +117,7 @@ TEST_F(IDBKeyFromValueAndKeyPathTest, TopLevelPropertyStringValue)
 TEST_F(IDBKeyFromValueAndKeyPathTest, TopLevelPropertyNumberValue)
 {
     v8::Local<v8::Object> object = v8::Object::New();
-    object->Set(v8::String::New("foo"), v8::Number::New(456));
+    object->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "foo"), v8::Number::New(456));
 
     ScriptValue scriptValue(object, v8::Isolate::GetCurrent());
 
@@ -128,8 +129,8 @@ TEST_F(IDBKeyFromValueAndKeyPathTest, SubProperty)
 {
     v8::Local<v8::Object> object = v8::Object::New();
     v8::Local<v8::Object> subProperty = v8::Object::New();
-    subProperty->Set(v8::String::New("bar"), v8::String::New("zee"));
-    object->Set(v8::String::New("foo"), subProperty);
+    subProperty->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "bar"), v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "zee"));
+    object->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "foo"), subProperty);
 
     ScriptValue scriptValue(object, v8::Isolate::GetCurrent());
 
@@ -143,7 +144,7 @@ class InjectIDBKeyTest : public IDBKeyFromValueAndKeyPathTest {
 TEST_F(InjectIDBKeyTest, TopLevelPropertyStringValue)
 {
     v8::Local<v8::Object> object = v8::Object::New();
-    object->Set(v8::String::New("foo"), v8::String::New("zoo"));
+    object->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "foo"), v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "zoo"));
 
     ScriptValue foozoo(object, v8::Isolate::GetCurrent());
     checkInjection(IDBKey::createString("myNewKey"), foozoo, "bar");
@@ -156,8 +157,8 @@ TEST_F(InjectIDBKeyTest, SubProperty)
 {
     v8::Local<v8::Object> object = v8::Object::New();
     v8::Local<v8::Object> subProperty = v8::Object::New();
-    subProperty->Set(v8::String::New("bar"), v8::String::New("zee"));
-    object->Set(v8::String::New("foo"), subProperty);
+    subProperty->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "bar"), v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "zee"));
+    object->Set(v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), "foo"), subProperty);
 
     ScriptValue scriptObject(object, v8::Isolate::GetCurrent());
     checkInjection(IDBKey::createString("myNewKey"), scriptObject, "foo.baz");

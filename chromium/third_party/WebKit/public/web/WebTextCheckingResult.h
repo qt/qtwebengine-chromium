@@ -33,26 +33,26 @@
 
 #include "../platform/WebCommon.h"
 #include "../platform/WebString.h"
-#include "WebTextCheckingType.h"
+#include "WebTextDecorationType.h"
 
 namespace WebCore {
 struct TextCheckingResult;
 }
 
-namespace WebKit {
+namespace blink {
 
 // A checked entry of text checking.
 struct WebTextCheckingResult {
     WebTextCheckingResult()
-        : type(WebTextCheckingTypeSpelling)
+        : decoration(WebTextDecorationTypeSpelling)
         , location(0)
         , length(0)
         , hash(0)
     {
     }
 
-    WebTextCheckingResult(WebTextCheckingType type, int location, int length, const WebString& replacement = WebString(), uint32_t hash = 0)
-        : type(type)
+    WebTextCheckingResult(WebTextDecorationType decoration, int location, int length, const WebString& replacement = WebString(), uint32_t hash = 0)
+        : decoration(decoration)
         , location(location)
         , length(length)
         , replacement(replacement)
@@ -60,17 +60,17 @@ struct WebTextCheckingResult {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     operator WebCore::TextCheckingResult() const;
 #endif
 
-    WebTextCheckingType type;
+    WebTextDecorationType decoration;
     int location;
     int length;
     WebString replacement;
     uint32_t hash;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

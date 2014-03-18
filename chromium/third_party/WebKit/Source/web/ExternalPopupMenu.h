@@ -32,7 +32,7 @@
 #define ExternalPopupMenu_h
 
 #include "WebExternalPopupMenuClient.h"
-#include "core/platform/PopupMenu.h"
+#include "platform/PopupMenu.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebScrollbar.h"
 
@@ -45,7 +45,7 @@ class IntSize;
 class PopupMenuClient;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebExternalPopupMenu;
 class WebViewClient;
@@ -85,6 +85,6 @@ private:
     WebExternalPopupMenu* m_webExternalPopupMenu;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // ExternalPopupMenu_h

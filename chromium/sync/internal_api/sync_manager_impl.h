@@ -81,7 +81,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      bool use_oauth2_token,
       CancelationSignal* cancelation_signal) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
@@ -180,6 +179,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   const SyncScheduler* scheduler() const;
 
   bool GetHasInvalidAuthTokenForTest() const;
+
+ protected:
+  // Helper functions.  Virtual for testing.
+  virtual void NotifyInitializationSuccess();
+  virtual void NotifyInitializationFailure();
 
  private:
   friend class SyncManagerTest;
@@ -285,8 +289,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
 
   base::ThreadChecker thread_checker_;
 
-  base::WeakPtrFactory<SyncManagerImpl> weak_ptr_factory_;
-
   // Thread-safe handle used by
   // HandleCalculateChangesChangeEventFromSyncApi(), which can be
   // called from any thread.  Valid only between between calls to
@@ -366,6 +368,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // changing passphrases, and in general handles sync-specific interactions
   // with the cryptographer.
   scoped_ptr<SyncEncryptionHandlerImpl> sync_encryption_handler_;
+
+  base::WeakPtrFactory<SyncManagerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncManagerImpl);
 };

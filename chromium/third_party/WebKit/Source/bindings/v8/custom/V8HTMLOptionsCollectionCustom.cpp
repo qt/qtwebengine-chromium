@@ -34,6 +34,7 @@
 #include "V8HTMLOptionElement.h"
 #include "V8Node.h"
 #include "V8NodeList.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
@@ -45,74 +46,74 @@
 namespace WebCore {
 
 template<typename CallbackInfo>
-static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString& name, const CallbackInfo& callbackInfo)
+static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString& name, const CallbackInfo& info)
 {
     Vector<RefPtr<Node> > namedItems;
     collection->namedItems(name, namedItems);
 
     if (!namedItems.size()) {
-        v8SetReturnValueNull(callbackInfo);
+        v8SetReturnValueNull(info);
         return;
     }
 
     if (namedItems.size() == 1) {
-        v8SetReturnValueFast(callbackInfo, namedItems.at(0).release(), collection);
+        v8SetReturnValueFast(info, namedItems.at(0).release(), collection);
         return;
     }
 
-    v8SetReturnValueFast(callbackInfo, NamedNodesCollection::create(namedItems), collection);
+    v8SetReturnValueFast(info, NamedNodesCollection::create(namedItems), collection);
 }
 
-void V8HTMLOptionsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLOptionsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, args[0]);
-    HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
-    getNamedItems(imp, name, args);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, info[0]);
+    HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
+    getNamedItems(imp, name, info);
 }
 
-void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (!V8HTMLOptionElement::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate()))) {
-        setDOMException(TypeMismatchError, args.GetIsolate());
-        return;
-    }
-    HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
-    HTMLOptionElement* option = V8HTMLOptionElement::toNative(v8::Handle<v8::Object>(v8::Handle<v8::Object>::Cast(args[0])));
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "add", "HTMLOptionsCollection", info.Holder(), info.GetIsolate());
+    if (!V8HTMLOptionElement::hasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate()))) {
+        exceptionState.throwTypeError("The element provided was not an HTMLOptionElement.");
+    } else {
+        HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
+        HTMLOptionElement* option = V8HTMLOptionElement::toNative(v8::Handle<v8::Object>(v8::Handle<v8::Object>::Cast(info[0])));
 
-    ExceptionState es(args.GetIsolate());
-    if (args.Length() < 2)
-        imp->add(option, es);
-    else {
-        bool ok;
-        V8TRYCATCH_VOID(int, index, toInt32(args[1], ok));
-        if (!ok)
-            es.throwDOMException(TypeMismatchError);
-        else
-            imp->add(option, index, es);
+        if (info.Length() < 2) {
+            imp->add(option, exceptionState);
+        } else {
+            bool ok;
+            V8TRYCATCH_VOID(int, index, toInt32(info[1], ok));
+            if (!ok)
+                exceptionState.throwTypeError("The index provided could not be interpreted as an integer.");
+            else
+                imp->add(option, index, exceptionState);
+        }
     }
 
-    es.throwIfNeeded();
+    exceptionState.throwIfNeeded();
 }
 
-void V8HTMLOptionsCollection::lengthAttributeSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
+void V8HTMLOptionsCollection::lengthAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
     double v = value->NumberValue();
     unsigned newLength = 0;
-    ExceptionState es(info.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::SetterContext, "length", "HTMLOptionsCollection", info.Holder(), info.GetIsolate());
     if (!std::isnan(v) && !std::isinf(v)) {
         if (v < 0.0)
-            es.throwDOMException(IndexSizeError);
+            exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(v) + ") is negative. Lengths must be greater than or equal to 0.");
         else if (v > static_cast<double>(UINT_MAX))
             newLength = UINT_MAX;
         else
             newLength = static_cast<unsigned>(v);
     }
 
-    if (es.throwIfNeeded())
+    if (exceptionState.throwIfNeeded())
         return;
 
-    imp->setLength(newLength, es);
+    imp->setLength(newLength, exceptionState);
 }
 
 } // namespace WebCore

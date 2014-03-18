@@ -82,6 +82,10 @@ std::string GetFilenameFromEntryHashAndFileIndex(uint64 entry_hash,
   return base::StringPrintf("%016" PRIx64 "_%1d", entry_hash, file_index);
 }
 
+std::string GetSparseFilenameFromEntryHash(uint64 entry_hash) {
+  return base::StringPrintf("%016" PRIx64 "_s", entry_hash);
+}
+
 std::string GetFilenameFromKeyAndFileIndex(const std::string& key,
                                            int file_index) {
   return GetEntryHashKeyAsHexString(key) +
@@ -122,7 +126,7 @@ bool GetMTime(const base::FilePath& path, base::Time* out_mtime) {
   }
 #endif
   base::PlatformFileInfo file_info;
-  if (!file_util::GetFileInfo(path, &file_info))
+  if (!base::GetFileInfo(path, &file_info))
     return false;
   *out_mtime = file_info.last_modified;
   return true;

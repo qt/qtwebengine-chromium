@@ -10,6 +10,7 @@
 #include "base/stl_util.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_utils.h"
+#include "net/tools/quic/quic_default_packet_writer.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_socket_utils.h"
 
@@ -36,16 +37,20 @@ class DeleteSessionsAlarm : public EpollAlarm {
 
 QuicDispatcher::QuicDispatcher(const QuicConfig& config,
                                const QuicCryptoServerConfig& crypto_config,
+                               const QuicVersionVector& supported_versions,
                                int fd,
                                EpollServer* epoll_server)
     : config_(config),
       crypto_config_(crypto_config),
       time_wait_list_manager_(
-          new QuicTimeWaitListManager(this, epoll_server)),
+          new QuicTimeWaitListManager(this, epoll_server, supported_versions)),
       delete_sessions_alarm_(new DeleteSessionsAlarm(this)),
       epoll_server_(epoll_server),
       fd_(fd),
-      write_blocked_(false) {
+      write_blocked_(false),
+      helper_(new QuicEpollConnectionHelper(epoll_server_)),
+      writer_(new QuicDefaultPacketWriter(fd)),
+      supported_versions_(supported_versions) {
 }
 
 QuicDispatcher::~QuicDispatcher() {
@@ -53,32 +58,39 @@ QuicDispatcher::~QuicDispatcher() {
   STLDeleteElements(&closed_session_list_);
 }
 
-int QuicDispatcher::WritePacket(const char* buffer, size_t buf_len,
-                                const IPAddressNumber& self_address,
-                                const IPEndPoint& peer_address,
-                                QuicBlockedWriterInterface* writer,
-                                int* error) {
+void QuicDispatcher::set_fd(int fd) {
+  fd_ = fd;
+  writer_.reset(new QuicDefaultPacketWriter(fd));
+}
+
+WriteResult QuicDispatcher::WritePacket(const char* buffer, size_t buf_len,
+                                        const IPAddressNumber& self_address,
+                                        const IPEndPoint& peer_address,
+                                        QuicBlockedWriterInterface* writer) {
   if (write_blocked_) {
     write_blocked_list_.insert(make_pair(writer, true));
-    *error = EAGAIN;
-    return -1;
+    return WriteResult(WRITE_STATUS_BLOCKED, EAGAIN);
   }
 
-  int rc = QuicSocketUtils::WritePacket(fd_, buffer, buf_len,
-                                        self_address, peer_address,
-                                        error);
-  if (rc == -1 && (*error == EWOULDBLOCK || *error == EAGAIN)) {
+  WriteResult result =
+      writer_->WritePacket(buffer, buf_len, self_address, peer_address, writer);
+  if (result.status == WRITE_STATUS_BLOCKED) {
     write_blocked_list_.insert(make_pair(writer, true));
     write_blocked_ = true;
   }
-  return rc;
+  return result;
+}
+
+bool QuicDispatcher::IsWriteBlockedDataBuffered() const {
+  return writer_->IsWriteBlockedDataBuffered();
 }
 
 void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
                                    const IPEndPoint& client_address,
                                    QuicGuid guid,
+                                   bool has_version_flag,
                                    const QuicEncryptedPacket& packet) {
-  QuicSession* session;
+  QuicSession* session = NULL;
 
   SessionMap::iterator it = session_map_.find(guid);
   if (it == session_map_.end()) {
@@ -89,13 +101,22 @@ void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
                                              packet);
       return;
     }
-    session = CreateQuicSession(guid, client_address, fd_, epoll_server_);
+
+    // Ensure the packet has a version negotiation bit set before creating a new
+    // session for it.  All initial packets for a new connection are required to
+    // have the flag set.  Otherwise it may be a stray packet.
+    if (has_version_flag) {
+      session = CreateQuicSession(guid, server_address, client_address);
+    }
 
     if (session == NULL) {
       DLOG(INFO) << "Failed to create session for " << guid;
-      // Add this guid fo the time-wait state, to safely nack future packets.
+      // Add this guid fo the time-wait state, to safely reject future packets.
       // We don't know the version here, so assume latest.
-      time_wait_list_manager_->AddGuidToTimeWait(guid, QuicVersionMax());
+      // TODO(ianswett): Produce a no-version version negotiation packet.
+      time_wait_list_manager_->AddGuidToTimeWait(guid,
+                                                 supported_versions_.front(),
+                                                 NULL);
       time_wait_list_manager_->ProcessPacket(server_address,
                                              client_address,
                                              guid,
@@ -113,15 +134,22 @@ void QuicDispatcher::ProcessPacket(const IPEndPoint& server_address,
 }
 
 void QuicDispatcher::CleanUpSession(SessionMap::iterator it) {
-  QuicSession* session = it->second;
-  write_blocked_list_.erase(session->connection());
+  QuicConnection* connection = it->second->connection();
+  QuicEncryptedPacket* connection_close_packet =
+          connection->ReleaseConnectionClosePacket();
+  write_blocked_list_.erase(connection);
   time_wait_list_manager_->AddGuidToTimeWait(it->first,
-                                             session->connection()->version());
+                                             connection->version(),
+                                             connection_close_packet);
   session_map_.erase(it);
 }
 
 void QuicDispatcher::DeleteSessions() {
   STLDeleteElements(&closed_session_list_);
+}
+
+void QuicDispatcher::UseWriter(QuicPacketWriter* writer) {
+  writer_.reset(writer);
 }
 
 bool QuicDispatcher::OnCanWrite() {
@@ -164,7 +192,7 @@ void QuicDispatcher::Shutdown() {
   DeleteSessions();
 }
 
-void QuicDispatcher::OnConnectionClose(QuicGuid guid, QuicErrorCode error) {
+void QuicDispatcher::OnConnectionClosed(QuicGuid guid, QuicErrorCode error) {
   SessionMap::iterator it = session_map_.find(guid);
   if (it == session_map_.end()) {
     LOG(DFATAL) << "GUID " << guid << " does not exist in the session map.  "
@@ -172,7 +200,8 @@ void QuicDispatcher::OnConnectionClose(QuicGuid guid, QuicErrorCode error) {
     return;
   }
 
-  DLOG_IF(INFO, error != QUIC_NO_ERROR) << "Closing connection due to error: "
+  DLOG_IF(INFO, error != QUIC_NO_ERROR) << "Closing connection (" << guid
+                                        << ") due to error: "
                                         << QuicUtils::ErrorToString(error);
 
   if (closed_session_list_.empty()) {
@@ -185,19 +214,14 @@ void QuicDispatcher::OnConnectionClose(QuicGuid guid, QuicErrorCode error) {
 
 QuicSession* QuicDispatcher::CreateQuicSession(
     QuicGuid guid,
-    const IPEndPoint& client_address,
-    int fd,
-    EpollServer* epoll_server) {
-  QuicConnectionHelperInterface* helper =
-      new QuicEpollConnectionHelper(this, epoll_server);
+    const IPEndPoint& server_address,
+    const IPEndPoint& client_address) {
   QuicServerSession* session = new QuicServerSession(
-       config_, new QuicConnection(guid, client_address, helper, true,
-                                   QuicVersionMax()), this);
+      config_, new QuicConnection(guid, client_address, helper_.get(), this,
+                                  true, supported_versions_), this);
   session->InitializeSession(crypto_config_);
   return session;
 }
 
 }  // namespace tools
 }  // namespace net
-
-

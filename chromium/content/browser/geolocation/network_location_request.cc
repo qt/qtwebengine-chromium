@@ -10,6 +10,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -25,15 +26,45 @@
 namespace content {
 namespace {
 
-const size_t kMaxRequestLength = 2048;
-
 const char kAccessTokenString[] = "accessToken";
 const char kLocationString[] = "location";
 const char kLatitudeString[] = "lat";
 const char kLongitudeString[] = "lng";
 const char kAccuracyString[] = "accuracy";
-const char kStatusString[] = "status";
-const char kStatusOKString[] = "OK";
+
+enum NetworkLocationRequestEvent {
+  // NOTE: Do not renumber these as that would confuse interpretation of
+  // previously logged data. When making changes, also update the enum list
+  // in tools/metrics/histograms/histograms.xml to keep it in sync.
+  NETWORK_LOCATION_REQUEST_EVENT_REQUEST_START = 0,
+  NETWORK_LOCATION_REQUEST_EVENT_REQUEST_CANCEL = 1,
+  NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_SUCCESS = 2,
+  NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_NOT_OK = 3,
+  NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_EMPTY = 4,
+  NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_MALFORMED = 5,
+  NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_INVALID_FIX = 6,
+
+  // NOTE: Add entries only immediately above this line.
+  NETWORK_LOCATION_REQUEST_EVENT_COUNT = 7
+};
+
+void RecordUmaEvent(NetworkLocationRequestEvent event) {
+  UMA_HISTOGRAM_ENUMERATION("Geolocation.NetworkLocationRequest.Event",
+      event, NETWORK_LOCATION_REQUEST_EVENT_COUNT);
+}
+
+void RecordUmaResponseCode(int code) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Geolocation.NetworkLocationRequest.ResponseCode",
+      code);
+}
+
+void RecordUmaAccessPoints(int count) {
+  const int min = 0;
+  const int max = 20;
+  const int buckets = 21;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Geolocation.NetworkLocationRequest.AccessPoints",
+      count, min, max, buckets);
+}
 
 // Local functions
 // Creates the request url to send to the server.
@@ -41,17 +72,18 @@ GURL FormRequestURL(const GURL& url);
 
 void FormUploadData(const WifiData& wifi_data,
                     const base::Time& timestamp,
-                    const string16& access_token,
+                    const base::string16& access_token,
                     std::string* upload_data);
 
-// Parsers the server response.
+// Attempts to extract a position from the response. Detects and indicates
+// various failure cases.
 void GetLocationFromResponse(bool http_post_result,
                              int status_code,
                              const std::string& response_body,
                              const base::Time& timestamp,
                              const GURL& server_url,
                              Geoposition* position,
-                             string16* access_token);
+                             base::string16* access_token);
 
 // Parses the server response body. Returns true if parsing was successful.
 // Sets |*position| to the parsed location if a valid fix was received,
@@ -59,7 +91,7 @@ void GetLocationFromResponse(bool http_post_result,
 bool ParseServerResponse(const std::string& response_body,
                          const base::Time& timestamp,
                          Geoposition* position,
-                         string16* access_token);
+                         base::string16* access_token);
 void AddWifiData(const WifiData& wifi_data,
                  int age_milliseconds,
                  base::DictionaryValue* request);
@@ -79,11 +111,14 @@ NetworkLocationRequest::NetworkLocationRequest(
 NetworkLocationRequest::~NetworkLocationRequest() {
 }
 
-bool NetworkLocationRequest::MakeRequest(const string16& access_token,
+bool NetworkLocationRequest::MakeRequest(const base::string16& access_token,
                                          const WifiData& wifi_data,
                                          const base::Time& timestamp) {
+  RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_REQUEST_START);
+  RecordUmaAccessPoints(wifi_data.access_point_data.size());
   if (url_fetcher_ != NULL) {
     DVLOG(1) << "NetworkLocationRequest : Cancelling pending request";
+    RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_REQUEST_CANCEL);
     url_fetcher_.reset();
   }
   wifi_data_ = wifi_data;
@@ -112,9 +147,10 @@ void NetworkLocationRequest::OnURLFetchComplete(
 
   net::URLRequestStatus status = source->GetStatus();
   int response_code = source->GetResponseCode();
+  RecordUmaResponseCode(response_code);
 
   Geoposition position;
-  string16 access_token;
+  base::string16 access_token;
   std::string data;
   source->GetResponseAsString(&data);
   GetLocationFromResponse(status.is_success(),
@@ -171,7 +207,7 @@ GURL FormRequestURL(const GURL& url) {
 
 void FormUploadData(const WifiData& wifi_data,
                     const base::Time& timestamp,
-                    const string16& access_token,
+                    const base::string16& access_token,
                     std::string* upload_data) {
   int age = kint32min;  // Invalid so AddInteger() will ignore.
   if (!timestamp.is_null()) {
@@ -255,7 +291,7 @@ void GetLocationFromResponse(bool http_post_result,
                              const base::Time& timestamp,
                              const GURL& server_url,
                              Geoposition* position,
-                             string16* access_token) {
+                             base::string16* access_token) {
   DCHECK(position);
   DCHECK(access_token);
 
@@ -263,12 +299,14 @@ void GetLocationFromResponse(bool http_post_result,
   // we're offline, or there was no response.
   if (!http_post_result) {
     FormatPositionError(server_url, "No response received", position);
+    RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_EMPTY);
     return;
   }
   if (status_code != 200) {  // HTTP OK.
     std::string message = "Returned error code ";
     message += base::IntToString(status_code);
     FormatPositionError(server_url, message, position);
+    RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_NOT_OK);
     return;
   }
   // We use the timestamp from the wifi data that was used to generate
@@ -276,6 +314,7 @@ void GetLocationFromResponse(bool http_post_result,
   if (!ParseServerResponse(response_body, timestamp, position, access_token)) {
     // We failed to parse the repsonse.
     FormatPositionError(server_url, "Response was malformed", position);
+    RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_MALFORMED);
     return;
   }
   // The response was successfully parsed, but it may not be a valid
@@ -283,8 +322,10 @@ void GetLocationFromResponse(bool http_post_result,
   if (!position->Validate()) {
     FormatPositionError(server_url,
                         "Did not provide a good position fix", position);
+    RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_INVALID_FIX);
     return;
   }
+  RecordUmaEvent(NETWORK_LOCATION_REQUEST_EVENT_RESPONSE_SUCCESS);
 }
 
 // Numeric values without a decimal point have type integer and IsDouble() will
@@ -310,7 +351,7 @@ bool GetAsDouble(const base::DictionaryValue& object,
 bool ParseServerResponse(const std::string& response_body,
                          const base::Time& timestamp,
                          Geoposition* position,
-                         string16* access_token) {
+                         base::string16* access_token) {
   DCHECK(position);
   DCHECK(!position->Validate());
   DCHECK(position->error_code == Geoposition::ERROR_CODE_NONE);

@@ -1203,6 +1203,14 @@ void SkXPSDevice::drawRect(const SkDraw& d,
     this->internalDrawRect(d, r, true, paint);
 }
 
+void SkXPSDevice::drawRRect(const SkDraw& d,
+                            const SkRRect& rr,
+                            const SkPaint& paint) {
+    SkPath path;
+    path.addRRect(rr);
+    this->drawPath(d, path, paint, NULL, true);
+}
+
 void SkXPSDevice::internalDrawRect(const SkDraw& d,
                                    const SkRect& r,
                                    bool transformRect,
@@ -2051,6 +2059,7 @@ HRESULT SkXPSDevice::CreateTypefaceUse(const SkPaint& paint,
     SkTScopedComPtr<IStream> fontStream;
     int ttcIndex;
     SkStream* fontData = typeface->openStream(&ttcIndex);
+    //TODO: cannot handle FON fonts.
     HRM(SkIStream::CreateFromSkStream(fontData, true, &fontStream),
         "Could not create font stream.");
 
@@ -2085,7 +2094,7 @@ HRESULT SkXPSDevice::CreateTypefaceUse(const SkPaint& paint,
     newTypefaceUse.fontData = fontData;
     newTypefaceUse.xpsFont = xpsFontResource.release();
 
-    SkAutoGlyphCache agc = SkAutoGlyphCache(paint, NULL, &SkMatrix::I());
+    SkAutoGlyphCache agc(paint, NULL, &SkMatrix::I());
     SkGlyphCache* glyphCache = agc.getCache();
     unsigned int glyphCount = glyphCache->getGlyphCount();
     newTypefaceUse.glyphsUsed = new SkBitSet(glyphCount);
@@ -2233,6 +2242,9 @@ static void text_draw_init(const SkPaint& paint,
                            SkBitSet& glyphsUsed,
                            SkDraw& myDraw, SkXPSDrawProcs& procs) {
     procs.fD1GProc = xps_draw_1_glyph;
+#if SK_DISTANCEFIELD_FONTS
+    procs.fFlags = 0;
+#endif
     size_t numGlyphGuess;
     switch (paint.getTextEncoding()) {
         case SkPaint::kUTF8_TextEncoding:
@@ -2286,6 +2298,7 @@ void SkXPSDevice::drawText(const SkDraw& d,
     HRV(CreateTypefaceUse(paint, &typeface));
 
     SkDraw myDraw(d);
+    myDraw.fMatrix = &SkMatrix::I();
     SkXPSDrawProcs procs;
     text_draw_init(paint, text, byteLen, *typeface->glyphsUsed, myDraw, procs);
 
@@ -2336,6 +2349,7 @@ void SkXPSDevice::drawPosText(const SkDraw& d,
     HRV(CreateTypefaceUse(paint, &typeface));
 
     SkDraw myDraw(d);
+    myDraw.fMatrix = &SkMatrix::I();
     SkXPSDrawProcs procs;
     text_draw_init(paint, text, byteLen, *typeface->glyphsUsed, myDraw, procs);
 
@@ -2411,6 +2425,9 @@ SkBaseDevice* SkXPSDevice::onCreateCompatibleDevice(SkBitmap::Config config,
                                                     int width, int height,
                                                     bool isOpaque,
                                                     Usage usage) {
+
+//Conditional for bug compatibility with PDF device.
+#if 0
     if (SkBaseDevice::kGeneral_Usage == usage) {
         return NULL;
         SK_CRASH();
@@ -2420,7 +2437,7 @@ SkBaseDevice* SkXPSDevice::onCreateCompatibleDevice(SkBitmap::Config config,
         //dev->BeginCanvas(s, s, SkMatrix::I());
         //return dev;
     }
-
+#endif
     return new SkXPSDevice(this->fXpsFactory.get());
 }
 

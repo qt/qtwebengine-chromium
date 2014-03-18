@@ -14,27 +14,29 @@
 
 namespace ui {
 
-class EventFactoryDelegateOzone;
-
 // Creates and dispatches |ui.Event|'s. Ozone assumes that events arrive on file
 // descriptors with one  |EventConverterOzone| instance for each descriptor.
 // Ozone presumes that the set of file desctiprtors can vary at runtime so this
 // class supports dynamically adding and removing |EventConverterOzone|
 // instances as necessary.
-class UI_EXPORT EventFactoryOzone {
+class EVENTS_EXPORT EventFactoryOzone {
  public:
   EventFactoryOzone();
-  ~EventFactoryOzone();
+  virtual ~EventFactoryOzone();
 
-  // Sets an optional delegate responsible for creating the starting set of
-  // EventConvertOzones under management. This permits embedders to override the
-  // Linux /dev/input/*-based default as desired. The caller must manage the
-  // scope of this object.
-  static void SetEventFactoryDelegateOzone(EventFactoryDelegateOzone* delegate);
+  // Called from RootWindowHostOzone to initialize and start processing events.
+  // This should create the initial set of converters, and potentially arrange
+  // for more converters to be created as new event sources become available.
+  // No events processing should happen until this is called. All processes have
+  // an EventFactoryOzone but not all of them should process events. In chrome,
+  // events are dispatched in the browser process on the UI thread.
+  virtual void StartProcessingEvents();
 
-  // Called from RootWindowHostOzone to create the starting set of event
-  // converters.
-  void CreateStartupEventConverters();
+  // Returns the static instance last set using SetInstance().
+  static EventFactoryOzone* GetInstance();
+
+  // Sets the implementation delegate. Ownership is retained by the caller.
+  static void SetInstance(EventFactoryOzone*);
 
   // Add an |EventConverterOzone| instances for the given file descriptor.
   // Transfers ownership of the |EventConverterOzone| to this class.
@@ -50,7 +52,7 @@ class UI_EXPORT EventFactoryOzone {
   std::map<int, Converter> converters_;
   std::map<int, FDWatcher> watchers_;
 
-  static EventFactoryDelegateOzone* delegate_;
+  static EventFactoryOzone* impl_;  // not owned
 
   DISALLOW_COPY_AND_ASSIGN(EventFactoryOzone);
 };

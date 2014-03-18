@@ -41,7 +41,7 @@ void* GrMemoryPool::allocate(size_t size) {
     size = GrSizeAlignUp(size, kAlignment);
     size += kPerAllocPad;
     if (fTail->fFreeSize < size) {
-        int blockSize = size;
+        size_t blockSize = size;
         blockSize = GrMax<size_t>(blockSize, fMinAllocSize);
         BlockHeader* block = CreateBlock(blockSize);
 
@@ -104,7 +104,7 @@ void GrMemoryPool::release(void* p) {
 
 GrMemoryPool::BlockHeader* GrMemoryPool::CreateBlock(size_t size) {
     BlockHeader* block =
-        reinterpret_cast<BlockHeader*>(GrMalloc(size + kHeaderSize));
+        reinterpret_cast<BlockHeader*>(sk_malloc_throw(size + kHeaderSize));
     // we assume malloc gives us aligned memory
     SkASSERT(!(reinterpret_cast<intptr_t>(block) % kAlignment));
     block->fLiveCount = 0;
@@ -115,7 +115,7 @@ GrMemoryPool::BlockHeader* GrMemoryPool::CreateBlock(size_t size) {
 }
 
 void GrMemoryPool::DeleteBlock(BlockHeader* block) {
-    GrFree(block);
+    sk_free(block);
 }
 
 void GrMemoryPool::validate() {

@@ -10,41 +10,38 @@
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
-#include "base/android/build_info.h"
+#include "media/base/android/media_codec_bridge.h"
 #endif
 
-using WebKit::WebRuntimeFeatures;
+using blink::WebRuntimeFeatures;
 
 namespace content {
 
 static void SetRuntimeFeatureDefaultsForPlatform() {
 #if defined(OS_ANDROID)
 #if !defined(GOOGLE_TV)
-  // MSE/EME implementation needs Android MediaCodec API that was introduced
-  // in JellyBrean.
-  if (base::android::BuildInfo::GetInstance()->sdk_int() < 16) {
+  // MSE/EME implementation needs Android MediaCodec API.
+  if (!media::MediaCodecBridge::IsAvailable()) {
     WebRuntimeFeatures::enableWebKitMediaSource(false);
     WebRuntimeFeatures::enableMediaSource(false);
-    WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
+    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
   }
 #endif  // !defined(GOOGLE_TV)
-  bool enable_webaudio = false;
-#if defined(ARCH_CPU_ARMEL)
-  // WebAudio needs Android MediaCodec API that was introduced in
-  // JellyBean, and also currently needs NEON support for the FFT.
-  enable_webaudio =
-      (base::android::BuildInfo::GetInstance()->sdk_int() >= 16) &&
-      ((android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0);
-#endif  // defined(ARCH_CPU_ARMEL)
-  WebRuntimeFeatures::enableWebAudio(enable_webaudio);
+  // WebAudio is enabled by default only on ARM and only when the
+  // MediaCodec API is available.
+  WebRuntimeFeatures::enableWebAudio(
+      media::MediaCodecBridge::IsAvailable() &&
+      (android_getCpuFamily() == ANDROID_CPU_FAMILY_ARM));
   // Android does not support the Gamepad API.
   WebRuntimeFeatures::enableGamepad(false);
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
-  // datalist on Android is not enabled
-  WebRuntimeFeatures::enableDataListElement(false);
   // Android does not yet support the Web Notification API. crbug.com/115320
   WebRuntimeFeatures::enableNotifications(false);
+  // Android does not yet support SharedWorker. crbug.com/154571
+  WebRuntimeFeatures::enableSharedWorker(false);
+  // Android does not yet support NavigatorContentUtils.
+  WebRuntimeFeatures::enableNavigatorContentUtils(false);
 #endif  // defined(OS_ANDROID)
 }
 
@@ -66,6 +63,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableDesktopNotifications))
     WebRuntimeFeatures::enableNotifications(false);
 
+  if (command_line.HasSwitch(switches::kDisableNavigatorContentUtils))
+    WebRuntimeFeatures::enableNavigatorContentUtils(false);
+
   if (command_line.HasSwitch(switches::kDisableLocalStorage))
     WebRuntimeFeatures::enableLocalStorage(false);
 
@@ -81,6 +81,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableUnprefixedMediaSource))
     WebRuntimeFeatures::enableMediaSource(false);
 
+  if (command_line.HasSwitch(switches::kDisableSharedWorkers))
+    WebRuntimeFeatures::enableSharedWorker(false);
+
 #if defined(OS_ANDROID)
   if (command_line.HasSwitch(switches::kDisableWebRTC)) {
     WebRuntimeFeatures::enableMediaStream(false);
@@ -91,8 +94,28 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableScriptedSpeech(false);
 #endif
 
+  if (command_line.HasSwitch(switches::kEnableServiceWorker))
+    WebRuntimeFeatures::enableServiceWorker(true);
+
+#if defined(OS_ANDROID)
+  // WebAudio requires the MediaCodec API.
+#if defined(ARCH_CPU_X86)
+  // WebAudio is disabled by default on x86.
+  WebRuntimeFeatures::enableWebAudio(
+      command_line.HasSwitch(switches::kEnableWebAudio) &&
+      media::MediaCodecBridge::IsAvailable());
+#elif defined(ARCH_CPU_ARMEL)
+  // WebAudio is enabled by default on ARM.
+  WebRuntimeFeatures::enableWebAudio(
+      !command_line.HasSwitch(switches::kDisableWebAudio) &&
+      media::MediaCodecBridge::IsAvailable());
+#else
+  WebRuntimeFeatures::enableWebAudio(false);
+#endif
+#else
   if (command_line.HasSwitch(switches::kDisableWebAudio))
     WebRuntimeFeatures::enableWebAudio(false);
+#endif
 
   if (command_line.HasSwitch(switches::kDisableFullScreen))
     WebRuntimeFeatures::enableFullscreen(false);
@@ -100,14 +123,18 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableEncryptedMedia))
     WebRuntimeFeatures::enableEncryptedMedia(true);
 
-  if (command_line.HasSwitch(switches::kDisableLegacyEncryptedMedia))
-    WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
+  if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
+    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
 
+  // FIXME: Remove the enable switch once Web Animations CSS is enabled by
+  // default in Blink.
   if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
-    WebRuntimeFeatures::enableWebAnimationsCSS();
+    WebRuntimeFeatures::enableWebAnimationsCSS(true);
+  else if (command_line.HasSwitch(switches::kDisableWebAnimationsCSS))
+    WebRuntimeFeatures::enableWebAnimationsCSS(false);
 
   if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
-    WebRuntimeFeatures::enableWebAnimationsSVG();
+    WebRuntimeFeatures::enableWebAnimationsSVG(true);
 
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);
@@ -123,6 +150,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
+
+#if defined(OS_WIN)
+  if (command_line.HasSwitch(switches::kEnableDirectWrite))
+    WebRuntimeFeatures::enableDirectWrite(true);
+#endif
 
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
@@ -144,6 +176,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableInputModeAttribute))
     WebRuntimeFeatures::enableInputModeAttribute(true);
+
+  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
+    WebRuntimeFeatures::enableFastTextAutosizing(true);
+
+  if (command_line.HasSwitch(switches::kEnableRepaintAfterLayout))
+    WebRuntimeFeatures::enableRepaintAfterLayout(true);
 }
 
 }  // namespace content

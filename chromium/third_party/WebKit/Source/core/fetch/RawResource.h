@@ -23,8 +23,8 @@
 #ifndef RawResource_h
 #define RawResource_h
 
-#include "core/fetch/Resource.h"
 #include "core/fetch/ResourceClient.h"
+#include "core/fetch/ResourcePtr.h"
 
 namespace WebCore {
 class RawResourceCallback;
@@ -32,6 +32,8 @@ class RawResourceClient;
 
 class RawResource : public Resource {
 public:
+    typedef RawResourceClient ClientType;
+
     RawResource(const ResourceRequest&, Type);
 
     // FIXME: AssociatedURLLoader shouldn't be a DocumentThreadableLoader and therefore shouldn't
@@ -71,6 +73,18 @@ private:
     Vector<RedirectPair> m_redirectChain;
 };
 
+#ifdef SECURITY_ASSERT_ENABLED
+inline bool isRawResource(const Resource& resource)
+{
+    Resource::Type type = resource.type();
+    return type == Resource::MainResource || type == Resource::Raw || type == Resource::TextTrack || type == Resource::ImportResource;
+}
+#endif
+inline RawResource* toRawResource(const ResourcePtr<Resource>& resource)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!resource || isRawResource(*resource.get()));
+    return static_cast<RawResource*>(resource.get());
+}
 
 class RawResourceClient : public ResourceClient {
 public:

@@ -34,17 +34,14 @@
 #include "public/platform/WebString.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-#include "WebDatabaseObserver.h"
 #include "modules/webdatabase/DatabaseBackendBase.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/QuotaTracker.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
-
-static WebDatabaseObserver* databaseObserver = 0;
+namespace blink {
 
 WebString WebDatabase::name() const
 {
@@ -76,16 +73,6 @@ bool WebDatabase::isSyncDatabase() const
     return m_database->isSyncDatabase();
 }
 
-void WebDatabase::setObserver(WebDatabaseObserver* observer)
-{
-    databaseObserver = observer;
-}
-
-WebDatabaseObserver* WebDatabase::observer()
-{
-    return databaseObserver;
-}
-
 void WebDatabase::updateDatabaseSize(const WebString& originIdentifier, const WebString& name, long long size)
 {
     QuotaTracker::instance().updateDatabaseSize(originIdentifier, name, size);
@@ -111,4 +98,4 @@ WebDatabase::WebDatabase(const DatabaseBackendBase* database)
 {
 }
 
-} // namespace WebKit
+} // namespace blink

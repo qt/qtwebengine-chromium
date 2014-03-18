@@ -26,26 +26,18 @@
     ['OS=="win"', {
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
-        '<(DEPTH)/third_party/angle_dx11/src',
+        '<(angle_path)/src',
         '<(DEPTH)/third_party/wtl/include',
       ],
       'dependencies': [
-        '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
-        '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
+        '<(angle_path)/src/build_angle.gyp:libEGL',
+        '<(angle_path)/src/build_angle.gyp:libGLESv2',
       ],
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
         ],
       },
-      'copies': [
-        {
-          'destination': '<(PRODUCT_DIR)',
-          'files': [
-            '<(windows_sdk_path)/Redist/D3D/<(winsdk_arch)/d3dcompiler_46.dll',
-          ],
-        },
-      ],
     }],
     ['OS=="win" and target_arch=="ia32" and directxsdk_exists=="True"', {
       # We don't support x64 prior to Win7 and D3DCompiler_43.dll is

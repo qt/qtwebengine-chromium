@@ -35,7 +35,7 @@
 #include "../WebColor.h"
 #include "../WebSize.h"
 
-namespace WebKit {
+namespace blink {
 
 struct WebRect;
 
@@ -71,11 +71,15 @@ public:
         StateHover,
         StateNormal,
         StatePressed,
+        StateFocused,
+        StateReadonly,
     };
 
     // Extra parameters for drawing the PartScrollbarHorizontalTrack and
     // PartScrollbarVerticalTrack.
     struct ScrollbarTrackExtraParams {
+        bool isBack; // Whether this is the 'back' part or the 'forward' part.
+
         // The bounds of the entire track, as opposed to the part being painted.
         int trackX;
         int trackY;
@@ -105,7 +109,9 @@ public:
         bool hasBorderRadius;
         int arrowX;
         int arrowY;
+        int arrowHeight;
         WebColor backgroundColor;
+        bool fillContentArea;
     };
 
     // Extra parameters for PartSliderTrack and PartSliderThumb
@@ -147,6 +153,6 @@ public:
     virtual void paint(WebCanvas*, Part, State, const WebRect&, const ExtraParams*) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

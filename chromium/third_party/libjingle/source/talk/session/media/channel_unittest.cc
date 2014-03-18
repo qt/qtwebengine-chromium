@@ -233,6 +233,10 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
         this, &ChannelTest<T>::OnMediaChannelError);
     channel1_->SignalAutoMuted.connect(
         this, &ChannelTest<T>::OnMediaMuted);
+    if ((flags1 & DTLS) && (flags2 & DTLS)) {
+      flags1 = (flags1 & ~SECURE);
+      flags2 = (flags2 & ~SECURE);
+    }
     CreateContent(flags1, kPcmuCodec, kH264Codec,
                   &local_media_content1_);
     CreateContent(flags2, kPcmuCodec, kH264Codec,
@@ -490,11 +494,6 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
   void CopyContent(const typename T::Content& source,
                    typename T::Content* content) {
     // overridden in specialized classes
-  }
-
-  void SetOptimisticDataSend(bool optimistic_data_send) {
-    channel1_->set_optimistic_data_send(optimistic_data_send);
-    channel2_->set_optimistic_data_send(optimistic_data_send);
   }
 
   // Creates a cricket::SessionDescription with one MediaContent and one stream.
@@ -1390,19 +1389,8 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     EXPECT_TRUE(CheckNoRtp1());
     EXPECT_TRUE(CheckNoRtp2());
 
-    // Lose writability, with optimistic send
-    SetOptimisticDataSend(true);
+    // Lose writability, which should fail.
     GetTransport1()->SetWritable(false);
-    EXPECT_TRUE(media_channel1_->sending());
-    EXPECT_TRUE(SendRtp1());
-    EXPECT_TRUE(SendRtp2());
-    EXPECT_TRUE(CheckRtp1());
-    EXPECT_TRUE(CheckRtp2());
-    EXPECT_TRUE(CheckNoRtp1());
-    EXPECT_TRUE(CheckNoRtp2());
-
-    // Check again with optimistic send off, which should fail.
-    SetOptimisticDataSend(false);
     EXPECT_FALSE(SendRtp1());
     EXPECT_TRUE(SendRtp2());
     EXPECT_TRUE(CheckRtp1());
@@ -1422,13 +1410,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     GetTransport1()->SetDestination(NULL);
     EXPECT_TRUE(media_channel1_->sending());
 
-    // Should fail regardless of optimistic send at this point.
-    SetOptimisticDataSend(true);
-    EXPECT_FALSE(SendRtp1());
-    EXPECT_TRUE(SendRtp2());
-    EXPECT_TRUE(CheckRtp1());
-    EXPECT_TRUE(CheckNoRtp2());
-    SetOptimisticDataSend(false);
+    // Should fail also.
     EXPECT_FALSE(SendRtp1());
     EXPECT_TRUE(SendRtp2());
     EXPECT_TRUE(CheckRtp1());
@@ -1793,7 +1775,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
         channel2_->transport_channel();
     transport_channel->SignalReadPacket(
         transport_channel, reinterpret_cast<const char*>(kBadPacket),
-        sizeof(kBadPacket), 0);
+        sizeof(kBadPacket), talk_base::PacketTime(), 0);
     EXPECT_EQ_WAIT(T::MediaChannel::ERROR_PLAY_SRTP_ERROR, error_, 500);
   }
 

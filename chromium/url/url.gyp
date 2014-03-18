@@ -15,7 +15,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../third_party/icu/icu.gyp:icudata',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
       ],
@@ -41,6 +41,7 @@
         'url_canon_pathurl.cc',
         'url_canon_query.cc',
         'url_canon_relative.cc',
+        'url_canon_stdstring.cc',
         'url_canon_stdstring.h',
         'url_canon_stdurl.cc',
         'url_file.h',

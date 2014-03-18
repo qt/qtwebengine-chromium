@@ -27,9 +27,9 @@
 #define XSSAuditor_h
 
 #include "core/html/parser/HTMLToken.h"
-#include "core/platform/network/HTTPParsers.h"
-#include "core/platform/text/SuffixTree.h"
-#include "weborigin/KURL.h"
+#include "platform/network/HTTPParsers.h"
+#include "platform/text/SuffixTree.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/TextEncoding.h"
 
@@ -69,7 +69,9 @@ private:
 
     enum State {
         Uninitialized,
-        Initialized
+        FilteringTokens,
+        PermittingAdjacentCharacterTokens,
+        SuppressingAdjacentCharacterTokens
     };
 
     enum AttributeKind {
@@ -107,7 +109,7 @@ private:
     KURL m_documentURL;
     bool m_isEnabled;
 
-    ContentSecurityPolicy::ReflectedXSSDisposition m_xssProtection;
+    ReflectedXSSDisposition m_xssProtection;
     bool m_didSendValidCSPHeader;
     bool m_didSendValidXSSProtectionHeader;
 

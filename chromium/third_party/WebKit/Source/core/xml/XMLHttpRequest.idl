@@ -37,11 +37,9 @@ enum XMLHttpRequestResponseType {
 };
 
 [
-    GlobalContext=Window&WorkerGlobalScope,
     ActiveDOMObject,
-    Constructor,
-    ConstructorCallWith=ScriptExecutionContext,
-    CustomConstructor(optional XMLHttpRequestOptions options)
+    CustomConstructor(optional XMLHttpRequestOptions options),
+    GlobalContext=Window&WorkerGlobalScope,
 ] interface XMLHttpRequest : XMLHttpRequestEventTarget {
     // event handler attributes
     attribute EventHandler onreadystatechange;
@@ -53,14 +51,14 @@ enum XMLHttpRequestResponseType {
     const unsigned short LOADING = 3;
     const unsigned short DONE = 4;
 
-    [SetterRaisesException] attribute unsigned long timeout;
+    [RaisesException=Setter] attribute unsigned long timeout;
     readonly attribute unsigned short readyState;
 
-    [SetterRaisesException] attribute boolean withCredentials;
+    [RaisesException=Setter] attribute boolean withCredentials;
 
-    [Custom, ActivityLog=Access, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
+    [Custom, ActivityLogging=ForAllWorlds, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
 
-    [ActivityLog=Access, RaisesException] void setRequestHeader(DOMString header, DOMString value);
+    [ActivityLogging=ForAllWorlds, RaisesException] void setRequestHeader(DOMString header, DOMString value);
 
     [Custom, RaisesException] void send();
 
@@ -69,16 +67,16 @@ enum XMLHttpRequestResponseType {
     readonly attribute XMLHttpRequestUpload upload;
 
     // response
-    [TreatReturnedNullStringAs=Undefined, RaisesException] DOMString getAllResponseHeaders();
-    [TreatReturnedNullStringAs=Null, RaisesException] DOMString getResponseHeader(DOMString header);
-    [CustomGetter, GetterRaisesException] readonly attribute DOMString responseText; // The custom getter implements TreatReturnedNullStringAs=Null
-    [GetterRaisesException] readonly attribute Document responseXML;
+    [TreatReturnedNullStringAs=Undefined] DOMString getAllResponseHeaders();
+    [TreatReturnedNullStringAs=Null] DOMString getResponseHeader(DOMString header);
+    [Custom=Getter, RaisesException=Getter] readonly attribute DOMString responseText; // The custom getter implements TreatReturnedNullStringAs=Null
+    [RaisesException=Getter] readonly attribute Document responseXML;
 
-    [SetterRaisesException] attribute XMLHttpRequestResponseType responseType;
-    [CustomGetter, GetterRaisesException] readonly attribute Object response;
+    [RaisesException=Setter] attribute XMLHttpRequestResponseType responseType;
+    [Custom=Getter, RaisesException=Getter] readonly attribute object response;
 
-    [GetterRaisesException] readonly attribute unsigned short status;
-    [GetterRaisesException] readonly attribute DOMString statusText;
+    readonly attribute unsigned short status;
+    readonly attribute DOMString statusText;
 
     // Extension
     void overrideMimeType(DOMString override);

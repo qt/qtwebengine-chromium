@@ -31,12 +31,11 @@ namespace WebCore {
 class HTMLHtmlElement FINAL : public HTMLElement {
 public:
     static PassRefPtr<HTMLHtmlElement> create(Document&);
-    static PassRefPtr<HTMLHtmlElement> create(const QualifiedName&, Document&);
 
     void insertedByParser();
 
 private:
-    HTMLHtmlElement(const QualifiedName&, Document&);
+    explicit HTMLHtmlElement(Document&);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 };
@@ -51,11 +50,7 @@ inline bool isHTMLHtmlElement(const Element* element)
     return element->hasTagName(HTMLNames::htmlTag);
 }
 
-inline HTMLHtmlElement* toHTMLHtmlElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLHtmlElement(node));
-    return static_cast<HTMLHtmlElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLHtmlElement, hasTagName(HTMLNames::htmlTag));
 
 } // namespace
 

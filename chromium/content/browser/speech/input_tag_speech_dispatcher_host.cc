@@ -22,19 +22,27 @@ const uint32 kMaxHypothesesForSpeechInputTag = 6;
 namespace content {
 
 InputTagSpeechDispatcherHost::InputTagSpeechDispatcherHost(
-    bool guest,
+    bool is_guest,
     int render_process_id,
     net::URLRequestContextGetter* url_request_context_getter)
-    : guest_(guest),
+    : is_guest_(is_guest),
       render_process_id_(render_process_id),
-      url_request_context_getter_(url_request_context_getter) {
+      url_request_context_getter_(url_request_context_getter),
+      weak_factory_(this) {
   // Do not add any non-trivial initialization here, instead do it lazily when
   // required (e.g. see the method |SpeechRecognitionManager::GetInstance()|) or
   // add an Init() method.
 }
 
 InputTagSpeechDispatcherHost::~InputTagSpeechDispatcherHost() {
-  SpeechRecognitionManager::GetInstance()->AbortAllSessionsForListener(this);
+  SpeechRecognitionManager::GetInstance()->AbortAllSessionsForRenderProcess(
+      render_process_id_);
+}
+
+base::WeakPtr<InputTagSpeechDispatcherHost>
+InputTagSpeechDispatcherHost::AsWeakPtr() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return weak_factory_.GetWeakPtr();
 }
 
 bool InputTagSpeechDispatcherHost::OnMessageReceived(
@@ -60,15 +68,19 @@ void InputTagSpeechDispatcherHost::OverrideThreadForMessage(
     *thread = BrowserThread::UI;
 }
 
+void InputTagSpeechDispatcherHost::OnChannelClosing() {
+  weak_factory_.InvalidateWeakPtrs();
+}
+
 void InputTagSpeechDispatcherHost::OnStartRecognition(
-    const InputTagSpeechHostMsg_StartRecognition_Params& params) {  
+    const InputTagSpeechHostMsg_StartRecognition_Params& params) {
   InputTagSpeechHostMsg_StartRecognition_Params input_params(params);
   int render_process_id = render_process_id_;
   // The chrome layer is mostly oblivious to BrowserPlugin guests and so it
   // cannot correctly place the speech bubble relative to a guest. Thus, we
   // set up the speech recognition context relative to the embedder.
-  int guest_render_view_id = 0;
-  if (guest_) {
+  int guest_render_view_id = MSG_ROUTING_NONE;
+  if (is_guest_) {
     RenderViewHostImpl* render_view_host =
         RenderViewHostImpl::FromID(render_process_id_, params.render_view_id);
     WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
@@ -108,6 +120,8 @@ void InputTagSpeechDispatcherHost::StartRecognitionOnIO(
   context.render_process_id = render_process_id;
   context.render_view_id = params.render_view_id;
   context.guest_render_view_id = guest_render_view_id;
+  // Keep context.embedder_render_process_id and context.embedder_render_view_id
+  // unset.
   context.request_id = params.request_id;
   context.element_rect = params.element_rect;
 
@@ -121,7 +135,7 @@ void InputTagSpeechDispatcherHost::StartRecognitionOnIO(
   config.initial_context = context;
   config.url_request_context_getter = url_request_context_getter_.get();
   config.filter_profanities = filter_profanities;
-  config.event_listener = this;
+  config.event_listener = AsWeakPtr();
 
   int session_id = SpeechRecognitionManager::GetInstance()->CreateSession(
       config);
@@ -162,8 +176,9 @@ void InputTagSpeechDispatcherHost::OnRecognitionResults(
   const SpeechRecognitionSessionContext& context =
       SpeechRecognitionManager::GetInstance()->GetSessionContext(session_id);
 
-  int render_view_id = context.guest_render_view_id ?
-      context.guest_render_view_id : context.render_view_id;
+  int render_view_id =
+      context.guest_render_view_id == MSG_ROUTING_NONE ?
+          context.render_view_id : context.guest_render_view_id;
   Send(new InputTagSpeechMsg_SetRecognitionResults(
       render_view_id,
       context.request_id,
@@ -176,8 +191,9 @@ void InputTagSpeechDispatcherHost::OnAudioEnd(int session_id) {
 
   const SpeechRecognitionSessionContext& context =
       SpeechRecognitionManager::GetInstance()->GetSessionContext(session_id);
-  int render_view_id = context.guest_render_view_id ?
-      context.guest_render_view_id : context.render_view_id;
+  int render_view_id =
+      context.guest_render_view_id == MSG_ROUTING_NONE ?
+          context.render_view_id : context.guest_render_view_id;
   Send(new InputTagSpeechMsg_RecordingComplete(render_view_id,
                                                context.request_id));
   DVLOG(1) << "InputTagSpeechDispatcherHost::OnAudioEnd exit";
@@ -187,8 +203,9 @@ void InputTagSpeechDispatcherHost::OnRecognitionEnd(int session_id) {
   DVLOG(1) << "InputTagSpeechDispatcherHost::OnRecognitionEnd enter";
   const SpeechRecognitionSessionContext& context =
       SpeechRecognitionManager::GetInstance()->GetSessionContext(session_id);
-  int render_view_id = context.guest_render_view_id ?
-      context.guest_render_view_id : context.render_view_id;
+  int render_view_id =
+      context.guest_render_view_id == MSG_ROUTING_NONE ?
+          context.render_view_id : context.guest_render_view_id;
   Send(new InputTagSpeechMsg_RecognitionComplete(render_view_id,
                                                  context.request_id));
   DVLOG(1) << "InputTagSpeechDispatcherHost::OnRecognitionEnd exit";

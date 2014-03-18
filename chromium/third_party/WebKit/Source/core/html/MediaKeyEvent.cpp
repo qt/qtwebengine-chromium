@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/MediaKeyEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
@@ -60,7 +60,7 @@ MediaKeyEvent::~MediaKeyEvent()
 
 const AtomicString& MediaKeyEvent::interfaceName() const
 {
-    return eventNames().interfaceForMediaKeyEvent;
+    return EventNames::MediaKeyEvent;
 }
 
 } // namespace WebCore

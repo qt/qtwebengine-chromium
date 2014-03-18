@@ -10,10 +10,11 @@
 #include "ipc/ipc_channel.h"
 #include "third_party/WebKit/public/web/WebSharedWorkerClient.h"
 
-namespace WebKit {
+namespace blink {
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebFrame;
+class WebSecurityOrigin;
 }
 
 namespace content {
@@ -26,56 +27,33 @@ class WebSharedWorkerStub;
 // is also called by the worker code and converts these function calls into
 // IPCs that are sent to the renderer, where they're converted back to function
 // calls by WebWorkerProxy.
-class WebSharedWorkerClientProxy : public WebKit::WebSharedWorkerClient {
+class WebSharedWorkerClientProxy : public blink::WebSharedWorkerClient {
  public:
   WebSharedWorkerClientProxy(int route_id, WebSharedWorkerStub* stub);
   virtual ~WebSharedWorkerClientProxy();
 
   // WebSharedWorkerClient implementation.
-  virtual void postMessageToWorkerObject(
-      const WebKit::WebString& message,
-      const WebKit::WebMessagePortChannelArray& channel);
-  virtual void postExceptionToWorkerObject(
-      const WebKit::WebString& error_message,
-      int line_number,
-      const WebKit::WebString& source_url);
-  // TODO(caseq): The overload before is obsolete and is preserved for
-  // WebKit/chromium compatibility only (pure virtual is base class).
-  // Should be removed once WebKit part is updated.
-  virtual void postConsoleMessageToWorkerObject(
-      int destination,
-      int source,
-      int type,
-      int level,
-      const WebKit::WebString& message,
-      int line_number,
-      const WebKit::WebString& source_url) {
-  }
-  virtual void postConsoleMessageToWorkerObject(
-      int source,
-      int type,
-      int level,
-      const WebKit::WebString& message,
-      int line_number,
-      const WebKit::WebString& source_url);
-  virtual void confirmMessageFromWorkerObject(bool has_pending_activity);
-  virtual void reportPendingActivity(bool has_pending_activity);
   virtual void workerContextClosed();
   virtual void workerContextDestroyed();
 
-  virtual WebKit::WebNotificationPresenter* notificationPresenter();
+  virtual blink::WebNotificationPresenter* notificationPresenter();
 
-  virtual WebKit::WebApplicationCacheHost* createApplicationCacheHost(
-      WebKit::WebApplicationCacheHostClient* client);
+  virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
+      blink::WebApplicationCacheHostClient* client);
+  virtual blink::WebWorkerPermissionClientProxy*
+      createWorkerPermissionClientProxy(
+          const blink::WebSecurityOrigin& origin);
 
-  virtual bool allowDatabase(WebKit::WebFrame* frame,
-                             const WebKit::WebString& name,
-                             const WebKit::WebString& display_name,
+  // TODO(kinuko): Deprecate these methods.
+  virtual bool allowDatabase(blink::WebFrame* frame,
+                             const blink::WebString& name,
+                             const blink::WebString& display_name,
                              unsigned long estimated_size);
   virtual bool allowFileSystem();
-  virtual bool allowIndexedDB(const WebKit::WebString&);
-  virtual void dispatchDevToolsMessage(const WebKit::WebString&);
-  virtual void saveDevToolsAgentState(const WebKit::WebString&);
+  virtual bool allowIndexedDB(const blink::WebString&);
+
+  virtual void dispatchDevToolsMessage(const blink::WebString&);
+  virtual void saveDevToolsAgentState(const blink::WebString&);
 
   void EnsureWorkerContextTerminates();
 

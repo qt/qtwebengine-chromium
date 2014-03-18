@@ -65,3 +65,23 @@ patch -p4 < $patches_dir/peercertchain2.patch
 patch -p4 < $patches_dir/canfalsestart.patch
 
 patch -p4 < $patches_dir/nullcipher_934016.patch
+
+patch -p4 < $patches_dir/paddingextension.patch
+
+patch -p4 < $patches_dir/paddingextensionall.patch
+
+patch -p4 < $patches_dir/channelid2.patch
+
+patch -p5 < $patches_dir/signedcertificatetimestamps.patch
+
+patch -p4 < $patches_dir/cipherorder.patch
+
+patch -p5 < $patches_dir/tls12backuphash2.patch
+
+patch -p4 < $patches_dir/fallbackscsv.patch
+
+patch -p4 < $patches_dir/disableticketrenewal.patch
+
+patch -p4 < $patches_dir/sessioncache.patch
+
+patch -p4 < $patches_dir/sslnoncestatics.patch

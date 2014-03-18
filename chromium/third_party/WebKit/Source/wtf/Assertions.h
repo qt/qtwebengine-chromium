@@ -40,6 +40,7 @@
 
 */
 
+#include "wtf/Compiler.h"
 #include "wtf/WTFExport.h"
 
 #ifdef NDEBUG
@@ -75,12 +76,6 @@
 
 #ifndef LOG_DISABLED
 #define LOG_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#endif
-
-#if COMPILER(GCC)
-#define WTF_PRETTY_FUNCTION __PRETTY_FUNCTION__
-#else
-#define WTF_PRETTY_FUNCTION __FUNCTION__
 #endif
 
 /* WTF logging functions can process %@ in the format string to log a NSObject* but the printf format attribute
@@ -244,6 +239,12 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 
 #endif
 
+#if defined(ADDRESS_SANITIZER) || !ASSERT_DISABLED
+#define SECURITY_ASSERT_ENABLED 1
+#else
+#define SECURITY_ASSERT_ENABLED 0
+#endif
+
 /* ASSERT_WITH_MESSAGE */
 
 #if ASSERT_MSG_DISABLED
@@ -310,30 +311,22 @@ while (0)
 } while (0)
 #endif
 
-/* LOG_ERROR */
+/* WTF_LOG_ERROR */
 
 #if ERROR_DISABLED
-#define LOG_ERROR(...) ((void)0)
+#define WTF_LOG_ERROR(...) ((void)0)
 #else
-#define LOG_ERROR(...) WTFReportError(__FILE__, __LINE__, WTF_PRETTY_FUNCTION, __VA_ARGS__)
+#define WTF_LOG_ERROR(...) WTFReportError(__FILE__, __LINE__, WTF_PRETTY_FUNCTION, __VA_ARGS__)
 #endif
 
-/* LOG */
+/* WTF_LOG */
 
 #if LOG_DISABLED
-#define LOG(channel, ...) ((void)0)
+#define WTF_LOG(channel, ...) ((void)0)
 #else
-#define LOG(channel, ...) WTFLog(&JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, channel), __VA_ARGS__)
+#define WTF_LOG(channel, ...) WTFLog(&JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, channel), __VA_ARGS__)
 #define JOIN_LOG_CHANNEL_WITH_PREFIX(prefix, channel) JOIN_LOG_CHANNEL_WITH_PREFIX_LEVEL_2(prefix, channel)
 #define JOIN_LOG_CHANNEL_WITH_PREFIX_LEVEL_2(prefix, channel) prefix ## channel
-#endif
-
-/* LOG_VERBOSE */
-
-#if LOG_DISABLED
-#define LOG_VERBOSE(channel, ...) ((void)0)
-#else
-#define LOG_VERBOSE(channel, ...) WTFLogVerbose(__FILE__, __LINE__, WTF_PRETTY_FUNCTION, &JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, channel), __VA_ARGS__)
 #endif
 
 /* UNREACHABLE_FOR_PLATFORM */
@@ -369,5 +362,31 @@ static inline void UNREACHABLE_FOR_PLATFORM()
 #define RELEASE_ASSERT_WITH_MESSAGE(assertion, ...) ASSERT_WITH_MESSAGE(assertion, __VA_ARGS__)
 #define RELEASE_ASSERT_NOT_REACHED() ASSERT_NOT_REACHED()
 #endif
+
+/* DEFINE_TYPE_CASTS */
+
+#define DEFINE_TYPE_CASTS(thisType, argumentType, argumentName, pointerPredicate, referencePredicate) \
+inline thisType* to##thisType(argumentType* argumentName) \
+{ \
+    ASSERT_WITH_SECURITY_IMPLICATION(!argumentName || (pointerPredicate)); \
+    return static_cast<thisType*>(argumentName); \
+} \
+inline const thisType* to##thisType(const argumentType* argumentName) \
+{ \
+    ASSERT_WITH_SECURITY_IMPLICATION(!argumentName || (pointerPredicate)); \
+    return static_cast<const thisType*>(argumentName); \
+} \
+inline thisType& to##thisType(argumentType& argumentName) \
+{ \
+    ASSERT_WITH_SECURITY_IMPLICATION(referencePredicate); \
+    return static_cast<thisType&>(argumentName); \
+} \
+inline const thisType& to##thisType(const argumentType& argumentName) \
+{ \
+    ASSERT_WITH_SECURITY_IMPLICATION(referencePredicate); \
+    return static_cast<const thisType&>(argumentName); \
+} \
+void to##thisType(const thisType*); \
+void to##thisType(const thisType&)
 
 #endif /* WTF_Assertions_h */

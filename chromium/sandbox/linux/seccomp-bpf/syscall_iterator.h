@@ -7,7 +7,9 @@
 
 #include <stdint.h>
 
-namespace playground2 {
+#include "base/basictypes.h"
+
+namespace sandbox {
 
 // Iterates over the entire system call range from 0..0xFFFFFFFFu. This
 // iterator is aware of how system calls look like and will skip quickly
@@ -32,9 +34,7 @@ namespace playground2 {
 class SyscallIterator {
  public:
   explicit SyscallIterator(bool invalid_only)
-      : invalid_only_(invalid_only),
-        done_(false),
-        num_(0) {}
+      : invalid_only_(invalid_only), done_(false), num_(0) {}
 
   bool Done() const { return done_; }
   uint32_t Next();
@@ -43,14 +43,13 @@ class SyscallIterator {
  private:
   static bool IsArmPrivate(uint32_t num);
 
-  bool     invalid_only_;
-  bool     done_;
+  bool invalid_only_;
+  bool done_;
   uint32_t num_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(SyscallIterator);
 };
 
-}  // namespace playground2
+}  // namespace sandbox
 
 #endif  // SANDBOX_LINUX_SECCOMP_BPF_SYSCALL_ITERATOR_H__
-

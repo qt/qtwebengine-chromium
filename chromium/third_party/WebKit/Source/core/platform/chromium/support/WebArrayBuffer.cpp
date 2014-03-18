@@ -37,7 +37,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebArrayBuffer WebArrayBuffer::create(unsigned numElements, unsigned elementByteSize)
 {
@@ -78,7 +78,7 @@ v8::Handle<v8::Value> WebArrayBuffer::toV8Value()
 
 WebArrayBuffer* WebArrayBuffer::createFromV8Value(v8::Handle<v8::Value> value)
 {
-    if (!V8ArrayBuffer::HasInstanceInAnyWorld(value, v8::Isolate::GetCurrent()))
+    if (!V8ArrayBuffer::hasInstanceInAnyWorld(value, v8::Isolate::GetCurrent()))
         return 0;
     WTF::ArrayBuffer* buffer = V8ArrayBuffer::toNative(value->ToObject());
     return new WebArrayBuffer(buffer);
@@ -100,4 +100,4 @@ WebArrayBuffer::operator WTF::PassRefPtr<WTF::ArrayBuffer>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink

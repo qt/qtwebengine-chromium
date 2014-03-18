@@ -9,7 +9,6 @@
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/invalidator_registrar.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -41,11 +40,6 @@ class RegistrarInvalidator : public Invalidator {
 
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE {
     registrar_.UnregisterHandler(handler);
-  }
-
-  virtual void Acknowledge(const invalidation::ObjectId& id,
-                           const AckHandle& ack_handle) OVERRIDE {
-    // Do nothing.
   }
 
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE {

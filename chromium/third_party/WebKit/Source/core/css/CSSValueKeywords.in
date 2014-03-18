@@ -3,8 +3,8 @@
 //
 
 // The mode argument is used to limit the keyword to be used only for certain
-// CSSParserModes. Values that have the prefix -internal- are automatically
-// only for UASheetMode or CSSAttributeMode.
+// CSSParserModes. Values that have the prefix -internal- are only allowed by
+// CSSParserModes listed in allowInternalPropertyAndValue()
 
 inherit
 initial
@@ -229,6 +229,13 @@ justify
 -webkit-center
 -webkit-match-parent
 //
+// CSS_PROP_TEXT_JUSTIFY:
+//
+//auto
+//none
+inter-word
+distribute
+//
 // CSS_PROP_LIST_STYLE_POSITION:
 //
 outside
@@ -325,8 +332,6 @@ katakana-iroha
 inline
 block
 list-item
-run-in
-compact
 inline-block
 table
 inline-table
@@ -454,6 +459,7 @@ portrait
 pre
 pre-line
 pre-wrap
+-internal-presence
 relative
 scroll
 separate
@@ -717,6 +723,9 @@ content-box
 padding
 padding-box
 
+// CSS_SHAPES
+margin-box
+
 //
 // background-size
 //
@@ -799,6 +808,7 @@ visibleStroke
 painted
 fill
 stroke
+bounding-box
 //all
 //none
 
@@ -901,8 +911,8 @@ off
 optimizeQuality
 -webkit-optimize-contrast
 
-// -webkit-shape-inside
-// -webkit-shape-outside
+// shape-inside
+// shape-outside
 nonzero
 evenodd
 outside-shape
@@ -964,6 +974,9 @@ luminosity
 // object-fit
 scale-down
 
+// column-fill
+balance
+
 // overflow
 -webkit-paged-x
 -webkit-paged-y
@@ -996,3 +1009,11 @@ markers
 // isolation
 // auto
 isolate
+
+// touch-action-delay
+// none
+script
+
+// touch-action
+pan-x
+pan-y

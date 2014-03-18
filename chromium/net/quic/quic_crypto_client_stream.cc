@@ -170,7 +170,25 @@ void QuicCryptoClientStream::DoHandshakeLoop(
 
         if (!cached->IsComplete(session()->connection()->clock()->WallNow())) {
           crypto_config_->FillInchoateClientHello(
-              server_hostname_, cached, &crypto_negotiated_params_, &out);
+              server_hostname_,
+              session()->connection()->supported_versions().front(),
+              cached, &crypto_negotiated_params_, &out);
+          // Pad the inchoate client hello to fill up a packet.
+          const size_t kFramingOverhead = 50;  // A rough estimate.
+          const size_t max_packet_size =
+              session()->connection()->options()->max_packet_length;
+          if (max_packet_size <= kFramingOverhead) {
+            DLOG(DFATAL) << "max_packet_length (" << max_packet_size
+                         << ") has no room for framing overhead.";
+            CloseConnection(QUIC_INTERNAL_ERROR);
+            return;
+          }
+          if (kClientHelloMinimumSize > max_packet_size - kFramingOverhead) {
+            DLOG(DFATAL) << "Client hello won't fit in a single packet.";
+            CloseConnection(QUIC_INTERNAL_ERROR);
+            return;
+          }
+          out.set_minimum_size(max_packet_size - kFramingOverhead);
           next_state_ = STATE_RECV_REJ;
           DVLOG(1) << "Client: Sending " << out.DebugString();
           SendHandshakeMessage(out);
@@ -180,6 +198,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         error = crypto_config_->FillClientHello(
             server_hostname_,
             session()->connection()->guid(),
+            session()->connection()->supported_versions().front(),
             cached,
             session()->connection()->clock()->WallNow(),
             session()->connection()->random_generator(),
@@ -333,8 +352,10 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           return;
         }
         error = crypto_config_->ProcessServerHello(
-            *in, session()->connection()->guid(), cached,
-            &crypto_negotiated_params_, &error_details);
+            *in, session()->connection()->guid(),
+            session()->connection()->server_supported_versions(),
+            cached, &crypto_negotiated_params_, &error_details);
+
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(
               error, "Server hello invalid: " + error_details);
@@ -346,6 +367,8 @@ void QuicCryptoClientStream::DoHandshakeLoop(
               error, "Server hello invalid: " + error_details);
           return;
         }
+        session()->OnConfigNegotiated();
+
         CrypterPair* crypters =
             &crypto_negotiated_params_.forward_secure_crypters;
         // TODO(agl): we don't currently latch this decrypter because the idea

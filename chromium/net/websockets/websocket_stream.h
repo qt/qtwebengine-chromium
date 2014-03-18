@@ -14,17 +14,14 @@
 #include "base/memory/scoped_vector.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "net/websockets/websocket_stream_base.h"
 
 class GURL;
 
 namespace net {
 
 class BoundNetLog;
-class HttpRequestHeaders;
-class HttpResponseInfo;
 class URLRequestContext;
-struct WebSocketFrameChunk;
+struct WebSocketFrame;
 
 // WebSocketStreamRequest is the caller's handle to the process of creation of a
 // WebSocketStream. Deleting the object before the OnSuccess or OnFailure
@@ -49,11 +46,11 @@ class NET_EXPORT_PRIVATE WebSocketStreamRequest {
 // |callback| will be called when the operation is finished. Non-null |callback|
 // must be provided to these functions.
 
-class NET_EXPORT_PRIVATE WebSocketStream : public WebSocketStreamBase {
+class NET_EXPORT_PRIVATE WebSocketStream {
  public:
   // A concrete object derived from ConnectDelegate is supplied by the caller to
   // CreateAndConnectStream() to receive the result of the connection.
-  class ConnectDelegate {
+  class NET_EXPORT_PRIVATE ConnectDelegate {
    public:
     virtual ~ConnectDelegate();
     // Called on successful connection. The parameter is an object derived from
@@ -91,10 +88,10 @@ class NET_EXPORT_PRIVATE WebSocketStream : public WebSocketStreamBase {
   virtual ~WebSocketStream();
 
   // Reads WebSocket frame data. This operation finishes when new frame data
-  // becomes available. Each frame message might be chopped off in the middle
-  // as specified in the description of the WebSocketFrameChunk struct.
-  // |frame_chunks| remains owned by the caller and must be valid until the
-  // operation completes or Close() is called. |frame_chunks| must be empty on
+  // becomes available.
+  //
+  // |frames| remains owned by the caller and must be valid until the
+  // operation completes or Close() is called. |frames| must be empty on
   // calling.
   //
   // This function should not be called while the previous call of ReadFrames()
@@ -102,20 +99,18 @@ class NET_EXPORT_PRIVATE WebSocketStream : public WebSocketStreamBase {
   //
   // Returns net::OK or one of the net::ERR_* codes.
   //
-  // frame_chunks->size() >= 1 if the result is OK.
+  // frames->size() >= 1 if the result is OK.
   //
-  // A frame with an incomplete header will never be inserted into
-  // |frame_chunks|. If the currently available bytes of a new frame do not form
-  // a complete frame header, then the implementation will buffer them until all
-  // the fields in the WebSocketFrameHeader object can be filled. If
-  // ReadFrames() is freshly called in this situation, it will return
-  // ERR_IO_PENDING exactly as if no data was available.
+  // Only frames with complete header information are inserted into |frames|. If
+  // the currently available bytes of a new frame do not form a complete frame
+  // header, then the implementation will buffer them until all the fields in
+  // the WebSocketFrameHeader object can be filled. If ReadFrames() is freshly
+  // called in this situation, it will return ERR_IO_PENDING exactly as if no
+  // data was available.
   //
-  // Every WebSocketFrameChunk in the vector except the first and last is
-  // guaranteed to be a complete frame. The first chunk may be the final part
-  // of the previous frame. The last chunk may be the first part of a new
-  // frame. If there is only one chunk, then it may consist of data from the
-  // middle part of a frame.
+  // Original frame boundaries are not preserved. In particular, if only part of
+  // a frame is available, then the frame will be split, and the available data
+  // will be returned immediately.
   //
   // When the socket is closed on the remote side, this method will return
   // ERR_CONNECTION_CLOSED. It will not return OK with an empty vector.
@@ -124,33 +119,34 @@ class NET_EXPORT_PRIVATE WebSocketStream : public WebSocketStreamBase {
   // ReadFrames may discard the incomplete frame. Since the renderer will
   // discard any incomplete messages when the connection is closed, this makes
   // no difference to the overall semantics.
-  virtual int ReadFrames(ScopedVector<WebSocketFrameChunk>* frame_chunks,
+  //
+  // Implementations of ReadFrames() must be able to handle being deleted during
+  // the execution of callback.Run(). In practice this means that the method
+  // calling callback.Run() (and any calling methods in the same object) must
+  // return immediately without any further method calls or access to member
+  // variables. Implementors should write test(s) for this case.
+  virtual int ReadFrames(ScopedVector<WebSocketFrame>* frames,
                          const CompletionCallback& callback) = 0;
 
-  // Writes WebSocket frame data. |frame_chunks| must only contain complete
-  // frames. Every chunk must have a non-NULL |header| and the |final_chunk|
-  // boolean set to true.
+  // Writes WebSocket frame data.
   //
-  // The |frame_chunks| pointer must remain valid until the operation completes
-  // or Close() is called. WriteFrames() will modify the contents of
-  // |frame_chunks| in the process of sending the message. After WriteFrames()
-  // has completed it is safe to clear and then re-use the vector, but other
-  // than that the caller should make no assumptions about its contents.
+  // |frames| must be valid until the operation completes or Close() is called.
   //
-  // This function should not be called while a previous call to WriteFrames()
-  // on the same stream is pending.
-  //
-  // Frame boundaries may not be preserved. Frames may be split or
-  // coalesced. Message boundaries are preserved (as required by WebSocket API
-  // semantics).
+  // This function must not be called while a previous call of WriteFrames() is
+  // still pending.
   //
   // This method will only return OK if all frames were written completely.
   // Otherwise it will return an appropriate net error code.
-  virtual int WriteFrames(ScopedVector<WebSocketFrameChunk>* frame_chunks,
+  //
+  // The callback implementation is permitted to delete this
+  // object. Implementations of WriteFrames() should be robust against
+  // this. This generally means returning to the event loop immediately after
+  // calling the callback.
+  virtual int WriteFrames(ScopedVector<WebSocketFrame>* frames,
                           const CompletionCallback& callback) = 0;
 
   // Closes the stream. All pending I/O operations (if any) are cancelled
-  // at this point, so |frame_chunks| can be freed.
+  // at this point, so |frames| can be freed.
   virtual void Close() = 0;
 
   // The subprotocol that was negotiated for the stream. If no protocol was
@@ -167,40 +163,6 @@ class NET_EXPORT_PRIVATE WebSocketStream : public WebSocketStreamBase {
   // RFC6455 section 9.1 for the exact format specification. If no
   // extensions were negotiated, the empty string is returned.
   virtual std::string GetExtensions() const = 0;
-
-  // TODO(yutak): Add following interfaces:
-  // - RenewStreamForAuth for authentication (is this necessary?)
-  // - GetSSLInfo, GetSSLCertRequestInfo for SSL
-
-  // WebSocketStreamBase derived functions
-  virtual WebSocketStream* AsWebSocketStream() OVERRIDE;
-
-  ////////////////////////////////////////////////////////////////////////////
-  // Methods used during the stream handshake. These must not be called once a
-  // WebSocket protocol stream has been established (ie. after the
-  // SuccessCallback or FailureCallback has been called.)
-
-  // Writes WebSocket handshake request to the underlying socket. Must be called
-  // before ReadHandshakeResponse().
-  //
-  // |callback| will only be called if this method returns ERR_IO_PENDING.
-  //
-  // |response_info| must remain valid until the callback from
-  // ReadHandshakeResponse has been called.
-  //
-  // TODO(ricea): This function is only used during the handshake and is
-  // probably only applicable to certain subclasses of WebSocketStream. Move it
-  // somewhere else? Also applies to ReadHandshakeResponse.
-  virtual int SendHandshakeRequest(const GURL& url,
-                                   const HttpRequestHeaders& headers,
-                                   HttpResponseInfo* response_info,
-                                   const CompletionCallback& callback) = 0;
-
-  // Reads WebSocket handshake response from the underlying socket. Must be
-  // called after SendHandshakeRequest() completes.
-  //
-  // |callback| will only be called if this method returns ERR_IO_PENDING.
-  virtual int ReadHandshakeResponse(const CompletionCallback& callback) = 0;
 
  protected:
   WebSocketStream();

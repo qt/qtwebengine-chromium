@@ -34,27 +34,27 @@
 #include "WebCommon.h"
 #include "WebPrivatePtr.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 #include "wtf/PassRefPtr.h"
 #endif
 
 namespace WebCore { class SocketStreamError; }
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
-class WebSocketStreamError {
+class BLINK_PLATFORM_EXPORT WebSocketStreamError {
 public:
     WebSocketStreamError(int code, const WebString& message) { assign(code, message); }
     WebSocketStreamError(const WebSocketStreamError& other) { assign(other); }
     ~WebSocketStreamError() { reset(); }
 
-    WEBKIT_EXPORT void assign(int code, const WebString& message);
-    WEBKIT_EXPORT void assign(const WebSocketStreamError&);
-    WEBKIT_EXPORT void reset();
+    void assign(int code, const WebString& message);
+    void assign(const WebSocketStreamError&);
+    void reset();
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WebSocketStreamError(WTF::PassRefPtr<WebCore::SocketStreamError>);
     WebSocketStreamError& operator=(WTF::PassRefPtr<WebCore::SocketStreamError>);
     operator WTF::PassRefPtr<WebCore::SocketStreamError>() const;
@@ -64,6 +64,6 @@ private:
     WebPrivatePtr<WebCore::SocketStreamError> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

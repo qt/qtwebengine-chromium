@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "cc/output/filter_operations.h"
+#include "skia/ext/refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/gfx/point.h"
 
 namespace cc {
@@ -410,6 +412,11 @@ TEST(FilterOperationsTest, BlendDropShadowFilters) {
       gfx::Point(-2, -4), 0.f, SkColorSetARGB(0, 0, 0, 0));
   EXPECT_EQ(expected, blended);
 
+  blended = FilterOperation::Blend(&from, &to, 0.25);
+  expected = FilterOperation::CreateDropShadowFilter(
+      gfx::Point(1, 1), 3.f, SkColorSetARGB(24, 32, 64, 128));
+  EXPECT_EQ(expected, blended);
+
   blended = FilterOperation::Blend(&from, &to, 0.75);
   expected = FilterOperation::CreateDropShadowFilter(
       gfx::Point(2, 4), 5.f, SkColorSetARGB(42, 30, 61, 121));
@@ -495,6 +502,45 @@ TEST(FilterOperationsTest, BlendSaturatingBrightnessWithNull) {
   blended = FilterOperation::Blend(NULL, &filter, 0.25);
   expected = FilterOperation::CreateSaturatingBrightnessFilter(0.25f);
   EXPECT_EQ(expected, blended);
+}
+
+TEST(FilterOperationsTest, BlendReferenceFilters) {
+  skia::RefPtr<SkImageFilter> from_filter = skia::AdoptRef(
+      new SkBlurImageFilter(1.f, 1.f));
+  skia::RefPtr<SkImageFilter> to_filter = skia::AdoptRef(
+      new SkBlurImageFilter(2.f, 2.f));
+  FilterOperation from = FilterOperation::CreateReferenceFilter(from_filter);
+  FilterOperation to = FilterOperation::CreateReferenceFilter(to_filter);
+
+  FilterOperation blended = FilterOperation::Blend(&from, &to, -0.75);
+  EXPECT_EQ(from, blended);
+
+  blended = FilterOperation::Blend(&from, &to, 0.5);
+  EXPECT_EQ(from, blended);
+
+  blended = FilterOperation::Blend(&from, &to, 0.6);
+  EXPECT_EQ(to, blended);
+
+  blended = FilterOperation::Blend(&from, &to, 1.5);
+  EXPECT_EQ(to, blended);
+}
+
+TEST(FilterOperationsTest, BlendReferenceWithNull) {
+  skia::RefPtr<SkImageFilter> image_filter = skia::AdoptRef(
+      new SkBlurImageFilter(1.f, 1.f));
+  FilterOperation filter = FilterOperation::CreateReferenceFilter(image_filter);
+  FilterOperation null_filter =
+      FilterOperation::CreateReferenceFilter(skia::RefPtr<SkImageFilter>());
+
+  FilterOperation blended = FilterOperation::Blend(&filter, NULL, 0.25);
+  EXPECT_EQ(filter, blended);
+  blended = FilterOperation::Blend(&filter, NULL, 0.75);
+  EXPECT_EQ(null_filter, blended);
+
+  blended = FilterOperation::Blend(NULL, &filter, 0.25);
+  EXPECT_EQ(null_filter, blended);
+  blended = FilterOperation::Blend(NULL, &filter, 0.75);
+  EXPECT_EQ(filter, blended);
 }
 
 // Tests blending non-empty sequences that have the same length and matching
@@ -598,9 +644,26 @@ TEST(FilterOperationsTest, BlendEmptySequences) {
   EXPECT_EQ(blended, empty);
 }
 
-// Tests blending non-empty sequences that either have different lengths or
-// have non-matching operations.
+// Tests blending non-empty sequences that have non-matching operations.
 TEST(FilterOperationsTest, BlendNonMatchingSequences) {
+  FilterOperations from;
+  FilterOperations to;
+
+  from.Append(FilterOperation::CreateSaturateFilter(3.f));
+  from.Append(FilterOperation::CreateBlurFilter(2.f));
+  to.Append(FilterOperation::CreateSaturateFilter(4.f));
+  to.Append(FilterOperation::CreateHueRotateFilter(0.5f));
+
+  FilterOperations blended = to.Blend(from, -0.75);
+  EXPECT_EQ(to, blended);
+  blended = to.Blend(from, 0.75);
+  EXPECT_EQ(to, blended);
+  blended = to.Blend(from, 1.5);
+  EXPECT_EQ(to, blended);
+}
+
+// Tests blending non-empty sequences of different sizes.
+TEST(FilterOperationsTest, BlendRaggedSequences) {
   FilterOperations from;
   FilterOperations to;
 
@@ -609,13 +672,25 @@ TEST(FilterOperationsTest, BlendNonMatchingSequences) {
   to.Append(FilterOperation::CreateSaturateFilter(4.f));
 
   FilterOperations blended = to.Blend(from, -0.75);
-  EXPECT_EQ(to, blended);
-  blended = to.Blend(from, 0.75);
-  EXPECT_EQ(to, blended);
-  blended = to.Blend(from, 1.5);
-  EXPECT_EQ(to, blended);
+  FilterOperations expected;
+  expected.Append(FilterOperation::CreateSaturateFilter(2.25f));
+  expected.Append(FilterOperation::CreateBlurFilter(3.5f));
+  EXPECT_EQ(expected, blended);
 
-  to.Append(FilterOperation::CreateHueRotateFilter(0.5f));
+  blended = to.Blend(from, 0.75);
+  expected.Clear();
+  expected.Append(FilterOperation::CreateSaturateFilter(3.75f));
+  expected.Append(FilterOperation::CreateBlurFilter(0.5f));
+  EXPECT_EQ(expected, blended);
+
+  blended = to.Blend(from, 1.5);
+  expected.Clear();
+  expected.Append(FilterOperation::CreateSaturateFilter(4.5f));
+  expected.Append(FilterOperation::CreateBlurFilter(0.f));
+  EXPECT_EQ(expected, blended);
+
+  from.Append(FilterOperation::CreateOpacityFilter(1.f));
+  to.Append(FilterOperation::CreateOpacityFilter(1.f));
   blended = to.Blend(from, -0.75);
   EXPECT_EQ(to, blended);
   blended = to.Blend(from, 0.75);

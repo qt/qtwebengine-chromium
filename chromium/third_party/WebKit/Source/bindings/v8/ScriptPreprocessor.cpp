@@ -40,7 +40,7 @@
 
 namespace WebCore {
 
-ScriptPreprocessor::ScriptPreprocessor(const ScriptSourceCode& preprocessorSourceCode, ScriptController* controller, PageConsole& console)
+ScriptPreprocessor::ScriptPreprocessor(const ScriptSourceCode& preprocessorSourceCode, ScriptController& controller, PageConsole& console)
     : m_isPreprocessing(false)
 {
     v8::TryCatch tryCatch;
@@ -48,7 +48,7 @@ ScriptPreprocessor::ScriptPreprocessor(const ScriptSourceCode& preprocessorSourc
     Vector<ScriptSourceCode> sources;
     sources.append(preprocessorSourceCode);
     Vector<ScriptValue> scriptResults;
-    controller->executeScriptInIsolatedWorld(ScriptPreprocessorIsolatedWorldId, sources, DOMWrapperWorld::mainWorldExtensionGroup, &scriptResults);
+    controller.executeScriptInIsolatedWorld(ScriptPreprocessorIsolatedWorldId, sources, DOMWrapperWorld::mainWorldExtensionGroup, &scriptResults);
 
     if (scriptResults.size() != 1) {
         console.addMessage(JSMessageSource, ErrorMessageLevel, "ScriptPreprocessor internal error, one ScriptSourceCode must give exactly one result.");
@@ -82,7 +82,7 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     if (!isValid())
         return sourceCode;
 
-    v8::Handle<v8::String> functionNameString = v8String(functionName, m_isolate);
+    v8::Handle<v8::String> functionNameString = v8String(m_isolate, functionName);
     return preprocessSourceCode(sourceCode, sourceName, functionNameString);
 }
 
@@ -94,8 +94,8 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     v8::HandleScope handleScope(m_isolate);
     v8::Context::Scope contextScope(m_context.newLocal(m_isolate));
 
-    v8::Handle<v8::String> sourceCodeString = v8String(sourceCode, m_isolate);
-    v8::Handle<v8::String> sourceNameString = v8String(sourceName, m_isolate);
+    v8::Handle<v8::String> sourceCodeString = v8String(m_isolate, sourceCode);
+    v8::Handle<v8::String> sourceNameString = v8String(m_isolate, sourceName);
     v8::Handle<v8::Value> argv[] = { sourceCodeString, sourceNameString, functionName};
 
     v8::TryCatch tryCatch;
@@ -104,7 +104,7 @@ String ScriptPreprocessor::preprocessSourceCode(const String& sourceCode, const 
     v8::Handle<v8::Value> resultValue = V8ScriptRunner::callAsFunction(m_preprocessorFunction.newLocal(m_isolate), m_context.newLocal(m_isolate)->Global(), WTF_ARRAY_LENGTH(argv), argv);
 
     if (!resultValue.IsEmpty() && resultValue->IsString())
-        return toWebCoreStringWithNullCheck(resultValue.As<v8::String>());
+        return toCoreStringWithNullCheck(resultValue.As<v8::String>());
 
     return sourceCode;
 }

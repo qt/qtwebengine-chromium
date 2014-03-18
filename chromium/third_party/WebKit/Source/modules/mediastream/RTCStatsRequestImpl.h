@@ -39,7 +39,7 @@ class RTCStatsCallback;
 
 class RTCStatsRequestImpl : public RTCStatsRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCStatsRequestImpl> create(ScriptExecutionContext*, PassRefPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
+    static PassRefPtr<RTCStatsRequestImpl> create(ExecutionContext*, PassOwnPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
     virtual ~RTCStatsRequestImpl();
 
     virtual PassRefPtr<RTCStatsResponseBase> createResponse() OVERRIDE;
@@ -53,11 +53,11 @@ public:
     virtual void stop() OVERRIDE;
 
 private:
-    RTCStatsRequestImpl(ScriptExecutionContext*, PassRefPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
+    RTCStatsRequestImpl(ExecutionContext*, PassOwnPtr<RTCStatsCallback>, PassRefPtr<MediaStreamTrack>);
 
     void clear();
 
-    RefPtr<RTCStatsCallback> m_successCallback;
+    OwnPtr<RTCStatsCallback> m_successCallback;
     RefPtr<MediaStreamDescriptor> m_stream;
     RefPtr<MediaStreamComponent> m_component;
 };

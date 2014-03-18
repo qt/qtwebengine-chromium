@@ -14,7 +14,7 @@ namespace net {
 QuicReliableClientStream::QuicReliableClientStream(QuicStreamId id,
                                                    QuicSession* session,
                                                    const BoundNetLog& net_log)
-    : ReliableQuicStream(id, session),
+    : QuicDataStream(id, session),
       net_log_(net_log),
       delegate_(NULL) {
 }
@@ -33,18 +33,18 @@ uint32 QuicReliableClientStream::ProcessData(const char* data,
   int rv = delegate_->OnDataReceived(data, data_len);
   if (rv != OK) {
     DLOG(ERROR) << "Delegate refused data, rv: " << rv;
-    Close(QUIC_BAD_APPLICATION_PAYLOAD);
+    Reset(QUIC_BAD_APPLICATION_PAYLOAD);
     return 0;
   }
   return data_len;
 }
 
-void QuicReliableClientStream::TerminateFromPeer(bool half_close) {
+void QuicReliableClientStream::OnFinRead() {
   if (delegate_) {
     delegate_->OnClose(connection_error());
     delegate_ = NULL;
   }
-  ReliableQuicStream::TerminateFromPeer(half_close);
+  ReliableQuicStream::OnFinRead();
 }
 
 void QuicReliableClientStream::OnCanWrite() {
@@ -57,7 +57,7 @@ void QuicReliableClientStream::OnCanWrite() {
 
 QuicPriority QuicReliableClientStream::EffectivePriority() const {
   if (delegate_ && delegate_->HasSendHeadersComplete()) {
-    return ReliableQuicStream::EffectivePriority();
+    return QuicDataStream::EffectivePriority();
   }
   return kHighestPriority;
 }
@@ -69,7 +69,7 @@ int QuicReliableClientStream::WriteStreamData(
   // We should not have data buffered.
   DCHECK(!HasBufferedData());
   // Writes the data, or buffers it.
-  WriteData(data, fin);
+  WriteOrBufferData(data, fin);
   if (!HasBufferedData()) {
     return OK;
   }
@@ -90,6 +90,18 @@ void QuicReliableClientStream::OnError(int error) {
     delegate_ = NULL;
     delegate->OnError(error);
   }
+}
+
+bool QuicReliableClientStream::CanWrite(const CompletionCallback& callback) {
+  bool can_write =  session()->connection()->CanWrite(
+      NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
+      id() == kCryptoStreamId ? IS_HANDSHAKE : NOT_HANDSHAKE);
+  if (!can_write) {
+    session()->MarkWriteBlocked(id(), EffectivePriority());
+    DCHECK(callback_.is_null());
+    callback_ = callback;
+  }
+  return can_write;
 }
 
 }  // namespace net

@@ -41,13 +41,15 @@ WebInspector.TimelineGrid = function()
 
     this._dividersElement = this.element.createChild("div", "resources-dividers");
 
-    this._gridHeaderElement = document.createElement("div"); 
+    this._gridHeaderElement = document.createElement("div");
     this._eventDividersElement = this._gridHeaderElement.createChild("div", "resources-event-dividers");
     this._dividersLabelBarElement = this._gridHeaderElement.createChild("div", "resources-dividers-label-bar");
     this.element.appendChild(this._gridHeaderElement);
 
     this._leftCurtainElement = this.element.createChild("div", "timeline-cpu-curtain-left");
     this._rightCurtainElement = this.element.createChild("div", "timeline-cpu-curtain-right");
+
+    this._gridSliceTime = 1;
 }
 
 WebInspector.TimelineGrid.prototype = {
@@ -71,6 +73,10 @@ WebInspector.TimelineGrid.prototype = {
         return this._gridHeaderElement;
     },
 
+    get gridSliceTime() {
+        return this._gridSliceTime;
+    },
+
     removeDividers: function()
     {
         this._dividersElement.removeChildren();
@@ -79,7 +85,7 @@ WebInspector.TimelineGrid.prototype = {
 
     updateDividers: function(calculator)
     {
-        const minGridSlicePx = 48; // minimal distance between grid lines.
+        const minGridSlicePx = 64; // minimal distance between grid lines.
         const gridFreeZoneAtLeftPx = 50;
 
         var dividersElementClientWidth = this._dividersElement.clientWidth;
@@ -92,12 +98,13 @@ WebInspector.TimelineGrid.prototype = {
         // e.g.: ...  .1  .2  .5  1  2  5  10  20  50  ...
         // After a span has been chosen make grid lines at multiples of the span.
 
-        var logGridSliceTime = Math.ceil(Math.log(gridSliceTime) / Math.log(10));
+        var logGridSliceTime = Math.ceil(Math.log(gridSliceTime) / Math.LN10);
         gridSliceTime = Math.pow(10, logGridSliceTime);
         if (gridSliceTime * pixelsPerTime >= 5 * minGridSlicePx)
             gridSliceTime = gridSliceTime / 5;
         if (gridSliceTime * pixelsPerTime >= 2 * minGridSlicePx)
             gridSliceTime = gridSliceTime / 2;
+        this._gridSliceTime = gridSliceTime;
 
         var firstDividerTime = Math.ceil((calculator.minimumBoundary() - calculator.zeroTime()) / gridSliceTime) * gridSliceTime + calculator.zeroTime();
         var lastDividerTime = calculator.maximumBoundary();
@@ -180,18 +187,18 @@ WebInspector.TimelineGrid.prototype = {
 
     hideEventDividers: function()
     {
-        this._eventDividersElement.addStyleClass("hidden");
+        this._eventDividersElement.classList.add("hidden");
     },
 
     showEventDividers: function()
     {
-        this._eventDividersElement.removeStyleClass("hidden");
+        this._eventDividersElement.classList.remove("hidden");
     },
 
     hideCurtains: function()
     {
-        this._leftCurtainElement.addStyleClass("hidden");
-        this._rightCurtainElement.addStyleClass("hidden");
+        this._leftCurtainElement.classList.add("hidden");
+        this._rightCurtainElement.classList.add("hidden");
     },
 
     /**
@@ -201,9 +208,9 @@ WebInspector.TimelineGrid.prototype = {
     showCurtains: function(gapOffset, gapWidth)
     {
         this._leftCurtainElement.style.width = gapOffset + "px";
-        this._leftCurtainElement.removeStyleClass("hidden");
+        this._leftCurtainElement.classList.remove("hidden");
         this._rightCurtainElement.style.left = (gapOffset + gapWidth) + "px";
-        this._rightCurtainElement.removeStyleClass("hidden");
+        this._rightCurtainElement.classList.remove("hidden");
     },
 
     setScrollAndDividerTop: function(scrollTop, dividersTop)
@@ -220,11 +227,18 @@ WebInspector.TimelineGrid.prototype = {
 WebInspector.TimelineGrid.Calculator = function() { }
 
 WebInspector.TimelineGrid.Calculator.prototype = {
-    /** @param {number} time */
-    computePosition: function(time) { },
+    /**
+     * @param {number} time
+     * @return {number}
+     */
+    computePosition: function(time) { return 0; },
 
-    /** @param {number} time */
-    formatTime: function(time) { },
+    /**
+     * @param {number} time
+     * @param {boolean=} hires
+     * @return {string}
+     */
+    formatTime: function(time, hires) { },
 
     /** @return {number} */
     minimumBoundary: function() { },

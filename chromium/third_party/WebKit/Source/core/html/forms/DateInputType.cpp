@@ -32,56 +32,47 @@
 #include "core/html/forms/DateInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/DateComponents.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "platform/DateComponents.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
+using blink::WebLocalizedString;
 using namespace HTMLNames;
 
 static const int dateDefaultStep = 1;
 static const int dateDefaultStepBase = 0;
 static const int dateStepScaleFactor = 86400000;
 
-inline DateInputType::DateInputType(HTMLInputElement* element)
+inline DateInputType::DateInputType(HTMLInputElement& element)
     : BaseDateInputType(element)
 {
 }
 
-PassRefPtr<InputType> DateInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> DateInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new DateInputType(element));
 }
 
 void DateInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeDate);
+    countUsageIfVisible(UseCounter::InputTypeDate);
 }
 
 const AtomicString& DateInputType::formControlType() const
 {
-    return InputTypeNames::date();
-}
-
-DateComponents::Type DateInputType::dateType() const
-{
-    return DateComponents::Date;
+    return InputTypeNames::date;
 }
 
 StepRange DateInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (dateDefaultStep, dateDefaultStepBase, dateStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element()->fastGetAttribute(minAttr), 0);
-    const Decimal minimum = parseToNumber(element()->fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumDate()));
-    const Decimal maximum = parseToNumber(element()->fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumDate()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumDate()), Decimal::fromDouble(DateComponents::maximumDate()), stepDescription);
 }
 
 bool DateInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const
@@ -115,13 +106,13 @@ void DateInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters&
 {
     layoutParameters.dateTimeFormat = layoutParameters.locale.dateFormat();
     layoutParameters.fallbackDateTimeFormat = "yyyy-MM-dd";
-    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+    if (!parseToDateComponents(element().fastGetAttribute(minAttr), &layoutParameters.minimum))
         layoutParameters.minimum = DateComponents();
-    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+    if (!parseToDateComponents(element().fastGetAttribute(maxAttr), &layoutParameters.maximum))
         layoutParameters.maximum = DateComponents();
-    layoutParameters.placeholderForDay = placeholderForDayOfMonthField();
-    layoutParameters.placeholderForMonth = placeholderForMonthField();
-    layoutParameters.placeholderForYear = placeholderForYearField();
+    layoutParameters.placeholderForDay = locale().queryString(WebLocalizedString::PlaceholderForDayOfMonthField);
+    layoutParameters.placeholderForMonth = locale().queryString(WebLocalizedString::PlaceholderForMonthField);
+    layoutParameters.placeholderForYear = locale().queryString(WebLocalizedString::PlaceholderForYearField);
 }
 
 bool DateInputType::isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const

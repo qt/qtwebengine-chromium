@@ -12,6 +12,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/port/browser/render_widget_host_view_port.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
@@ -57,7 +58,7 @@ namespace {
 // Convenience macro: Short-circuit a pass for platforms where setting up
 // high-DPI fails.
 #define PASS_TEST_IF_SCALE_FACTOR_NOT_SUPPORTED(factor) \
-  if (ui::GetScaleFactorScale( \
+  if (ui::GetImageScale( \
           GetScaleFactorForView(GetRenderWidgetHostViewPort())) != factor) {  \
     LOG(WARNING) << "Blindly passing this test: failed to set up "  \
                     "scale factor: " << factor;  \
@@ -343,14 +344,6 @@ class FakeFrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
 // is enabled.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
                        CopyFromBackingStore) {
-  // Disable the test for WinXP.  See http://crbug/294116.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
-    return;
-  }
-#endif
-
   RunBasicCopyFromBackingStoreTest();
 }
 
@@ -430,14 +423,6 @@ IN_PROC_BROWSER_TEST_F(NonCompositingRenderWidgetHostViewBrowserTest,
 // until at least one DeliverFrameCallback has been invoked.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
                        FrameSubscriberTest) {
-  // Disable the test for WinXP.  See http://crbug/294116.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
-    return;
-  }
-#endif
-
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewPort* const view = GetRenderWidgetHostViewPort();
   if (!view->CanSubscribeFrame()) {
@@ -463,14 +448,6 @@ IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
 
 // Test that we can copy twice from an accelerated composited page.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest, CopyTwice) {
-  // Disable the test for WinXP.  See http://crbug/294116.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
-    return;
-  }
-#endif
-
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewPort* const view = GetRenderWidgetHostViewPort();
   if (!view->CanCopyToVideoFrame()) {
@@ -590,9 +567,9 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     SkBitmap bitmap;
     bitmap.setConfig(SkBitmap::kARGB_8888_Config,
                      video_frame->visible_rect().width(),
-                     video_frame->visible_rect().height());
+                     video_frame->visible_rect().height(),
+                     0, kOpaque_SkAlphaType);
     bitmap.allocPixels();
-    bitmap.setIsOpaque(true);
 
     SkBitmapDevice device(bitmap);
     SkCanvas canvas(&device);
@@ -671,6 +648,20 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
       return;
 
     RenderWidgetHostViewPort* rwhvp = GetRenderWidgetHostViewPort();
+    if (video_frame && !rwhvp->CanCopyToVideoFrame()) {
+      // This should only happen on Mac when using the software compositor.
+      // Otherwise, raise an error. This can be removed when Mac is moved to a
+      // browser compositor.
+      // http://crbug.com/314190
+#if defined(OS_MACOSX)
+      if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
+        LOG(WARNING) << ("Blindly passing this test because copying to "
+                         "video frames is not supported on this platform.");
+        return;
+      }
+#endif
+      NOTREACHED();
+    }
 
     // The page is loaded in the renderer, wait for a new frame to arrive.
     uint32 frame = rwhvp->RendererFrameNumber();
@@ -708,6 +699,17 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
                                                     video_frame,
                                                     callback);
     } else {
+#if defined(USE_AURA)
+      if (!content::GpuDataManager::GetInstance()
+               ->CanUseGpuBrowserCompositor()) {
+        // Skia rendering can cause color differences, particularly in the
+        // middle two columns.
+        SetAllowableError(2);
+        SetExcludeRect(
+            gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
+      }
+#endif
+
       base::Callback<void(bool, const SkBitmap&)> callback =
           base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
                        CopyFromCompositingSurfaceCallback,

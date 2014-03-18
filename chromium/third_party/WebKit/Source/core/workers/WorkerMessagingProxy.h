@@ -27,10 +27,9 @@
 #ifndef WorkerMessagingProxy_h
 #define WorkerMessagingProxy_h
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerLoaderProxy.h"
-#include "core/workers/WorkerObjectProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -40,12 +39,13 @@
 
 namespace WebCore {
 
+    class WorkerObjectProxy;
     class DedicatedWorkerThread;
-    class ScriptExecutionContext;
+    class ExecutionContext;
     class Worker;
     class WorkerClients;
 
-    class WorkerMessagingProxy : public WorkerGlobalScopeProxy, public WorkerObjectProxy, public WorkerLoaderProxy {
+    class WorkerMessagingProxy : public WorkerGlobalScopeProxy, public WorkerLoaderProxy {
         WTF_MAKE_NONCOPYABLE(WorkerMessagingProxy); WTF_MAKE_FAST_ALLOCATED;
     public:
         WorkerMessagingProxy(Worker*, PassOwnPtr<WorkerClients>);
@@ -61,45 +61,33 @@ namespace WebCore {
         virtual void disconnectFromInspector() OVERRIDE;
         virtual void sendMessageToInspector(const String&) OVERRIDE;
 
-        // Implementations of WorkerObjectProxy.
-        // (Only use these methods in the worker context thread.)
-        virtual void postMessageToWorkerObject(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>) OVERRIDE;
-        virtual void postExceptionToWorkerObject(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) OVERRIDE;
-        virtual void postConsoleMessageToWorkerObject(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL) OVERRIDE;
-        virtual void postMessageToPageInspector(const String&) OVERRIDE;
-        virtual void updateInspectorStateCookie(const String&) OVERRIDE;
-        virtual void confirmMessageFromWorkerObject(bool hasPendingActivity) OVERRIDE;
-        virtual void reportPendingActivity(bool hasPendingActivity) OVERRIDE;
-        virtual void workerGlobalScopeClosed() OVERRIDE;
-        virtual void workerGlobalScopeDestroyed() OVERRIDE;
+        // These methods come from worker context thread via WorkerObjectProxy
+        // and are called on the worker object thread (e.g. main thread).
+        void postMessageToWorkerObject(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>);
+        void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL);
+        void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL);
+        void postMessageToPageInspector(const String&);
+        void confirmMessageFromWorkerObject(bool hasPendingActivity);
+        void reportPendingActivity(bool hasPendingActivity);
+        void workerGlobalScopeClosed();
+        void workerGlobalScopeDestroyed();
 
         // Implementation of WorkerLoaderProxy.
         // These methods are called on different threads to schedule loading
         // requests and to send callbacks back to WorkerGlobalScope.
-        virtual void postTaskToLoader(PassOwnPtr<ScriptExecutionContext::Task>) OVERRIDE;
-        virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ScriptExecutionContext::Task>, const String& mode) OVERRIDE;
+        virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask>) OVERRIDE;
+        virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>, const String& mode) OVERRIDE;
 
         void workerThreadCreated(PassRefPtr<DedicatedWorkerThread>);
-
-        // Only use this method on the worker object thread.
-        bool askedToTerminate() const { return m_askedToTerminate; }
 
     protected:
         virtual ~WorkerMessagingProxy();
 
     private:
-        friend class MessageWorkerTask;
-        friend class PostMessageToPageInspectorTask;
-        friend class WorkerGlobalScopeDestroyedTask;
-        friend class WorkerExceptionTask;
-        friend class WorkerThreadActivityReportTask;
+        static void workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy*);
 
-        void workerGlobalScopeDestroyedInternal();
-        static void workerObjectDestroyedInternal(ScriptExecutionContext*, WorkerMessagingProxy*);
-        void reportPendingActivityInternal(bool confirmingMessage, bool hasPendingActivity);
-        Worker* workerObject() const { return m_workerObject; }
-
-        RefPtr<ScriptExecutionContext> m_scriptExecutionContext;
+        RefPtr<ExecutionContext> m_executionContext;
+        OwnPtr<WorkerObjectProxy> m_workerObjectProxy;
         Worker* m_workerObject;
         bool m_mayBeDestroyed;
         RefPtr<DedicatedWorkerThread> m_workerThread;
@@ -109,7 +97,7 @@ namespace WebCore {
 
         bool m_askedToTerminate;
 
-        Vector<OwnPtr<ScriptExecutionContext::Task> > m_queuedEarlyTasks; // Tasks are queued here until there's a thread object created.
+        Vector<OwnPtr<ExecutionContextTask> > m_queuedEarlyTasks; // Tasks are queued here until there's a thread object created.
         WorkerGlobalScopeProxy::PageInspector* m_pageInspector;
 
         OwnPtr<WorkerClients> m_workerClients;

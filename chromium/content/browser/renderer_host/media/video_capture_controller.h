@@ -30,7 +30,7 @@
 //
 //   * VideoCaptureController indirectly observes a VideoCaptureDevice
 //     by means of its proxy, VideoCaptureDeviceClient, which implements
-//     the VideoCaptureDevice::EventHandler interface. The proxy forwards
+//     the VideoCaptureDevice::Client interface. The proxy forwards
 //     observed events to the VideoCaptureController on the IO thread.
 //   * A VideoCaptureController interacts with its clients (VideoCaptureHosts)
 //     via the VideoCaptureControllerEventHandler interface.
@@ -48,14 +48,12 @@
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_H_
 
 #include <list>
-#include <map>
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
-#include "base/synchronization/lock.h"
 #include "content/browser/renderer_host/media/video_capture_buffer_pool.h"
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/common/content_export.h"
@@ -76,15 +74,15 @@ class CONTENT_EXPORT VideoCaptureController {
 
   // Return a new VideoCaptureDeviceClient to forward capture events to this
   // instance.
-  scoped_ptr<media::VideoCaptureDevice::EventHandler> NewDeviceClient();
+  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient();
 
-  // Start video capturing and try to use the resolution specified in
-  // |params|.
-  // When capturing starts, the |event_handler| will receive an OnFrameInfo()
-  // call informing it of the resolution that was actually picked by the device.
+  // Start video capturing and try to use the resolution specified in |params|.
+  // Buffers will be shared to the client as necessary. The client will continue
+  // to receive frames from the device until RemoveClient() is called.
   void AddClient(const VideoCaptureControllerID& id,
                  VideoCaptureControllerEventHandler* event_handler,
                  base::ProcessHandle render_process,
+                 media::VideoCaptureSessionId session_id,
                  const media::VideoCaptureParams& params);
 
   // Stop video capture. This will take back all buffers held by by
@@ -106,6 +104,8 @@ class CONTENT_EXPORT VideoCaptureController {
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id);
 
+  const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
+
  private:
   class VideoCaptureDeviceClient;
 
@@ -113,18 +113,14 @@ class CONTENT_EXPORT VideoCaptureController {
   typedef std::list<ControllerClient*> ControllerClients;
 
   // Worker functions on IO thread. Called by the VideoCaptureDeviceClient.
-  void DoIncomingCapturedFrameOnIOThread(
-      const scoped_refptr<media::VideoFrame>& captured_frame,
+  void DoIncomingCapturedI420BufferOnIOThread(
+      scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer,
+      const gfx::Size& dimensions,
+      int frame_rate,
       base::Time timestamp);
-  void DoFrameInfoOnIOThread(
-      const media::VideoCaptureCapability& frame_info,
-      const scoped_refptr<VideoCaptureBufferPool>& buffer_pool);
-  void DoFrameInfoChangedOnIOThread(const media::VideoCaptureCapability& info);
   void DoErrorOnIOThread();
   void DoDeviceStoppedOnIOThread();
-
-  // Send frame info and init buffers to |client|.
-  void SendFrameInfoAndBuffers(ControllerClient* client);
+  void DoBufferDestroyedOnIOThread(int buffer_id_to_drop);
 
   // Find a client of |id| and |handler| in |clients|.
   ControllerClient* FindClient(
@@ -138,20 +134,16 @@ class CONTENT_EXPORT VideoCaptureController {
       const ControllerClients& clients);
 
   // The pool of shared-memory buffers used for capturing.
-  scoped_refptr<VideoCaptureBufferPool> buffer_pool_;
+  const scoped_refptr<VideoCaptureBufferPool> buffer_pool_;
 
   // All clients served by this controller.
   ControllerClients controller_clients_;
 
-  // The parameter that currently used for the capturing.
-  media::VideoCaptureParams current_params_;
-
-  // Tracks the current frame format.
-  media::VideoCaptureCapability frame_info_;
-
   // Takes on only the states 'STARTED' and 'ERROR'. 'ERROR' is an absorbing
   // state which stops the flow of data to clients.
   VideoCaptureState state_;
+
+  media::VideoCaptureFormat video_capture_format_;
 
   base::WeakPtrFactory<VideoCaptureController> weak_ptr_factory_;
 

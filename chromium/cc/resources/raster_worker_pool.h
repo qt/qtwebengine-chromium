@@ -22,10 +22,6 @@ class LazyPixelRef;
 }
 
 namespace cc {
-class PicturePileImpl;
-class PixelBufferRasterWorkerPool;
-class ResourceProvider;
-
 namespace internal {
 
 class CC_EXPORT RasterWorkerPoolTask
@@ -186,6 +182,9 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   // even if they later get canceled by another call to ScheduleTasks().
   virtual void ScheduleTasks(RasterTask::Queue* queue) = 0;
 
+  // Returns the target that needs to be used for raster task resources.
+  virtual GLenum GetResourceTarget() const = 0;
+
   // Returns the format that needs to be used for raster task resources.
   virtual ResourceFormat GetResourceFormat() const = 0;
 
@@ -196,7 +195,6 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
       gfx::Rect content_rect,
       float contents_scale,
       RasterMode raster_mode,
-      bool is_tile_in_pending_tree_now_bin,
       TileResolution tile_resolution,
       int layer_id,
       const void* tile_id,
@@ -273,10 +271,10 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   RasterTask::Queue::TaskVector raster_tasks_;
   RasterTask::Queue::TaskSet raster_tasks_required_for_activation_;
 
-  base::WeakPtrFactory<RasterWorkerPool> weak_ptr_factory_;
   scoped_refptr<internal::WorkerPoolTask> raster_finished_task_;
   scoped_refptr<internal::WorkerPoolTask>
       raster_required_for_activation_finished_task_;
+  base::WeakPtrFactory<RasterWorkerPool> weak_ptr_factory_;
 };
 
 }  // namespace cc

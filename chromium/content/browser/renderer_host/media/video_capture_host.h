@@ -5,33 +5,48 @@
 // VideoCaptureHost serves video capture related messages from
 // VideoCaptureMessageFilter which lives inside the render process.
 //
-// This class is owned by BrowserRenderProcessHost, and instantiated on UI
+// This class is owned by RenderProcessHostImpl, and instantiated on UI
 // thread, but all other operations and method calls happen on IO thread.
 //
 // Here's an example of a typical IPC dialog for video capture:
 //
-//   Renderer                          VideoCaptureHost
-//      |                                     |
-//      |  VideoCaptureHostMsg_Start >        |
-//      |  < VideoCaptureMsg_DeviceInfo       |
-//      |                                     |
-//      | < VideoCaptureMsg_StateChanged      |
-//      |        (kStarted)                   |
-//      | < VideoCaptureMsg_BufferReady       |
-//      |             ...                     |
-//      | < VideoCaptureMsg_BufferReady       |
-//      |             ...                     |
-//      | VideoCaptureHostMsg_BufferReady >   |
-//      | VideoCaptureHostMsg_BufferReady >   |
-//      |                                     |
-//      |             ...                     |
-//      |                                     |
-//      | < VideoCaptureMsg_BufferReady       |
-//      |  VideoCaptureHostMsg_Stop >         |
-//      | VideoCaptureHostMsg_BufferReady >   |
-//      | < VideoCaptureMsg_StateChanged      |
-//      |         (kStopped)                  |
-//      v                                     v
+//   Renderer                             VideoCaptureHost
+//      |                                        |
+//      |  VideoCaptureHostMsg_Start >           |
+//      | < VideoCaptureMsg_StateChanged         |
+//      |        (VIDEO_CAPTURE_STATE_STARTED)   |
+//      | < VideoCaptureMsg_NewBuffer(1)         |
+//      | < VideoCaptureMsg_NewBuffer(2)         |
+//      | < VideoCaptureMsg_NewBuffer(3)         |
+//      |                                        |
+//      | < VideoCaptureMsg_BufferReady(1)       |
+//      | < VideoCaptureMsg_BufferReady(2)       |
+//      | VideoCaptureHostMsg_BufferReady(1) >   |
+//      | < VideoCaptureMsg_BufferReady(3)       |
+//      | VideoCaptureHostMsg_BufferReady(2) >   |
+//      | < VideoCaptureMsg_BufferReady(1)       |
+//      | VideoCaptureHostMsg_BufferReady(3) >   |
+//      | < VideoCaptureMsg_BufferReady(2)       |
+//      | VideoCaptureHostMsg_BufferReady(1) >   |
+//      |             ...                        |
+//      | < VideoCaptureMsg_BufferReady(3)       |
+//      |                                        |
+//      |             ... (resolution change)    |
+//      | < VideoCaptureMsg_FreeBuffer(1)        |  Buffers are re-allocated
+//      | < VideoCaptureMsg_NewBuffer(4)         |  at a larger size, as
+//      | < VideoCaptureMsg_BufferReady(4)       |  needed.
+//      | VideoCaptureHostMsg_BufferReady(2) >   |
+//      | < VideoCaptureMsg_FreeBuffer(2)        |
+//      | < VideoCaptureMsg_NewBuffer(5)         |
+//      | < VideoCaptureMsg_BufferReady(5)       |
+//      |             ...                        |
+//      |                                        |
+//      | < VideoCaptureMsg_BufferReady          |
+//      | VideoCaptureHostMsg_Stop >             |
+//      | VideoCaptureHostMsg_BufferReady >      |
+//      | < VideoCaptureMsg_StateChanged         |
+//      |         (VIDEO_CAPTURE_STATE_STOPPED)  |
+//      v                                        v
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_HOST_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_HOST_H_
@@ -45,10 +60,6 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "ipc/ipc_message.h"
-
-namespace media {
-class VideoCaptureCapability;
-}
 
 namespace content {
 class MediaStreamManager;
@@ -69,17 +80,15 @@ class CONTENT_EXPORT VideoCaptureHost
   virtual void OnError(const VideoCaptureControllerID& id) OVERRIDE;
   virtual void OnBufferCreated(const VideoCaptureControllerID& id,
                                base::SharedMemoryHandle handle,
-                               int length, int buffer_id) OVERRIDE;
-  virtual void OnBufferReady(const VideoCaptureControllerID& id,
-                             int buffer_id,
-                             base::Time timestamp) OVERRIDE;
-  virtual void OnFrameInfo(
+                               int length,
+                               int buffer_id) OVERRIDE;
+  virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
+                                 int buffer_id) OVERRIDE;
+  virtual void OnBufferReady(
       const VideoCaptureControllerID& id,
-      const media::VideoCaptureCapability& format) OVERRIDE;
-  virtual void OnFrameInfoChanged(const VideoCaptureControllerID& id,
-                                  int width,
-                                  int height,
-                                  int frame_per_second) OVERRIDE;
+      int buffer_id,
+      base::Time timestamp,
+      const media::VideoCaptureFormat& format) OVERRIDE;
   virtual void OnEnded(const VideoCaptureControllerID& id) OVERRIDE;
 
  private:
@@ -91,16 +100,17 @@ class CONTENT_EXPORT VideoCaptureHost
   virtual ~VideoCaptureHost();
 
   // IPC message: Start capture on the VideoCaptureDevice referenced by
-  // VideoCaptureParams::session_id. |device_id| is an id created by
-  // VideoCaptureMessageFilter to identify a session
-  // between a VideoCaptureMessageFilter and a VideoCaptureHost.
+  // |session_id|. |device_id| is an id created by VideoCaptureMessageFilter
+  // to identify a session between a VideoCaptureMessageFilter and a
+  // VideoCaptureHost.
   void OnStartCapture(int device_id,
+                      media::VideoCaptureSessionId session_id,
                       const media::VideoCaptureParams& params);
   void OnControllerAdded(
-      int device_id, const media::VideoCaptureParams& params,
+      int device_id,
       const base::WeakPtr<VideoCaptureController>& controller);
   void DoControllerAddedOnIOThread(
-      int device_id, const media::VideoCaptureParams params,
+      int device_id,
       const base::WeakPtr<VideoCaptureController>& controller);
 
   // IPC message: Stop capture on device referenced by |device_id|.
@@ -120,24 +130,16 @@ class CONTENT_EXPORT VideoCaptureHost
       int length,
       int buffer_id);
 
+  void DoSendFreeBufferOnIOThread(
+      const VideoCaptureControllerID& controller_id,
+      int buffer_id);
+
   // Send a filled buffer to the VideoCaptureMessageFilter.
   void DoSendFilledBufferOnIOThread(
       const VideoCaptureControllerID& controller_id,
       int buffer_id,
-      base::Time timestamp);
-
-  // Send information about the capture parameters (resolution, frame rate etc)
-  // to the VideoCaptureMessageFilter.
-  void DoSendFrameInfoOnIOThread(const VideoCaptureControllerID& controller_id,
-                                 const media::VideoCaptureCapability& format);
-
-  // Send newly changed information about frame resolution and frame rate
-  // to the VideoCaptureMessageFilter.
-  void DoSendFrameInfoChangedOnIOThread(
-      const VideoCaptureControllerID& controller_id,
-      int width,
-      int height,
-      int frame_per_second);
+      base::Time timestamp,
+      const media::VideoCaptureFormat& format);
 
   // Handle error coming from VideoCaptureDevice.
   void DoHandleErrorOnIOThread(const VideoCaptureControllerID& controller_id);

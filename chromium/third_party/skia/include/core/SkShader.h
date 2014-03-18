@@ -334,6 +334,9 @@ public:
      *  exceed implementation limits (currently at 64K - 1)) then SkEmptyShader
      *  may be returned.
      *
+     *  If the src is kA8_Config then that mask will be colorized using the color on
+     *  the paint.
+     *
      *  @param src  The bitmap to use inside the shader
      *  @param tmx  The tiling mode to use when sampling the bitmap in the x-direction.
      *  @param tmy  The tiling mode to use when sampling the bitmap in the y-direction.
@@ -343,6 +346,8 @@ public:
                                         TileMode tmx, TileMode tmy);
 
     SkDEVCODE(virtual void toString(SkString* str) const;)
+
+    SK_DEFINE_FLATTENABLE_TYPE(SkShader)
 
 protected:
     enum MatrixClass {

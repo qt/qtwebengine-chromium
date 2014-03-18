@@ -52,7 +52,6 @@ private:
 
     virtual FloatRect objectBoundingBox() const { return floatLinesBoundingBox(); }
 
-    virtual bool requiresLayer() const { return false; }
     virtual bool isSVGInlineText() const { return true; }
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
@@ -65,20 +64,7 @@ private:
     SVGTextLayoutAttributes m_layoutAttributes;
 };
 
-inline RenderSVGInlineText* toRenderSVGInlineText(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGInlineText());
-    return static_cast<RenderSVGInlineText*>(object);
-}
-
-inline const RenderSVGInlineText* toRenderSVGInlineText(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGInlineText());
-    return static_cast<const RenderSVGInlineText*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderSVGInlineText(const RenderSVGInlineText*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGInlineText, isSVGInlineText());
 
 }
 

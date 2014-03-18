@@ -9,6 +9,7 @@
 #include "base/single_thread_task_runner.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_provider.h"
+#include "ui/gfx/frame_time.h"
 
 namespace {
 
@@ -31,11 +32,7 @@ size_t ResourceUpdateController::MaxPartialTextureUpdates() {
 
 size_t ResourceUpdateController::MaxFullUpdatesPerTick(
     ResourceProvider* resource_provider) {
-  double textures_per_second = resource_provider->EstimatedUploadsPerSecond();
-  size_t textures_per_tick =
-      floor(resource_provider->TextureUpdateTickRate().InSecondsF() *
-            textures_per_second);
-  return textures_per_tick ? textures_per_tick : 1;
+  return resource_provider->EstimatedUploadsPerTick();
 }
 
 ResourceUpdateController::ResourceUpdateController(
@@ -49,8 +46,8 @@ ResourceUpdateController::ResourceUpdateController(
       texture_updates_per_tick_(MaxFullUpdatesPerTick(resource_provider)),
       first_update_attempt_(true),
       task_runner_(task_runner),
-      weak_factory_(this),
-      task_posted_(false) {}
+      task_posted_(false),
+      weak_factory_(this) {}
 
 ResourceUpdateController::~ResourceUpdateController() {}
 
@@ -112,12 +109,9 @@ void ResourceUpdateController::OnTimerFired() {
     client_->ReadyToFinalizeTextureUpdates();
 }
 
-base::TimeTicks ResourceUpdateController::Now() const {
-  return base::TimeTicks::Now();
-}
-
-base::TimeDelta ResourceUpdateController::UpdateMoreTexturesTime() const {
-  return resource_provider_->TextureUpdateTickRate();
+base::TimeTicks ResourceUpdateController::UpdateMoreTexturesCompletionTime() {
+  return resource_provider_->EstimatedUploadCompletionTime(
+      texture_updates_per_tick_);
 }
 
 size_t ResourceUpdateController::UpdateMoreTexturesSize() const {
@@ -128,25 +122,14 @@ size_t ResourceUpdateController::MaxBlockingUpdates() const {
   return UpdateMoreTexturesSize() * kMaxBlockingUpdateIntervals;
 }
 
-base::TimeDelta ResourceUpdateController::PendingUpdateTime() const {
-  base::TimeDelta update_one_resource_time =
-      UpdateMoreTexturesTime() / UpdateMoreTexturesSize();
-  return update_one_resource_time * resource_provider_->NumBlockingUploads();
-}
-
 bool ResourceUpdateController::UpdateMoreTexturesIfEnoughTimeRemaining() {
   while (resource_provider_->NumBlockingUploads() < MaxBlockingUpdates()) {
     if (!queue_->FullUploadSize())
       return false;
 
     if (!time_limit_.is_null()) {
-      // Estimated completion time of all pending updates.
-      base::TimeTicks completion_time = Now() + PendingUpdateTime();
-
-      // Time remaining based on current completion estimate.
-      base::TimeDelta time_remaining = time_limit_ - completion_time;
-
-      if (time_remaining < UpdateMoreTexturesTime())
+      base::TimeTicks completion_time = UpdateMoreTexturesCompletionTime();
+      if (completion_time > time_limit_)
         return true;
     }
 

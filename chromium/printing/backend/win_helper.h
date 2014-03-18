@@ -46,9 +46,10 @@ class ScopedPrinterHandle
                                             base::win::VerifierTraits> {
  public:
   bool OpenPrinter(const wchar_t* printer) {
+    HANDLE temp_handle;
     // ::OpenPrinter may return error but assign some value into handle.
-    if (!::OpenPrinter(const_cast<LPTSTR>(printer), Receive(), NULL)) {
-      Take();
+    if (::OpenPrinter(const_cast<LPTSTR>(printer), &temp_handle, NULL)) {
+      Set(temp_handle);
     }
     return IsValid();
   }
@@ -56,11 +57,32 @@ class ScopedPrinterHandle
  private:
   typedef base::win::GenericScopedHandle<PrinterHandleTraits,
                                          base::win::VerifierTraits> Base;
-  // Hide Receive to avoid assigning handle when ::OpenPrinter returned error.
-  Base::Receiver Receive() {
-    return Base::Receive();
-  }
 };
+
+class PrinterChangeHandleTraits {
+ public:
+  typedef HANDLE Handle;
+
+  static bool CloseHandle(HANDLE handle) {
+    ::FindClosePrinterChangeNotification(handle);
+    return true;
+  }
+
+  static bool IsHandleValid(HANDLE handle) {
+    return handle != NULL;
+  }
+
+  static HANDLE NullHandle() {
+    return NULL;
+  }
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(PrinterChangeHandleTraits);
+};
+
+typedef base::win::GenericScopedHandle<PrinterChangeHandleTraits,
+                                       base::win::DummyVerifierTraits>
+    ScopedPrinterChangeHandle;
 
 // Wrapper class to wrap the XPS APIs (PTxxx APIs). This is needed because these
 // APIs are not available by default on XP. We could delayload prntvpt.dll but
@@ -72,7 +94,7 @@ class PRINTING_EXPORT XPSModule {
   // All the other methods can ONLY be called after a successful call to Init.
   // Init can be called many times and by multiple threads.
   static bool Init();
-  static HRESULT OpenProvider(const string16& printer_name,
+  static HRESULT OpenProvider(const base::string16& printer_name,
                               DWORD version,
                               HPTPROVIDER* provider);
   static HRESULT GetPrintCapabilities(HPTPROVIDER provider,

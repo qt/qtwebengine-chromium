@@ -11,12 +11,13 @@
 #include <list>
 
 #include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
 #include "net/quic/quic_blocked_writer_interface.h"
+#include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/flip_server/epoll_server.h"
-#include "net/tools/quic/quic_packet_writer.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
 
@@ -46,29 +47,37 @@ class QuicDispatcherPeer;
 }  // namespace test
 
 class DeleteSessionsAlarm;
+class QuicEpollConnectionHelper;
+
 class QuicDispatcher : public QuicPacketWriter, public QuicSessionOwner {
  public:
   // Ideally we'd have a linked_hash_set: the  boolean is unused.
   typedef linked_hash_map<QuicBlockedWriterInterface*, bool> WriteBlockedList;
 
   // Due to the way delete_sessions_closure_ is registered, the Dispatcher
-  // must live until epoll_server Shutdown.
+  // must live until epoll_server Shutdown. |supported_versions| specifies the
+  // list of supported QUIC versions.
   QuicDispatcher(const QuicConfig& config,
                  const QuicCryptoServerConfig& crypto_config,
+                 const QuicVersionVector& supported_versions,
                  int fd,
                  EpollServer* epoll_server);
   virtual ~QuicDispatcher();
 
   // QuicPacketWriter
-  virtual int WritePacket(const char* buffer, size_t buf_len,
-                          const IPAddressNumber& self_address,
-                          const IPEndPoint& peer_address,
-                          QuicBlockedWriterInterface* writer,
-                          int* error) OVERRIDE;
+  virtual WriteResult WritePacket(
+      const char* buffer, size_t buf_len,
+      const IPAddressNumber& self_address,
+      const IPEndPoint& peer_address,
+      QuicBlockedWriterInterface* writer) OVERRIDE;
+  virtual bool IsWriteBlockedDataBuffered() const OVERRIDE;
 
+  // Process the incoming packet by creating a new session, passing it to
+  // an existing session, or passing it to the TimeWaitListManager.
   virtual void ProcessPacket(const IPEndPoint& server_address,
                              const IPEndPoint& client_address,
                              QuicGuid guid,
+                             bool has_version_flag,
                              const QuicEncryptedPacket& packet);
 
   // Called when the underyling connection becomes writable to allow
@@ -81,22 +90,26 @@ class QuicDispatcher : public QuicPacketWriter, public QuicSessionOwner {
   void Shutdown();
 
   // Ensure that the closed connection is cleaned up asynchronously.
-  virtual void OnConnectionClose(QuicGuid guid, QuicErrorCode error) OVERRIDE;
+  virtual void OnConnectionClosed(QuicGuid guid, QuicErrorCode error) OVERRIDE;
 
-  void set_fd(int fd) { fd_ = fd; }
+  // Sets the fd and creates a default packet writer with that fd.
+  void set_fd(int fd);
 
   typedef base::hash_map<QuicGuid, QuicSession*> SessionMap;
 
   virtual QuicSession* CreateQuicSession(
       QuicGuid guid,
-      const IPEndPoint& client_address,
-      int fd,
-      EpollServer* epoll_server);
+      const IPEndPoint& server_address,
+      const IPEndPoint& client_address);
 
   // Deletes all sessions on the closed session list and clears the list.
   void DeleteSessions();
 
   const SessionMap& session_map() const { return session_map_; }
+
+  // Uses the specified |writer| instead of QuicSocketUtils and takes ownership
+  // of writer.
+  void UseWriter(QuicPacketWriter* writer);
 
   WriteBlockedList* write_blocked_list() { return &write_blocked_list_; }
 
@@ -106,6 +119,13 @@ class QuicDispatcher : public QuicPacketWriter, public QuicSessionOwner {
 
   QuicTimeWaitListManager* time_wait_list_manager() {
     return time_wait_list_manager_.get();
+  }
+
+  QuicEpollConnectionHelper* helper() { return helper_.get(); }
+  EpollServer* epoll_server() { return epoll_server_; }
+
+  const QuicVersionVector& supported_versions() const {
+    return supported_versions_;
   }
 
  private:
@@ -137,6 +157,18 @@ class QuicDispatcher : public QuicPacketWriter, public QuicSessionOwner {
   // True if the session is write blocked due to the socket returning EAGAIN.
   // False if we have gotten a call to OnCanWrite after the last failed write.
   bool write_blocked_;
+
+  // The helper used for all connections.
+  scoped_ptr<QuicEpollConnectionHelper> helper_;
+
+  // The writer to write to the socket with.
+  scoped_ptr<QuicPacketWriter> writer_;
+
+  // This vector contains QUIC versions which we currently support.
+  // This should be ordered such that the highest supported version is the first
+  // element, with subsequent elements in descending order (versions can be
+  // skipped as necessary).
+  const QuicVersionVector supported_versions_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicDispatcher);
 };

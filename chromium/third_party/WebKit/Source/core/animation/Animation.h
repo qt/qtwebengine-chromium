@@ -42,29 +42,56 @@ class Element;
 class Animation FINAL : public TimedItem {
 
 public:
-    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, PassOwnPtr<EventDelegate> = nullptr);
+    enum Priority { DefaultPriority, TransitionPriority };
 
-    const AnimationEffect::CompositableValueMap* compositableValues() const
+    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
+    virtual bool isAnimation() const OVERRIDE FINAL { return true; }
+
+    const AnimationEffect::CompositableValueList* compositableValues() const
     {
         ASSERT(m_compositableValues);
         return m_compositableValues.get();
     }
 
+    bool affects(CSSPropertyID) const;
+    const AnimationEffect* effect() const { return m_effect.get(); }
+    Priority priority() const { return m_priority; }
+    Element* target() { return m_target.get(); }
+
+    bool isCandidateForAnimationOnCompositor() const;
+    // Must only be called once and assumes to be part of a player without a start time.
+    bool maybeStartAnimationOnCompositor();
+    bool hasActiveAnimationsOnCompositor() const;
+    bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
+    void cancelAnimationOnCompositor();
+    void pauseAnimationForTestingOnCompositor(double pauseTime);
+
 protected:
-    virtual void applyEffects(bool previouslyInEffect);
+    // Returns whether style recalc was triggered.
+    virtual bool applyEffects(bool previouslyInEffect);
     virtual void clearEffects();
-    virtual void updateChildrenAndEffects(bool) const OVERRIDE FINAL;
+    virtual bool updateChildrenAndEffects() const OVERRIDE FINAL;
+    virtual void didAttach() OVERRIDE FINAL;
     virtual void willDetach() OVERRIDE FINAL;
+    virtual double calculateTimeToEffectChange(double inheritedTime, double timeToNextIteration) const OVERRIDE FINAL;
 
 private:
-    Animation(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, PassOwnPtr<EventDelegate>);
+    Animation(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
 
     RefPtr<Element> m_target;
     RefPtr<AnimationEffect> m_effect;
 
     bool m_activeInAnimationStack;
-    OwnPtr<AnimationEffect::CompositableValueMap> m_compositableValues;
+    OwnPtr<AnimationEffect::CompositableValueList> m_compositableValues;
+
+    Priority m_priority;
+
+    Vector<int> m_compositorAnimationIds;
+
+    friend class CSSAnimations;
 };
+
+DEFINE_TYPE_CASTS(Animation, TimedItem, timedItem, timedItem->isAnimation(), timedItem.isAnimation());
 
 } // namespace WebCore
 

@@ -168,6 +168,7 @@ common_src_files := \
   crypto/buffer/buf_err.c \
   crypto/buffer/buf_str.c \
   crypto/buffer/buffer.c \
+  crypto/chacha/chacha_enc.c \
   crypto/cmac/cm_ameth.c \
   crypto/cmac/cm_pmeth.c \
   crypto/cmac/cmac.c \
@@ -305,6 +306,7 @@ common_src_files := \
   crypto/evp/e_aes.c \
   crypto/evp/e_aes_cbc_hmac_sha1.c \
   crypto/evp/e_bf.c \
+  crypto/evp/e_chacha20poly1305.c \
   crypto/evp/e_des.c \
   crypto/evp/e_des3.c \
   crypto/evp/e_null.c \
@@ -316,6 +318,7 @@ common_src_files := \
   crypto/evp/e_xcbc_d.c \
   crypto/evp/encode.c \
   crypto/evp/evp_acnf.c \
+  crypto/evp/evp_aead.c \
   crypto/evp/evp_cnf.c \
   crypto/evp/evp_enc.c \
   crypto/evp/evp_err.c \
@@ -420,6 +423,7 @@ common_src_files := \
   crypto/pkcs7/pk7_mime.c \
   crypto/pkcs7/pk7_smime.c \
   crypto/pkcs7/pkcs7err.c \
+  crypto/poly1305/poly1305.c \
   crypto/pqueue/pqueue.c \
   crypto/rand/md_rand.c \
   crypto/rand/rand_egd.c \
@@ -554,7 +558,10 @@ arm_src_files := \
   crypto/aes/asm/aes-armv4.S \
   crypto/bn/asm/armv4-gf2m.S \
   crypto/bn/asm/armv4-mont.S \
+  crypto/chacha/chacha_vec_arm.S \
   crypto/modes/asm/ghash-armv4.S \
+  crypto/poly1305/poly1305_arm.c \
+  crypto/poly1305/poly1305_arm_asm.S \
   crypto/sha/asm/sha1-armv4-large.S \
   crypto/sha/asm/sha256-armv4.S \
   crypto/sha/asm/sha512-armv4.S \
@@ -629,8 +636,10 @@ x86_64_src_files := \
   crypto/bn/asm/x86_64-gf2m.S \
   crypto/bn/asm/x86_64-mont.S \
   crypto/bn/asm/x86_64-mont5.S \
+  crypto/chacha/chacha_vec.c \
   crypto/md5/asm/md5-x86_64.S \
   crypto/modes/asm/ghash-x86_64.S \
+  crypto/poly1305/poly1305_vec.c \
   crypto/rc4/asm/rc4-md5-x86_64.S \
   crypto/rc4/asm/rc4-x86_64.S \
   crypto/sha/asm/sha1-x86_64.S \
@@ -642,7 +651,9 @@ x86_64_exclude_files := \
   crypto/aes/aes_cbc.c \
   crypto/aes/aes_core.c \
   crypto/bn/bn_asm.c \
+  crypto/chacha/chacha_enc.c \
   crypto/mem_clr.c \
+  crypto/poly1305/poly1305.c \
   crypto/rc4/rc4_enc.c \
   crypto/rc4/rc4_skey.c \
 

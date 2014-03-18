@@ -26,12 +26,16 @@ class VIEWS_EXPORT NonClientFrameView : public View {
  public:
   // Internal class name.
   static const char kViewClassName[];
-  // Various edges of the frame border have a 1 px shadow along their edges; in
-  // a few cases we shift elements based on this amount for visual appeal.
-  static const int kFrameShadowThickness;
-  // In restored mode, we draw a 1 px edge around the content area inside the
-  // frame border.
-  static const int kClientEdgeThickness;
+
+  enum {
+    // Various edges of the frame border have a 1 px shadow along their edges;
+    // in a few cases we shift elements based on this amount for visual appeal.
+    kFrameShadowThickness = 1,
+
+    // In restored mode, we draw a 1 px edge around the content area inside the
+    // frame border.
+    kClientEdgeThickness = 1,
+  };
 
   // Sets whether the window should be rendered as active regardless of the
   // actual active state. Used when bubbles become active to make their parent
@@ -156,9 +160,8 @@ class VIEWS_EXPORT NonClientView : public View {
   void WindowClosing();
 
   // Replaces the frame view with a new one. Used when switching window theme
-  // or frame style. Pass true for |layout| to refresh the window layout (the
-  // common case) or false if you will trigger layout yourself.
-  void UpdateFrame(bool layout);
+  // or frame style.
+  void UpdateFrame();
 
   // Prevents the window from being rendered as deactivated when |disable| is
   // true, until called with |disable| false. Used when a sub-window is to be
@@ -215,8 +218,7 @@ class VIEWS_EXPORT NonClientView : public View {
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
-  virtual views::View* GetEventHandlerForPoint(
-      const gfx::Point& point) OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
   virtual views::View* GetTooltipHandlerForPoint(
       const gfx::Point& point) OVERRIDE;
 

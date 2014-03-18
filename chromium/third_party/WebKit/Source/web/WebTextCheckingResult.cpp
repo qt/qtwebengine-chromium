@@ -31,21 +31,21 @@
 #include "config.h"
 #include "WebTextCheckingResult.h"
 
-#include "core/platform/text/TextCheckerClient.h"
+#include "platform/text/TextCheckerClient.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebTextCheckingResult::operator TextCheckingResult() const
 {
     TextCheckingResult result;
-    result.type = static_cast<TextCheckingType>(type);
+    result.decoration = static_cast<TextDecorationType>(decoration);
     result.location = location;
     result.length = length;
     result.replacement = replacement;
     result.hash = hash;
-    if (result.type == TextCheckingTypeGrammar) {
+    if (result.decoration == TextDecorationTypeGrammar) {
         GrammarDetail detail;
         detail.location = 0;
         detail.length = length;
@@ -56,4 +56,4 @@ WebTextCheckingResult::operator TextCheckingResult() const
     return result;
 }
 
-} // namespace WebKit
+} // namespace blink

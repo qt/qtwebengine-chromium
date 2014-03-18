@@ -34,10 +34,6 @@
 
 #include "modules/webdatabase/DatabaseBackend.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
-#include "wtf/Deque.h"
-#include "wtf/HashMap.h"
-#include "wtf/HashSet.h"
-#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -97,7 +93,7 @@ void SQLTransactionCoordinator::releaseLock(SQLTransactionBackend* transaction)
     String dbIdentifier = getDatabaseIdentifier(transaction);
 
     CoordinationInfoMap::iterator coordinationInfoIterator = m_coordinationInfoMap.find(dbIdentifier);
-    ASSERT(coordinationInfoIterator != m_coordinationInfoMap.end());
+    ASSERT_WITH_SECURITY_IMPLICATION(coordinationInfoIterator != m_coordinationInfoMap.end());
     CoordinationInfo& info = coordinationInfoIterator->value;
 
     if (transaction->isReadOnly()) {
