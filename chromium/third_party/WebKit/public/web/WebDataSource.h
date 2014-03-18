@@ -35,7 +35,7 @@
 #include "WebNavigationType.h"
 #include "WebTextDirection.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebApplicationCacheHost;
 class WebString;
@@ -67,6 +67,10 @@ public:
     // there may be an associated unreachableURL.
     virtual bool hasUnreachableURL() const = 0;
     virtual WebURL unreachableURL() const = 0;
+
+    // Allows the embedder to append redirects to the chain as a navigation
+    // is starting, in case it is being transferred from another process.
+    virtual void appendRedirect(const WebURL&) = 0;
 
     // Returns all redirects that occurred (both client and server) before
     // at last committing the current page.  This will contain one entry
@@ -117,6 +121,6 @@ protected:
     ~WebDataSource() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

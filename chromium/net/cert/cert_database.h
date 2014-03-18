@@ -40,8 +40,9 @@ class NET_EXPORT CertDatabase {
     // Will be called when a certificate is removed.
     virtual void OnCertRemoved(const X509Certificate* cert) {}
 
-    // Will be called when a certificate's trust is changed.
-    virtual void OnCertTrustChanged(const X509Certificate* cert) {}
+    // Will be called when a CA certificate was added, removed, or its trust
+    // changed. This can also mean that a client certificate's trust changed.
+    virtual void OnCACertChanged(const X509Certificate* cert) {}
 
    protected:
     Observer() {}
@@ -78,6 +79,12 @@ class NET_EXPORT CertDatabase {
   void SetMessageLoopForKeychainEvents();
 #endif
 
+#if defined(OS_ANDROID)
+  // On android, the system database is used. When the system notifies the
+  // application that the certificates changed, the observers must be notified.
+  void OnAndroidKeyChainChanged();
+#endif
+
  private:
   friend struct DefaultSingletonTraits<CertDatabase>;
 
@@ -87,7 +94,7 @@ class NET_EXPORT CertDatabase {
   // Broadcasts notifications to all registered observers.
   void NotifyObserversOfCertAdded(const X509Certificate* cert);
   void NotifyObserversOfCertRemoved(const X509Certificate* cert);
-  void NotifyObserversOfCertTrustChanged(const X509Certificate* cert);
+  void NotifyObserversOfCACertChanged(const X509Certificate* cert);
 
   const scoped_refptr<ObserverListThreadSafe<Observer> > observer_list_;
 

@@ -24,7 +24,8 @@ static const int kMenuCornerRadiusForAura = 0;
 
 #if !defined(OS_WIN)
 void MenuConfig::Init(const ui::NativeTheme* theme) {
-  InitAura(theme);
+  if (theme == ui::NativeThemeAura::instance())
+    InitAura(theme);
 }
 #endif
 
@@ -32,12 +33,12 @@ void MenuConfig::InitAura(const ui::NativeTheme* theme) {
   text_color = theme->GetSystemColor(
       ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor);
   submenu_horizontal_inset = 1;
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   arrow_to_edge_padding = 20;
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   arrow_width =
       rb.GetImageNamed(IDR_MENU_HIERARCHY_ARROW).ToImageSkia()->width();
-  const gfx::ImageSkia* check = GetMenuCheckImage();
-  check_height = check->height();
+  gfx::ImageSkia check = GetMenuCheckImage(false);
+  check_height = check.height();
   item_min_height = 29;
   separator_spacing_height = 7;
   separator_lower_height = 8;

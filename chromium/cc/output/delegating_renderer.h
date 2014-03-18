@@ -31,11 +31,14 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
                          ContextProvider* offscreen_context_provider,
                          float device_scale_factor,
-                         bool allow_partial_swap) OVERRIDE;
+                         gfx::Rect device_viewport_rect,
+                         gfx::Rect device_clip_rect,
+                         bool allow_partial_swap,
+                         bool disable_picture_quad_image_filtering) OVERRIDE;
 
   virtual void Finish() OVERRIDE {}
 
-  virtual void SwapBuffers() OVERRIDE;
+  virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
   virtual void ReceiveSwapBuffersAck(const CompositorFrameAck&) OVERRIDE;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
@@ -48,8 +51,6 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
 
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
-
  private:
   DelegatingRenderer(RendererClient* client,
                      const LayerTreeSettings* settings,
@@ -60,7 +61,7 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
   RendererCapabilities capabilities_;
-  CompositorFrame frame_for_swap_buffers_;
+  scoped_ptr<DelegatedFrameData> delegated_frame_data_;
   bool visible_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatingRenderer);

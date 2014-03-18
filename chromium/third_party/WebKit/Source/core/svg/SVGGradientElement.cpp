@@ -23,7 +23,6 @@
 
 #include "core/svg/SVGGradientElement.h"
 
-#include "SVGNames.h"
 #include "XLinkNames.h"
 #include "core/dom/Attribute.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
@@ -33,7 +32,6 @@
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGStopElement.h"
 #include "core/svg/SVGTransformList.h"
-#include "core/svg/SVGTransformable.h"
 
 namespace WebCore {
 
@@ -121,8 +119,9 @@ void SVGGradientElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGGradientElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)

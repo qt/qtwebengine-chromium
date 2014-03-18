@@ -13,7 +13,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/focus_border.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
@@ -37,12 +37,11 @@ const int kPreferredPaddingVertical = 5;
 const int kPreferredNativeThemePaddingHorizontal = 12;
 const int kPreferredNativeThemePaddingVertical = 5;
 
-// By default the focus rect is drawn at the border of the view.
-// For a button, we inset the focus rect by 3 pixels so that it
-// doesn't draw on top of the button's border. This roughly matches
-// how the Windows native focus rect for buttons looks. A subclass
-// that draws a button with different padding may need to
-// override OnPaintFocusBorder and do something different.
+// By default the focus rect is drawn at the border of the view.  For a button,
+// we inset the focus rect by 3 pixels so that it doesn't draw on top of the
+// button's border. This roughly matches how the Windows native focus rect for
+// buttons looks. A subclass that draws a button with different padding may need
+// to provide a different focus painter and do something different.
 const int kFocusRectInset = 3;
 
 // How long the hover fade animation should last.
@@ -65,11 +64,8 @@ const char TextButtonBase::kViewClassName[] = "TextButtonBase";
 // static
 const char TextButton::kViewClassName[] = "TextButton";
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// TextButtonBorder
-//
-////////////////////////////////////////////////////////////////////////////////
+
+// TextButtonBorder -----------------------------------------------------------
 
 TextButtonBorder::TextButtonBorder() {
 }
@@ -77,8 +73,15 @@ TextButtonBorder::TextButtonBorder() {
 TextButtonBorder::~TextButtonBorder() {
 }
 
+void TextButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
+}
+
 gfx::Insets TextButtonBorder::GetInsets() const {
   return insets_;
+}
+
+gfx::Size TextButtonBorder::GetMinimumSize() const {
+  return gfx::Size();
 }
 
 void TextButtonBorder::SetInsets(const gfx::Insets& insets) {
@@ -93,11 +96,8 @@ const TextButtonBorder* TextButtonBorder::AsTextButtonBorder() const {
   return this;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// TextButtonDefaultBorder - constructors, destructors, initialization
-//
-////////////////////////////////////////////////////////////////////////////////
+
+// TextButtonDefaultBorder ----------------------------------------------------
 
 TextButtonDefaultBorder::TextButtonDefaultBorder()
     : vertical_padding_(kPreferredPaddingVertical) {
@@ -110,11 +110,6 @@ TextButtonDefaultBorder::TextButtonDefaultBorder()
 TextButtonDefaultBorder::~TextButtonDefaultBorder() {
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// TextButtonDefaultBorder - painting
-//
-////////////////////////////////////////////////////////////////////////////////
 void TextButtonDefaultBorder::Paint(const View& view, gfx::Canvas* canvas) {
   const TextButton* button = static_cast<const TextButton*>(&view);
   int state = button->state();
@@ -146,11 +141,19 @@ void TextButtonDefaultBorder::Paint(const View& view, gfx::Canvas* canvas) {
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// TextButtonNativeThemeBorder
-//
-////////////////////////////////////////////////////////////////////////////////
+gfx::Size TextButtonDefaultBorder::GetMinimumSize() const {
+  gfx::Size size;
+  if (normal_painter_)
+    size.SetToMax(normal_painter_->GetMinimumSize());
+  if (hot_painter_)
+    size.SetToMax(hot_painter_->GetMinimumSize());
+  if (pushed_painter_)
+    size.SetToMax(pushed_painter_->GetMinimumSize());
+  return size;
+}
+
+
+// TextButtonNativeThemeBorder ------------------------------------------------
 
 TextButtonNativeThemeBorder::TextButtonNativeThemeBorder(
     NativeThemeDelegate* delegate)
@@ -193,8 +196,8 @@ void TextButtonNativeThemeBorder::Paint(const View& view, gfx::Canvas* canvas) {
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// TextButtonBase, public:
+
+// TextButtonBase -------------------------------------------------------------
 
 TextButtonBase::TextButtonBase(ButtonListener* listener, const string16& text)
     : CustomButton(listener),
@@ -214,7 +217,8 @@ TextButtonBase::TextButtonBase(ButtonListener* listener, const string16& text)
       use_enabled_color_from_theme_(true),
       use_disabled_color_from_theme_(true),
       use_highlight_color_from_theme_(true),
-      use_hover_color_from_theme_(true) {
+      use_hover_color_from_theme_(true),
+      focus_painter_(Painter::CreateDashedFocusPainter()) {
   SetText(text);
   // OnNativeThemeChanged sets the color member variables.
   TextButtonBase::OnNativeThemeChanged(GetNativeTheme());
@@ -403,6 +407,18 @@ int TextButtonBase::ComputeCanvasStringFlags() const {
   return flags;
 }
 
+void TextButtonBase::OnFocus() {
+  View::OnFocus();
+  if (focus_painter_)
+    SchedulePaint();
+}
+
+void TextButtonBase::OnBlur() {
+  View::OnBlur();
+  if (focus_painter_)
+    SchedulePaint();
+}
+
 void TextButtonBase::GetExtraParams(
     ui::NativeTheme::ExtraParams* params) const {
   params->button.checked = false;
@@ -448,11 +464,15 @@ gfx::Rect TextButtonBase::GetTextBounds() const {
   return GetContentBounds(0);
 }
 
+void TextButtonBase::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
+  focus_painter_ = focus_painter.Pass();
+}
+
 void TextButtonBase::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   if (mode == PB_NORMAL) {
     OnPaintBackground(canvas);
     OnPaintBorder(canvas);
-    OnPaintFocusBorder(canvas);
+    Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
   }
 
   gfx::Rect text_bounds(GetTextBounds());
@@ -507,9 +527,6 @@ void TextButtonBase::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// TextButtonBase, View overrides:
-
 gfx::Size TextButtonBase::GetMinimumSize() {
   return max_text_size_;
 }
@@ -544,9 +561,6 @@ void TextButtonBase::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   }
   UpdateColor();
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// TextButtonBase, NativeThemeDelegate overrides:
 
 gfx::Rect TextButtonBase::GetThemePaintRect() const {
   return GetLocalBounds();
@@ -592,11 +606,8 @@ ui::NativeTheme::State TextButtonBase::GetForegroundThemeState(
   return ui::NativeTheme::kHovered;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// TextButton
-//
-////////////////////////////////////////////////////////////////////////////////
+
+// TextButton -----------------------------------------------------------------
 
 TextButton::TextButton(ButtonListener* listener, const string16& text)
     : TextButtonBase(listener, text),
@@ -606,10 +617,9 @@ TextButton::TextButton(ButtonListener* listener, const string16& text)
       icon_text_spacing_(kDefaultIconTextSpacing),
       ignore_minimum_size_(true) {
   set_border(new TextButtonDefaultBorder);
-  set_focus_border(FocusBorder::CreateDashedFocusBorder(kFocusRectInset,
-                                                        kFocusRectInset,
-                                                        kFocusRectInset,
-                                                        kFocusRectInset));
+  SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(
+                      gfx::Insets(kFocusRectInset, kFocusRectInset,
+                                  kFocusRectInset, kFocusRectInset)));
 }
 
 TextButton::~TextButton() {

@@ -18,6 +18,10 @@ EventTarget::EventTarget()
 EventTarget::~EventTarget() {
 }
 
+void EventTarget::ConvertEventToTarget(EventTarget* target,
+                                       LocatedEvent* event) {
+}
+
 void EventTarget::AddPreTargetHandler(EventHandler* handler) {
   pre_target_list_.push_back(handler);
 }
@@ -46,6 +50,10 @@ void EventTarget::RemovePostTargetHandler(EventHandler* handler) {
                 handler);
   if (find != post_target_list_.end())
     post_target_list_.erase(find);
+}
+
+bool EventTarget::IsPreTargetListEmpty() const {
+  return pre_target_list_.empty();
 }
 
 void EventTarget::OnEvent(Event* event) {

@@ -44,7 +44,6 @@ typedef struct X264Context {
     x264_picture_t  pic;
     uint8_t        *sei;
     int             sei_size;
-    AVFrame         out_pic;
     char *preset;
     char *tune;
     char *profile;
@@ -208,20 +207,20 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
     switch (pic_out.i_type) {
     case X264_TYPE_IDR:
     case X264_TYPE_I:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_I;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
         break;
     case X264_TYPE_P:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_P;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
         break;
     case X264_TYPE_B:
     case X264_TYPE_BREF:
-        x4->out_pic.pict_type = AV_PICTURE_TYPE_B;
+        ctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
         break;
     }
 
     pkt->flags |= AV_PKT_FLAG_KEY*pic_out.b_keyframe;
     if (ret)
-        x4->out_pic.quality = (pic_out.i_qpplus1 - 1) * FF_QP2LAMBDA;
+        ctx->coded_frame->quality = (pic_out.i_qpplus1 - 1) * FF_QP2LAMBDA;
 
     *got_packet = ret;
     return 0;
@@ -236,6 +235,8 @@ static av_cold int X264_close(AVCodecContext *avctx)
 
     if (x4->enc)
         x264_encoder_close(x4->enc);
+
+    av_frame_free(&avctx->coded_frame);
 
     return 0;
 }
@@ -262,8 +263,10 @@ static int convert_pix_fmt(enum AVPixelFormat pix_fmt)
     case AV_PIX_FMT_YUV420P9:
     case AV_PIX_FMT_YUV420P10: return X264_CSP_I420;
     case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
     case AV_PIX_FMT_YUV422P10: return X264_CSP_I422;
     case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
     case AV_PIX_FMT_YUV444P9:
     case AV_PIX_FMT_YUV444P10: return X264_CSP_I444;
 #ifdef X264_CSP_BGR
@@ -273,6 +276,9 @@ static int convert_pix_fmt(enum AVPixelFormat pix_fmt)
     case AV_PIX_FMT_RGB24:
         return X264_CSP_RGB;
 #endif
+    case AV_PIX_FMT_NV12:      return X264_CSP_NV12;
+    case AV_PIX_FMT_NV16:
+    case AV_PIX_FMT_NV20:      return X264_CSP_NV16;
     };
     return 0;
 }
@@ -530,7 +536,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     x4->params.i_slice_count  = avctx->slices;
 
-    x4->params.vui.b_fullrange = avctx->pix_fmt == AV_PIX_FMT_YUVJ420P;
+    x4->params.vui.b_fullrange = avctx->pix_fmt == AV_PIX_FMT_YUVJ420P ||
+                                 avctx->pix_fmt == AV_PIX_FMT_YUVJ422P ||
+                                 avctx->pix_fmt == AV_PIX_FMT_YUVJ444P;
 
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER)
         x4->params.b_repeat_headers = 0;
@@ -563,7 +571,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
     if (!x4->enc)
         return -1;
 
-    avctx->coded_frame = &x4->out_pic;
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER) {
         x264_nal_t *nal;
@@ -595,7 +605,11 @@ static const enum AVPixelFormat pix_fmts_8bit[] = {
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_YUVJ420P,
     AV_PIX_FMT_YUV422P,
+    AV_PIX_FMT_YUVJ422P,
     AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_YUVJ444P,
+    AV_PIX_FMT_NV12,
+    AV_PIX_FMT_NV16,
     AV_PIX_FMT_NONE
 };
 static const enum AVPixelFormat pix_fmts_9bit[] = {
@@ -607,6 +621,7 @@ static const enum AVPixelFormat pix_fmts_10bit[] = {
     AV_PIX_FMT_YUV420P10,
     AV_PIX_FMT_YUV422P10,
     AV_PIX_FMT_YUV444P10,
+    AV_PIX_FMT_NV20,
     AV_PIX_FMT_NONE
 };
 static const enum AVPixelFormat pix_fmts_8bit_rgb[] = {
@@ -733,6 +748,7 @@ static const AVCodecDefault x264_defaults[] = {
 
 AVCodec ff_libx264_encoder = {
     .name             = "libx264",
+    .long_name        = NULL_IF_CONFIG_SMALL("libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
     .type             = AVMEDIA_TYPE_VIDEO,
     .id               = AV_CODEC_ID_H264,
     .priv_data_size   = sizeof(X264Context),
@@ -740,7 +756,6 @@ AVCodec ff_libx264_encoder = {
     .encode2          = X264_frame,
     .close            = X264_close,
     .capabilities     = CODEC_CAP_DELAY | CODEC_CAP_AUTO_THREADS,
-    .long_name        = NULL_IF_CONFIG_SMALL("libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
     .priv_class       = &x264_class,
     .defaults         = x264_defaults,
     .init_static_data = X264_init_static,
@@ -748,6 +763,7 @@ AVCodec ff_libx264_encoder = {
 
 AVCodec ff_libx264rgb_encoder = {
     .name           = "libx264rgb",
+    .long_name      = NULL_IF_CONFIG_SMALL("libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 RGB"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_H264,
     .priv_data_size = sizeof(X264Context),
@@ -755,7 +771,6 @@ AVCodec ff_libx264rgb_encoder = {
     .encode2        = X264_frame,
     .close          = X264_close,
     .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_AUTO_THREADS,
-    .long_name      = NULL_IF_CONFIG_SMALL("libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 RGB"),
     .priv_class     = &rgbclass,
     .defaults       = x264_defaults,
     .pix_fmts       = pix_fmts_8bit_rgb,

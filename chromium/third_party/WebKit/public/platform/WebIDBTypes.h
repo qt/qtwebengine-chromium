@@ -26,11 +26,12 @@
 #ifndef WebIDBTypes_h
 #define WebIDBTypes_h
 
-namespace WebKit {
+namespace blink {
 
 enum WebIDBKeyType {
     WebIDBKeyTypeInvalid = 0,
     WebIDBKeyTypeArray,
+    WebIDBKeyTypeBinary,
     WebIDBKeyTypeString,
     WebIDBKeyTypeDate,
     WebIDBKeyTypeNumber,
@@ -44,7 +45,11 @@ enum WebIDBKeyPathType {
     WebIDBKeyPathTypeArray,
 };
 
+enum WebIDBDataLoss {
+    WebIDBDataLossNone = 0,
+    WebIDBDataLossTotal,
+};
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebIDBTypes_h

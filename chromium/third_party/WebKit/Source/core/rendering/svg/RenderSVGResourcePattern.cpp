@@ -22,15 +22,14 @@
 
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
-#include "core/svg/PatternAttributes.h"
 #include "core/svg/SVGFitToViewBox.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourcePattern::s_resourceType = PatternResourceType;
+const RenderSVGResourceType RenderSVGResourcePattern::s_resourceType = PatternResourceType;
 
 RenderSVGResourcePattern::RenderSVGResourcePattern(SVGPatternElement* node)
     : RenderSVGResourceContainer(node)
@@ -110,7 +109,7 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsign
     patternData->pattern = Pattern::create(copiedImage, true, true);
 
     // Compute pattern space transformation.
-    const IntSize tileImageSize = tileImage->logicalSize();
+    const IntSize tileImageSize = tileImage->size();
     patternData->transform.translate(tileBoundaries.x(), tileBoundaries.y());
     patternData->transform.scale(tileBoundaries.width() / tileImageSize.width(), tileBoundaries.height() / tileImageSize.height());
 
@@ -138,6 +137,8 @@ bool RenderSVGResourcePattern::applyResource(RenderObject* object, RenderStyle* 
     ASSERT(style);
     ASSERT(context);
     ASSERT(resourceMode != ApplyToDefaultMode);
+
+    clearInvalidationMask();
 
     // Spec: When the geometry of the applicable element has no width or height and objectBoundingBox is specified,
     // then the given effect (e.g. a gradient or a filter) will be ignored.
@@ -239,13 +240,17 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
 {
     clampedAbsoluteTileBoundaries = SVGRenderingContext::clampedAbsoluteTargetRect(absoluteTileBoundaries);
 
-    OwnPtr<ImageBuffer> tileImage;
-
-    if (!SVGRenderingContext::createImageBufferForPattern(absoluteTileBoundaries, clampedAbsoluteTileBoundaries, tileImage, Unaccelerated))
+    IntSize imageSize(roundedIntSize(clampedAbsoluteTileBoundaries.size()));
+    if (imageSize.isEmpty())
+        return nullptr;
+    OwnPtr<ImageBuffer> tileImage = ImageBuffer::create(imageSize);
+    if (!tileImage)
         return nullptr;
 
     GraphicsContext* tileImageContext = tileImage->context();
     ASSERT(tileImageContext);
+    IntSize unclampedImageSize(roundedIntSize(absoluteTileBoundaries.size()));
+    tileImageContext->scale(FloatSize(unclampedImageSize.width() / absoluteTileBoundaries.width(), unclampedImageSize.height() / absoluteTileBoundaries.height()));
 
     // The image buffer represents the final rendered size, so the content has to be scaled (to avoid pixelation).
     tileImageContext->scale(FloatSize(clampedAbsoluteTileBoundaries.width() / tileBoundaries.width(),

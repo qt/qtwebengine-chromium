@@ -309,8 +309,6 @@ public:
         return *this;
     }
 
-    void makeLower() { if (m_impl) m_impl = m_impl->lower(); }
-    void makeUpper() { if (m_impl) m_impl = m_impl->upper(); }
     void fill(UChar c) { if (m_impl) m_impl = m_impl->fill(c); }
 
     void ensure16Bit();
@@ -329,10 +327,13 @@ public:
     String lower() const;
     String upper() const;
 
+    String lower(const AtomicString& localeIdentifier) const;
+    String upper(const AtomicString& localeIdentifier) const;
+
     String stripWhiteSpace() const;
     String stripWhiteSpace(IsWhiteSpaceFunctionPtr) const;
-    String simplifyWhiteSpace() const;
-    String simplifyWhiteSpace(IsWhiteSpaceFunctionPtr) const;
+    String simplifyWhiteSpace(StripBehavior stripBehavior = StripExtraWhiteSpace) const;
+    String simplifyWhiteSpace(IsWhiteSpaceFunctionPtr, StripBehavior stripBehavior = StripExtraWhiteSpace) const;
 
     String removeCharacters(CharacterMatchFunctionPtr) const;
     template<bool isSpecialCharacter(UChar)> bool isAllSpecialCharacters() const;
@@ -422,16 +423,6 @@ public:
     // Tries to convert the passed in string to UTF-8, but will fall back to Latin-1 if the string is not valid UTF-8.
     static String fromUTF8WithLatin1Fallback(const LChar*, size_t);
     static String fromUTF8WithLatin1Fallback(const char* s, size_t length) { return fromUTF8WithLatin1Fallback(reinterpret_cast<const LChar*>(s), length); };
-
-    // Determines the writing direction using the Unicode Bidi Algorithm rules P2 and P3.
-    WTF::Unicode::Direction defaultWritingDirection(bool* hasStrongDirectionality = 0) const
-    {
-        if (m_impl)
-            return m_impl->defaultWritingDirection(hasStrongDirectionality);
-        if (hasStrongDirectionality)
-            *hasStrongDirectionality = false;
-        return WTF::Unicode::LeftToRight;
-    }
 
     bool containsOnlyASCII() const;
     bool containsOnlyLatin1() const;

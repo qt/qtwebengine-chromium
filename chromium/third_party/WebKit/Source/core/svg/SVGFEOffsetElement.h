@@ -21,18 +21,18 @@
 #ifndef SVGFEOffsetElement_h
 #define SVGFEOffsetElement_h
 
-#include "core/platform/graphics/filters/FEOffset.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEOffset.h"
 
 namespace WebCore {
 
 class SVGFEOffsetElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEOffsetElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEOffsetElement> create(Document&);
 
 private:
-    SVGFEOffsetElement(const QualifiedName&, Document&);
+    explicit SVGFEOffsetElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

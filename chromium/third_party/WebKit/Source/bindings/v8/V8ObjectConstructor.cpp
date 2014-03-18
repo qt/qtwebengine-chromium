@@ -28,8 +28,8 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
-#include "core/page/Frame.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/Frame.h"
+#include "platform/TraceEvent.h"
 
 
 namespace WebCore {
@@ -65,13 +65,13 @@ v8::Local<v8::Object> V8ObjectConstructor::newInstanceInDocument(v8::Handle<v8::
     return V8ScriptRunner::instantiateObjectInDocument(function, document, argc, argv);
 }
 
-void V8ObjectConstructor::isValidConstructorMode(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8ObjectConstructor::isValidConstructorMode(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (ConstructorMode::current() == ConstructorMode::CreateNewObject) {
-        throwTypeError("Illegal constructor", args.GetIsolate());
+        throwTypeError("Illegal constructor", info.GetIsolate());
         return;
     }
-    v8SetReturnValue(args, args.This());
+    v8SetReturnValue(info, info.This());
 }
 
 } // namespace WebCore

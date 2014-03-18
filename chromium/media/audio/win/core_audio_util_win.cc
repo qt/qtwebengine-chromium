@@ -25,8 +25,6 @@ namespace media {
 
 enum { KSAUDIO_SPEAKER_UNSUPPORTED = 0 };
 
-typedef uint32 ChannelConfig;
-
 // Converts Microsoft's channel configuration to ChannelLayout.
 // This mapping is not perfect but the best we can do given the current
 // ChannelLayout enumerator and the Windows-specific speaker configurations
@@ -401,7 +399,7 @@ std::string CoreAudioUtil::GetMatchingOutputDeviceID(
   ScopedComPtr<IMMDevice> output_device;
   for (UINT i = 0; i < count; ++i) {
     collection->Item(i, output_device.Receive());
-    std::string output_controller_id(CoreAudioUtil::GetAudioControllerID(
+    std::string output_controller_id(GetAudioControllerID(
         output_device, enumerator));
     if (output_controller_id == controller_id)
       break;
@@ -478,6 +476,18 @@ ScopedComPtr<IAudioClient> CoreAudioUtil::CreateDefaultClient(
       ScopedComPtr<IAudioClient>());
 }
 
+ScopedComPtr<IAudioClient> CoreAudioUtil::CreateClient(
+    const std::string& device_id, EDataFlow data_flow, ERole role) {
+  if (device_id.empty())
+    return CreateDefaultClient(data_flow, role);
+
+  ScopedComPtr<IMMDevice> device(CreateDevice(device_id));
+  if (!device)
+    return ScopedComPtr<IAudioClient>();
+
+ return CreateClient(device);
+}
+
 HRESULT CoreAudioUtil::GetSharedModeMixFormat(
     IAudioClient* client, WAVEFORMATPCMEX* format) {
   DCHECK(IsSupported());
@@ -494,18 +504,6 @@ HRESULT CoreAudioUtil::GetSharedModeMixFormat(
   DVLOG(2) << *format;
 
   return hr;
-}
-
-HRESULT CoreAudioUtil::GetDefaultSharedModeMixFormat(
-    EDataFlow data_flow, ERole role, WAVEFORMATPCMEX* format) {
-  DCHECK(IsSupported());
-  ScopedComPtr<IAudioClient> client(CreateDefaultClient(data_flow, role));
-  if (!client) {
-    // Map NULL-pointer to new error code which can be different from the
-    // actual error code. The exact value is not important here.
-    return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
-  }
-  return CoreAudioUtil::GetSharedModeMixFormat(client, format);
 }
 
 bool CoreAudioUtil::IsFormatSupported(IAudioClient* client,
@@ -529,18 +527,20 @@ bool CoreAudioUtil::IsFormatSupported(IAudioClient* client,
   return (hr == S_OK);
 }
 
-bool CoreAudioUtil::IsChannelLayoutSupported(EDataFlow data_flow, ERole role,
+bool CoreAudioUtil::IsChannelLayoutSupported(const std::string& device_id,
+                                             EDataFlow data_flow,
+                                             ERole role,
                                              ChannelLayout channel_layout) {
   DCHECK(IsSupported());
 
   // First, get the preferred mixing format for shared mode streams.
 
-  ScopedComPtr<IAudioClient> client(CreateDefaultClient(data_flow, role));
+  ScopedComPtr<IAudioClient> client(CreateClient(device_id, data_flow, role));
   if (!client)
     return false;
 
   WAVEFORMATPCMEX format;
-  HRESULT hr = CoreAudioUtil::GetSharedModeMixFormat(client, &format);
+  HRESULT hr = GetSharedModeMixFormat(client, &format);
   if (FAILED(hr))
     return false;
 
@@ -623,6 +623,16 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
   // Convert Microsoft's channel configuration to genric ChannelLayout.
   ChannelLayout channel_layout = ChannelConfigToChannelLayout(channel_config);
 
+  // Some devices don't appear to set a valid channel layout, so guess based on
+  // the number of channels.  See http://crbug.com/311906.
+  if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED) {
+    VLOG(1) << "Unsupported channel config: "
+            << std::hex << channel_config
+            << ".  Guessing layout by channel count: "
+            << std::dec << mix_format.Format.nChannels;
+    channel_layout = GuessChannelLayout(mix_format.Format.nChannels);
+  }
+
   // Preferred sample rate.
   int sample_rate = mix_format.Format.nSamplesPerSec;
 
@@ -682,6 +692,18 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
     return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
   }
   return GetPreferredAudioParameters(client, params);
+}
+
+ChannelConfig CoreAudioUtil::GetChannelConfig(const std::string& device_id,
+                                              EDataFlow data_flow) {
+  ScopedComPtr<IAudioClient> client(
+      CreateClient(device_id, data_flow, eConsole));
+
+  WAVEFORMATPCMEX format = {0};
+  if (!client || FAILED(GetSharedModeMixFormat(client, &format)))
+    return 0;
+
+  return static_cast<ChannelConfig>(format.dwChannelMask);
 }
 
 HRESULT CoreAudioUtil::SharedModeInitialize(IAudioClient* client,

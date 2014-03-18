@@ -33,10 +33,10 @@
 #include "V8HTMLAppletElement.h"
 #include "V8HTMLEmbedElement.h"
 #include "V8HTMLObjectElement.h"
-#include "bindings/v8/ScriptInstance.h"
+#include "bindings/v8/SharedPersistent.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8NPObject.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -47,30 +47,30 @@ template <class C>
 static void npObjectNamedGetter(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     HTMLPlugInElement* imp = C::toNative(info.Holder());
-    ScriptInstance scriptInstance = imp->getInstance();
-    if (!scriptInstance)
+    RefPtr<SharedPersistent<v8::Object> > wrapper = imp->pluginWrapper();
+    if (!wrapper)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
-    if (instance.IsEmpty())
+    v8::Local<v8::Object> instanceTemplate = wrapper->newLocal(info.GetIsolate());
+    if (instanceTemplate.IsEmpty())
         return;
 
-    npObjectGetNamedProperty(instance, name, info);
+    npObjectGetNamedProperty(instanceTemplate, name, info);
 }
 
 template <class C>
 static void npObjectNamedSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     HTMLPlugInElement* imp = C::toNative(info.Holder());
-    ScriptInstance scriptInstance = imp->getInstance();
-    if (!scriptInstance)
+    RefPtr<SharedPersistent<v8::Object> > wrapper = imp->pluginWrapper();
+    if (!wrapper)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
-    if (instance.IsEmpty())
+    v8::Local<v8::Object> instanceTemplate = wrapper->newLocal(info.GetIsolate());
+    if (instanceTemplate.IsEmpty())
         return;
 
-    npObjectSetNamedProperty(instance, name, value, info);
+    npObjectSetNamedProperty(instanceTemplate, name, value, info);
 }
 
 void V8HTMLAppletElement::namedPropertyGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -103,55 +103,55 @@ void V8HTMLObjectElement::namedPropertySetterCustom(v8::Local<v8::String> name, 
     return npObjectNamedSetter<V8HTMLObjectElement>(name, value, info);
 }
 
-void V8HTMLAppletElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLAppletElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    HTMLPlugInElement* imp = V8HTMLAppletElement::toNative(args.Holder());
-    UseCounter::count(&imp->document(), UseCounter::HTMLAppletElementLegacyCall);
-    npObjectInvokeDefaultHandler(args);
+    HTMLPlugInElement* imp = V8HTMLAppletElement::toNative(info.Holder());
+    UseCounter::count(imp->document(), UseCounter::HTMLAppletElementLegacyCall);
+    npObjectInvokeDefaultHandler(info);
 }
 
-void V8HTMLEmbedElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLEmbedElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    HTMLPlugInElement* imp = V8HTMLEmbedElement::toNative(args.Holder());
-    UseCounter::count(&imp->document(), UseCounter::HTMLEmbedElementLegacyCall);
-    npObjectInvokeDefaultHandler(args);
+    HTMLPlugInElement* imp = V8HTMLEmbedElement::toNative(info.Holder());
+    UseCounter::count(imp->document(), UseCounter::HTMLEmbedElementLegacyCall);
+    npObjectInvokeDefaultHandler(info);
 }
 
-void V8HTMLObjectElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLObjectElement::legacyCallCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    HTMLPlugInElement* imp = V8HTMLObjectElement::toNative(args.Holder());
-    UseCounter::count(&imp->document(), UseCounter::HTMLObjectElementLegacyCall);
-    npObjectInvokeDefaultHandler(args);
+    HTMLPlugInElement* imp = V8HTMLObjectElement::toNative(info.Holder());
+    UseCounter::count(imp->document(), UseCounter::HTMLObjectElementLegacyCall);
+    npObjectInvokeDefaultHandler(info);
 }
 
 template <class C>
 void npObjectIndexedGetter(uint32_t index, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     HTMLPlugInElement* imp = C::toNative(info.Holder());
-    ScriptInstance scriptInstance = imp->getInstance();
-    if (!scriptInstance)
+    RefPtr<SharedPersistent<v8::Object> > wrapper = imp->pluginWrapper();
+    if (!wrapper)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
-    if (instance.IsEmpty())
+    v8::Local<v8::Object> instanceTemplate = wrapper->newLocal(info.GetIsolate());
+    if (instanceTemplate.IsEmpty())
         return;
 
-    npObjectGetIndexedProperty(instance, index, info);
+    npObjectGetIndexedProperty(instanceTemplate, index, info);
 }
 
 template <class C>
 void npObjectIndexedSetter(uint32_t index, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     HTMLPlugInElement* imp = C::toNative(info.Holder());
-    ScriptInstance scriptInstance = imp->getInstance();
-    if (!scriptInstance)
+    RefPtr<SharedPersistent<v8::Object> > wrapper = imp->pluginWrapper();
+    if (!wrapper)
         return;
 
-    v8::Local<v8::Object> instance = scriptInstance->newLocal(info.GetIsolate());
-    if (instance.IsEmpty())
+    v8::Local<v8::Object> instanceTemplate = wrapper->newLocal(info.GetIsolate());
+    if (instanceTemplate.IsEmpty())
         return;
 
-    npObjectSetIndexedProperty(instance, index, value, info);
+    npObjectSetIndexedProperty(instanceTemplate, index, value, info);
 }
 
 void V8HTMLAppletElement::indexedPropertyGetterCustom(uint32_t index, const v8::PropertyCallbackInfo<v8::Value>& info)

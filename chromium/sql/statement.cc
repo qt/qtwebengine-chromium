@@ -16,11 +16,13 @@ namespace sql {
 // only have to check the ref's validity bit.
 Statement::Statement()
     : ref_(new Connection::StatementRef(NULL, NULL, false)),
+      stepped_(false),
       succeeded_(false) {
 }
 
 Statement::Statement(scoped_refptr<Connection::StatementRef> ref)
     : ref_(ref),
+      stepped_(false),
       succeeded_(false) {
 }
 
@@ -50,10 +52,12 @@ bool Statement::CheckValid() const {
 }
 
 bool Statement::Run() {
+  DCHECK(!stepped_);
   ref_->AssertIOAllowed();
   if (!CheckValid())
     return false;
 
+  stepped_ = true;
   return CheckError(sqlite3_step(ref_->stmt())) == SQLITE_DONE;
 }
 
@@ -62,6 +66,7 @@ bool Statement::Step() {
   if (!CheckValid())
     return false;
 
+  stepped_ = true;
   return CheckError(sqlite3_step(ref_->stmt())) == SQLITE_ROW;
 }
 
@@ -77,6 +82,7 @@ void Statement::Reset(bool clear_bound_vars) {
   }
 
   succeeded_ = false;
+  stepped_ = false;
 }
 
 bool Statement::Succeeded() const {
@@ -87,6 +93,7 @@ bool Statement::Succeeded() const {
 }
 
 bool Statement::BindNull(int col) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -98,6 +105,7 @@ bool Statement::BindBool(int col, bool val) {
 }
 
 bool Statement::BindInt(int col, int val) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -105,6 +113,7 @@ bool Statement::BindInt(int col, int val) {
 }
 
 bool Statement::BindInt64(int col, int64 val) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -112,6 +121,7 @@ bool Statement::BindInt64(int col, int64 val) {
 }
 
 bool Statement::BindDouble(int col, double val) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -119,6 +129,7 @@ bool Statement::BindDouble(int col, double val) {
 }
 
 bool Statement::BindCString(int col, const char* val) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -127,6 +138,7 @@ bool Statement::BindCString(int col, const char* val) {
 }
 
 bool Statement::BindString(int col, const std::string& val) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -137,11 +149,12 @@ bool Statement::BindString(int col, const std::string& val) {
                                    SQLITE_TRANSIENT));
 }
 
-bool Statement::BindString16(int col, const string16& value) {
+bool Statement::BindString16(int col, const base::string16& value) {
   return BindString(col, UTF16ToUTF8(value));
 }
 
 bool Statement::BindBlob(int col, const void* val, int val_len) {
+  DCHECK(!stepped_);
   if (!is_valid())
     return false;
 
@@ -222,12 +235,12 @@ std::string Statement::ColumnString(int col) const {
   return result;
 }
 
-string16 Statement::ColumnString16(int col) const {
+base::string16 Statement::ColumnString16(int col) const {
   if (!CheckValid())
-    return string16();
+    return base::string16();
 
   std::string s = ColumnString(col);
-  return !s.empty() ? UTF8ToUTF16(s) : string16();
+  return !s.empty() ? UTF8ToUTF16(s) : base::string16();
 }
 
 int Statement::ColumnByteLength(int col) const {
@@ -258,16 +271,16 @@ bool Statement::ColumnBlobAsString(int col, std::string* blob) {
   return true;
 }
 
-bool Statement::ColumnBlobAsString16(int col, string16* val) const {
+bool Statement::ColumnBlobAsString16(int col, base::string16* val) const {
   if (!CheckValid())
     return false;
 
   const void* data = ColumnBlob(col);
-  size_t len = ColumnByteLength(col) / sizeof(char16);
+  size_t len = ColumnByteLength(col) / sizeof(base::char16);
   val->resize(len);
   if (val->size() != len)
     return false;
-  val->assign(reinterpret_cast<const char16*>(data), len);
+  val->assign(reinterpret_cast<const base::char16*>(data), len);
   return true;
 }
 
@@ -309,7 +322,7 @@ int Statement::CheckError(int err) {
   // Please don't add DCHECKs here, OnSqliteError() already has them.
   succeeded_ = (err == SQLITE_OK || err == SQLITE_ROW || err == SQLITE_DONE);
   if (!succeeded_ && ref_.get() && ref_->connection())
-    return ref_->connection()->OnSqliteError(err, this);
+    return ref_->connection()->OnSqliteError(err, this, NULL);
   return err;
 }
 

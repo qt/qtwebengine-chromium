@@ -33,8 +33,8 @@
 
 #include "core/dom/Document.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/html/HTMLImportLoader.h"
-#include "core/html/HTMLImportLoaderClient.h"
+#include "core/html/HTMLImportChild.h"
+#include "core/html/HTMLImportChildClient.h"
 
 namespace WebCore {
 
@@ -43,7 +43,7 @@ void HTMLImportsController::provideTo(Document* master)
     DEFINE_STATIC_LOCAL(const char*, name, ("HTMLImportsController"));
     OwnPtr<HTMLImportsController> controller = adoptPtr(new HTMLImportsController(master));
     master->setImport(controller.get());
-    Supplement<ScriptExecutionContext>::provideTo(master, name, controller.release());
+    DocumentSupplement::provideTo(master, name, controller.release());
 }
 
 HTMLImportsController::HTMLImportsController(Document* master)
@@ -66,27 +66,35 @@ void HTMLImportsController::clear()
     m_master = 0;
 }
 
-PassRefPtr<HTMLImportLoader> HTMLImportsController::createLoader(HTMLImport* parent, FetchRequest request)
+HTMLImportChild* HTMLImportsController::createChild(const KURL& url, HTMLImport* parent, HTMLImportChildClient* client)
+{
+    OwnPtr<HTMLImportChild> loader = adoptPtr(new HTMLImportChild(url, client));
+    parent->appendChild(loader.get());
+    m_imports.append(loader.release());
+    return m_imports.last().get();
+}
+
+HTMLImportChild* HTMLImportsController::load(HTMLImport* parent, HTMLImportChildClient* client, FetchRequest request)
 {
     ASSERT(!request.url().isEmpty() && request.url().isValid());
 
-    if (RefPtr<HTMLImportLoader> found = findLinkFor(request.url()))
-        return found.release();
+    if (HTMLImportChild* found = findLinkFor(request.url())) {
+        HTMLImportChild* child = createChild(request.url(), parent, client);
+        child->wasAlreadyLoadedAs(found);
+        return child;
+    }
 
-    request.setPotentiallyCrossOriginEnabled(securityOrigin(), DoNotAllowStoredCredentials);
+    request.setCrossOriginAccessControl(securityOrigin(), DoNotAllowStoredCredentials);
     ResourcePtr<RawResource> resource = parent->document()->fetcher()->fetchImport(request);
     if (!resource)
         return 0;
 
-    RefPtr<HTMLImportLoader> loader = adoptRef(new HTMLImportLoader(parent, request.url()));
-    parent->appendChild(loader.get());
-    m_imports.append(loader);
-
+    HTMLImportChild* child = createChild(request.url(), parent, client);
     // We set resource after the import tree is built since
     // Resource::addClient() immediately calls back to feed the bytes when the resource is cached.
-    loader->setResource(resource);
+    child->startLoading(resource);
 
-    return loader.release();
+    return child;
 }
 
 void HTMLImportsController::showSecurityErrorMessage(const String& message)
@@ -94,11 +102,12 @@ void HTMLImportsController::showSecurityErrorMessage(const String& message)
     m_master->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 }
 
-PassRefPtr<HTMLImportLoader> HTMLImportsController::findLinkFor(const KURL& url) const
+HTMLImportChild* HTMLImportsController::findLinkFor(const KURL& url, HTMLImport* excluding) const
 {
     for (size_t i = 0; i < m_imports.size(); ++i) {
-        if (equalIgnoringFragmentIdentifier(m_imports[i]->url(), url))
-            return m_imports[i];
+        HTMLImportChild* candidate = m_imports[i].get();
+        if (candidate != excluding && equalIgnoringFragmentIdentifier(candidate->url(), url) && !candidate->isDocumentBlocked())
+            return candidate;
     }
 
     return 0;
@@ -117,11 +126,6 @@ ResourceFetcher* HTMLImportsController::fetcher() const
 HTMLImportRoot* HTMLImportsController::root()
 {
     return this;
-}
-
-HTMLImport* HTMLImportsController::parent() const
-{
-    return 0;
 }
 
 Document* HTMLImportsController::document() const
@@ -143,7 +147,12 @@ bool HTMLImportsController::isProcessing() const
     return m_master->parsing();
 }
 
-void HTMLImportsController::importWasDisposed()
+bool HTMLImportsController::isDone() const
+{
+    return !m_master->parsing();
+}
+
+void HTMLImportsController::blockerGone()
 {
     scheduleUnblock();
 }

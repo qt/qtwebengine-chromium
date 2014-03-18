@@ -8,35 +8,24 @@
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
-#include "components/autofill/core/common/autofill_messages.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
 #include "grit/component_strings.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(OS_ANDROID)
-#include "content/public/browser/android/content_view_core.h"
-#endif
-
-using content::RenderViewHost;
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace autofill {
 
 AutofillExternalDelegate::AutofillExternalDelegate(
-    content::WebContents* web_contents,
     AutofillManager* autofill_manager,
     AutofillDriver* autofill_driver)
-    : web_contents_(web_contents),
-      autofill_manager_(autofill_manager),
+    : autofill_manager_(autofill_manager),
       autofill_driver_(autofill_driver),
-      password_autofill_manager_(web_contents),
+      password_autofill_manager_(autofill_driver),
       autofill_query_id_(0),
       display_warning_if_disabled_(false),
       has_autofill_suggestion_(false),
       has_shown_autofill_popup_for_current_edit_(false),
-      registered_key_press_event_callback_with_(NULL),
       weak_ptr_factory_(this) {
   DCHECK(autofill_manager);
 }
@@ -161,29 +150,13 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
       data_list_labels);
 }
 
-void AutofillExternalDelegate::OnPopupShown(
-    content::RenderWidgetHost::KeyPressEventCallback* callback) {
-  if (callback && !registered_key_press_event_callback_with_) {
-    registered_key_press_event_callback_with_ =
-        web_contents_->GetRenderViewHost();
-    registered_key_press_event_callback_with_->AddKeyPressEventCallback(
-        *callback);
-  }
-
+void AutofillExternalDelegate::OnPopupShown() {
   autofill_manager_->OnDidShowAutofillSuggestions(
       has_autofill_suggestion_ && !has_shown_autofill_popup_for_current_edit_);
   has_shown_autofill_popup_for_current_edit_ |= has_autofill_suggestion_;
 }
 
-void AutofillExternalDelegate::OnPopupHidden(
-    content::RenderWidgetHost::KeyPressEventCallback* callback) {
-  if (callback && (!web_contents_->IsBeingDestroyed()) &&
-      (registered_key_press_event_callback_with_ ==
-          web_contents_->GetRenderViewHost())) {
-    web_contents_->GetRenderViewHost()->RemoveKeyPressEventCallback(*callback);
-  }
-
-  registered_key_press_event_callback_with_ = NULL;
+void AutofillExternalDelegate::OnPopupHidden() {
 }
 
 bool AutofillExternalDelegate::ShouldRepostEvent(const ui::MouseEvent& event) {
@@ -201,8 +174,6 @@ void AutofillExternalDelegate::DidSelectSuggestion(int identifier) {
 
 void AutofillExternalDelegate::DidAcceptSuggestion(const base::string16& value,
                                                    int identifier) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-
   if (identifier == WebAutofillClient::MenuItemIDAutofillOptions) {
     // User selected 'Autofill Options'.
     autofill_manager_->OnShowAutofillDialog();
@@ -214,11 +185,10 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const base::string16& value,
         autofill_query_field_, value);
     DCHECK(success);
   } else if (identifier == WebAutofillClient::MenuItemIDDataListEntry) {
-    host->Send(new AutofillMsg_AcceptDataListSuggestion(host->GetRoutingID(),
-                                                        value));
+    autofill_driver_->RendererShouldAcceptDataListSuggestion(value);
   } else if (identifier == WebAutofillClient::MenuItemIDAutocompleteEntry) {
     // User selected an Autocomplete, so we fill directly.
-    host->Send(new AutofillMsg_SetNodeText(host->GetRoutingID(), value));
+    autofill_driver_->RendererShouldSetNodeText(value);
   } else {
     FillAutofillFormData(identifier, false);
   }

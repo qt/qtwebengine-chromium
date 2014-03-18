@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/strings/string16.h"
 #include "printing/print_job_constants.h"
 #include "printing/printing_export.h"
 
@@ -41,6 +40,11 @@ struct PRINTING_EXPORT PrinterSemanticCapsAndDefaults {
   // Capabilities.
   bool color_changeable;
   bool duplex_capable;
+
+#if defined(USE_CUPS)
+  ColorModel color_model;
+  ColorModel bw_model;
+#endif
 
   // Current defaults.
   bool color_default;
@@ -92,9 +96,6 @@ class PRINTING_EXPORT PrintBackend
 
   // Returns true if printer_name points to a valid printer.
   virtual bool IsValidPrinter(const std::string& printer_name) = 0;
-
-  // Simplify title to resolve issue with some drivers.
-  static string16 SimplifyDocumentTitle(const string16& title);
 
   // Allocate a print backend. If |print_backend_settings| is NULL, default
   // settings will be used.

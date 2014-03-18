@@ -21,8 +21,8 @@
 PRUint32 ssl_sid_timeout = 100;
 PRUint32 ssl3_sid_timeout = 86400L; /* 24 hours */
 
-static sslSessionID *cache = NULL;
-static PZLock *      cacheLock = NULL;
+sslSessionID *cache = NULL;
+PZLock *      cacheLock = NULL;
 
 /* sids can be in one of 4 states:
  *
@@ -122,7 +122,21 @@ ssl_DestroySID(sslSessionID *sid)
     if (sid->version < SSL_LIBRARY_VERSION_3_0) {
 	SECITEM_ZfreeItem(&sid->u.ssl2.masterKey, PR_FALSE);
 	SECITEM_ZfreeItem(&sid->u.ssl2.cipherArg, PR_FALSE);
+    } else {
+	if (sid->u.ssl3.sessionTicket.ticket.data) {
+	    SECITEM_FreeItem(&sid->u.ssl3.sessionTicket.ticket, PR_FALSE);
+	}
+	if (sid->u.ssl3.srvName.data) {
+	    SECITEM_FreeItem(&sid->u.ssl3.srvName, PR_FALSE);
+	}
+	if (sid->u.ssl3.signedCertTimestamps.data) {
+	    SECITEM_FreeItem(&sid->u.ssl3.signedCertTimestamps, PR_FALSE);
+	}
+	if (sid->u.ssl3.originalHandshakeHash.data) {
+	  SECITEM_FreeItem(&sid->u.ssl3.originalHandshakeHash, PR_FALSE);
+	}
     }
+
     if (sid->peerID != NULL)
 	PORT_Free((void *)sid->peerID);		/* CONST */
 
@@ -142,13 +156,7 @@ ssl_DestroySID(sslSessionID *sid)
     if ( sid->localCert ) {
 	CERT_DestroyCertificate(sid->localCert);
     }
-    if (sid->u.ssl3.sessionTicket.ticket.data) {
-	SECITEM_FreeItem(&sid->u.ssl3.sessionTicket.ticket, PR_FALSE);
-    }
-    if (sid->u.ssl3.srvName.data) {
-	SECITEM_FreeItem(&sid->u.ssl3.srvName, PR_FALSE);
-    }
-    
+
     PORT_ZFree(sid, sizeof(sslSessionID));
 }
 
@@ -429,6 +437,12 @@ ssl3_SetSIDSessionTicket(sslSessionID *sid, NewSessionTicket *session_ticket)
 
     /* We need to lock the cache, as this sid might already be in the cache. */
     LOCK_CACHE;
+
+    /* Don't modify sid if it has ever been cached. */
+    if (sid->cached != never_cached) {
+	UNLOCK_CACHE;
+	return SECSuccess;
+    }
 
     /* A server might have sent us an empty ticket, which has the
      * effect of clearing the previously known ticket.

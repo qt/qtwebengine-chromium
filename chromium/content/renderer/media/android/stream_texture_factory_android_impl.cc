@@ -80,7 +80,7 @@ void StreamTextureProxyImpl::OnMatrixChanged(const float matrix[16]) {
 }  // namespace
 
 StreamTextureFactoryImpl::StreamTextureFactoryImpl(
-    WebKit::WebGraphicsContext3D* context,
+    blink::WebGraphicsContext3D* context,
     GpuChannelHost* channel,
     int view_id)
     : context_(context), channel_(channel), view_id_(view_id) {
@@ -135,6 +135,10 @@ void StreamTextureFactoryImpl::DestroyStreamTexture(unsigned texture_id) {
 void StreamTextureFactoryImpl::SetStreamTextureSize(
     int32 stream_id, const gfx::Size& size) {
   channel_->Send(new GpuChannelMsg_SetStreamTextureSize(stream_id, size));
+}
+
+blink::WebGraphicsContext3D* StreamTextureFactoryImpl::Context3d() {
+  return context_;
 }
 
 }  // namespace content

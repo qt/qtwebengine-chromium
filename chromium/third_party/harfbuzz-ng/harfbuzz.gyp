@@ -28,6 +28,10 @@
         'src/hb-cache-private.hh',
         'src/hb-common.cc',
         'src/hb-common.h',
+        'src/hb-deprecated.h',
+        'src/hb-face-private.hh',
+        'src/hb-face.cc',
+        'src/hb-face.h',
         'src/hb-fallback-shape.cc',
         'src/hb-font-private.hh',
         'src/hb-font.cc',
@@ -119,6 +123,10 @@
           'cflags': [
             '-Wno-unused-value',
           ]
+        }],
+        ['OS=="win"', {
+          # TODO(eae): C4267 on amd64. size_t -> int, size_t -> unsigned int
+          'msvs_disabled_warnings': [4267, 4334],
         }],
       ],
     },

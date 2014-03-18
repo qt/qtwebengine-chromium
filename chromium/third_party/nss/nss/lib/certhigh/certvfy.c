@@ -1355,7 +1355,7 @@ CERT_VerifyCert(CERTCertDBHandle *handle, CERTCertificate *cert,
 	PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
 	LOG_ERROR_OR_EXIT(log,cert,0,flags);
     } else if (trusted) {
-	goto winner;
+	goto done;
     }
 
 
@@ -1383,7 +1383,10 @@ CERT_VerifyCert(CERTCertDBHandle *handle, CERTCertificate *cert,
 	}
     }
 
-winner:
+done:
+    if (log && log->head) {
+      return SECFailure;
+    }
     return(SECSuccess);
 
 loser:

@@ -5,21 +5,17 @@
 #ifndef UI_GFX_GFX_EXPORT_H_
 #define UI_GFX_GFX_EXPORT_H_
 
-// TODO(beng): remove include once gfx dependencies have been corrected.
-
-#include "ui/base/ui_export.h"
-
 #if defined(COMPONENT_BUILD)
 #if defined(WIN32)
 
-#if defined(UI_IMPLEMENTATION)
+#if defined(GFX_IMPLEMENTATION)
 #define GFX_EXPORT __declspec(dllexport)
 #else
 #define GFX_EXPORT __declspec(dllimport)
-#endif  // defined(UI_IMPLEMENTATION)
+#endif  // defined(GFX_IMPLEMENTATION)
 
 #else  // defined(WIN32)
-#if defined(UI_IMPLEMENTATION)
+#if defined(GFX_IMPLEMENTATION)
 #define GFX_EXPORT __attribute__((visibility("default")))
 #else
 #define GFX_EXPORT

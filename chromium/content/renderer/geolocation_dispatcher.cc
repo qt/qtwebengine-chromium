@@ -13,11 +13,11 @@
 #include "third_party/WebKit/public/web/WebGeolocationPosition.h"
 #include "third_party/WebKit/public/web/WebGeolocationError.h"
 
-using WebKit::WebGeolocationController;
-using WebKit::WebGeolocationError;
-using WebKit::WebGeolocationPermissionRequest;
-using WebKit::WebGeolocationPermissionRequestManager;
-using WebKit::WebGeolocationPosition;
+using blink::WebGeolocationController;
+using blink::WebGeolocationError;
+using blink::WebGeolocationPermissionRequest;
+using blink::WebGeolocationPermissionRequestManager;
+using blink::WebGeolocationPosition;
 
 namespace content {
 
@@ -87,7 +87,7 @@ bool GeolocationDispatcher::lastPosition(WebGeolocationPosition&) {
 void GeolocationDispatcher::requestPermission(
     const WebGeolocationPermissionRequest& permissionRequest) {
   int bridge_id = pending_permissions_->add(permissionRequest);
-  string16 origin = permissionRequest.securityOrigin().toString();
+  base::string16 origin = permissionRequest.securityOrigin().toString();
   Send(new GeolocationHostMsg_RequestPermission(
       routing_id(), bridge_id, GURL(origin)));
 }
@@ -99,7 +99,7 @@ void GeolocationDispatcher::cancelPermissionRequest(
   int bridge_id;
   if (!pending_permissions_->remove(permissionRequest, bridge_id))
     return;
-  string16 origin = permissionRequest.securityOrigin().toString();
+  base::string16 origin = permissionRequest.securityOrigin().toString();
   Send(new GeolocationHostMsg_CancelPermissionRequest(
       routing_id(), bridge_id, GURL(origin)));
 }
@@ -150,7 +150,7 @@ void GeolocationDispatcher::OnPositionUpdated(
     }
     controller_->errorOccurred(
         WebGeolocationError(
-            code, WebKit::WebString::fromUTF8(geoposition.error_message)));
+            code, blink::WebString::fromUTF8(geoposition.error_message)));
   }
 }
 

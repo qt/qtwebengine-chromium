@@ -33,16 +33,14 @@
 #include "core/dom/MutationObserverInterestGroup.h"
 
 #include "core/dom/MutationRecord.h"
-#include "core/dom/Node.h"
-#include "core/dom/QualifiedName.h"
 
 namespace WebCore {
 
-PassOwnPtr<MutationObserverInterestGroup> MutationObserverInterestGroup::createIfNeeded(Node* target, MutationObserver::MutationType type, MutationRecordDeliveryOptions oldValueFlag, const QualifiedName* attributeName)
+PassOwnPtr<MutationObserverInterestGroup> MutationObserverInterestGroup::createIfNeeded(Node& target, MutationObserver::MutationType type, MutationRecordDeliveryOptions oldValueFlag, const QualifiedName* attributeName)
 {
     ASSERT((type == MutationObserver::Attributes && attributeName) || !attributeName);
     HashMap<MutationObserver*, MutationRecordDeliveryOptions> observers;
-    target->getRegisteredMutationObserversOfType(observers, type, attributeName);
+    target.getRegisteredMutationObserversOfType(observers, type, attributeName);
     if (observers.isEmpty())
         return nullptr;
 

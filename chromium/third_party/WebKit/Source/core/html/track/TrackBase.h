@@ -26,40 +26,24 @@
 #ifndef TrackBase_h
 #define TrackBase_h
 
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class ScriptExecutionContext;
-
-class TrackBase : public RefCounted<TrackBase>, public EventTarget {
+class TrackBase : public RefCounted<TrackBase>, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(TrackBase);
 public:
-    virtual ~TrackBase();
+    virtual ~TrackBase() { }
 
-    enum Type { BaseTrack, TextTrack, AudioTrack, VideoTrack };
+    enum Type { TextTrack, AudioTrack, VideoTrack };
     Type type() const { return m_type; }
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-
-    using RefCounted<TrackBase>::ref;
-    using RefCounted<TrackBase>::deref;
-
 protected:
-    TrackBase(ScriptExecutionContext*, Type);
-
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    explicit TrackBase(Type type) : m_type(type) { }
 
 private:
     Type m_type;
-
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-
-    ScriptExecutionContext* m_scriptExecutionContext;
-    EventTargetData m_eventTargetData;
 };
 
 } // namespace WebCore

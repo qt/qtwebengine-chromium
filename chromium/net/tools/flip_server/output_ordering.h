@@ -11,8 +11,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/flip_server/constants.h"
-#include "net/tools/flip_server/epoll_server.h"
 #include "net/tools/flip_server/mem_cache.h"
 
 namespace net {
@@ -26,6 +26,7 @@ class OutputOrdering {
 
   struct PriorityMapPointer {
     PriorityMapPointer();
+    ~PriorityMapPointer();
     PriorityRing* ring;
     PriorityRing::iterator it;
     bool alarm_enabled;

@@ -23,13 +23,11 @@
 
 #include "core/svg/SVGPatternElement.h"
 
-#include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 #include "core/svg/PatternAttributes.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFitToViewBox.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
@@ -62,8 +60,8 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGPatternElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGPatternElement::SVGPatternElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGPatternElement::SVGPatternElement(Document& document)
+    : SVGElement(SVGNames::patternTag, document)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
     , m_width(LengthModeWidth)
@@ -71,14 +69,13 @@ inline SVGPatternElement::SVGPatternElement(const QualifiedName& tagName, Docume
     , m_patternUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
     , m_patternContentUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
 {
-    ASSERT(hasTagName(SVGNames::patternTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGPatternElement();
 }
 
-PassRefPtr<SVGPatternElement> SVGPatternElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGPatternElement> SVGPatternElement::create(Document& document)
 {
-    return adoptRef(new SVGPatternElement(tagName, document));
+    return adoptRef(new SVGPatternElement(document));
 }
 
 bool SVGPatternElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -155,8 +152,9 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGPatternElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -193,7 +191,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
         if (!attributes.hasHeight() && current->hasAttribute(SVGNames::heightAttr))
             attributes.setHeight(current->heightCurrentValue());
 
-        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr) && current->viewBoxIsValid())
+        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr) && current->viewBoxCurrentValue().isValid())
             attributes.setViewBox(current->viewBoxCurrentValue());
 
         if (!attributes.hasPreserveAspectRatio() && current->hasAttribute(SVGNames::preserveAspectRatioAttr))
@@ -219,7 +217,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
         // Respect xlink:href, take attributes from referenced element
         Node* refNode = SVGURIReference::targetElementFromIRIString(current->hrefCurrentValue(), document());
         if (refNode && refNode->hasTagName(SVGNames::patternTag)) {
-            current = static_cast<const SVGPatternElement*>(const_cast<const Node*>(refNode));
+            current = toSVGPatternElement(const_cast<const Node*>(refNode));
 
             // Cycle detection
             if (processedPatterns.contains(current)) {
@@ -231,7 +229,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
     }
 }
 
-AffineTransform SVGPatternElement::localCoordinateSpaceTransform(SVGLocatable::CTMScope) const
+AffineTransform SVGPatternElement::localCoordinateSpaceTransform(SVGElement::CTMScope) const
 {
     AffineTransform matrix;
     patternTransformCurrentValue().concatenate(matrix);

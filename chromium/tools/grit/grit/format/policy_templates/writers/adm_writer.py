@@ -130,6 +130,10 @@ class AdmWriter(template_writer.TemplateWriter):
     builder.AddLine('END PART', -1)
 
   def _WritePolicy(self, policy, key_name, builder):
+    if policy['type'] == 'external':
+      # This type can only be set through cloud policy.
+      return
+
     self._AddGuiString(policy['name'] + '_Policy', policy['caption'])
     builder.AddLine('POLICY !!%s_Policy' % policy['name'], 1)
     self._WriteSupported(builder)

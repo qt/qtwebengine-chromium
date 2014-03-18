@@ -133,13 +133,15 @@ void EnableThemeSupportOnAllWindowStations() {
 
   HWINSTA winsta0 = ::OpenWindowStationA("WinSta0", FALSE, GENERIC_READ);
   if (!winsta0) {
-    DLOG(INFO) << "Unable to open to WinSta0, we: "<< ::GetLastError();
+    DVLOG(0) << "Unable to open to WinSta0, we: "<< ::GetLastError();
     return;
   }
   if (!::SetProcessWindowStation(winsta0)) {
     // Could not set the alternate window station. There is a possibility
     // that the theme wont be correctly initialized.
     NOTREACHED() << "Unable to switch to WinSta0, we: "<< ::GetLastError();
+    ::CloseWindowStation(winsta0);
+    return;
   }
 
   HWND window = ::CreateWindowExW(0, L"Static", L"", WS_POPUP | WS_DISABLED,
@@ -406,6 +408,27 @@ int RunZygote(const MainFunctionParams& main_function_params,
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
 #if !defined(OS_IOS)
+static void RegisterMainThreadFactories() {
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
+  RenderProcessHost::RegisterRendererMainThreadFactory(
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(
+      CreateInProcessGpuThread);
+#else
+  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kSingleProcess)) {
+    LOG(FATAL) <<
+        "--single-process is not supported in chrome multiple dll browser.";
+  }
+  if (command_line.HasSwitch(switches::kInProcessGPU)) {
+    LOG(FATAL) <<
+        "--in-process-gpu is not supported in chrome multiple dll browser.";
+  }
+#endif
+}
+
 // Run the FooMain() for a given process type.
 // If |process_type| is empty, runs BrowserMain().
 // Returns the exit code for this process.
@@ -430,14 +453,7 @@ int RunNamedProcessTypeMain(
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
 
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(
-      CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
-      CreateInProcessRendererThread);
-  GpuProcessHost::RegisterGpuMainThreadFactory(
-      CreateInProcessGpuThread);
-#endif
+  RegisterMainThreadFactories();
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {

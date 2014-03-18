@@ -29,6 +29,7 @@
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_insertion_delegate_win.h"
 #include "ui/views/controls/menu/menu_listener.h"
+#include "ui/views/layout/layout_constants.h"
 
 using ui::NativeTheme;
 
@@ -43,8 +44,6 @@ static const int kItemTopMargin = 3;
 static const int kItemBottomMargin = 4;
 // Margins between the left of the item and the icon.
 static const int kItemLeftMargin = 4;
-// Margins between the right of the item and the label.
-static const int kItemRightMargin = 10;
 // The width for displaying the sub-menu arrow.
 static const int kArrowWidth = 10;
 
@@ -174,7 +173,7 @@ class NativeMenuWin::MenuHostWindow {
     if (data) {
       gfx::Font font;
       measure_item_struct->itemWidth = font.GetStringWidth(data->label) +
-          kIconWidth + kItemLeftMargin + kItemRightMargin -
+          kIconWidth + kItemLeftMargin + views::kItemLabelSpacing -
           GetSystemMetrics(SM_CXMENUCHECK);
       if (data->submenu.get())
         measure_item_struct->itemWidth += kArrowWidth;
@@ -219,7 +218,7 @@ class NativeMenuWin::MenuHostWindow {
       rect.top += kItemTopMargin;
       // Should we add kIconWidth only when icon.width() != 0 ?
       rect.left += kItemLeftMargin + kIconWidth;
-      rect.right -= kItemRightMargin;
+      rect.right -= views::kItemLabelSpacing;
       UINT format = DT_TOP | DT_SINGLELINE;
       // Check whether the mnemonics should be underlined.
       BOOL underline_mnemonics;
@@ -261,7 +260,7 @@ class NativeMenuWin::MenuHostWindow {
         const gfx::ImageSkia* skia_icon = icon.ToImageSkia();
         DCHECK(type != ui::MenuModel::TYPE_CHECK);
         gfx::Canvas canvas(
-            skia_icon->GetRepresentation(ui::SCALE_FACTOR_100P),
+            skia_icon->GetRepresentation(1.0f),
             false);
         skia::DrawToNativeContext(
             canvas.sk_canvas(), dc,
@@ -287,7 +286,7 @@ class NativeMenuWin::MenuHostWindow {
             (height - kItemTopMargin - kItemBottomMargin -
              config.check_height) / 2;
         gfx::Canvas canvas(gfx::Size(config.check_width, config.check_height),
-                           ui::SCALE_FACTOR_100P,
+                           1.0f,
                            false);
         NativeTheme::ExtraParams extra;
         extra.menu_check.is_radio = false;

@@ -41,7 +41,7 @@ class NSEvent;
 class NSView;
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class WebKeyboardEvent;
 class WebMouseEvent;
@@ -50,13 +50,14 @@ class WebGestureEvent;
 
 class WebInputEventFactory {
 public:
-    WEBKIT_EXPORT static WebKeyboardEvent keyboardEvent(NSEvent*);
-    WEBKIT_EXPORT static WebKeyboardEvent keyboardEvent(wchar_t character, int modifiers, double timeStampSeconds);
-    WEBKIT_EXPORT static WebMouseEvent mouseEvent(NSEvent*, NSView*);
-    WEBKIT_EXPORT static WebMouseWheelEvent mouseWheelEvent(NSEvent*, NSView*);
-    WEBKIT_EXPORT static WebGestureEvent gestureEvent(NSEvent *, NSView *);
+    BLINK_EXPORT static WebKeyboardEvent keyboardEvent(NSEvent*);
+    BLINK_EXPORT static WebKeyboardEvent keyboardEvent(wchar_t character, int modifiers, double timeStampSeconds);
+    BLINK_EXPORT static WebMouseEvent mouseEvent(NSEvent*, NSView*);
+    BLINK_EXPORT static WebMouseWheelEvent mouseWheelEvent(NSEvent*, NSView*);
+    BLINK_EXPORT static WebGestureEvent gestureEvent(NSEvent *, NSView *);
+    BLINK_EXPORT static bool isSystemKeyEvent(const WebKeyboardEvent&);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

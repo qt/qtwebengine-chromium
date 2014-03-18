@@ -23,16 +23,15 @@ namespace syncer {
 
 class CancelationSignal;
 
-// A Syncer provides a control interface for driving the individual steps
-// of the sync cycle.  Each cycle (hopefully) moves the client into closer
-// synchronization with the server.  The individual steps are modeled
-// as SyncerCommands, and the ordering of the steps is expressed using
-// the SyncerStep enum.
+// A Syncer provides a control interface for driving the sync cycle.  These
+// cycles consist of downloading updates, parsing the response (aka. process
+// updates), applying updates while resolving conflicts, and committing local
+// changes.  Some of these steps may be skipped if they're deemed to be
+// unnecessary.
 //
-// A Syncer instance expects to run on a dedicated thread.  Calls
-// to SyncShare() may take an unbounded amount of time, as SyncerCommands
-// may block on network i/o, on lock contention, or on tasks posted to
-// other threads.
+// A Syncer instance expects to run on a dedicated thread.  Calls to SyncShare()
+// may take an unbounded amount of time because it may block on network I/O, on
+// lock contention, or on tasks posted to other threads.
 class SYNC_EXPORT_PRIVATE Syncer {
  public:
   typedef std::vector<int64> UnsyncedMetaHandles;
@@ -70,8 +69,17 @@ class SYNC_EXPORT_PRIVATE Syncer {
  private:
   void ApplyUpdates(sessions::SyncSession* session);
   bool DownloadAndApplyUpdates(
+      ModelTypeSet request_types,
       sessions::SyncSession* session,
       base::Callback<void(sync_pb::ClientToServerMessage*)> build_fn);
+
+  // This function will commit batches of unsynced items to the server until the
+  // number of unsynced and ready to commit items reaches zero or an error is
+  // encountered.  A request to exit early will be treated as an error and will
+  // abort any blocking operations.
+  SyncerError BuildAndPostCommits(
+      ModelTypeSet request_types,
+      sessions::SyncSession* session);
 
   void HandleCycleBegin(sessions::SyncSession* session);
   bool HandleCycleEnd(

@@ -32,13 +32,13 @@
 #define ColorInputType_h
 
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
-#include "core/platform/ColorChooserClient.h"
+#include "platform/ColorChooserClient.h"
 
 namespace WebCore {
 
 class ColorInputType : public BaseClickableWithKeyInputType, public ColorChooserClient {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
     virtual ~ColorInputType();
 
     // ColorChooserClient implementation.
@@ -47,10 +47,10 @@ public:
     virtual IntRect elementRectRelativeToRootView() const OVERRIDE;
     virtual Color currentColor() OVERRIDE;
     virtual bool shouldShowSuggestions() const OVERRIDE;
-    virtual Vector<Color> suggestions() const OVERRIDE;
+    virtual Vector<ColorSuggestion> suggestions() const OVERRIDE;
 
 private:
-    ColorInputType(HTMLInputElement* element) : BaseClickableWithKeyInputType(element) { }
+    ColorInputType(HTMLInputElement& element) : BaseClickableWithKeyInputType(element) { }
     virtual void countUsage() OVERRIDE;
     virtual bool isColorControl() const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
@@ -60,7 +60,7 @@ private:
     virtual void createShadowSubtree() OVERRIDE;
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual void detach() OVERRIDE;
+    virtual void closePopupView() OVERRIDE;
     virtual bool shouldRespectListAttribute() OVERRIDE;
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
 

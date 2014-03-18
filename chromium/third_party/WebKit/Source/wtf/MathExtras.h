@@ -113,7 +113,7 @@ inline float log2f(float num)
 }
 #endif
 
-#if COMPILER(MSVC)
+#if COMPILER(MSVC) && (_MSC_VER < 1800)
 
 namespace std {
 
@@ -223,6 +223,11 @@ template<> inline long long int clampTo(double, long long int, long long int); /
 inline int clampToInteger(double value)
 {
     return clampTo<int>(value);
+}
+
+inline unsigned clampToUnsigned(double value)
+{
+    return clampTo<unsigned>(value);
 }
 
 inline float clampToFloat(double value)

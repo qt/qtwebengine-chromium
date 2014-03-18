@@ -22,7 +22,7 @@
 
 #include "core/page/Page.h"
 #include "core/page/PageLifecycleObserver.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
@@ -51,6 +51,10 @@ public:
     static bool vibrate(Navigator*, unsigned time);
     static bool vibrate(Navigator*, const VibrationPattern&);
     static NavigatorVibration* from(Page*);
+
+    bool isVibrating() const { return m_isVibrating; }
+
+    VibrationPattern pattern() const { return m_pattern; }
 
 private:
     explicit NavigatorVibration(Page*);

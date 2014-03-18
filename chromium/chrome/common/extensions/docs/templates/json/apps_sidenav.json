@@ -1,0 +1,278 @@
+[
+  {
+    "title": "Discover",
+    "items": [
+      {
+        "title": "What Are Chrome Apps?",
+        "href": "/apps/about_apps.html"
+      }
+    ]
+  },
+  {
+    "title": "Develop",
+    "items": [
+      {
+        "title": "Create Your First App",
+        "href": "/apps/first_app.html"
+      },
+      {
+        "title": "Tutorials",
+        "toggleable": true,
+        "items": [
+          {
+            "title": "Learn with a Codelab",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "About this Codelab",
+                "href": "/apps/app_codelab.html"
+              },
+              {
+                "title": "1 - Set Up Development Environment",
+                "href": "/apps/app_codelab1_setup.html"
+              },
+              {
+                "title": "2 - Create Basic App",
+                "href": "/apps/app_codelab2_basic.html"
+              },
+              {
+                "title": "3 - Create MVC",
+                "href": "/apps/app_codelab3_mvc.html"
+              },
+              {
+                "title": "4 - Save and Fetch Data",
+                "href": "/apps/app_codelab5_data.html"
+              },
+              {
+                "title": "5 - Manage App Lifecycle",
+                "href": "/apps/app_codelab6_lifecycle.html"
+              },
+              {
+                "title": "6 - Access User's Data",
+                "href": "/apps/app_codelab7_useridentification.html"
+              },
+              {
+                "title": "7 - Access Web Resources",
+                "href": "/apps/app_codelab8_webresources.html"
+              },
+              {
+                "title": "8 - Publish App",
+                "href": "/apps/app_codelab_10_publishing.html"
+              }
+            ]
+          },
+          {
+            "title": "MVC Architecture & Frameworks",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "About MVC Architecture",
+                "href": "/apps/app_frameworks.html"
+              },
+              {
+                "title": "Build Apps with AngularJS",
+                "href": "/apps/angular_framework.html"
+              },
+              {
+                "title": "Build Apps with Sencha Ext JS",
+                "href": "/apps/sencha_framework.html"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Chrome App Concepts",
+        "toggleable": true,
+        "items": [
+          {
+            "title": "The Fundamentals",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "App Architecture",
+                "href": "/apps/app_architecture.html"
+              },
+              {
+                "title": "App Lifecycle",
+                "href": "/apps/app_lifecycle.html"
+              },
+              {
+                "title": "Offline First",
+                "href": "/apps/offline_apps.html"
+              },
+              {
+                "title": "External Content",
+                "href": "/apps/app_external.html"
+              }
+            ]
+          },
+          {
+            "title": "Security",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "Content Security Policy",
+                "href": "/apps/contentSecurityPolicy.html"
+              }
+            ]
+          },
+          {
+            "title": "Cloud-Enable Your App",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "Cloud Messaging",
+                "toggleable": true,
+                "items": [
+                  {
+                    "title": "About Cloud Messaging",
+                    "href": "/apps/cloudMessaging.html"
+                  },
+                  {
+                    "title": "Client Reference",
+                    "href": "/apps/pushMessaging.html"
+                  },
+                  {
+                    "title": "Service Reference",
+                    "href": "/apps/gcm_server.html"
+                  },
+                  {
+                    "title": "Terms of Service",
+                    "href": "/apps/gcm_tos.html"
+                  }
+                ]
+              },
+              {
+                "title": "Cloud Storage",
+                "toggleable": true,
+                "items": [
+                  {
+                    "title": "chrome.storage",
+                    "href": "/apps/storage.html"
+                  }
+                ]
+              },
+              {
+                "title": "User Authentication",
+                "href": "/apps/app_identity.html"
+              }
+            ]
+          },
+          {
+            "title": "Store and Retrieve Data",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "Storage APIs",
+                "href": "/apps/app_storage.html"
+              }
+            ]
+          },
+          {
+            "title": "Use Low-Level System Services",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "USB",
+                "href": "/apps/app_usb.html"
+              },
+              {
+                "title": "Serial",
+                "href": "/apps/app_serial.html"
+              },
+              {
+                "title": "Network Communications",
+                "href": "/apps/app_network.html"
+              }
+            ]
+          },
+          {
+            "title": "Interact with the Host Platform",
+            "toggleable": true,
+            "items": [
+              {
+                "title": "Rich Notifications",
+                "href": "/apps/desktop_notifications.html"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Distribute",
+    "items": [
+      {
+        "title": "Publish Your App",
+        "href": "/apps/publish_app.html"
+      },
+      {
+        "title": "Monetize Your App",
+        "toggleable": true,
+        "items": [
+          {
+            "title": "Google Wallet for Digital Goods",
+            "href": "/apps/google_wallet.html"
+          }
+        ]
+      },
+      {
+        "title": "Analytics",
+        "href": "/apps/analytics.html"
+      }
+    ]
+  },
+  {
+    "title": "Reference",
+    "items": [
+      {
+        "title": "Chrome Platform APIs",
+        "href": "/apps/api_index.html"
+      },
+      {
+        "title": "Webview Tag",
+        "href": "/apps/tags/webview.html"
+      },
+      {
+        "title": "Web APIs",
+        "href": "/apps/api_other.html"
+      },
+      {
+        "title": "Manifest File Format",
+        "href": "/apps/manifest.html"
+      },
+      {
+        "title": "Disabled Web Features",
+        "href": "/apps/app_deprecated.html"
+      }
+    ]
+  },
+  {
+    "title": "Samples",
+    "items": [
+      {
+        "title": "Sample Apps",
+        "href": "/apps/samples.html"
+      }
+    ]
+  },
+  {
+    "title": "Help",
+    "items": [
+      {
+        "title": "FAQ",
+        "href": "/apps/faq.html"
+      },
+      {
+        "title": "Google Groups",
+        "href": "https://groups.google.com/a/chromium.org/forum/#!forum/chromium-apps"
+      },
+      {
+        "title": "Stack Overflow",
+        "href": "http://stackoverflow.com/questions/tagged/google-chrome-app"
+      }
+    ]
+  }
+]

@@ -21,11 +21,10 @@
 #include "config.h"
 #include "core/page/PrintContext.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderView.h"
-#include "wtf/text/WTFString.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -64,7 +63,7 @@ void PrintContext::computePageRects(const FloatRect& printRect, float headerHeig
         return;
 
     if (userScaleFactor <= 0) {
-        LOG_ERROR("userScaleFactor has bad value %.2f", userScaleFactor);
+        WTF_LOG_ERROR("userScaleFactor has bad value %.2f", userScaleFactor);
         return;
     }
 
@@ -78,7 +77,7 @@ void PrintContext::computePageRects(const FloatRect& printRect, float headerHeig
     pageHeight -= headerHeight + footerHeight;
 
     if (pageHeight <= 0) {
-        LOG_ERROR("pageHeight has bad value %.2f", pageHeight);
+        WTF_LOG_ERROR("pageHeight has bad value %.2f", pageHeight);
         return;
     }
 

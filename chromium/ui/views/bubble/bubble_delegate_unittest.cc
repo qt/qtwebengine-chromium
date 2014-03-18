@@ -24,10 +24,18 @@ class TestBubbleDelegateView : public BubbleDelegateView {
   TestBubbleDelegateView(View* anchor_view)
       : BubbleDelegateView(anchor_view, BubbleBorder::TOP_LEFT),
         view_(new View()) {
-    view_->set_focusable(true);
+    view_->SetFocusable(true);
     AddChildView(view_);
   }
   virtual ~TestBubbleDelegateView() {}
+
+  void SetAnchorRectForTest(gfx::Rect rect) {
+    SetAnchorRect(rect);
+  }
+
+  void SetAnchorViewForTest(View* view) {
+    SetAnchorView(view);
+  }
 
   // BubbleDelegateView overrides:
   virtual View* GetInitiallyFocusedView() OVERRIDE { return view_; }
@@ -109,6 +117,57 @@ TEST_F(BubbleDelegateTest, CloseAnchorWidget) {
   EXPECT_TRUE(bubble_observer.widget_closed());
 }
 
+// This test checks that the bubble delegate is capable to handle an early
+// destruction of the used anchor view. (Animations and delayed closure of the
+// bubble will call upon the anchor view to get its location).
+TEST_F(BubbleDelegateTest, CloseAnchorViewTest) {
+  // Create an anchor widget and add a view to be used as an anchor view.
+  scoped_ptr<Widget> anchor_widget(CreateTestWidget());
+  scoped_ptr<View> anchor_view(new View());
+  anchor_widget->GetContentsView()->AddChildView(anchor_view.get());
+  TestBubbleDelegateView* bubble_delegate = new TestBubbleDelegateView(
+      anchor_view.get());
+  // Prevent flakes by avoiding closing on activation changes.
+  bubble_delegate->set_close_on_deactivate(false);
+  Widget* bubble_widget = BubbleDelegateView::CreateBubble(bubble_delegate);
+
+  // Check that the anchor view is correct and set up an anchor view rect.
+  // Make sure that this rect will get ignored (as long as the anchor view is
+  // attached).
+  EXPECT_EQ(anchor_view, bubble_delegate->GetAnchorView());
+  const gfx::Rect set_anchor_rect = gfx::Rect(10, 10, 100, 100);
+  bubble_delegate->SetAnchorRectForTest(set_anchor_rect);
+  const gfx::Rect view_rect = bubble_delegate->GetAnchorRect();
+  EXPECT_NE(view_rect.ToString(), set_anchor_rect.ToString());
+
+  // Create the bubble.
+  bubble_widget->Show();
+  EXPECT_EQ(anchor_widget, bubble_delegate->anchor_widget());
+
+  // Remove now the anchor view and make sure that the original found rect
+  // is still kept, so that the bubble does not jump when the view gets deleted.
+  anchor_widget->GetContentsView()->RemoveChildView(anchor_view.get());
+  anchor_view.reset();
+  EXPECT_EQ(NULL, bubble_delegate->GetAnchorView());
+  EXPECT_EQ(view_rect.ToString(), bubble_delegate->GetAnchorRect().ToString());
+}
+
+// Testing that a move of the anchor view will lead to new bubble locations.
+TEST_F(BubbleDelegateTest, TestAnchorRectMovesWithViewTest) {
+  // Create an anchor widget and add a view to be used as anchor view.
+  scoped_ptr<Widget> anchor_widget(CreateTestWidget());
+  TestBubbleDelegateView* bubble_delegate = new TestBubbleDelegateView(
+      anchor_widget->GetContentsView());
+  BubbleDelegateView::CreateBubble(bubble_delegate);
+
+  anchor_widget->GetContentsView()->SetBounds(10, 10, 100, 100);
+  const gfx::Rect view_rect = bubble_delegate->GetAnchorRect();
+
+  anchor_widget->GetContentsView()->SetBounds(20, 10, 100, 100);
+  const gfx::Rect view_rect_2 = bubble_delegate->GetAnchorRect();
+  EXPECT_NE(view_rect.ToString(), view_rect_2.ToString());
+}
+
 TEST_F(BubbleDelegateTest, ResetAnchorWidget) {
   scoped_ptr<Widget> anchor_widget(CreateTestWidget());
   BubbleDelegateView* bubble_delegate = new BubbleDelegateView(
@@ -174,8 +233,6 @@ TEST_F(BubbleDelegateTest, NonClientHitTest) {
     const int hit;
   } cases[] = {
     { border,      HTNOWHERE },
-    { border + 5,  HTNOWHERE },
-    { border + 6,  HTCLIENT  },
     { border + 50, HTCLIENT  },
     { 1000,        HTNOWHERE },
   };
@@ -187,6 +244,20 @@ TEST_F(BubbleDelegateTest, NonClientHitTest) {
   }
 }
 
+TEST_F(BubbleDelegateTest, CloseWhenAnchorWidgetBoundsChanged) {
+  scoped_ptr<Widget> anchor_widget(CreateTestWidget());
+  BubbleDelegateView* bubble_delegate = new BubbleDelegateView(
+      anchor_widget->GetContentsView(), BubbleBorder::NONE);
+  Widget* bubble_widget = BubbleDelegateView::CreateBubble(bubble_delegate);
+  test::TestWidgetObserver bubble_observer(bubble_widget);
+  EXPECT_FALSE(bubble_observer.widget_closed());
+
+  bubble_widget->Show();
+  EXPECT_TRUE(bubble_widget->IsVisible());
+  anchor_widget->SetBounds(gfx::Rect(10, 10, 100, 100));
+  EXPECT_FALSE(bubble_widget->IsVisible());
+}
+
 // This class provides functionality to verify that the BubbleView shows up
 // when we call BubbleDelegateView::StartFade(true) and is destroyed when we
 // call BubbleDelegateView::StartFade(false).
@@ -195,6 +266,7 @@ class BubbleWidgetClosingTest : public BubbleDelegateTest,
  public:
   BubbleWidgetClosingTest() : bubble_destroyed_(false) {
 #if defined(USE_AURA)
+    aura::Env::CreateInstance();
     loop_.set_dispatcher(aura::Env::GetInstance()->GetDispatcher());
 #endif
   }

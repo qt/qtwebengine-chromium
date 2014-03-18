@@ -32,9 +32,8 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/sql/SQLValue.h"
-#include "core/platform/sql/SQLiteDatabase.h"
-#include "core/platform/sql/SQLiteStatement.h"
+#include "modules/webdatabase/sqlite/SQLiteDatabase.h"
+#include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
@@ -51,7 +50,7 @@ SQLStatementSync::SQLStatementSync(const String& statement, const Vector<SQLValu
     ASSERT(!m_statement.isEmpty());
 }
 
-PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionState& es)
+PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionState& exceptionState)
 {
     db->setAuthorizerPermissions(m_permissions);
 
@@ -61,18 +60,18 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
     int result = statement.prepare();
     if (result != SQLResultOk) {
         if (result == SQLResultInterrupt)
-            es.throwDOMException(SQLDatabaseError);
+            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         else
-            es.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
+            exceptionState.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
         db->setLastErrorMessage("could not prepare statement", result, database->lastErrorMsg());
         return 0;
     }
 
     if (statement.bindParameterCount() != m_arguments.size()) {
         if (db->isInterrupted())
-            es.throwDOMException(SQLDatabaseError);
+            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         else
-            es.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
+            exceptionState.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
         db->setLastErrorMessage("number of '?'s in statement string does not match argument count");
         return 0;
     }
@@ -80,13 +79,13 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
     for (unsigned i = 0; i < m_arguments.size(); ++i) {
         result = statement.bindValue(i + 1, m_arguments[i]);
         if (result == SQLResultFull) {
-            es.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
+            exceptionState.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
             db->setLastErrorMessage("there was not enough remaining storage space");
             return 0;
         }
 
         if (result != SQLResultOk) {
-            es.throwDOMException(SQLDatabaseError);
+            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
             db->setLastErrorMessage("could not bind value", result, database->lastErrorMsg());
             return 0;
         }
@@ -111,7 +110,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         } while (result == SQLResultRow);
 
         if (result != SQLResultDone) {
-            es.throwDOMException(SQLDatabaseError);
+            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
             db->setLastErrorMessage("could not iterate results", result, database->lastErrorMsg());
             return 0;
         }
@@ -121,15 +120,15 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
             resultSet->setInsertId(database->lastInsertRowID());
     } else if (result == SQLResultFull) {
         // Quota error, the delegate will be asked for more space and this statement might be re-run.
-        es.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
+        exceptionState.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
         db->setLastErrorMessage("there was not enough remaining storage space");
         return 0;
     } else if (result == SQLResultConstraint) {
-        es.throwDOMException(ConstraintError, "A constraint was violated.");
+        exceptionState.throwDOMException(ConstraintError, "A constraint was violated.");
         db->setLastErrorMessage("statement failed due to a constraint failure");
         return 0;
     } else {
-        es.throwDOMException(SQLDatabaseError);
+        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         db->setLastErrorMessage("could not execute statement", result, database->lastErrorMsg());
         return 0;
     }

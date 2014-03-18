@@ -25,11 +25,11 @@
 #ifndef FillLayer_h
 #define FillLayer_h
 
-#include "core/platform/Length.h"
-#include "core/platform/LengthSize.h"
-#include "core/platform/graphics/GraphicsTypes.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/StyleImage.h"
+#include "platform/Length.h"
+#include "platform/LengthSize.h"
+#include "platform/graphics/GraphicsTypes.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -62,7 +62,7 @@ struct FillSize {
 class FillLayer {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    FillLayer(EFillLayerType);
+    FillLayer(EFillLayerType, bool useInitialValues = false);
     ~FillLayer();
 
     StyleImage* image() const { return m_image.get(); }
@@ -76,7 +76,7 @@ public:
     EFillRepeat repeatX() const { return static_cast<EFillRepeat>(m_repeatX); }
     EFillRepeat repeatY() const { return static_cast<EFillRepeat>(m_repeatY); }
     CompositeOperator composite() const { return static_cast<CompositeOperator>(m_composite); }
-    BlendMode blendMode() const { return static_cast<BlendMode>(m_blendMode); }
+    blink::WebBlendMode blendMode() const { return static_cast<blink::WebBlendMode>(m_blendMode); }
     LengthSize sizeLength() const { return m_sizeLength; }
     EFillSizeType sizeType() const { return static_cast<EFillSizeType>(m_sizeType); }
     FillSize size() const { return FillSize(static_cast<EFillSizeType>(m_sizeType), m_sizeLength); }
@@ -88,7 +88,8 @@ public:
     bool isImageSet() const { return m_imageSet; }
     bool isXPositionSet() const { return m_xPosSet; }
     bool isYPositionSet() const { return m_yPosSet; }
-    bool isBackgroundOriginSet() const { return m_backgroundOriginSet; }
+    bool isBackgroundXOriginSet() const { return m_backgroundXOriginSet; }
+    bool isBackgroundYOriginSet() const { return m_backgroundYOriginSet; }
     bool isAttachmentSet() const { return m_attachmentSet; }
     bool isClipSet() const { return m_clipSet; }
     bool isOriginSet() const { return m_originSet; }
@@ -100,17 +101,17 @@ public:
     bool isMaskSourceTypeSet() const { return m_maskSourceTypeSet; }
 
     void setImage(PassRefPtr<StyleImage> i) { m_image = i; m_imageSet = true; }
-    void setXPosition(Length l) { m_xPosition = l; m_xPosSet = true; }
-    void setYPosition(Length l) { m_yPosition = l; m_yPosSet = true; }
-    void setBackgroundXOrigin(BackgroundEdgeOrigin o) { m_backgroundXOrigin = o; m_backgroundOriginSet = true; }
-    void setBackgroundYOrigin(BackgroundEdgeOrigin o) { m_backgroundYOrigin = o; m_backgroundOriginSet = true; }
+    void setXPosition(Length position) { m_xPosition = position; m_xPosSet = true; m_backgroundXOriginSet = false; m_backgroundXOrigin = LeftEdge; }
+    void setYPosition(Length position) { m_yPosition = position; m_yPosSet = true; m_backgroundYOriginSet = false; m_backgroundYOrigin = TopEdge; }
+    void setBackgroundXOrigin(BackgroundEdgeOrigin origin) { m_backgroundXOrigin = origin; m_backgroundXOriginSet = true; }
+    void setBackgroundYOrigin(BackgroundEdgeOrigin origin) { m_backgroundYOrigin = origin; m_backgroundYOriginSet = true; }
     void setAttachment(EFillAttachment attachment) { m_attachment = attachment; m_attachmentSet = true; }
     void setClip(EFillBox b) { m_clip = b; m_clipSet = true; }
     void setOrigin(EFillBox b) { m_origin = b; m_originSet = true; }
     void setRepeatX(EFillRepeat r) { m_repeatX = r; m_repeatXSet = true; }
     void setRepeatY(EFillRepeat r) { m_repeatY = r; m_repeatYSet = true; }
     void setComposite(CompositeOperator c) { m_composite = c; m_compositeSet = true; }
-    void setBlendMode(BlendMode b) { m_blendMode = b; m_blendModeSet = true; }
+    void setBlendMode(blink::WebBlendMode b) { m_blendMode = b; m_blendModeSet = true; }
     void setSizeType(EFillSizeType b) { m_sizeType = b; }
     void setSizeLength(LengthSize l) { m_sizeLength = l; }
     void setSize(FillSize f) { m_sizeType = f.type; m_sizeLength = f.size; }
@@ -120,12 +121,12 @@ public:
     void clearXPosition()
     {
         m_xPosSet = false;
-        m_backgroundOriginSet = false;
+        m_backgroundXOriginSet = false;
     }
     void clearYPosition()
     {
         m_yPosSet = false;
-        m_backgroundOriginSet = false;
+        m_backgroundYOriginSet = false;
     }
 
     void clearAttachment() { m_attachmentSet = false; }
@@ -181,8 +182,8 @@ public:
     static EFillRepeat initialFillRepeatX(EFillLayerType) { return RepeatFill; }
     static EFillRepeat initialFillRepeatY(EFillLayerType) { return RepeatFill; }
     static CompositeOperator initialFillComposite(EFillLayerType) { return CompositeSourceOver; }
-    static BlendMode initialFillBlendMode(EFillLayerType) { return BlendModeNormal; }
-    static EFillSizeType initialFillSizeType(EFillLayerType) { return SizeNone; }
+    static blink::WebBlendMode initialFillBlendMode(EFillLayerType) { return blink::WebBlendModeNormal; }
+    static EFillSizeType initialFillSizeType(EFillLayerType) { return SizeLength; }
     static LengthSize initialFillSizeLength(EFillLayerType) { return LengthSize(); }
     static FillSize initialFillSize(EFillLayerType type) { return FillSize(initialFillSizeType(type), initialFillSizeLength(type)); }
     static Length initialFillXPosition(EFillLayerType) { return Length(0.0, Percent); }
@@ -213,8 +214,10 @@ private:
     unsigned m_repeatY : 3; // EFillRepeat
     unsigned m_composite : 4; // CompositeOperator
     unsigned m_sizeType : 2; // EFillSizeType
-    unsigned m_blendMode : 5; // BlendMode
+    unsigned m_blendMode : 5; // blink::WebBlendMode
     unsigned m_maskSourceType : 1; // EMaskSourceType
+    unsigned m_backgroundXOrigin : 2; // BackgroundEdgeOrigin
+    unsigned m_backgroundYOrigin : 2; // BackgroundEdgeOrigin
 
     unsigned m_imageSet : 1;
     unsigned m_attachmentSet : 1;
@@ -224,9 +227,8 @@ private:
     unsigned m_repeatYSet : 1;
     unsigned m_xPosSet : 1;
     unsigned m_yPosSet : 1;
-    unsigned m_backgroundOriginSet : 1;
-    unsigned m_backgroundXOrigin : 2; // BackgroundEdgeOrigin
-    unsigned m_backgroundYOrigin : 2; // BackgroundEdgeOrigin
+    unsigned m_backgroundXOriginSet : 1;
+    unsigned m_backgroundYOriginSet : 1;
     unsigned m_compositeSet : 1;
     unsigned m_blendModeSet : 1;
     unsigned m_maskSourceTypeSet : 1;

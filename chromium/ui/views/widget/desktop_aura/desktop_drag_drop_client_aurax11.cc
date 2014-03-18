@@ -7,12 +7,14 @@
 #include <X11/Xatom.h>
 
 #include "base/event_types.h"
+#include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
 #include "ui/base/x/selection_utils.h"
@@ -57,6 +59,10 @@ const char* kAtomsToCache[] = {
   "XdndTypeList",
   NULL
 };
+
+static base::LazyInstance<
+    std::map< ::Window, views::DesktopDragDropClientAuraX11*> >::Leaky
+        g_live_client_map = LAZY_INSTANCE_INITIALIZER;
 
 // Helper class to FindWindowFor which looks for a drag target under the
 // cursor.
@@ -130,9 +136,6 @@ void FindWindowFor(const gfx::Point& screen_point,
 }  // namespace
 
 namespace views {
-
-std::map< ::Window, DesktopDragDropClientAuraX11*>
-    DesktopDragDropClientAuraX11::g_live_client_map;
 
 class DesktopDragDropClientAuraX11::X11DragContext :
     public base::MessageLoop::Dispatcher {
@@ -365,7 +368,7 @@ bool DesktopDragDropClientAuraX11::X11DragContext::Dispatch(
 ///////////////////////////////////////////////////////////////////////////////
 
 DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     views::DesktopNativeCursorManager* cursor_manager,
     Display* xdisplay,
     ::Window xwindow)
@@ -383,8 +386,9 @@ DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
       grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorGrabbing)),
       copy_grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorCopy)),
       move_grab_cursor_(cursor_manager->GetInitializedCursor(ui::kCursorMove)) {
-  DCHECK(g_live_client_map.find(xwindow) == g_live_client_map.end());
-  g_live_client_map.insert(std::make_pair(xwindow, this));
+  DCHECK(g_live_client_map.Get().find(xwindow) ==
+         g_live_client_map.Get().end());
+  g_live_client_map.Get().insert(std::make_pair(xwindow, this));
 
   // Mark that we are aware of drag and drop concepts.
   unsigned long xdnd_version = kMinXdndVersion;
@@ -394,15 +398,15 @@ DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
 }
 
 DesktopDragDropClientAuraX11::~DesktopDragDropClientAuraX11() {
-  g_live_client_map.erase(xwindow_);
+  g_live_client_map.Get().erase(xwindow_);
 }
 
 // static
 DesktopDragDropClientAuraX11* DesktopDragDropClientAuraX11::GetForWindow(
     ::Window window) {
   std::map< ::Window, DesktopDragDropClientAuraX11*>::const_iterator it =
-      g_live_client_map.find(window);
-  if (it == g_live_client_map.end())
+      g_live_client_map.Get().find(window);
+  if (it == g_live_client_map.Get().end())
     return NULL;
   return it->second;
 }
@@ -561,7 +565,7 @@ void DesktopDragDropClientAuraX11::OnSelectionNotify(
 
 int DesktopDragDropClientAuraX11::StartDragAndDrop(
     const ui::OSExchangeData& data,
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     aura::Window* source_window,
     const gfx::Point& root_location,
     int operation,
@@ -583,7 +587,10 @@ int DesktopDragDropClientAuraX11::StartDragAndDrop(
   // Windows has a specific method, DoDragDrop(), which performs the entire
   // drag. We have to emulate this, so we spin off a nested runloop which will
   // track all cursor movement and reroute events to a specific handler.
+  move_loop_.SetDragImage(source_provider_->GetDragImage(),
+                          source_provider_->GetDragImageOffset());
   move_loop_.RunMoveLoop(source_window, grab_cursor_);
+  move_loop_.SetDragImage(gfx::ImageSkia(), gfx::Vector2dF());
 
   source_provider_ = NULL;
   drag_drop_in_progress_ = false;
@@ -680,7 +687,8 @@ void DesktopDragDropClientAuraX11::DragTranslate(
     scoped_ptr<ui::DropTargetEvent>* event,
     aura::client::DragDropDelegate** delegate) {
   gfx::Point root_location = root_window_location;
-  root_window_->ConvertPointFromNativeScreen(&root_location);
+  root_window_->GetDispatcher()->host()->ConvertPointFromNativeScreen(
+      &root_location);
   aura::Window* target_window =
       root_window_->GetEventHandlerForPoint(root_location);
   bool target_window_changed = false;

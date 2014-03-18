@@ -31,13 +31,13 @@
 /**
  * @constructor
  * @extends {WebInspector.View}
- * @param {WebInspector.CanvasTraceLogPlayerProxy} traceLogPlayer
+ * @param {!WebInspector.CanvasTraceLogPlayerProxy} traceLogPlayer
  */
 WebInspector.CanvasReplayStateView = function(traceLogPlayer)
 {
     WebInspector.View.call(this);
     this.registerRequiredCSS("canvasProfiler.css");
-    this.element.addStyleClass("canvas-replay-state-view");
+    this.element.classList.add("canvas-replay-state-view");
     this._traceLogPlayer = traceLogPlayer;
 
     var controlsContainer = this.element.createChild("div", "status-bar");
@@ -73,7 +73,7 @@ WebInspector.CanvasReplayStateView = function(traceLogPlayer)
     ];
 
     this._stateGrid = new WebInspector.DataGrid(columns);
-    this._stateGrid.element.addStyleClass("fill");
+    this._stateGrid.element.classList.add("fill");
     this._stateGrid.show(this.element);
 
     this._traceLogPlayer.addEventListener(WebInspector.CanvasTraceLogPlayerProxy.Events.CanvasReplayStateChanged, this._onReplayResourceChanged, this);
@@ -102,7 +102,7 @@ WebInspector.CanvasReplayStateView.prototype = {
     },
 
     /**
-     * @param {Element} parent
+     * @param {!Element} parent
      * @param {string} className
      * @param {string} title
      * @param {function(this:WebInspector.CanvasProfileView)} clickCallback
@@ -196,7 +196,7 @@ WebInspector.CanvasReplayStateView.prototype = {
     },
 
     /**
-     * @param {Array.<!CanvasAgent.ResourceStateDescriptor>|undefined} descriptors
+     * @param {!Array.<!CanvasAgent.ResourceStateDescriptor>|undefined} descriptors
      * @param {!Array.<!CanvasAgent.CallArgument>} output
      */
     _collectResourceFromResourceStateDescriptors: function(descriptors, output)
@@ -211,7 +211,7 @@ WebInspector.CanvasReplayStateView.prototype = {
     },
 
     /**
-     * @param {CanvasAgent.CallArgument|undefined} argument
+     * @param {!CanvasAgent.CallArgument|undefined} argument
      * @param {!Array.<!CanvasAgent.CallArgument>} output
      */
     _collectResourceFromCallArgument: function(argument, output)
@@ -262,8 +262,10 @@ WebInspector.CanvasReplayStateView.prototype = {
     {
         this._updateCurrentOption();
         var selectedResourceId = this._resourceSelector.selectedOption().value;
+
         /**
          * @param {?CanvasAgent.ResourceState} resourceState
+         * @this {WebInspector.CanvasReplayStateView}
          */
         function didReceiveResourceState(resourceState)
         {
@@ -275,23 +277,23 @@ WebInspector.CanvasReplayStateView.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onCanvasTraceLogReceived: function(event)
     {
-        var traceLog = /** @type {CanvasAgent.TraceLog} */ (event.data);
-        if (traceLog)
-            this._collectResourcesFromTraceLog(traceLog);
+        var traceLog = /** @type {!CanvasAgent.TraceLog} */ (event.data);
+        console.assert(traceLog);
+        this._collectResourcesFromTraceLog(traceLog);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onCanvasResourceStateReceived: function(event)
     {
-        var resourceState = /** @type {CanvasAgent.ResourceState} */ (event.data);
-        if (resourceState)
-            this._collectResourcesFromResourceState(resourceState);
+        var resourceState = /** @type {!CanvasAgent.ResourceState} */ (event.data);
+        console.assert(resourceState);
+        this._collectResourcesFromResourceState(resourceState);
     },
 
     /**
@@ -315,7 +317,7 @@ WebInspector.CanvasReplayStateView.prototype = {
 
         /**
          * @param {!Object} map
-         * @param {WebInspector.DataGridNode=} node
+         * @param {!WebInspector.DataGridNode=} node
          */
         function populateNameToNodesMap(map, node)
         {
@@ -347,9 +349,10 @@ WebInspector.CanvasReplayStateView.prototype = {
             return String.naturalOrderComparator(d1.name, d2.name);
         }
         /**
-         * @param {Array.<!CanvasAgent.ResourceStateDescriptor>|undefined} descriptors
+         * @param {!Array.<!CanvasAgent.ResourceStateDescriptor>|undefined} descriptors
          * @param {!WebInspector.DataGridNode} parent
-         * @param {Object=} nameToOldChildren
+         * @param {!Object=} nameToOldChildren
+         * @this {WebInspector.CanvasReplayStateView}
          */
         function appendResourceStateDescriptors(descriptors, parent, nameToOldChildren)
         {
@@ -383,14 +386,14 @@ WebInspector.CanvasReplayStateView.prototype = {
     {
         for (var i = 0, n = this._highlightedGridNodes.length; i < n; ++i) {
             var node = this._highlightedGridNodes[i];
-            node.element.removeStyleClass("canvas-grid-node-highlighted");
+            node.element.classList.remove("canvas-grid-node-highlighted");
         }
 
         this._highlightedGridNodes = nodes;
 
         for (var i = 0, n = this._highlightedGridNodes.length; i < n; ++i) {
             var node = this._highlightedGridNodes[i];
-            node.element.addStyleClass("canvas-grid-node-highlighted");
+            node.element.classList.add("canvas-grid-node-highlighted");
             node.reveal();
         }
     },

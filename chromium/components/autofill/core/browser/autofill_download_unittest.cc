@@ -14,6 +14,7 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/common/form_data.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -22,7 +23,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 
-using WebKit::WebInputElement;
+using blink::WebInputElement;
 
 namespace autofill {
 
@@ -64,7 +65,8 @@ class AutofillDownloadTest : public AutofillDownloadManager::Observer,
                              public testing::Test {
  public:
   AutofillDownloadTest()
-      : download_manager_(&profile_, this) {
+      : download_manager_(&driver_, profile_.GetPrefs(), this) {
+    driver_.SetURLRequestContext(profile_.GetRequestContext());
   }
 
   void LimitCache(size_t cache_size) {
@@ -118,6 +120,7 @@ class AutofillDownloadTest : public AutofillDownloadManager::Observer,
 
   content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
+  TestAutofillDriver driver_;
   AutofillDownloadManager download_manager_;
 };
 

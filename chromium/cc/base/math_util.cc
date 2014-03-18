@@ -72,13 +72,13 @@ static HomogeneousCoordinate ComputeClippedPointForEdge(
   // w plane when this is called.
   DCHECK(h1.ShouldBeClipped() ^ h2.ShouldBeClipped());
 
-  SkMScalar w = 0.00001;  // or any positive non-zero small epsilon
-
+  // ...or any positive non-zero small epsilon
+  SkMScalar w = 0.00001f;
   SkMScalar t = (w - h1.w()) / (h2.w() - h1.w());
 
-  SkMScalar x = (1 - t) * h1.x() + t * h2.x();
-  SkMScalar y = (1 - t) * h1.y() + t * h2.y();
-  SkMScalar z = (1 - t) * h1.z() + t * h2.z();
+  SkMScalar x = (SK_MScalar1 - t) * h1.x() + t * h2.x();
+  SkMScalar y = (SK_MScalar1 - t) * h1.y() + t * h2.y();
+  SkMScalar z = (SK_MScalar1 - t) * h1.z() + t * h2.z();
 
   return HomogeneousCoordinate(x, y, z, w);
 }
@@ -466,6 +466,13 @@ gfx::RectF MathUtil::ScaleRectProportional(const gfx::RectF& input_outer_rect,
 }
 
 static inline float ScaleOnAxis(double a, double b, double c) {
+  if (!b && !c)
+    return a;
+  if (!a && !c)
+    return b;
+  if (!a && !b)
+    return c;
+
   // Do the sqrt as a double to not lose precision.
   return static_cast<float>(std::sqrt(a * a + b * b + c * c));
 }
@@ -580,6 +587,17 @@ scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Transform& transform) {
     for (int col = 0; col < 4; ++col)
       res->AppendDouble(m.getDouble(row, col));
   }
+  return res.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::BoxF& box) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendInteger(box.x());
+  res->AppendInteger(box.y());
+  res->AppendInteger(box.z());
+  res->AppendInteger(box.width());
+  res->AppendInteger(box.height());
+  res->AppendInteger(box.depth());
   return res.PassAs<base::Value>();
 }
 

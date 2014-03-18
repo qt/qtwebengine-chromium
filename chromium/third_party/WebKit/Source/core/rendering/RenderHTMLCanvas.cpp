@@ -28,8 +28,8 @@
 
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
@@ -67,13 +67,6 @@ void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& pa
         // Not allowed to overflow the content box.
         paintInfo.context->save();
         paintInfo.context->clip(pixelSnappedIntRect(contentRect));
-    }
-
-    if (Frame* frame = this->frame()) {
-        if (Page* page = frame->page()) {
-            if (paintInfo.phase == PaintPhaseForeground)
-                page->addRelevantRepaintedObject(this, intersection(paintRect, contentRect));
-        }
     }
 
     bool useLowQualityScale = style()->imageRendering() == ImageRenderingOptimizeContrast;

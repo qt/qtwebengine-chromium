@@ -29,7 +29,7 @@
 #include "core/css/CSSCanvasValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSGradientValue.h"
-#include "core/platform/graphics/Image.h"
+#include "platform/graphics/Image.h"
 
 namespace WebCore {
 
@@ -63,7 +63,7 @@ void CSSImageGeneratorValue::removeClient(RenderObject* renderer)
 {
     ASSERT(renderer);
     RenderObjectSizeCountMap::iterator it = m_clients.find(renderer);
-    ASSERT(it != m_clients.end());
+    ASSERT_WITH_SECURITY_IMPLICATION(it != m_clients.end());
 
     IntSize removedImageSize;
     SizeAndCount& sizeCount = it->value;
@@ -110,13 +110,13 @@ PassRefPtr<Image> CSSImageGeneratorValue::image(RenderObject* renderer, const In
 {
     switch (classType()) {
     case CanvasClass:
-        return static_cast<CSSCanvasValue*>(this)->image(renderer, size);
+        return toCSSCanvasValue(this)->image(renderer, size);
     case CrossfadeClass:
-        return static_cast<CSSCrossfadeValue*>(this)->image(renderer, size);
+        return toCSSCrossfadeValue(this)->image(renderer, size);
     case LinearGradientClass:
-        return static_cast<CSSLinearGradientValue*>(this)->image(renderer, size);
+        return toCSSLinearGradientValue(this)->image(renderer, size);
     case RadialGradientClass:
-        return static_cast<CSSRadialGradientValue*>(this)->image(renderer, size);
+        return toCSSRadialGradientValue(this)->image(renderer, size);
     default:
         ASSERT_NOT_REACHED();
     }
@@ -127,13 +127,13 @@ bool CSSImageGeneratorValue::isFixedSize() const
 {
     switch (classType()) {
     case CanvasClass:
-        return static_cast<const CSSCanvasValue*>(this)->isFixedSize();
+        return toCSSCanvasValue(this)->isFixedSize();
     case CrossfadeClass:
-        return static_cast<const CSSCrossfadeValue*>(this)->isFixedSize();
+        return toCSSCrossfadeValue(this)->isFixedSize();
     case LinearGradientClass:
-        return static_cast<const CSSLinearGradientValue*>(this)->isFixedSize();
+        return toCSSLinearGradientValue(this)->isFixedSize();
     case RadialGradientClass:
-        return static_cast<const CSSRadialGradientValue*>(this)->isFixedSize();
+        return toCSSRadialGradientValue(this)->isFixedSize();
     default:
         ASSERT_NOT_REACHED();
     }
@@ -144,13 +144,13 @@ IntSize CSSImageGeneratorValue::fixedSize(const RenderObject* renderer)
 {
     switch (classType()) {
     case CanvasClass:
-        return static_cast<CSSCanvasValue*>(this)->fixedSize(renderer);
+        return toCSSCanvasValue(this)->fixedSize(renderer);
     case CrossfadeClass:
-        return static_cast<CSSCrossfadeValue*>(this)->fixedSize(renderer);
+        return toCSSCrossfadeValue(this)->fixedSize(renderer);
     case LinearGradientClass:
-        return static_cast<CSSLinearGradientValue*>(this)->fixedSize(renderer);
+        return toCSSLinearGradientValue(this)->fixedSize(renderer);
     case RadialGradientClass:
-        return static_cast<CSSRadialGradientValue*>(this)->fixedSize(renderer);
+        return toCSSRadialGradientValue(this)->fixedSize(renderer);
     default:
         ASSERT_NOT_REACHED();
     }
@@ -161,13 +161,13 @@ bool CSSImageGeneratorValue::isPending() const
 {
     switch (classType()) {
     case CrossfadeClass:
-        return static_cast<const CSSCrossfadeValue*>(this)->isPending();
+        return toCSSCrossfadeValue(this)->isPending();
     case CanvasClass:
-        return static_cast<const CSSCanvasValue*>(this)->isPending();
+        return toCSSCanvasValue(this)->isPending();
     case LinearGradientClass:
-        return static_cast<const CSSLinearGradientValue*>(this)->isPending();
+        return toCSSLinearGradientValue(this)->isPending();
     case RadialGradientClass:
-        return static_cast<const CSSRadialGradientValue*>(this)->isPending();
+        return toCSSRadialGradientValue(this)->isPending();
     default:
         ASSERT_NOT_REACHED();
     }
@@ -178,13 +178,13 @@ bool CSSImageGeneratorValue::knownToBeOpaque(const RenderObject* renderer) const
 {
     switch (classType()) {
     case CrossfadeClass:
-        return static_cast<const CSSCrossfadeValue*>(this)->knownToBeOpaque(renderer);
+        return toCSSCrossfadeValue(this)->knownToBeOpaque(renderer);
     case CanvasClass:
         return false;
     case LinearGradientClass:
-        return static_cast<const CSSLinearGradientValue*>(this)->knownToBeOpaque(renderer);
+        return toCSSLinearGradientValue(this)->knownToBeOpaque(renderer);
     case RadialGradientClass:
-        return static_cast<const CSSRadialGradientValue*>(this)->knownToBeOpaque(renderer);
+        return toCSSRadialGradientValue(this)->knownToBeOpaque(renderer);
     default:
         ASSERT_NOT_REACHED();
     }
@@ -195,16 +195,16 @@ void CSSImageGeneratorValue::loadSubimages(ResourceFetcher* fetcher)
 {
     switch (classType()) {
     case CrossfadeClass:
-        static_cast<CSSCrossfadeValue*>(this)->loadSubimages(fetcher);
+        toCSSCrossfadeValue(this)->loadSubimages(fetcher);
         break;
     case CanvasClass:
-        static_cast<CSSCanvasValue*>(this)->loadSubimages(fetcher);
+        toCSSCanvasValue(this)->loadSubimages(fetcher);
         break;
     case LinearGradientClass:
-        static_cast<CSSLinearGradientValue*>(this)->loadSubimages(fetcher);
+        toCSSLinearGradientValue(this)->loadSubimages(fetcher);
         break;
     case RadialGradientClass:
-        static_cast<CSSRadialGradientValue*>(this)->loadSubimages(fetcher);
+        toCSSRadialGradientValue(this)->loadSubimages(fetcher);
         break;
     default:
         ASSERT_NOT_REACHED();

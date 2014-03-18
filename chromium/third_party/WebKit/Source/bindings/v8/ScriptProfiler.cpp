@@ -70,7 +70,7 @@ void ScriptProfiler::start(const String& title)
     if (!profiler)
         return;
     v8::HandleScope handleScope(isolate);
-    profiler->StartCpuProfiling(v8String(title, isolate), true);
+    profiler->StartCpuProfiling(v8String(isolate, title), true);
 }
 
 PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
@@ -80,11 +80,11 @@ PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
     if (!profiler)
         return 0;
     v8::HandleScope handleScope(isolate);
-    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(title, isolate));
+    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(isolate, title));
     if (!profile)
         return 0;
 
-    String profileTitle = toWebCoreString(profile->GetTitle());
+    String profileTitle = toCoreString(profile->GetTitle());
     double idleTime = 0.0;
     ProfileNameIdleTimeMap* profileNameIdleTimeMap = ScriptProfiler::currentProfileNameIdleTimeMap();
     ProfileNameIdleTimeMap::iterator profileIdleTime = profileNameIdleTimeMap->find(profileTitle);
@@ -173,7 +173,7 @@ class GlobalObjectNameResolver : public v8::HeapProfiler::ObjectNameResolver {
 public:
     virtual const char* GetName(v8::Handle<v8::Object> object)
     {
-        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::info)) {
+        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::wrapperTypeInfo)) {
             DOMWindow* window = V8Window::toNative(object);
             if (window) {
                 CString url = window->document()->url().string().utf8();
@@ -249,7 +249,7 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     ASSERT(control);
     ActivityControlAdapter adapter(control);
     GlobalObjectNameResolver resolver;
-    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(title, isolate), &adapter, &resolver);
+    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(isolate, title), &adapter, &resolver);
     return snapshot ? ScriptHeapSnapshot::create(snapshot) : 0;
 }
 
@@ -292,7 +292,7 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
             // Casting to Handle is safe here, since the Persistent cannot get
             // GCd during visiting.
             v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            ASSERT(V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
+            ASSERT_UNUSED(m_isolate, V8Node::hasInstanceInAnyWorld(*wrapper, m_isolate));
             ASSERT((*wrapper)->IsObject());
             m_visitor->visitNode(V8Node::toNative(*wrapper));
         }

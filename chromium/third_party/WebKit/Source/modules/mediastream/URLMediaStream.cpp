@@ -31,20 +31,20 @@
 #include "config.h"
 #include "modules/mediastream/URLMediaStream.h"
 
-#include "core/html/DOMURL.h"
+#include "core/dom/DOMURL.h"
 #include "modules/mediastream/MediaStream.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
 
-String URLMediaStream::createObjectURL(ScriptExecutionContext* scriptExecutionContext, MediaStream* stream)
+String URLMediaStream::createObjectURL(ExecutionContext* executionContext, MediaStream* stream)
 {
     // Since WebWorkers cannot obtain Stream objects, we should be on the main thread.
     ASSERT(isMainThread());
 
-    if (!scriptExecutionContext || !stream)
+    if (!executionContext || !stream)
         return String();
-    return DOMURL::createPublicURL(scriptExecutionContext, stream);
+    return DOMURL::createPublicURL(executionContext, stream);
 }
 
 

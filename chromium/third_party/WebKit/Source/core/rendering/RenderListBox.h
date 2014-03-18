@@ -31,8 +31,8 @@
 #ifndef RenderListBox_h
 #define RenderListBox_h
 
-#include "core/platform/ScrollableArea.h"
 #include "core/rendering/RenderBlockFlow.h"
+#include "platform/scroll/ScrollableArea.h"
 
 namespace WebCore {
 
@@ -65,14 +65,13 @@ private:
     virtual bool isListBox() const { return true; }
 
     virtual void updateFromElement();
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
     virtual bool hasControlClip() const { return true; }
     virtual void paintObject(PaintInfo&, const LayoutPoint&);
     virtual LayoutRect controlClipRect(const LayoutPoint&) const;
 
     virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset);
 
-    virtual bool scrollImpl(ScrollDirection, ScrollGranularity, float) OVERRIDE;
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float) OVERRIDE;
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
@@ -146,6 +145,7 @@ private:
     int numVisibleItems() const;
     int numItems() const;
     LayoutUnit listHeight() const;
+    int scrollbarLeft() const;
     void paintScrollbar(PaintInfo&, const LayoutPoint&);
     void paintItemForeground(PaintInfo&, const LayoutPoint&, int listIndex);
     void paintItemBackground(PaintInfo&, const LayoutPoint&, int listIndex);
@@ -160,14 +160,7 @@ private:
     RefPtr<Scrollbar> m_vBar;
 };
 
-inline RenderListBox* toRenderListBox(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListBox());
-    return static_cast<RenderListBox*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderListBox(const RenderListBox*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListBox, isListBox());
 
 } // namepace WebCore
 

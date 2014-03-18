@@ -27,19 +27,20 @@
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontSelector.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/TextRun.h"
+#include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/fonts/Font.h"
+#include "platform/fonts/FontSelector.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/Path.h"
+#include "platform/text/PlatformLocale.h"
+#include "platform/text/TextRun.h"
 
 namespace WebCore {
 
@@ -51,12 +52,6 @@ static const float replacementTextRoundedRectOpacity = 0.20f;
 static const float replacementTextRoundedRectRadius = 5;
 static const float replacementTextTextOpacity = 0.55f;
 
-static const Color& replacementTextRoundedRectPressedColor()
-{
-    static const Color lightGray(205, 205, 205);
-    return lightGray;
-}
-
 RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
     : RenderPart(element)
     , m_hasFallbackContent(false)
@@ -67,8 +62,6 @@ RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
 
 RenderEmbeddedObject::~RenderEmbeddedObject()
 {
-    if (frameView())
-        frameView()->removeWidgetToUpdate(this);
 }
 
 bool RenderEmbeddedObject::requiresLayer() const
@@ -84,13 +77,14 @@ bool RenderEmbeddedObject::allowsAcceleratedCompositing() const
     return widget() && widget()->isPluginView() && toPluginView(widget())->platformLayer();
 }
 
-static String unavailablePluginReplacementText(RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
+static String unavailablePluginReplacementText(Node* node, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
 {
+    Locale& locale = node ? toElement(node)->locale() : Locale::defaultLocale();
     switch (pluginUnavailabilityReason) {
     case RenderEmbeddedObject::PluginMissing:
-        return missingPluginText();
+        return locale.queryString(blink::WebLocalizedString::MissingPluginText);
     case RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy:
-        return blockedPluginByContentSecurityPolicyText();
+        return locale.queryString(blink::WebLocalizedString::BlockedPluginText);
     }
 
     ASSERT_NOT_REACHED();
@@ -103,7 +97,7 @@ void RenderEmbeddedObject::setPluginUnavailabilityReason(PluginUnavailabilityRea
     m_showsUnavailablePluginIndicator = true;
     m_pluginUnavailabilityReason = pluginUnavailabilityReason;
 
-    m_unavailablePluginReplacementText = unavailablePluginReplacementText(pluginUnavailabilityReason);
+    m_unavailablePluginReplacementText = unavailablePluginReplacementText(node(), pluginUnavailabilityReason);
 }
 
 bool RenderEmbeddedObject::showsUnavailablePluginIndicator() const
@@ -122,19 +116,10 @@ void RenderEmbeddedObject::paintContents(PaintInfo& paintInfo, const LayoutPoint
 
 void RenderEmbeddedObject::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    Page* page = 0;
-    if (Frame* frame = this->frame())
-        page = frame->page();
-
     if (showsUnavailablePluginIndicator()) {
-        if (page && paintInfo.phase == PaintPhaseForeground)
-            page->addRelevantUnpaintedObject(this, visualOverflowRect());
         RenderReplaced::paint(paintInfo, paintOffset);
         return;
     }
-
-    if (page && paintInfo.phase == PaintPhaseForeground)
-        page->addRelevantRepaintedObject(this, visualOverflowRect());
 
     RenderPart::paint(paintInfo, paintOffset);
 }
@@ -210,6 +195,7 @@ void RenderEmbeddedObject::layout()
     ASSERT(needsLayout());
 
     LayoutSize oldSize = contentBoxRect().size();
+    LayoutRectRecorder recorder(*this);
 
     updateLogicalWidth();
     updateLogicalHeight();
@@ -222,7 +208,7 @@ void RenderEmbeddedObject::layout()
     updateLayerTransform();
 
     if (!widget() && frameView())
-        frameView()->addWidgetToUpdate(this);
+        frameView()->addWidgetToUpdate(*this);
 
     clearNeedsLayout();
 
@@ -277,12 +263,7 @@ void RenderEmbeddedObject::viewCleared()
     }
 }
 
-bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float, Node**)
-{
-    return false;
-}
-
-bool RenderEmbeddedObject::logicalScroll(ScrollLogicalDirection direction, ScrollGranularity granularity, float multiplier, Node** stopNode)
+bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float)
 {
     return false;
 }

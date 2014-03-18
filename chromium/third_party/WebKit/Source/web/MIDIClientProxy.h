@@ -38,10 +38,9 @@ namespace WebCore {
 class MIDIAccess;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebMIDIClient;
-class WebViewImpl;
 
 class MIDIClientProxy : public WebCore::MIDIClient {
 public:
@@ -55,6 +54,6 @@ private:
     WebMIDIClient* m_client;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // MIDIClientProxy_h

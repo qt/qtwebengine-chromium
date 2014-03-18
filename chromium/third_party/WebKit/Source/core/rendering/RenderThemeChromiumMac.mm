@@ -31,32 +31,31 @@
 #import "core/html/HTMLInputElement.h"
 #import "core/html/HTMLMediaElement.h"
 #import "core/html/HTMLMeterElement.h"
-#import "core/html/HTMLPlugInImageElement.h"
 #import "core/html/TimeRanges.h"
 #import "core/html/shadow/MediaControlElements.h"
-#import "core/page/FrameView.h"
-#import "core/platform/LayoutTestSupport.h"
-#import "core/platform/LocalizedStrings.h"
-#import "core/platform/SharedBuffer.h"
-#import "core/platform/graphics/BitmapImage.h"
-#import "core/platform/graphics/GraphicsContextStateSaver.h"
-#import "core/platform/graphics/Image.h"
-#import "core/platform/graphics/ImageBuffer.h"
-#import "core/platform/graphics/StringTruncator.h"
-#import "core/platform/graphics/cg/GraphicsContextCG.h"
-#import "core/platform/graphics/mac/ColorMac.h"
-#import "core/platform/mac/LocalCurrentGraphicsContext.h"
+#import "core/frame/FrameView.h"
 #import "core/platform/mac/ThemeMac.h"
-#import "core/platform/mac/WebCoreNSCellExtras.h"
 #import "core/rendering/PaintInfo.h"
 #import "core/rendering/RenderLayer.h"
 #import "core/rendering/RenderMedia.h"
 #import "core/rendering/RenderMediaControls.h"
-#import "core/rendering/RenderMediaControlsChromium.h"
 #import "core/rendering/RenderMeter.h"
 #import "core/rendering/RenderProgress.h"
 #import "core/rendering/RenderSlider.h"
 #import "core/rendering/RenderView.h"
+#import "core/rendering/style/ShadowList.h"
+#import "platform/LayoutTestSupport.h"
+#import "platform/SharedBuffer.h"
+#import "platform/graphics/BitmapImage.h"
+#import "platform/graphics/GraphicsContextStateSaver.h"
+#import "platform/graphics/Image.h"
+#import "platform/graphics/ImageBuffer.h"
+#import "platform/graphics/cg/GraphicsContextCG.h"
+#import "platform/mac/ColorMac.h"
+#import "platform/mac/LocalCurrentGraphicsContext.h"
+#import "platform/mac/WebCoreNSCellExtras.h"
+#import "platform/text/PlatformLocale.h"
+#import "platform/text/StringTruncator.h"
 
 #import <AvailabilityMacros.h>
 #import <Carbon/Carbon.h>
@@ -781,10 +780,6 @@ bool RenderThemeChromiumMac::paintTextField(RenderObject* o, const PaintInfo& pa
     return false;
 }
 
-void RenderThemeChromiumMac::adjustTextFieldStyle(RenderStyle*, Element*) const
-{
-}
-
 bool RenderThemeChromiumMac::paintCapsLockIndicator(RenderObject*, const PaintInfo& paintInfo, const IntRect& r)
 {
     if (paintInfo.context->paintingDisabled())
@@ -852,10 +847,6 @@ bool RenderThemeChromiumMac::paintTextArea(RenderObject* o, const PaintInfo& pai
     LocalCurrentGraphicsContext localContext(paintInfo.context);
     _NSDrawCarbonThemeListBox(r, isEnabled(o) && !isReadOnlyControl(o), YES, YES);
     return false;
-}
-
-void RenderThemeChromiumMac::adjustTextAreaStyle(RenderStyle*, Element*) const
-{
 }
 
 const int* RenderThemeChromiumMac::popupButtonMargins() const
@@ -1059,10 +1050,6 @@ double RenderThemeChromiumMac::animationDurationForProgressBar(RenderProgress*) 
     return progressAnimationNumFrames * progressAnimationFrameRate;
 }
 
-void RenderThemeChromiumMac::adjustProgressBarStyle(RenderStyle*, Element*) const
-{
-}
-
 bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const PaintInfo& paintInfo, const IntRect& rect)
 {
     if (!renderObject->isProgress())
@@ -1097,7 +1084,7 @@ bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const 
     trackInfo.reserved = 0;
     trackInfo.filler1 = 0;
 
-    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(inflatedRect.size(), 1);
+    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(inflatedRect.size());
     if (!imageBuffer)
         return true;
 
@@ -1536,7 +1523,6 @@ bool RenderThemeChromiumMac::paintSliderThumb(RenderObject* o, const PaintInfo& 
     FloatRect borderBounds = unzoomedRect;
     borderBounds.inflate(sliderThumbBorderWidth / 2.0);
 
-    FloatRect shadowBounds = unzoomedRect;
     borderBounds.inflate(-sliderThumbBorderWidth);
     FloatSize shadowOffset(0, 1);
     paintInfo.context->setShadow(shadowOffset, sliderThumbShadowBlur, shadowColor);
@@ -1875,18 +1861,20 @@ NSTextFieldCell* RenderThemeChromiumMac::textField() const
     return m_textField.get();
 }
 
-String RenderThemeChromiumMac::fileListNameForWidth(const FileList* fileList, const Font& font, int width, bool multipleFilesAllowed) const
+String RenderThemeChromiumMac::fileListNameForWidth(Locale& locale, const FileList* fileList, const Font& font, int width) const
 {
     if (width <= 0)
         return String();
 
     String strToTruncate;
-    if (fileList->isEmpty())
-        strToTruncate = fileListDefaultLabel(multipleFilesAllowed);
-    else if (fileList->length() == 1)
+    if (fileList->isEmpty()) {
+        strToTruncate = locale.queryString(blink::WebLocalizedString::FileButtonNoFileSelectedLabel);
+    } else if (fileList->length() == 1) {
         strToTruncate = [[NSFileManager defaultManager] displayNameAtPath:(fileList->item(0)->path())];
-    else
-        return StringTruncator::rightTruncate(multipleFileUploadText(fileList->length()), width, font, StringTruncator::EnableRoundingHacks);
+    } else {
+        // FIXME: Localization of fileList->length().
+        return StringTruncator::rightTruncate(locale.queryString(blink::WebLocalizedString::MultipleFileUploadText, String::number(fileList->length())), width, font, StringTruncator::EnableRoundingHacks);
+    }
 
     return StringTruncator::centerTruncate(strToTruncate, width, font, StringTruncator::EnableRoundingHacks);
 }
@@ -1899,7 +1887,7 @@ NSView* FlippedView()
 
 RenderTheme& RenderTheme::theme()
 {
-    static RenderTheme* renderTheme = RenderThemeChromiumMac::create().leakRef();
+    DEFINE_STATIC_REF(RenderTheme, renderTheme, (RenderThemeChromiumMac::create()));
     return *renderTheme;
 }
 
@@ -1944,22 +1932,22 @@ bool RenderThemeChromiumMac::shouldShowPlaceholderWhenFocused() const
 
 void RenderThemeChromiumMac::adjustMediaSliderThumbSize(RenderStyle* style) const
 {
-    RenderMediaControlsChromium::adjustMediaSliderThumbSize(style);
+    RenderMediaControls::adjustMediaSliderThumbSize(style);
 }
 
 bool RenderThemeChromiumMac::paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::paintMediaMuteButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::paintMediaSliderTrack(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSlider, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaSlider, object, paintInfo, rect);
 }
 
 String RenderThemeChromiumMac::extraFullScreenStyleSheet()
@@ -1981,37 +1969,37 @@ bool RenderThemeChromiumMac::paintMediaVolumeSliderContainer(RenderObject* objec
 
 bool RenderThemeChromiumMac::paintMediaVolumeSliderTrack(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSlider, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaVolumeSlider, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::paintMediaSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSliderThumb, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaSliderThumb, object, paintInfo, rect);
 }
 
 String RenderThemeChromiumMac::formatMediaControlsTime(float time) const
 {
-    return RenderMediaControlsChromium::formatMediaControlsTime(time);
+    return RenderMediaControls::formatMediaControlsTime(time);
 }
 
 String RenderThemeChromiumMac::formatMediaControlsCurrentTime(float currentTime, float duration) const
 {
-    return RenderMediaControlsChromium::formatMediaControlsCurrentTime(currentTime, duration);
+    return RenderMediaControls::formatMediaControlsCurrentTime(currentTime, duration);
 }
 
 bool RenderThemeChromiumMac::paintMediaFullscreenButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::paintMediaToggleClosedCaptionsButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    return RenderMediaControlsChromium::paintMediaControlsPart(MediaShowClosedCaptionsButton, object, paintInfo, rect);
+    return RenderMediaControls::paintMediaControlsPart(MediaShowClosedCaptionsButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumMac::shouldUseFallbackTheme(RenderStyle* style) const

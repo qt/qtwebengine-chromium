@@ -476,30 +476,21 @@ void Layer::SwitchCCLayerForTest() {
 }
 
 void Layer::SetExternalTexture(Texture* texture) {
+  DCHECK(texture);
+
   // Hold a ref to the old |Texture| until we have updated all
   // compositor references to the texture id that it holds.
   scoped_refptr<ui::Texture> old_texture = texture_;
 
   DCHECK_EQ(type_, LAYER_TEXTURED);
   DCHECK(!solid_color_layer_.get());
-  bool has_texture = !!texture;
-  layer_updated_externally_ = has_texture;
+  layer_updated_externally_ = true;
   texture_ = texture;
-  if (!!texture_layer_.get() != has_texture) {
-    // Switch to a different type of layer.
-    if (has_texture) {
-      scoped_refptr<cc::TextureLayer> new_layer =
-          cc::TextureLayer::Create(this);
-      new_layer->SetFlipped(texture_->flipped());
-      SwitchToLayer(new_layer);
-      texture_layer_ = new_layer;
-    } else {
-      scoped_refptr<cc::ContentLayer> new_layer =
-          cc::ContentLayer::Create(this);
-      SwitchToLayer(new_layer);
-      content_layer_ = new_layer;
-      mailbox_ = cc::TextureMailbox();
-    }
+  if (!texture_layer_.get()) {
+    scoped_refptr<cc::TextureLayer> new_layer = cc::TextureLayer::Create(this);
+    new_layer->SetFlipped(texture_->flipped());
+    SwitchToLayer(new_layer);
+    texture_layer_ = new_layer;
   }
   RecomputeDrawsContentAndUVRect();
 }
@@ -531,39 +522,36 @@ cc::TextureMailbox Layer::GetTextureMailbox(float* scale_factor) {
   return mailbox_;
 }
 
-void Layer::SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData> frame,
-                              gfx::Size frame_size_in_dip) {
+void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
+                                    gfx::Size frame_size_in_dip) {
   DCHECK_EQ(type_, LAYER_TEXTURED);
-  bool has_frame = frame.get() && !frame->render_pass_list.empty();
-  layer_updated_externally_ = has_frame;
+
+  scoped_refptr<cc::DelegatedRendererLayer> new_layer =
+      cc::DelegatedRendererLayer::Create(frame_provider);
+  SwitchToLayer(new_layer);
+  delegated_renderer_layer_ = new_layer;
+  layer_updated_externally_ = true;
+
   delegated_frame_size_in_dip_ = frame_size_in_dip;
-  if (!!delegated_renderer_layer_.get() != has_frame) {
-    if (has_frame) {
-      scoped_refptr<cc::DelegatedRendererLayer> new_layer =
-          cc::DelegatedRendererLayer::Create(NULL);
-      SwitchToLayer(new_layer);
-      delegated_renderer_layer_ = new_layer;
-    } else {
-      scoped_refptr<cc::ContentLayer> new_layer =
-          cc::ContentLayer::Create(this);
-      SwitchToLayer(new_layer);
-      content_layer_ = new_layer;
-    }
-  }
-  if (has_frame)
-    delegated_renderer_layer_->SetFrameData(frame.Pass());
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::TakeUnusedResourcesForChildCompositor(
-    cc::ReturnedResourceArray* list) {
-  if (delegated_renderer_layer_.get())
-    delegated_renderer_layer_->TakeUnusedResourcesForChildCompositor(list);
+void Layer::SetShowPaintedContent() {
+  if (content_layer_.get())
+    return;
+
+  scoped_refptr<cc::ContentLayer> new_layer = cc::ContentLayer::Create(this);
+  SwitchToLayer(new_layer);
+  content_layer_ = new_layer;
+
+  layer_updated_externally_ = false;
+  mailbox_ = cc::TextureMailbox();
+  texture_ = NULL;
+
+  RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::SetColor(SkColor color) {
-  GetAnimator()->SetColor(color);
-}
+void Layer::SetColor(SkColor color) { GetAnimator()->SetColor(color); }
 
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
   if (type_ == LAYER_SOLID_COLOR || (!delegate_ && !texture_.get()))
@@ -639,7 +627,7 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
                           gfx::RectF* opaque) {
   TRACE_EVENT0("ui", "Layer::PaintContents");
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, ui::GetScaleFactorFromScale(device_scale_factor_)));
+      sk_canvas, device_scale_factor_));
 
   bool scale_content = scale_content_;
   if (scale_content) {
@@ -659,13 +647,6 @@ unsigned Layer::PrepareTexture() {
   return texture_->PrepareTexture();
 }
 
-WebKit::WebGraphicsContext3D* Layer::Context3d() {
-  DCHECK(texture_layer_.get());
-  if (texture_.get())
-    return texture_->HostContext3D();
-  return NULL;
-}
-
 bool Layer::PrepareTextureMailbox(
     cc::TextureMailbox* mailbox,
     scoped_ptr<cc::SingleReleaseCallback>* release_callback,
@@ -683,6 +664,11 @@ void Layer::SetForceRenderSurface(bool force) {
 
 std::string Layer::DebugName() {
   return name_;
+}
+
+scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+  // TODO: return something useful here.
+  return NULL;
 }
 
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {

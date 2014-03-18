@@ -91,10 +91,12 @@ class TransportProxy : public sigslot::has_slots<>,
                        public CandidateTranslator {
  public:
   TransportProxy(
+      talk_base::Thread* worker_thread,
       const std::string& sid,
       const std::string& content_name,
       TransportWrapper* transport)
-      : sid_(sid),
+      : worker_thread_(worker_thread),
+        sid_(sid),
         content_name_(content_name),
         transport_(transport),
         connecting_(false),
@@ -168,12 +170,21 @@ class TransportProxy : public sigslot::has_slots<>,
  private:
   TransportChannelProxy* GetChannelProxy(int component) const;
   TransportChannelProxy* GetChannelProxyByName(const std::string& name) const;
-  void ReplaceChannelProxyImpl(TransportChannelProxy* channel_proxy,
-                               size_t index);
-  TransportChannelImpl* GetOrCreateChannelProxyImpl(int component);
-  void SetChannelProxyImpl(int component,
-                           TransportChannelProxy* proxy);
 
+  TransportChannelImpl* GetOrCreateChannelProxyImpl(int component);
+  TransportChannelImpl* GetOrCreateChannelProxyImpl_w(int component);
+
+  // Manipulators of transportchannelimpl in channel proxy.
+  void SetupChannelProxy(int component,
+                           TransportChannelProxy* proxy);
+  void SetupChannelProxy_w(int component,
+                             TransportChannelProxy* proxy);
+  void ReplaceChannelProxyImpl(TransportChannelProxy* proxy,
+                               TransportChannelImpl* impl);
+  void ReplaceChannelProxyImpl_w(TransportChannelProxy* proxy,
+                                 TransportChannelImpl* impl);
+
+  talk_base::Thread* worker_thread_;
   std::string sid_;
   std::string content_name_;
   talk_base::scoped_refptr<TransportWrapper> transport_;
@@ -339,7 +350,7 @@ class BaseSession : public sigslot::has_slots<>,
 
   // Returns the transport that has been negotiated or NULL if
   // negotiation is still in progress.
-  Transport* GetTransport(const std::string& content_name);
+  virtual Transport* GetTransport(const std::string& content_name);
 
   // Creates a new channel with the given names.  This method may be called
   // immediately after creating the session.  However, the actual
@@ -573,7 +584,8 @@ class Session : public BaseSession {
   // arbitrary XML messages, which are called "info" messages. Sending
   // takes ownership of the given elements.  The signal does not; the
   // parent element will be deleted after the signal.
-  bool SendInfoMessage(const XmlElements& elems);
+  bool SendInfoMessage(const XmlElements& elems,
+                       const std::string& remote_name);
   bool SendDescriptionInfoMessage(const ContentInfos& contents);
   sigslot::signal2<Session*, const buzz::XmlElement*> SignalInfoMessage;
 
@@ -627,7 +639,7 @@ class Session : public BaseSession {
   bool ResendAllTransportInfoMessages(SessionError* error);
   bool SendAllUnsentTransportInfoMessages(SessionError* error);
 
-  // Both versions of SendMessage send a message of the given type to
+  // All versions of SendMessage send a message of the given type to
   // the other client.  Can pass either a set of elements or an
   // "action", which must have a WriteSessionAction method to go along
   // with it.  Sending with an action supports sending a "hybrid"
@@ -636,6 +648,10 @@ class Session : public BaseSession {
   // When passing elems, must be either Jingle or Gingle protocol.
   // Takes ownership of action_elems.
   bool SendMessage(ActionType type, const XmlElements& action_elems,
+                   SessionError* error);
+  // Sends a messge, but overrides the remote name.
+  bool SendMessage(ActionType type, const XmlElements& action_elems,
+                   const std::string& remote_name,
                    SessionError* error);
   // When passing an action, may be Hybrid protocol.
   template <typename Action>

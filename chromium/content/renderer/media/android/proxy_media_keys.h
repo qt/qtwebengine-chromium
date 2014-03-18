@@ -12,32 +12,56 @@ class GURL;
 
 namespace content {
 
-class WebMediaPlayerProxyAndroid;
+class RendererMediaPlayerManager;
 
-// MediaKeys wrapper of the WebMediaPlayerProxyAndroid.
-// TODO(xhwang): Remove |player_id| from WebMediaPlayerProxyAndroid, make
-// WebMediaPlayerProxyAndroid a subclass of media::MediaKeys, then remove this
-// class!
+// A MediaKeys proxy that wraps the EME part of RendererMediaPlayerManager.
+// TODO(xhwang): Instead of accessing RendererMediaPlayerManager directly, let
+// RendererMediaPlayerManager return a MediaKeys object that can be used by
+// ProxyDecryptor directly. Then we can remove this class!
 class ProxyMediaKeys : public media::MediaKeys {
  public:
-  ProxyMediaKeys(WebMediaPlayerProxyAndroid* proxy, int media_keys_id);
+  ProxyMediaKeys(RendererMediaPlayerManager* proxy,
+                 int media_keys_id,
+                 const media::SessionCreatedCB& session_created_cb,
+                 const media::SessionMessageCB& session_message_cb,
+                 const media::SessionReadyCB& session_ready_cb,
+                 const media::SessionClosedCB& session_closed_cb,
+                 const media::SessionErrorCB& session_error_cb);
+  virtual ~ProxyMediaKeys();
 
   void InitializeCDM(const std::string& key_system, const GURL& frame_url);
 
   // MediaKeys implementation.
-  virtual bool GenerateKeyRequest(const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) OVERRIDE;
-  virtual void AddKey(const uint8* key, int key_length,
-                      const uint8* init_data, int init_data_length,
-                      const std::string& session_id) OVERRIDE;
-  virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
+  virtual bool CreateSession(uint32 session_id,
+                             const std::string& type,
+                             const uint8* init_data,
+                             int init_data_length) OVERRIDE;
+  virtual void UpdateSession(uint32 session_id,
+                             const uint8* response,
+                             int response_length) OVERRIDE;
+  virtual void ReleaseSession(uint32 session_id) OVERRIDE;
+
+  // Callbacks.
+  void OnSessionCreated(uint32 session_id, const std::string& web_session_id);
+  void OnSessionMessage(uint32 session_id,
+                        const std::vector<uint8>& message,
+                        const std::string& destination_url);
+  void OnSessionReady(uint32 session_id);
+  void OnSessionClosed(uint32 session_id);
+  void OnSessionError(uint32 session_id,
+                      media::MediaKeys::KeyError error_code,
+                      int system_code);
 
  private:
-  WebMediaPlayerProxyAndroid* proxy_;
+  RendererMediaPlayerManager* manager_;
   int media_keys_id_;
+  media::SessionCreatedCB session_created_cb_;
+  media::SessionMessageCB session_message_cb_;
+  media::SessionReadyCB session_ready_cb_;
+  media::SessionClosedCB session_closed_cb_;
+  media::SessionErrorCB session_error_cb_;
 
-  DISALLOW_COPY_AND_ASSIGN (ProxyMediaKeys);
+  DISALLOW_COPY_AND_ASSIGN(ProxyMediaKeys);
 };
 
 }  // namespace content

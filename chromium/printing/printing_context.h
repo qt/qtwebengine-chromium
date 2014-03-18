@@ -51,11 +51,13 @@ class PRINTING_EXPORT PrintingContext {
   // default device settings.
   virtual Result UseDefaultSettings() = 0;
 
-  // Updates printer related settings. |job_settings| contains all print job
-  // settings information. |ranges| has the new page range settings.
-  virtual Result UpdatePrinterSettings(
-      const base::DictionaryValue& job_settings,
-      const PageRanges& ranges) = 0;
+  // Returns paper size to be used for PDF or Cloud Print in device units.
+  virtual gfx::Size GetPdfPaperSizeDeviceUnits() = 0;
+
+  // Updates printer settings.
+  // |external_preview| is true if pdf is going to be opened in external
+  // preview. Used by MacOS only now to open Preview.app.
+  virtual Result UpdatePrinterSettings(bool external_preview) = 0;
 
   // Updates Print Settings. |job_settings| contains all print job
   // settings information. |ranges| has the new page range settings.
@@ -71,7 +73,7 @@ class PRINTING_EXPORT PrintingContext {
   // like IPC message processing! Some printers have side-effects on this call
   // like virtual printers that ask the user for the path of the saved document;
   // for example a PDF printer.
-  virtual Result NewDocument(const string16& document_name) = 0;
+  virtual Result NewDocument(const base::string16& document_name) = 0;
 
   // Starts a new page.
   virtual Result NewPage() = 0;
@@ -128,6 +130,7 @@ class PRINTING_EXPORT PrintingContext {
   // The application locale.
   std::string app_locale_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(PrintingContext);
 };
 

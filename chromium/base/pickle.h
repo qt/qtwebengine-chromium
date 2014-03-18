@@ -37,7 +37,7 @@ class BASE_EXPORT PickleIterator {
   bool ReadFloat(float* result) WARN_UNUSED_RESULT;
   bool ReadString(std::string* result) WARN_UNUSED_RESULT;
   bool ReadWString(std::wstring* result) WARN_UNUSED_RESULT;
-  bool ReadString16(string16* result) WARN_UNUSED_RESULT;
+  bool ReadString16(base::string16* result) WARN_UNUSED_RESULT;
   bool ReadData(const char** data, int* length) WARN_UNUSED_RESULT;
   bool ReadBytes(const char** data, int length) WARN_UNUSED_RESULT;
 
@@ -138,57 +138,73 @@ class BASE_EXPORT Pickle {
   // For compatibility, these older style read methods pass through to the
   // PickleIterator methods.
   // TODO(jbates) Remove these methods.
-  bool ReadBool(PickleIterator* iter, bool* result) const {
+  bool ReadBool(PickleIterator* iter,
+                bool* result) const WARN_UNUSED_RESULT {
     return iter->ReadBool(result);
   }
-  bool ReadInt(PickleIterator* iter, int* result) const {
+  bool ReadInt(PickleIterator* iter,
+               int* result) const WARN_UNUSED_RESULT {
     return iter->ReadInt(result);
   }
-  bool ReadLong(PickleIterator* iter, long* result) const {
+  bool ReadLong(PickleIterator* iter,
+                long* result) const WARN_UNUSED_RESULT {
     return iter->ReadLong(result);
   }
-  bool ReadUInt16(PickleIterator* iter, uint16* result) const {
+  bool ReadUInt16(PickleIterator* iter,
+                  uint16* result) const WARN_UNUSED_RESULT {
     return iter->ReadUInt16(result);
   }
-  bool ReadUInt32(PickleIterator* iter, uint32* result) const {
+  bool ReadUInt32(PickleIterator* iter,
+                  uint32* result) const WARN_UNUSED_RESULT {
     return iter->ReadUInt32(result);
   }
-  bool ReadInt64(PickleIterator* iter, int64* result) const {
+  bool ReadInt64(PickleIterator* iter,
+                 int64* result) const WARN_UNUSED_RESULT {
     return iter->ReadInt64(result);
   }
-  bool ReadUInt64(PickleIterator* iter, uint64* result) const {
+  bool ReadUInt64(PickleIterator* iter,
+                  uint64* result) const WARN_UNUSED_RESULT {
     return iter->ReadUInt64(result);
   }
-  bool ReadFloat(PickleIterator* iter, float* result) const {
+  bool ReadFloat(PickleIterator* iter,
+                 float* result) const WARN_UNUSED_RESULT {
     return iter->ReadFloat(result);
   }
-  bool ReadString(PickleIterator* iter, std::string* result) const {
+  bool ReadString(PickleIterator* iter,
+                  std::string* result) const WARN_UNUSED_RESULT {
     return iter->ReadString(result);
   }
-  bool ReadWString(PickleIterator* iter, std::wstring* result) const {
+  bool ReadWString(PickleIterator* iter,
+                   std::wstring* result) const WARN_UNUSED_RESULT {
     return iter->ReadWString(result);
   }
-  bool ReadString16(PickleIterator* iter, string16* result) const {
+  bool ReadString16(PickleIterator* iter,
+                    base::string16* result) const WARN_UNUSED_RESULT {
     return iter->ReadString16(result);
   }
   // A pointer to the data will be placed in *data, and the length will be
   // placed in *length. This buffer will be into the message's buffer so will
   // be scoped to the lifetime of the message (or until the message data is
   // mutated).
-  bool ReadData(PickleIterator* iter, const char** data, int* length) const {
+  bool ReadData(PickleIterator* iter,
+                const char** data,
+                int* length) const WARN_UNUSED_RESULT {
     return iter->ReadData(data, length);
   }
   // A pointer to the data will be placed in *data. The caller specifies the
   // number of bytes to read, and ReadBytes will validate this length. The
   // returned buffer will be into the message's buffer so will be scoped to the
   // lifetime of the message (or until the message data is mutated).
-  bool ReadBytes(PickleIterator* iter, const char** data, int length) const {
+  bool ReadBytes(PickleIterator* iter,
+                 const char** data,
+                 int length) const WARN_UNUSED_RESULT {
     return iter->ReadBytes(data, length);
   }
 
   // Safer version of ReadInt() checks for the result not being negative.
   // Use it for reading the object sizes.
-  bool ReadLength(PickleIterator* iter, int* result) const {
+  bool ReadLength(PickleIterator* iter,
+                  int* result) const  WARN_UNUSED_RESULT {
     return iter->ReadLength(result);
   }
 
@@ -200,7 +216,7 @@ class BASE_EXPORT Pickle {
     return WriteInt(value ? 1 : 0);
   }
   bool WriteInt(int value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   // WARNING: DO NOT USE THIS METHOD IF PICKLES ARE PERSISTED IN ANY WAY.
   // It will write whatever a "long" is on this architecture. On 32-bit
@@ -208,54 +224,38 @@ class BASE_EXPORT Pickle {
   // pickles are still around after upgrading to 64-bit, or if they are copied
   // between dissimilar systems, YOUR PICKLES WILL HAVE GONE BAD.
   bool WriteLongUsingDangerousNonPortableLessPersistableForm(long value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteUInt16(uint16 value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteUInt32(uint32 value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteInt64(int64 value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteUInt64(uint64 value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteFloat(float value) {
-    return WriteBytes(&value, sizeof(value));
+    return WritePOD(value);
   }
   bool WriteString(const std::string& value);
   bool WriteWString(const std::wstring& value);
-  bool WriteString16(const string16& value);
+  bool WriteString16(const base::string16& value);
   // "Data" is a blob with a length. When you read it out you will be given the
   // length. See also WriteBytes.
   bool WriteData(const char* data, int length);
-  // "Bytes" is a blob with no length. The caller must specify the lenght both
+  // "Bytes" is a blob with no length. The caller must specify the length both
   // when reading and writing. It is normally used to serialize PoD types of a
   // known size. See also WriteData.
-  bool WriteBytes(const void* data, int data_len);
+  bool WriteBytes(const void* data, int length);
 
-  // Same as WriteData, but allows the caller to write directly into the
-  // Pickle. This saves a copy in cases where the data is not already
-  // available in a buffer. The caller should take care to not write more
-  // than the length it declares it will. Use ReadData to get the data.
-  // Returns NULL on failure.
-  //
-  // The returned pointer will only be valid until the next write operation
-  // on this Pickle.
-  char* BeginWriteData(int length);
-
-  // For Pickles which contain variable length buffers (e.g. those created
-  // with BeginWriteData), the Pickle can
-  // be 'trimmed' if the amount of data required is less than originally
-  // requested.  For example, you may have created a buffer with 10K of data,
-  // but decided to only fill 10 bytes of that data.  Use this function
-  // to trim the buffer so that we don't send 9990 bytes of unused data.
-  // You cannot increase the size of the variable buffer; only shrink it.
-  // This function assumes that the length of the variable buffer has
-  // not been changed.
-  void TrimWriteData(int length);
+  // Reserves space for upcoming writes when multiple writes will be made and
+  // their sizes are computed in advance. It can be significantly faster to call
+  // Reserve() before calling WriteFoo() multiple times.
+  void Reserve(size_t additional_capacity);
 
   // Payload follows after allocation of Header (header size is customizable).
   struct Header {
@@ -295,26 +295,13 @@ class BASE_EXPORT Pickle {
     return reinterpret_cast<char*>(header_) + header_size_;
   }
 
-  size_t capacity() const {
-    return capacity_;
+  size_t capacity_after_header() const {
+    return capacity_after_header_;
   }
 
-  // Resizes the buffer for use when writing the specified amount of data. The
-  // location that the data should be written at is returned, or NULL if there
-  // was an error. Call EndWrite with the returned offset and the given length
-  // to pad out for the next write.
-  char* BeginWrite(size_t length);
-
-  // Completes the write operation by padding the data with NULL bytes until it
-  // is padded. Should be paired with BeginWrite, but it does not necessarily
-  // have to be called after the data is written.
-  void EndWrite(char* dest, int length);
-
-  // Resize the capacity, note that the input value should include the size of
-  // the header: new_capacity = sizeof(Header) + desired_payload_capacity.
-  // A realloc() failure will cause a Resize failure... and caller should check
-  // the return result for true (i.e., successful resizing).
-  bool Resize(size_t new_capacity);
+  // Resize the capacity, note that the input value should not include the size
+  // of the header.
+  void Resize(size_t new_capacity);
 
   // Aligns 'i' by rounding it up to the next multiple of 'alignment'
   static size_t AlignInt(size_t i, int alignment) {
@@ -335,13 +322,27 @@ class BASE_EXPORT Pickle {
 
   Header* header_;
   size_t header_size_;  // Supports extra data between header and payload.
-  // Allocation size of payload (or -1 if allocation is const).
-  size_t capacity_;
-  size_t variable_buffer_offset_;  // IF non-zero, then offset to a buffer.
+  // Allocation size of payload (or -1 if allocation is const). Note: this
+  // doesn't count the header.
+  size_t capacity_after_header_;
+  // The offset at which we will write the next field. Note: this doesn't count
+  // the header.
+  size_t write_offset_;
+
+  // Just like WriteBytes, but with a compile-time size, for performance.
+  template<size_t length> void WriteBytesStatic(const void* data);
+
+  // Writes a POD by copying its bytes.
+  template <typename T> bool WritePOD(const T& data) {
+    WriteBytesStatic<sizeof(data)>(&data);
+    return true;
+  }
+  inline void WriteBytesCommon(const void* data, size_t length);
 
   FRIEND_TEST_ALL_PREFIXES(PickleTest, Resize);
   FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNext);
   FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNextWithIncompleteHeader);
+  FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNextOverflow);
 };
 
 #endif  // BASE_PICKLE_H__

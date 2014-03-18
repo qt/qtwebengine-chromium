@@ -26,7 +26,7 @@
 
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
-#include "core/platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/GraphicsTypes.h"
 
 namespace WebCore {
 
@@ -36,8 +36,8 @@ class HTMLImageElement FINAL : public HTMLElement {
     friend class HTMLFormElement;
 public:
     static PassRefPtr<HTMLImageElement> create(Document&);
-    static PassRefPtr<HTMLImageElement> create(const QualifiedName&, Document&, HTMLFormElement*);
-    static PassRefPtr<HTMLImageElement> createForJSConstructor(Document&, const int* optionalWidth, const int* optionalHeight);
+    static PassRefPtr<HTMLImageElement> create(Document&, HTMLFormElement*);
+    static PassRefPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
 
@@ -49,7 +49,7 @@ public:
 
     bool isServerMap() const;
 
-    String altText() const;
+    const AtomicString& altText() const;
 
     CompositeOperator compositeOperator() const { return m_compositeOperator; }
 
@@ -81,10 +81,12 @@ public:
 
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
-protected:
-    HTMLImageElement(const QualifiedName&, Document&, HTMLFormElement* = 0);
+    virtual HTMLFormElement* formOwner() const OVERRIDE;
 
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+protected:
+    explicit HTMLImageElement(Document&, HTMLFormElement* = 0);
+
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
 private:
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
@@ -115,19 +117,10 @@ private:
     HTMLFormElement* m_form;
     CompositeOperator m_compositeOperator;
     AtomicString m_bestFitImageURL;
+    float m_imageDevicePixelRatio;
 };
 
-inline HTMLImageElement* toHTMLImageElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::imgTag));
-    return static_cast<HTMLImageElement*>(node);
-}
-
-inline const HTMLImageElement* toHTMLImageElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::imgTag));
-    return static_cast<const HTMLImageElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLImageElement, hasTagName(HTMLNames::imgTag));
 
 } //namespace
 

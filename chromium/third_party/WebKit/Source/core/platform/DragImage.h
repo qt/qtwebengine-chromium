@@ -26,8 +26,8 @@
 #ifndef DragImage_h
 #define DragImage_h
 
-#include "core/platform/graphics/ImageOrientation.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "wtf/Forward.h"
 
@@ -39,7 +39,7 @@ class KURL;
 
 class DragImage {
 public:
-    static PassOwnPtr<DragImage> create(Image*, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    static PassOwnPtr<DragImage> create(Image*, RespectImageOrientationEnum = DoNotRespectImageOrientation, float deviceScaleFactor = 1);
     static PassOwnPtr<DragImage> create(const KURL&, const String& label, const FontDescription& systemFont, float deviceScaleFactor);
     ~DragImage();
 

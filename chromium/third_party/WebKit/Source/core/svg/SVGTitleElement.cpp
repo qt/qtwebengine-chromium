@@ -26,16 +26,15 @@
 
 namespace WebCore {
 
-inline SVGTitleElement::SVGTitleElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGTitleElement::SVGTitleElement(Document& document)
+    : SVGElement(SVGNames::titleTag, document)
 {
-    ASSERT(hasTagName(SVGNames::titleTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTitleElement> SVGTitleElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGTitleElement> SVGTitleElement::create(Document& document)
 {
-    return adoptRef(new SVGTitleElement(tagName, document));
+    return adoptRef(new SVGTitleElement(document));
 }
 
 Node::InsertionNotificationRequest SVGTitleElement::insertedInto(ContainerNode* rootParent)
@@ -43,6 +42,7 @@ Node::InsertionNotificationRequest SVGTitleElement::insertedInto(ContainerNode* 
     SVGElement::insertedInto(rootParent);
     if (!rootParent->inDocument())
         return InsertionDone;
+    // FIXME: It's possible to register SVGTitleElement to an HTMLDocument.
     if (firstChild())
         document().setTitleElement(textContent(), this);
     return InsertionDone;

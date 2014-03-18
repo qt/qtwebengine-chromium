@@ -24,8 +24,8 @@
  */
 
 [
+    Custom=Wrap,
     NoInterfaceObject,
-    CustomToV8
 ] interface CanvasRenderingContext {
     readonly attribute HTMLCanvasElement canvas;
 };

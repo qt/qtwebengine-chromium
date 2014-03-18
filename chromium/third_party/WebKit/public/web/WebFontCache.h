@@ -33,27 +33,18 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 // An interface to query and configure WebKit's font cache.
 class WebFontCache {
 public:
-    // Returns the number of items in the font data cache.
-    WEBKIT_EXPORT static size_t fontDataCount();
-
-    // Returns the number of inactive items in the font data cache.
-    WEBKIT_EXPORT static size_t inactiveFontDataCount();
-
     // Clears the cache.
-    WEBKIT_EXPORT static void clear();
-
-    // Purges inactive font data.
-    WEBKIT_EXPORT static void prune();
+    BLINK_EXPORT static void clear();
 
 private:
     WebFontCache();  // Not intended to be instanced.
 };
 
-}  // namespace WebKit
+}  // namespace blink
 
 #endif

@@ -40,7 +40,7 @@
 namespace WebCore {
 
 template<typename CallbackInfo>
-static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collection, const AtomicString& name, const CallbackInfo& callbackInfo)
+static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collection, const AtomicString& name, const CallbackInfo& info)
 {
     Vector<RefPtr<Node> > namedItems;
     collection->namedItems(name, namedItems);
@@ -49,23 +49,23 @@ static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collectio
         return v8Undefined();
 
     if (namedItems.size() == 1)
-        return toV8(namedItems.at(0).release(), callbackInfo.Holder(), callbackInfo.GetIsolate());
+        return toV8(namedItems.at(0).release(), info.Holder(), info.GetIsolate());
 
-    return toV8(collection->ownerNode()->radioNodeList(name).get(), callbackInfo.Holder(), callbackInfo.GetIsolate());
+    return toV8(collection->ownerNode()->radioNodeList(name).get(), info.Holder(), info.GetIsolate());
 }
 
-void V8HTMLFormControlsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8HTMLFormControlsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, args[0]);
-    HTMLFormControlsCollection* imp = V8HTMLFormControlsCollection::toNative(args.Holder());
-    v8::Handle<v8::Value> result = getNamedItems(imp, name, args);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, name, info[0]);
+    HTMLFormControlsCollection* imp = V8HTMLFormControlsCollection::toNative(info.Holder());
+    v8::Handle<v8::Value> result = getNamedItems(imp, name, info);
 
     if (result.IsEmpty()) {
-        v8SetReturnValueNull(args);
+        v8SetReturnValueNull(info);
         return;
     }
 
-    v8SetReturnValue(args, result);
+    v8SetReturnValue(info, result);
 }
 
 } // namespace WebCore

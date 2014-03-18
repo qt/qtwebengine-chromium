@@ -34,13 +34,15 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
 struct HTMLConstructionSiteTask {
     enum Operation {
         Insert,
-        InsertAlreadyParsedChild,
+        InsertText, // Handles possible merging of text nodes.
+        InsertAlreadyParsedChild, // Insert w/o calling begin/end parsing.
         Reparent,
         TakeAllChildren,
     };
@@ -74,10 +76,12 @@ template<> struct VectorTraits<WebCore::HTMLConstructionSiteTask> : SimpleClassV
 
 namespace WebCore {
 
+// Note: These are intentionally ordered so that when we concatonate
+// strings and whitespaces the resulting whitespace is ws = min(ws1, ws2).
 enum WhitespaceMode {
-    AllWhitespace,
+    WhitespaceUnknown,
     NotAllWhitespace,
-    WhitespaceUnknown
+    AllWhitespace,
 };
 
 class AtomicHTMLToken;
@@ -93,9 +97,31 @@ public:
     ~HTMLConstructionSite();
 
     void detach();
+
+    // executeQueuedTasks empties the queue but does not flush pending text.
+    // NOTE: Possible reentrancy via JavaScript execution.
     void executeQueuedTasks();
 
+    // flushPendingText turns pending text into queued Text insertions, but does not execute them.
+    void flushPendingText();
+
+    // Called before every token in HTMLTreeBuilder::processToken, thus inlined:
+    void flush()
+    {
+        if (!hasPendingTasks())
+            return;
+        flushPendingText();
+        executeQueuedTasks(); // NOTE: Possible reentrancy via JavaScript execution.
+        ASSERT(!hasPendingTasks());
+    }
+
+    bool hasPendingTasks()
+    {
+        return !m_pendingText.isEmpty() || !m_taskQueue.isEmpty();
+    }
+
     void setDefaultCompatibilityMode();
+    void processEndOfFile();
     void finishedParsing();
 
     void insertDoctype(AtomicHTMLToken*);
@@ -195,6 +221,9 @@ private:
     void mergeAttributesFromTokenIntoElement(AtomicHTMLToken*, Element*);
     void dispatchDocumentElementAvailableIfNeeded();
 
+    void executeTask(HTMLConstructionSiteTask&);
+    void queueTask(const HTMLConstructionSiteTask&);
+
     Document* m_document;
 
     // This is the root ContainerNode to which the parser attaches all newly
@@ -208,6 +237,53 @@ private:
     mutable HTMLFormattingElementList m_activeFormattingElements;
 
     TaskQueue m_taskQueue;
+
+    struct PendingText {
+        PendingText()
+            : whitespaceMode(WhitespaceUnknown)
+        {
+        }
+
+        void append(PassRefPtr<ContainerNode> newParent, PassRefPtr<Node> newNextChild, const String& newString, WhitespaceMode newWhitespaceMode)
+        {
+            ASSERT(!parent || parent == newParent);
+            parent = newParent;
+            ASSERT(!nextChild || nextChild == newNextChild);
+            nextChild = newNextChild;
+            stringBuilder.append(newString);
+            whitespaceMode = std::min(whitespaceMode, newWhitespaceMode);
+        }
+
+        void swap(PendingText& other)
+        {
+            std::swap(whitespaceMode, other.whitespaceMode);
+            parent.swap(other.parent);
+            nextChild.swap(other.nextChild);
+            stringBuilder.swap(other.stringBuilder);
+        }
+
+        void discard()
+        {
+            PendingText discardedText;
+            swap(discardedText);
+        }
+
+        bool isEmpty()
+        {
+            // When the stringbuilder is empty, the parent and whitespace should also be "empty".
+            ASSERT(stringBuilder.isEmpty() == !parent);
+            ASSERT(!stringBuilder.isEmpty() || !nextChild);
+            ASSERT(!stringBuilder.isEmpty() || (whitespaceMode == WhitespaceUnknown));
+            return stringBuilder.isEmpty();
+        }
+
+        RefPtr<ContainerNode> parent;
+        RefPtr<Node> nextChild;
+        StringBuilder stringBuilder;
+        WhitespaceMode whitespaceMode;
+    };
+
+    PendingText m_pendingText;
 
     ParserContentPolicy m_parserContentPolicy;
     bool m_isParsingFragment;

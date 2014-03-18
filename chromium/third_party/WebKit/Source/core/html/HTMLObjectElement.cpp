@@ -28,9 +28,10 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NodeList.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ShadowRoot.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLDocument.h"
@@ -38,23 +39,20 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/Widget.h"
+#include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
+#include "platform/MIMETypeRegistry.h"
+#include "platform/Widget.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLObjectElement::HTMLObjectElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
-    : HTMLPlugInImageElement(tagName, document, createdByParser, ShouldNotPreferPlugInsForImages)
-    , m_docNamedItem(true)
+inline HTMLObjectElement::HTMLObjectElement(Document& document, HTMLFormElement* form, bool createdByParser)
+    : HTMLPlugInElement(objectTag, document, createdByParser, ShouldNotPreferPlugInsForImages)
     , m_useFallbackContent(false)
 {
-    ASSERT(hasTagName(objectTag));
     setForm(form ? form : findFormAncestor());
     ScriptWrappable::init(this);
 }
@@ -64,9 +62,11 @@ inline HTMLObjectElement::~HTMLObjectElement()
     setForm(0);
 }
 
-PassRefPtr<HTMLObjectElement> HTMLObjectElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    return adoptRef(new HTMLObjectElement(tagName, document, form, createdByParser));
+    RefPtr<HTMLObjectElement> element = adoptRef(new HTMLObjectElement(document, form, createdByParser));
+    element->ensureUserAgentShadowRoot();
+    return element.release();
 }
 
 RenderWidget* HTMLObjectElement::existingRenderWidget() const
@@ -78,7 +78,7 @@ bool HTMLObjectElement::isPresentationAttribute(const QualifiedName& name) const
 {
     if (name == borderAttr)
         return true;
-    return HTMLPlugInImageElement::isPresentationAttribute(name);
+    return HTMLPlugInElement::isPresentationAttribute(name);
 }
 
 void HTMLObjectElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
@@ -86,7 +86,7 @@ void HTMLObjectElement::collectStyleForPresentationAttribute(const QualifiedName
     if (name == borderAttr)
         applyBorderAttributeToStyle(value, style);
     else
-        HTMLPlugInImageElement::collectStyleForPresentationAttribute(name, value, style);
+        HTMLPlugInElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -114,10 +114,11 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_classId = value;
         if (renderer())
             setNeedsWidgetUpdate(true);
-    } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
-    else
-        HTMLPlugInImageElement::parseAttribute(name, value);
+    } else if (name == onbeforeloadAttr) {
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
+    } else {
+        HTMLPlugInElement::parseAttribute(name, value);
+    }
 }
 
 static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramValues)
@@ -230,8 +231,8 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
     // 'generator' meta tag is present. Only apply this quirk if there is no
     // fallback content, which ensures the quirk will disable itself if Wiki
     // Server is updated to generate an alternate embed tag as fallback content.
-    if (!document().page()
-        || !document().page()->settings().needsSiteSpecificQuirks()
+    if (!document().settings()
+        || !document().settings()->needsSiteSpecificQuirks()
         || hasFallbackContent()
         || !equalIgnoringCase(classId(), "clsid:02BF25D5-8C17-4B23-BC80-D3488ABDDC6B"))
         return false;
@@ -250,7 +251,7 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
 
 bool HTMLObjectElement::hasValidClassId()
 {
-    if (MIMETypeRegistry::isJavaAppletMIMEType(serviceType()) && classId().startsWith("java:", false))
+    if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", false))
         return true;
 
     if (shouldAllowQuickTimeClassIdQuirk())
@@ -262,8 +263,8 @@ bool HTMLObjectElement::hasValidClassId()
 }
 
 // FIXME: This should be unified with HTMLEmbedElement::updateWidget and
-// moved down into HTMLPluginImageElement.cpp
-void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
+// moved down into HTMLPluginElement.cpp
+void HTMLObjectElement::updateWidgetInternal()
 {
     ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
@@ -275,11 +276,11 @@ void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
     // FIXME: I'm not sure it's ever possible to get into updateWidget during a
     // removal, but just in case we should avoid loading the frame to prevent
     // security bugs.
-    if (!SubframeLoadingDisabler::canLoadFrame(this))
+    if (!SubframeLoadingDisabler::canLoadFrame(*this))
         return;
 
     String url = this->url();
-    String serviceType = this->serviceType();
+    String serviceType = m_serviceType;
 
     // FIXME: These should be joined into a PluginParameters class.
     Vector<String> paramNames;
@@ -292,15 +293,6 @@ void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
 
     bool fallbackContent = hasFallbackContent();
     renderEmbeddedObject()->setHasFallbackContent(fallbackContent);
-
-    // FIXME: It's sadness that we have this special case here.
-    //        See http://trac.webkit.org/changeset/25128 and
-    //        plugins/netscape-plugin-setwindow-size.html
-    if (pluginCreationOption == CreateOnlyNonNetscapePlugins && wouldLoadAsNetscapePlugin(url, serviceType)) {
-        // Ensure updateWidget() is called again during layout to create the Netscape plug-in.
-        setNeedsWidgetUpdate(true);
-        return;
-    }
 
     RefPtr<HTMLObjectElement> protect(this); // beforeload and plugin loading can make arbitrary DOM mutations.
     bool beforeLoadAllowedLoad = dispatchBeforeLoadEvent(url);
@@ -315,39 +307,38 @@ void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
 bool HTMLObjectElement::rendererIsNeeded(const RenderStyle& style)
 {
     // FIXME: This check should not be needed, detached documents never render!
-    Frame* frame = document().frame();
-    if (!frame)
+    if (!document().frame())
         return false;
-
-    return HTMLPlugInImageElement::rendererIsNeeded(style);
+    return HTMLPlugInElement::rendererIsNeeded(style);
 }
 
 Node::InsertionNotificationRequest HTMLObjectElement::insertedInto(ContainerNode* insertionPoint)
 {
-    HTMLPlugInImageElement::insertedInto(insertionPoint);
+    HTMLPlugInElement::insertedInto(insertionPoint);
     FormAssociatedElement::insertedInto(insertionPoint);
     return InsertionDone;
 }
 
 void HTMLObjectElement::removedFrom(ContainerNode* insertionPoint)
 {
-    HTMLPlugInImageElement::removedFrom(insertionPoint);
+    HTMLPlugInElement::removedFrom(insertionPoint);
     FormAssociatedElement::removedFrom(insertionPoint);
 }
 
 void HTMLObjectElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
-    updateDocNamedItem();
     if (inDocument() && !useFallbackContent()) {
         setNeedsWidgetUpdate(true);
         setNeedsStyleRecalc();
     }
-    HTMLPlugInImageElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLPlugInElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
 
 bool HTMLObjectElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == dataAttr || (attribute.name() == usemapAttr && attribute.value().string()[0] != '#') || HTMLPlugInImageElement::isURLAttribute(attribute);
+    return attribute.name() == codebaseAttr || attribute.name() == dataAttr
+        || (attribute.name() == usemapAttr && attribute.value().string()[0] != '#')
+        || HTMLPlugInElement::isURLAttribute(attribute);
 }
 
 const AtomicString HTMLObjectElement::imageSourceURL() const
@@ -363,7 +354,7 @@ void HTMLObjectElement::reattachFallbackContent()
     if (document().inStyleRecalc())
         reattach();
     else
-        lazyReattach();
+        lazyReattachIfAttached();
 }
 
 void HTMLObjectElement::renderFallbackContent()
@@ -391,63 +382,18 @@ void HTMLObjectElement::renderFallbackContent()
     reattachFallbackContent();
 }
 
-// FIXME: This should be removed, all callers are almost certainly wrong.
-static bool isRecognizedTagName(const QualifiedName& tagName)
+bool HTMLObjectElement::isExposed() const
 {
-    DEFINE_STATIC_LOCAL(HashSet<StringImpl*>, tagList, ());
-    if (tagList.isEmpty()) {
-        QualifiedName** tags = HTMLNames::getHTMLTags();
-        for (size_t i = 0; i < HTMLNames::HTMLTagsCount; i++) {
-            if (*tags[i] == bgsoundTag
-                || *tags[i] == commandTag
-                || *tags[i] == detailsTag
-                || *tags[i] == figcaptionTag
-                || *tags[i] == figureTag
-                || *tags[i] == summaryTag
-                || *tags[i] == trackTag) {
-                // Even though we have atoms for these tags, we don't want to
-                // treat them as "recognized tags" for the purpose of parsing
-                // because that changes how we parse documents.
-                continue;
-            }
-            tagList.add(tags[i]->localName().impl());
-        }
+    // http://www.whatwg.org/specs/web-apps/current-work/#exposed
+    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
+        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+            return false;
     }
-    return tagList.contains(tagName.localName().impl());
-}
-
-void HTMLObjectElement::updateDocNamedItem()
-{
-    // The rule is "<object> elements with no children other than
-    // <param> elements, unknown elements and whitespace can be
-    // found by name in a document, and other <object> elements cannot."
-    bool wasNamedItem = m_docNamedItem;
-    bool isNamedItem = true;
-    Node* child = firstChild();
-    while (child && isNamedItem) {
-        if (child->isElementNode()) {
-            Element* element = toElement(child);
-            // FIXME: Use of isRecognizedTagName is almost certainly wrong here.
-            if (isRecognizedTagName(element->tagQName()) && !element->hasTagName(paramTag))
-                isNamedItem = false;
-        } else if (child->isTextNode()) {
-            if (!toText(child)->containsOnlyWhitespace())
-                isNamedItem = false;
-        } else
-            isNamedItem = false;
-        child = child->nextSibling();
+    for (Node* node = firstChild(); node; node = NodeTraversal::next(*node, this)) {
+        if (node->hasTagName(objectTag) || node->hasTagName(embedTag))
+            return false;
     }
-    if (isNamedItem != wasNamedItem && document().isHTMLDocument()) {
-        HTMLDocument& document = toHTMLDocument(this->document());
-        if (isNamedItem) {
-            document.addNamedItem(getNameAttribute());
-            document.addExtraNamedItem(getIdAttribute());
-        } else {
-            document.removeNamedItem(getNameAttribute());
-            document.removeExtraNamedItem(getIdAttribute());
-        }
-    }
-    m_docNamedItem = isNamedItem;
+    return true;
 }
 
 bool HTMLObjectElement::containsJavaApplet() const
@@ -455,7 +401,7 @@ bool HTMLObjectElement::containsJavaApplet() const
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
 
-    for (Element* child = ElementTraversal::firstWithin(this); child; child = ElementTraversal::nextSkippingChildren(child, this)) {
+    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSkippingChildren(*child, this)) {
         if (child->hasTagName(paramTag)
                 && equalIgnoringCase(child->getNameAttribute(), "type")
                 && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))
@@ -471,7 +417,7 @@ bool HTMLObjectElement::containsJavaApplet() const
 
 void HTMLObjectElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
 {
-    HTMLPlugInImageElement::addSubresourceAttributeURLs(urls);
+    HTMLPlugInElement::addSubresourceAttributeURLs(urls);
 
     addSubresourceURL(urls, document().completeURL(getAttribute(dataAttr)));
 
@@ -482,10 +428,10 @@ void HTMLObjectElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) con
         addSubresourceURL(urls, document().completeURL(useMap));
 }
 
-void HTMLObjectElement::didMoveToNewDocument(Document* oldDocument)
+void HTMLObjectElement::didMoveToNewDocument(Document& oldDocument)
 {
     FormAssociatedElement::didMoveToNewDocument(oldDocument);
-    HTMLPlugInImageElement::didMoveToNewDocument(oldDocument);
+    HTMLPlugInElement::didMoveToNewDocument(oldDocument);
 }
 
 bool HTMLObjectElement::appendFormData(FormDataList& encoding, bool)
@@ -503,7 +449,7 @@ bool HTMLObjectElement::appendFormData(FormDataList& encoding, bool)
     return true;
 }
 
-HTMLFormElement* HTMLObjectElement::virtualForm() const
+HTMLFormElement* HTMLObjectElement::formOwner() const
 {
     return FormAssociatedElement::form();
 }
@@ -511,6 +457,11 @@ HTMLFormElement* HTMLObjectElement::virtualForm() const
 bool HTMLObjectElement::isInteractiveContent() const
 {
     return fastHasAttribute(usemapAttr);
+}
+
+bool HTMLObjectElement::useFallbackContent() const
+{
+    return HTMLPlugInElement::useFallbackContent() || m_useFallbackContent;
 }
 
 }

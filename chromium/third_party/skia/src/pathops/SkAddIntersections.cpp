@@ -363,24 +363,33 @@ bool AddIntersectTs(SkOpContour* test, SkOpContour* next) {
             if (pts == 2) {
                 if (wn.segmentType() <= SkIntersectionHelper::kLine_Segment
                         && wt.segmentType() <= SkIntersectionHelper::kLine_Segment) {
-                    wt.addCoincident(wn, ts, swap);
-                    continue;
-                }
-                if (wn.segmentType() >= SkIntersectionHelper::kQuad_Segment
+                    if (wt.addCoincident(wn, ts, swap)) {
+                        continue;
+                    }
+                    ts.cleanUpCoincidence();  // prefer (t == 0 or t == 1)
+                    pts = 1;
+                } else if (wn.segmentType() >= SkIntersectionHelper::kQuad_Segment
                         && wt.segmentType() >= SkIntersectionHelper::kQuad_Segment
                         && ts.isCoincident(0)) {
                     SkASSERT(ts.coincidentUsed() == 2);
-                    wt.addCoincident(wn, ts, swap);
-                    continue;
+                    if (wt.addCoincident(wn, ts, swap)) {
+                        continue;
+                    }
+                    ts.cleanUpCoincidence();  // prefer (t == 0 or t == 1)
+                    pts = 1;
                 }
             }
             if (pts >= 2) {
                 for (int pt = 0; pt < pts - 1; ++pt) {
                     const SkDPoint& point = ts.pt(pt);
                     const SkDPoint& next = ts.pt(pt + 1);
-                    if (wt.isNear(ts[swap][pt], ts[swap][pt + 1], point, next)
-                            && wn.isNear(ts[!swap][pt], ts[!swap][pt + 1], point, next)) {
-                        wt.addPartialCoincident(wn, ts, pt, swap);
+                    if (wt.isPartial(ts[swap][pt], ts[swap][pt + 1], point, next)
+                            && wn.isPartial(ts[!swap][pt], ts[!swap][pt + 1], point, next)) {
+                        if (!wt.addPartialCoincident(wn, ts, pt, swap)) {
+                            // remove extra point if two map to same float values
+                            ts.cleanUpCoincidence();  // prefer (t == 0 or t == 1)
+                            pts = 1;
+                        }
                     }
                 }
             }
@@ -388,8 +397,8 @@ bool AddIntersectTs(SkOpContour* test, SkOpContour* next) {
                 SkASSERT(ts[0][pt] >= 0 && ts[0][pt] <= 1);
                 SkASSERT(ts[1][pt] >= 0 && ts[1][pt] <= 1);
                 SkPoint point = ts.pt(pt).asSkPoint();
-                int testTAt = wt.addT(wn, point, ts[swap][pt], swap && ts.isNear(pt));
-                int nextTAt = wn.addT(wt, point, ts[!swap][pt], !swap && ts.isNear(pt));
+                int testTAt = wt.addT(wn, point, ts[swap][pt]);
+                int nextTAt = wn.addT(wt, point, ts[!swap][pt]);
                 wt.addOtherT(testTAt, ts[!swap][pt], nextTAt);
                 wn.addOtherT(nextTAt, ts[swap][pt], testTAt);
             }
@@ -416,7 +425,7 @@ void AddSelfIntersectTs(SkOpContour* test) {
         SkASSERT(ts[1][0] >= 0 && ts[1][0] <= 1);
         SkPoint point = ts.pt(0).asSkPoint();
         int testTAt = wt.addSelfT(wt, point, ts[0][0]);
-        int nextTAt = wt.addT(wt, point, ts[1][0], ts.isNear(0));
+        int nextTAt = wt.addT(wt, point, ts[1][0]);
         wt.addOtherT(testTAt, ts[1][0], nextTAt);
         wt.addOtherT(nextTAt, ts[0][0], testTAt);
     } while (wt.advance());

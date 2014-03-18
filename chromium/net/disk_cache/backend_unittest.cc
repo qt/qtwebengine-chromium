@@ -489,7 +489,7 @@ TEST_F(DiskCacheBackendTest, ExternalFiles) {
 
   // And verify that the first file is still there.
   scoped_refptr<net::IOBuffer> buffer2(new net::IOBuffer(kSize));
-  ASSERT_EQ(kSize, file_util::ReadFile(filename, buffer2->data(), kSize));
+  ASSERT_EQ(kSize, base::ReadFile(filename, buffer2->data(), kSize));
   EXPECT_EQ(0, memcmp(buffer1->data(), buffer2->data(), kSize));
 }
 
@@ -518,9 +518,13 @@ void DiskCacheBackendTest::BackendShutdownWithPendingFileIO(bool fast) {
 
   base::MessageLoop::current()->RunUntilIdle();
 
+#if !defined(OS_IOS)
   // Wait for the actual operation to complete, or we'll keep a file handle that
-  // may cause issues later.
+  // may cause issues later. Note that on iOS systems even though this test
+  // uses a single thread, the actual IO is posted to a worker thread and the
+  // cache destructor breaks the link to reach cb when the operation completes.
   rv = cb.GetResult(rv);
+#endif
 }
 
 TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO) {
@@ -543,6 +547,8 @@ TEST_F(DiskCacheBackendTest, ShutdownWithPendingFileIO_Fast) {
 }
 #endif
 
+// See crbug.com/330074
+#if !defined(OS_IOS)
 // Tests that one cache instance is not affected by another one going away.
 TEST_F(DiskCacheBackendTest, MultipleInstancesWithPendingFileIO) {
   base::ScopedTempDir store;
@@ -576,6 +582,7 @@ TEST_F(DiskCacheBackendTest, MultipleInstancesWithPendingFileIO) {
   // may cause issues later.
   rv = cb.GetResult(rv);
 }
+#endif
 
 // Tests that we deal with background-thread pending operations.
 void DiskCacheBackendTest::BackendShutdownWithPendingIO(bool fast) {
@@ -2898,51 +2905,51 @@ TEST_F(DiskCacheTest, MultipleInstances) {
 
 // Test the six regions of the curve that determines the max cache size.
 TEST_F(DiskCacheTest, AutomaticMaxSize) {
-  const int kDefaultSize = 80 * 1024 * 1024;
-  int64 large_size = kDefaultSize;
-  int64 largest_size = kint32max;
+  using disk_cache::kDefaultCacheSize;
+  int64 large_size = kDefaultCacheSize;
 
   // Region 1: expected = available * 0.8
-  EXPECT_EQ((kDefaultSize - 1) * 8 / 10,
-            disk_cache::PreferedCacheSize(large_size - 1));
-  EXPECT_EQ(kDefaultSize * 8 / 10,
-            disk_cache::PreferedCacheSize(large_size));
-  EXPECT_EQ(kDefaultSize - 1,
-            disk_cache::PreferedCacheSize(large_size * 10 / 8 - 1));
+  EXPECT_EQ((kDefaultCacheSize - 1) * 8 / 10,
+            disk_cache::PreferredCacheSize(large_size - 1));
+  EXPECT_EQ(kDefaultCacheSize * 8 / 10,
+            disk_cache::PreferredCacheSize(large_size));
+  EXPECT_EQ(kDefaultCacheSize - 1,
+            disk_cache::PreferredCacheSize(large_size * 10 / 8 - 1));
 
   // Region 2: expected = default_size
-  EXPECT_EQ(kDefaultSize,
-            disk_cache::PreferedCacheSize(large_size * 10 / 8));
-  EXPECT_EQ(kDefaultSize,
-            disk_cache::PreferedCacheSize(large_size * 10 - 1));
+  EXPECT_EQ(kDefaultCacheSize,
+            disk_cache::PreferredCacheSize(large_size * 10 / 8));
+  EXPECT_EQ(kDefaultCacheSize,
+            disk_cache::PreferredCacheSize(large_size * 10 - 1));
 
   // Region 3: expected = available * 0.1
-  EXPECT_EQ(kDefaultSize,
-            disk_cache::PreferedCacheSize(large_size * 10));
-  EXPECT_EQ((kDefaultSize * 25 - 1) / 10,
-            disk_cache::PreferedCacheSize(large_size * 25 - 1));
+  EXPECT_EQ(kDefaultCacheSize,
+            disk_cache::PreferredCacheSize(large_size * 10));
+  EXPECT_EQ((kDefaultCacheSize * 25 - 1) / 10,
+            disk_cache::PreferredCacheSize(large_size * 25 - 1));
 
   // Region 4: expected = default_size * 2.5
-  EXPECT_EQ(kDefaultSize * 25 / 10,
-            disk_cache::PreferedCacheSize(large_size * 25));
-  EXPECT_EQ(kDefaultSize * 25 / 10,
-            disk_cache::PreferedCacheSize(large_size * 100 - 1));
-  EXPECT_EQ(kDefaultSize * 25 / 10,
-            disk_cache::PreferedCacheSize(large_size * 100));
-  EXPECT_EQ(kDefaultSize * 25 / 10,
-            disk_cache::PreferedCacheSize(large_size * 250 - 1));
+  EXPECT_EQ(kDefaultCacheSize * 25 / 10,
+            disk_cache::PreferredCacheSize(large_size * 25));
+  EXPECT_EQ(kDefaultCacheSize * 25 / 10,
+            disk_cache::PreferredCacheSize(large_size * 100 - 1));
+  EXPECT_EQ(kDefaultCacheSize * 25 / 10,
+            disk_cache::PreferredCacheSize(large_size * 100));
+  EXPECT_EQ(kDefaultCacheSize * 25 / 10,
+            disk_cache::PreferredCacheSize(large_size * 250 - 1));
 
   // Region 5: expected = available * 0.1
-  EXPECT_EQ(kDefaultSize * 25 / 10,
-            disk_cache::PreferedCacheSize(large_size * 250));
-  EXPECT_EQ(kint32max - 1,
-            disk_cache::PreferedCacheSize(largest_size * 100 - 1));
+  int64 largest_size = kDefaultCacheSize * 4;
+  EXPECT_EQ(kDefaultCacheSize * 25 / 10,
+            disk_cache::PreferredCacheSize(large_size * 250));
+  EXPECT_EQ(largest_size - 1,
+            disk_cache::PreferredCacheSize(largest_size * 100 - 1));
 
-  // Region 6: expected = kint32max
-  EXPECT_EQ(kint32max,
-            disk_cache::PreferedCacheSize(largest_size * 100));
-  EXPECT_EQ(kint32max,
-            disk_cache::PreferedCacheSize(largest_size * 10000));
+  // Region 6: expected = largest possible size
+  EXPECT_EQ(largest_size,
+            disk_cache::PreferredCacheSize(largest_size * 100));
+  EXPECT_EQ(largest_size,
+            disk_cache::PreferredCacheSize(largest_size * 10000));
 }
 
 // Tests that we can "migrate" a running instance from one experiment group to
@@ -3469,9 +3476,5 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
   EXPECT_EQ(key_pool.size(), count);
   EXPECT_TRUE(keys_to_match.empty());
 }
-
-// TODO(pasko): Add a Simple Cache test that would simulate upgrade from the
-// version with the index file in the cache directory to the version with the
-// index file in subdirectory.
 
 #endif  // defined(OS_POSIX)

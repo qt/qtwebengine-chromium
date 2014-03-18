@@ -105,14 +105,14 @@
                 # included here, or better yet, build a proper .jar in webrtc
                 # and include it here.
                 'android_java_files': [
-                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRTCAudioDevice.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/AudioManagerAndroid.java',
-                  '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/CaptureCapabilityAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureDeviceInfoAndroid.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViEAndroidGLES20.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViERenderer.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViESurfaceRenderer.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioRecord.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioTrack.java',
                 ],
               },
               'action_name': 'create_jar',
@@ -258,6 +258,7 @@
         'base/asynchttprequest.cc',
         'base/asynchttprequest.h',
         'base/asyncpacketsocket.h',
+        'base/asyncresolverinterface.h',
         'base/asyncsocket.cc',
         'base/asyncsocket.h',
         'base/asynctcpsocket.cc',
@@ -842,6 +843,8 @@
         # TODO(ronghuawu): Enable when SCTP is ready.
         # 'media/sctp/sctpdataengine.cc',
         # 'media/sctp/sctpdataengine.h',
+        'media/sctp/sctputils.cc',
+        'media/sctp/sctputils.h',
         'media/webrtc/webrtccommon.h',
         'media/webrtc/webrtcexport.h',
         'media/webrtc/webrtcmediaengine.h',

@@ -466,11 +466,9 @@ TEST_F(TextureTest, SetTargetTextureExternalOES) {
   EXPECT_FALSE(TextureTestHelper::IsCubeComplete(texture));
   EXPECT_FALSE(manager_->CanGenerateMipmaps(texture_ref_.get()));
   EXPECT_TRUE(TextureTestHelper::IsNPOT(texture));
-  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
   EXPECT_TRUE(texture->SafeToRenderFrom());
   EXPECT_TRUE(texture->IsImmutable());
-  manager_->SetStreamTexture(texture_ref_.get(), true);
-  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
 }
 
 TEST_F(TextureTest, ZeroSizeCanNotRender) {
@@ -2002,6 +2000,26 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsumeClearRectangle) {
       decoder_.get(), restored_texture.get(), GL_TEXTURE_RECTANGLE_ARB, 0));
 }
 
+TEST_F(ProduceConsumeTextureTest, ProduceConsumeExternal) {
+  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_EXTERNAL_OES);
+  Texture* texture = texture_ref_->texture();
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_EXTERNAL_OES), texture->target());
+  LevelInfo level0(
+      GL_TEXTURE_EXTERNAL_OES, GL_RGBA, 1, 1, 1, 0, GL_UNSIGNED_BYTE, false);
+  SetLevelInfo(texture_ref_.get(), 0, level0);
+  EXPECT_TRUE(TextureTestHelper::IsTextureComplete(texture));
+  Texture* produced_texture = Produce(texture_ref_.get());
+  EXPECT_EQ(produced_texture, texture);
+
+  GLuint client_id = texture2_->client_id();
+  manager_->RemoveTexture(client_id);
+  Consume(client_id, produced_texture);
+  scoped_refptr<TextureRef> restored_texture = manager_->GetTexture(client_id);
+  EXPECT_EQ(produced_texture, restored_texture->texture());
+  EXPECT_EQ(level0,
+            GetLevelInfo(restored_texture.get(), GL_TEXTURE_EXTERNAL_OES, 0));
+}
+
 TEST_F(ProduceConsumeTextureTest, ProduceConsumeStreamTexture) {
   manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_EXTERNAL_OES);
   Texture* texture = texture_ref_->texture();
@@ -2347,6 +2365,66 @@ TEST_F(SharedTextureTest, Memory) {
   texture_manager2_->RemoveTexture(20);
   EXPECT_EQ(initial_memory2,
             memory_tracker2_->GetSize(MemoryTracker::kUnmanaged));
+}
+
+TEST_F(SharedTextureTest, Images) {
+  scoped_refptr<TextureRef> ref1 = texture_manager1_->CreateTexture(10, 10);
+  scoped_refptr<TextureRef> ref2 =
+      texture_manager2_->Consume(20, ref1->texture());
+
+  texture_manager1_->SetTarget(ref1.get(), GL_TEXTURE_2D);
+  texture_manager1_->SetLevelInfo(ref1.get(),
+                                  GL_TEXTURE_2D,
+                                  1,
+                                  GL_RGBA,
+                                  2,
+                                  2,
+                                  1,
+                                  0,
+                                  GL_RGBA,
+                                  GL_UNSIGNED_BYTE,
+                                  true);
+  EXPECT_FALSE(ref1->texture()->HasImages());
+  EXPECT_FALSE(ref2->texture()->HasImages());
+  EXPECT_FALSE(texture_manager1_->HaveImages());
+  EXPECT_FALSE(texture_manager2_->HaveImages());
+  texture_manager1_->SetLevelImage(ref1.get(),
+                                   GL_TEXTURE_2D,
+                                   1,
+                                   gfx::GLImage::CreateGLImage(0).get());
+  EXPECT_TRUE(ref1->texture()->HasImages());
+  EXPECT_TRUE(ref2->texture()->HasImages());
+  EXPECT_TRUE(texture_manager1_->HaveImages());
+  EXPECT_TRUE(texture_manager2_->HaveImages());
+  texture_manager1_->SetLevelImage(ref1.get(),
+                                   GL_TEXTURE_2D,
+                                   1,
+                                   gfx::GLImage::CreateGLImage(0).get());
+  EXPECT_TRUE(ref1->texture()->HasImages());
+  EXPECT_TRUE(ref2->texture()->HasImages());
+  EXPECT_TRUE(texture_manager1_->HaveImages());
+  EXPECT_TRUE(texture_manager2_->HaveImages());
+  texture_manager1_->SetLevelInfo(ref1.get(),
+                                  GL_TEXTURE_2D,
+                                  1,
+                                  GL_RGBA,
+                                  2,
+                                  2,
+                                  1,
+                                  0,
+                                  GL_RGBA,
+                                  GL_UNSIGNED_BYTE,
+                                  true);
+  EXPECT_FALSE(ref1->texture()->HasImages());
+  EXPECT_FALSE(ref2->texture()->HasImages());
+  EXPECT_FALSE(texture_manager1_->HaveImages());
+  EXPECT_FALSE(texture_manager1_->HaveImages());
+
+  EXPECT_CALL(*gl_, DeleteTextures(1, _))
+      .Times(1)
+      .RetiresOnSaturation();
+  texture_manager1_->RemoveTexture(10);
+  texture_manager2_->RemoveTexture(20);
 }
 
 }  // namespace gles2

@@ -33,18 +33,18 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 // An interface to configure WebKit's cross-origin preflight result cache.
 class WebCrossOriginPreflightResultCache {
 public:
     // Clears the cache.
-    WEBKIT_EXPORT static void clear();
+    BLINK_EXPORT static void clear();
 
 private:
     WebCrossOriginPreflightResultCache();  // Not intended to be instanced.
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

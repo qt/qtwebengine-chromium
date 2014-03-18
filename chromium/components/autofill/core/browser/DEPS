@@ -12,21 +12,27 @@ include_rules = [
   #
   # Do not add to the list of temporarily-allowed dependencies below,
   # and please do not introduce more #includes of these files.
-  "!content/public/browser/android/content_view_core.h",
-  "!content/public/browser/browser_context.h",
-  "!content/public/browser/browser_thread.h",
-  "!content/public/browser/render_view_host.h",
-  "!content/public/browser/web_contents.h",
-  "!content/public/browser/web_contents_observer.h",
-  "!content/public/browser/web_contents_view.h",
-  "!content/public/common/url_constants.h",
   "!third_party/WebKit/public/web/WebAutofillClient.h",
-  "!third_party/WebKit/public/web/WebInputElement.h",
 ]
 
 specific_include_rules = {
+  'autofill_test_utils\.cc': [
+    # TODO(blundell): Bring this list to zero.
+    #
+    # Do not add to the list of temporarily-allowed dependencies below,
+    # and please do not introduce more #includes of these files.
+    "!components/user_prefs/user_prefs.h",
+    "!content/public/browser/browser_context.h",
+  ],
   '.*_[a-z]*test\.cc': [
-    "+content/public/test",
+    # TODO(blundell): Bring this list to zero.
+    #
+    # Do not add to the list of temporarily-allowed dependencies below,
+    # and please do not introduce more #includes of these files.
+    "!components/user_prefs/user_prefs.h",
+    "!content/public/browser/browser_context.h",
+    "!content/public/browser/browser_thread.h",
+    "!content/public/test",
 
     # TODO(joi): Bring this list to zero.
     #
@@ -40,10 +46,9 @@ specific_include_rules = {
     "!chrome/browser/sync/profile_sync_service.h",
     "!chrome/browser/sync/profile_sync_service_factory.h",
     "!chrome/browser/ui/autofill/tab_autofill_manager_delegate.h",
-    "!chrome/browser/webdata/web_data_service.h",
     "!chrome/browser/webdata/web_data_service_factory.h",
-    "!chrome/common/chrome_paths.h",
     "!chrome/test/base/chrome_render_view_host_test_harness.h",
     "!chrome/test/base/testing_profile.h",
+    "!third_party/WebKit/public/web/WebInputElement.h",
   ],
 }

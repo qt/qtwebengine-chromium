@@ -25,9 +25,11 @@ namespace content {
 scoped_ptr<PpapiDecryptor> PpapiDecryptor::Create(
     const std::string& key_system,
     const scoped_refptr<PepperPluginInstanceImpl>& plugin_instance,
-    const media::KeyAddedCB& key_added_cb,
-    const media::KeyErrorCB& key_error_cb,
-    const media::KeyMessageCB& key_message_cb,
+    const media::SessionCreatedCB& session_created_cb,
+    const media::SessionMessageCB& session_message_cb,
+    const media::SessionReadyCB& session_ready_cb,
+    const media::SessionClosedCB& session_closed_cb,
+    const media::SessionErrorCB& session_error_cb,
     const base::Closure& destroy_plugin_cb) {
   ContentDecryptorDelegate* plugin_cdm_delegate =
       plugin_instance->GetContentDecryptorDelegate();
@@ -36,41 +38,53 @@ scoped_ptr<PpapiDecryptor> PpapiDecryptor::Create(
     return scoped_ptr<PpapiDecryptor>();
   }
 
-  // TODO(jrummell): How do we get the can_challenge_platform value from
-  // the browser?
-  const bool can_challenge_platform = false;
-  plugin_cdm_delegate->Initialize(key_system, can_challenge_platform);
+  plugin_cdm_delegate->Initialize(key_system);
 
   return scoped_ptr<PpapiDecryptor>(new PpapiDecryptor(plugin_instance,
                                                        plugin_cdm_delegate,
-                                                       key_added_cb,
-                                                       key_error_cb,
-                                                       key_message_cb,
+                                                       session_created_cb,
+                                                       session_message_cb,
+                                                       session_ready_cb,
+                                                       session_closed_cb,
+                                                       session_error_cb,
                                                        destroy_plugin_cb));
 }
 
 PpapiDecryptor::PpapiDecryptor(
     const scoped_refptr<PepperPluginInstanceImpl>& plugin_instance,
     ContentDecryptorDelegate* plugin_cdm_delegate,
-    const media::KeyAddedCB& key_added_cb,
-    const media::KeyErrorCB& key_error_cb,
-    const media::KeyMessageCB& key_message_cb,
+    const media::SessionCreatedCB& session_created_cb,
+    const media::SessionMessageCB& session_message_cb,
+    const media::SessionReadyCB& session_ready_cb,
+    const media::SessionClosedCB& session_closed_cb,
+    const media::SessionErrorCB& session_error_cb,
     const base::Closure& destroy_plugin_cb)
     : plugin_instance_(plugin_instance),
       plugin_cdm_delegate_(plugin_cdm_delegate),
-      key_added_cb_(key_added_cb),
-      key_error_cb_(key_error_cb),
-      key_message_cb_(key_message_cb),
+      session_created_cb_(session_created_cb),
+      session_message_cb_(session_message_cb),
+      session_ready_cb_(session_ready_cb),
+      session_closed_cb_(session_closed_cb),
+      session_error_cb_(session_error_cb),
       destroy_plugin_cb_(destroy_plugin_cb),
       render_loop_proxy_(base::MessageLoopProxy::current()),
-      weak_ptr_factory_(this),
-      weak_this_(weak_ptr_factory_.GetWeakPtr()) {
+      weak_ptr_factory_(this) {
   DCHECK(plugin_instance_.get());
+  DCHECK(!session_created_cb_.is_null());
+  DCHECK(!session_message_cb_.is_null());
+  DCHECK(!session_ready_cb_.is_null());
+  DCHECK(!session_closed_cb_.is_null());
+  DCHECK(!session_error_cb_.is_null());
+  DCHECK(!destroy_plugin_cb_.is_null());
 
-  plugin_cdm_delegate_->SetKeyEventCallbacks(
-      base::Bind(&PpapiDecryptor::KeyAdded, weak_this_),
-      base::Bind(&PpapiDecryptor::KeyError, weak_this_),
-      base::Bind(&PpapiDecryptor::KeyMessage, weak_this_));
+  weak_this_ = weak_ptr_factory_.GetWeakPtr();
+
+  plugin_cdm_delegate_->SetSessionEventCallbacks(
+      base::Bind(&PpapiDecryptor::OnSessionCreated, weak_this_),
+      base::Bind(&PpapiDecryptor::OnSessionMessage, weak_this_),
+      base::Bind(&PpapiDecryptor::OnSessionReady, weak_this_),
+      base::Bind(&PpapiDecryptor::OnSessionClosed, weak_this_),
+      base::Bind(&PpapiDecryptor::OnSessionError, weak_this_));
 }
 
 PpapiDecryptor::~PpapiDecryptor() {
@@ -79,34 +93,32 @@ PpapiDecryptor::~PpapiDecryptor() {
   destroy_plugin_cb_.Run();
 }
 
-bool PpapiDecryptor::GenerateKeyRequest(const std::string& type,
-                                        const uint8* init_data,
-                                        int init_data_length) {
-  DVLOG(2) << "GenerateKeyRequest()";
+bool PpapiDecryptor::CreateSession(uint32 session_id,
+                                   const std::string& type,
+                                   const uint8* init_data,
+                                   int init_data_length) {
+  DVLOG(2) << __FUNCTION__;
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
   DCHECK(plugin_cdm_delegate_);
 
-  if (!plugin_cdm_delegate_->GenerateKeyRequest(
-      type, init_data, init_data_length)) {
-    ReportFailureToCallPlugin(std::string());
+  if (!plugin_cdm_delegate_->CreateSession(
+      session_id, type, init_data, init_data_length)) {
+    ReportFailureToCallPlugin(session_id);
     return false;
   }
 
   return true;
 }
 
-void PpapiDecryptor::AddKey(const uint8* key,
-                            int key_length,
-                            const uint8* init_data,
-                            int init_data_length,
-                            const std::string& session_id) {
-  DVLOG(2) << "AddKey()";
+void PpapiDecryptor::UpdateSession(uint32 session_id,
+                                   const uint8* response,
+                                   int response_length) {
+  DVLOG(2) << __FUNCTION__;
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
 
-  if (!plugin_cdm_delegate_->AddKey(
-      session_id, key, key_length, init_data, init_data_length)) {
+  if (!plugin_cdm_delegate_->UpdateSession(
+           session_id, response, response_length))
     ReportFailureToCallPlugin(session_id);
-  }
 
   if (!new_audio_key_cb_.is_null())
     new_audio_key_cb_.Run();
@@ -115,11 +127,11 @@ void PpapiDecryptor::AddKey(const uint8* key,
     new_video_key_cb_.Run();
 }
 
-void PpapiDecryptor::CancelKeyRequest(const std::string& session_id) {
-  DVLOG(2) << "CancelKeyRequest()";
+void PpapiDecryptor::ReleaseSession(uint32 session_id) {
+  DVLOG(2) << __FUNCTION__;
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
 
-  if (!plugin_cdm_delegate_->CancelKeyRequest(session_id))
+  if (!plugin_cdm_delegate_->ReleaseSession(session_id))
     ReportFailureToCallPlugin(session_id);
 }
 
@@ -140,6 +152,14 @@ media::Decryptor* PpapiDecryptor::GetDecryptor() {
 
 void PpapiDecryptor::RegisterNewKeyCB(StreamType stream_type,
                                       const NewKeyCB& new_key_cb) {
+  if (!render_loop_proxy_->BelongsToCurrentThread()) {
+    render_loop_proxy_->PostTask(FROM_HERE, base::Bind(
+        &PpapiDecryptor::RegisterNewKeyCB, weak_this_, stream_type,
+        new_key_cb));
+    return;
+  }
+
+  DVLOG(3) << __FUNCTION__ << " - stream_type: " << stream_type;
   switch (stream_type) {
     case kAudio:
       new_audio_key_cb_ = new_key_cb;
@@ -163,13 +183,19 @@ void PpapiDecryptor::Decrypt(
     return;
   }
 
-  DVLOG(3) << "Decrypt() - stream_type: " << stream_type;
+  DVLOG(3) << __FUNCTION__ << " - stream_type: " << stream_type;
   if (!plugin_cdm_delegate_->Decrypt(stream_type, encrypted, decrypt_cb))
     decrypt_cb.Run(kError, NULL);
 }
 
 void PpapiDecryptor::CancelDecrypt(StreamType stream_type) {
-  DVLOG(1) << "CancelDecrypt() - stream_type: " << stream_type;
+  if (!render_loop_proxy_->BelongsToCurrentThread()) {
+    render_loop_proxy_->PostTask(FROM_HERE, base::Bind(
+        &PpapiDecryptor::CancelDecrypt, weak_this_, stream_type));
+    return;
+  }
+
+  DVLOG(1) << __FUNCTION__ << " - stream_type: " << stream_type;
   plugin_cdm_delegate_->CancelDecrypt(stream_type);
 }
 
@@ -182,7 +208,7 @@ void PpapiDecryptor::InitializeAudioDecoder(
     return;
   }
 
-  DVLOG(2) << "InitializeAudioDecoder()";
+  DVLOG(2) << __FUNCTION__;
   DCHECK(config.is_encrypted());
   DCHECK(config.IsValidConfig());
 
@@ -203,7 +229,7 @@ void PpapiDecryptor::InitializeVideoDecoder(
     return;
   }
 
-  DVLOG(2) << "InitializeVideoDecoder()";
+  DVLOG(2) << __FUNCTION__;
   DCHECK(config.is_encrypted());
   DCHECK(config.IsValidConfig());
 
@@ -225,7 +251,7 @@ void PpapiDecryptor::DecryptAndDecodeAudio(
     return;
   }
 
-  DVLOG(3) << "DecryptAndDecodeAudio()";
+  DVLOG(3) << __FUNCTION__;
   if (!plugin_cdm_delegate_->DecryptAndDecodeAudio(encrypted, audio_decode_cb))
     audio_decode_cb.Run(kError, AudioBuffers());
 }
@@ -240,7 +266,7 @@ void PpapiDecryptor::DecryptAndDecodeVideo(
     return;
   }
 
-  DVLOG(3) << "DecryptAndDecodeVideo()";
+  DVLOG(3) << __FUNCTION__;
   if (!plugin_cdm_delegate_->DecryptAndDecodeVideo(encrypted, video_decode_cb))
     video_decode_cb.Run(kError, NULL);
 }
@@ -252,7 +278,7 @@ void PpapiDecryptor::ResetDecoder(StreamType stream_type) {
     return;
   }
 
-  DVLOG(2) << "ResetDecoder() - stream_type: " << stream_type;
+  DVLOG(2) << __FUNCTION__ << " - stream_type: " << stream_type;
   plugin_cdm_delegate_->ResetDecoder(stream_type);
 }
 
@@ -263,17 +289,19 @@ void PpapiDecryptor::DeinitializeDecoder(StreamType stream_type) {
     return;
   }
 
-  DVLOG(2) << "DeinitializeDecoder() - stream_type: " << stream_type;
+  DVLOG(2) << __FUNCTION__ << " - stream_type: " << stream_type;
   plugin_cdm_delegate_->DeinitializeDecoder(stream_type);
 }
 
-void PpapiDecryptor::ReportFailureToCallPlugin(const std::string& session_id) {
+void PpapiDecryptor::ReportFailureToCallPlugin(uint32 session_id) {
+  DCHECK(render_loop_proxy_->BelongsToCurrentThread());
   DVLOG(1) << "Failed to call plugin.";
-  key_error_cb_.Run(session_id, kUnknownError, 0);
+  session_error_cb_.Run(session_id, kUnknownError, 0);
 }
 
 void PpapiDecryptor::OnDecoderInitialized(StreamType stream_type,
                                           bool success) {
+  DCHECK(render_loop_proxy_->BelongsToCurrentThread());
   switch (stream_type) {
     case kAudio:
       DCHECK(!audio_decoder_init_cb_.is_null());
@@ -288,23 +316,34 @@ void PpapiDecryptor::OnDecoderInitialized(StreamType stream_type,
   }
 }
 
-void PpapiDecryptor::KeyAdded(const std::string& session_id) {
+void PpapiDecryptor::OnSessionCreated(uint32 session_id,
+                                      const std::string& web_session_id) {
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
-  key_added_cb_.Run(session_id);
+  session_created_cb_.Run(session_id, web_session_id);
 }
 
-void PpapiDecryptor::KeyError(const std::string& session_id,
-                              media::MediaKeys::KeyError error_code,
-                              int system_code) {
+void PpapiDecryptor::OnSessionMessage(uint32 session_id,
+                                      const std::vector<uint8>& message,
+                                      const std::string& destination_url) {
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
-  key_error_cb_.Run(session_id, error_code, system_code);
+  session_message_cb_.Run(session_id, message, destination_url);
 }
 
-void PpapiDecryptor::KeyMessage(const std::string& session_id,
-                                const std::vector<uint8>& message,
-                                const std::string& default_url) {
+void PpapiDecryptor::OnSessionReady(uint32 session_id) {
   DCHECK(render_loop_proxy_->BelongsToCurrentThread());
-  key_message_cb_.Run(session_id, message, default_url);
+  session_ready_cb_.Run(session_id);
+}
+
+void PpapiDecryptor::OnSessionClosed(uint32 session_id) {
+  DCHECK(render_loop_proxy_->BelongsToCurrentThread());
+  session_closed_cb_.Run(session_id);
+}
+
+void PpapiDecryptor::OnSessionError(uint32 session_id,
+                                    media::MediaKeys::KeyError error_code,
+                                    int system_code) {
+  DCHECK(render_loop_proxy_->BelongsToCurrentThread());
+  session_error_cb_.Run(session_id, error_code, system_code);
 }
 
 }  // namespace content

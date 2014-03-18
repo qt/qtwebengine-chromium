@@ -24,18 +24,18 @@
 #include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGGraphicsElement.h"
+#include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGPointList.h"
 
 namespace WebCore {
 
-class SVGPolyElement : public SVGGraphicsElement
+class SVGPolyElement : public SVGGeometryElement
                      , public SVGExternalResourcesRequired {
 public:
     SVGListPropertyTearOff<SVGPointList>* points();
     SVGListPropertyTearOff<SVGPointList>* animatedPoints();
 
-    SVGPointList& pointList() const { return m_points.value; }
+    SVGPointList& pointsCurrentValue();
 
     static const SVGPropertyInfo* pointsPropertyInfo();
 
@@ -56,19 +56,20 @@ private:
     static void synchronizePoints(SVGElement* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreatePointsWrapper(SVGElement* contextElement);
 
+    mutable SVGSynchronizableAnimatedProperty<SVGPointList> m_points;
+
+private:
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPolyElement)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-protected:
-    mutable SVGSynchronizableAnimatedProperty<SVGPointList> m_points;
 };
 
-inline SVGPolyElement* toSVGPolyElement(SVGElement* element)
+inline bool isSVGPolyElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::polygonTag) || element->hasTagName(SVGNames::polylineTag));
-    return static_cast<SVGPolyElement*>(element);
+    return node.hasTagName(SVGNames::polygonTag) || node.hasTagName(SVGNames::polylineTag);
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGPolyElement);
 
 } // namespace WebCore
 

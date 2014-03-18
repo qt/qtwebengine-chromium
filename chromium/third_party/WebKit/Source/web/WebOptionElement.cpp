@@ -40,7 +40,7 @@
 using namespace WebCore;
 using namespace HTMLNames;
 
-namespace WebKit {
+namespace blink {
 
 void WebOptionElement::setValue(const WebString& newValue)
 {
@@ -60,16 +60,6 @@ int WebOptionElement::index() const
 WebString WebOptionElement::text() const
 {
     return constUnwrap<HTMLOptionElement>()->text();
-}
-
-bool WebOptionElement::defaultSelected() const
-{
-    return constUnwrap<HTMLOptionElement>()->hasAttribute(selectedAttr);
-}
-
-void WebOptionElement::setDefaultSelected(bool newSelected)
-{
-    unwrap<HTMLOptionElement>()->setAttribute(selectedAttr, newSelected ? "" : 0);
 }
 
 WebString WebOptionElement::label() const
@@ -98,4 +88,4 @@ WebOptionElement::operator PassRefPtr<HTMLOptionElement>() const
     return toHTMLOptionElement(m_private.get());
 }
 
-} // namespace WebKit
+} // namespace blink

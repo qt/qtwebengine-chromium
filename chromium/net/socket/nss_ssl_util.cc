@@ -13,6 +13,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/cpu.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -22,16 +23,67 @@
 #include "crypto/nss_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/base/nss_memio.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
 
+namespace {
+
+// CiphersRemove takes a zero-terminated array of cipher suite ids in
+// |to_remove| and sets every instance of them in |ciphers| to zero. It returns
+// true if it found and removed every element of |to_remove|. It assumes that
+// there are no duplicates in |ciphers| nor in |to_remove|.
+bool CiphersRemove(const uint16* to_remove, uint16* ciphers, size_t num) {
+  size_t i, found = 0;
+
+  for (i = 0; ; i++) {
+    if (to_remove[i] == 0)
+      break;
+
+    for (size_t j = 0; j < num; j++) {
+      if (to_remove[i] == ciphers[j]) {
+        ciphers[j] = 0;
+        found++;
+        break;
+      }
+    }
+  }
+
+  return found == i;
+}
+
+// CiphersCompact takes an array of cipher suite ids in |ciphers|, where some
+// entries are zero, and moves the entries so that all the non-zero elements
+// are compacted at the end of the array.
+void CiphersCompact(uint16* ciphers, size_t num) {
+  size_t j = num - 1;
+
+  for (size_t i = num - 1; i < num; i--) {
+    if (ciphers[i] == 0)
+      continue;
+    ciphers[j--] = ciphers[i];
+  }
+}
+
+// CiphersCopy copies the zero-terminated array |in| to |out|. It returns the
+// number of cipher suite ids copied.
+size_t CiphersCopy(const uint16* in, uint16* out) {
+  for (size_t i = 0; ; i++) {
+    if (in[i] == 0)
+      return i;
+    out[i] = in[i];
+  }
+}
+
+}  // anonymous namespace
+
 namespace net {
 
 class NSSSSLInitSingleton {
  public:
-  NSSSSLInitSingleton() {
+  NSSSSLInitSingleton() : model_fd_(NULL) {
     crypto::EnsureNSSInit();
 
     NSS_SetDomesticPolicy();
@@ -81,14 +133,72 @@ class NSSSSLInitSingleton {
     // Enable SSL.
     SSL_OptionSetDefault(SSL_SECURITY, PR_TRUE);
 
+    // Calculate the order of ciphers that we'll use for NSS sockets. (Note
+    // that, even if a cipher is specified in the ordering, it must still be
+    // enabled in order to be included in a ClientHello.)
+    //
+    // Our top preference cipher suites are either forward-secret AES-GCM or
+    // forward-secret ChaCha20-Poly1305. If the local machine has AES-NI then
+    // we prefer AES-GCM, otherwise ChaCha20. The remainder of the cipher suite
+    // preference is inheriented from NSS. */
+    static const uint16 chacha_ciphers[] = {
+      TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+      TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+      0,
+    };
+    static const uint16 aes_gcm_ciphers[] = {
+      TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+      TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+      TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
+      0,
+    };
+    scoped_ptr<uint16[]> ciphers(new uint16[num_ciphers]);
+    memcpy(ciphers.get(), ssl_ciphers, sizeof(uint16)*num_ciphers);
+
+    if (CiphersRemove(chacha_ciphers, ciphers.get(), num_ciphers) &&
+        CiphersRemove(aes_gcm_ciphers, ciphers.get(), num_ciphers)) {
+      CiphersCompact(ciphers.get(), num_ciphers);
+
+      const uint16* preference_ciphers = chacha_ciphers;
+      const uint16* other_ciphers = aes_gcm_ciphers;
+      base::CPU cpu;
+
+      if (cpu.has_aesni() && cpu.has_avx()) {
+        preference_ciphers = aes_gcm_ciphers;
+        other_ciphers = chacha_ciphers;
+      }
+      unsigned i = CiphersCopy(preference_ciphers, ciphers.get());
+      CiphersCopy(other_ciphers, &ciphers[i]);
+
+      if ((model_fd_ = memio_CreateIOLayer(1, 1)) == NULL ||
+          SSL_ImportFD(NULL, model_fd_) == NULL ||
+          SECSuccess !=
+              SSL_CipherOrderSet(model_fd_, ciphers.get(), num_ciphers)) {
+        NOTREACHED();
+        if (model_fd_) {
+          PR_Close(model_fd_);
+          model_fd_ = NULL;
+        }
+      }
+    }
+
     // All other SSL options are set per-session by SSLClientSocket and
     // SSLServerSocket.
+  }
+
+  PRFileDesc* GetModelSocket() {
+    return model_fd_;
   }
 
   ~NSSSSLInitSingleton() {
     // Have to clear the cache, or NSS_Shutdown fails with SEC_ERROR_BUSY.
     SSL_ClearSessionCache();
+    if (model_fd_)
+      PR_Close(model_fd_);
   }
+
+ private:
+  PRFileDesc* model_fd_;
 };
 
 static base::LazyInstance<NSSSSLInitSingleton> g_nss_ssl_init_singleton =
@@ -105,6 +215,10 @@ void EnsureNSSSSLInit() {
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
   g_nss_ssl_init_singleton.Get();
+}
+
+PRFileDesc* GetNSSModelSocket() {
+  return g_nss_ssl_init_singleton.Get().GetModelSocket();
 }
 
 // Map a Chromium net error code to an NSS error code.
@@ -237,6 +351,8 @@ int MapNSSError(PRErrorCode err) {
     // was used earlier.
     case SSL_ERROR_WRONG_CERTIFICATE:
       return ERR_SSL_SERVER_CERT_CHANGED;
+    case SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT:
+      return ERR_SSL_INAPPROPRIATE_FALLBACK;
 
     default: {
       if (IS_SSL_ERROR(err)) {

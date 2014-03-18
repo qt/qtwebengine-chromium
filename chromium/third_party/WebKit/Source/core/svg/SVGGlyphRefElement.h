@@ -30,7 +30,7 @@ namespace WebCore {
 class SVGGlyphRefElement FINAL : public SVGElement,
                                  public SVGURIReference {
 public:
-    static PassRefPtr<SVGGlyphRefElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGGlyphRefElement> create(Document&);
 
     bool hasValidGlyphElement(String& glyphName) const;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -48,7 +48,7 @@ public:
     void setDy(float);
 
 private:
-    SVGGlyphRefElement(const QualifiedName&, Document&);
+    explicit SVGGlyphRefElement(Document&);
 
     template<typename CharType>
     void parseAttributeInternal(const QualifiedName&, const AtomicString&);
@@ -65,11 +65,7 @@ private:
     float m_dy;
 };
 
-inline SVGGlyphRefElement* toSVGGlyphRefElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::glyphRefTag));
-    return static_cast<SVGGlyphRefElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGGlyphRefElement, hasTagName(SVGNames::glyphRefTag));
 
 }
 

@@ -35,7 +35,7 @@ namespace WebCore {
 class SpeechInputResult;
 }
 
-namespace WebKit {
+namespace blink {
 
 // This class holds one speech recognition result including the text and other related
 // fields, as received from the embedder.
@@ -51,11 +51,11 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebString& utterance, double confidence);
-    WEBKIT_EXPORT void assign(const WebSpeechInputResult& other);
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebString& utterance, double confidence);
+    BLINK_EXPORT void assign(const WebSpeechInputResult& other);
+    BLINK_EXPORT void reset();
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebSpeechInputResult(const WTF::PassRefPtr<WebCore::SpeechInputResult>&);
     operator WTF::PassRefPtr<WebCore::SpeechInputResult>() const;
 #endif
@@ -66,6 +66,6 @@ private:
 
 typedef WebVector<WebSpeechInputResult> WebSpeechInputResultArray;
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSpeechInputResult_h

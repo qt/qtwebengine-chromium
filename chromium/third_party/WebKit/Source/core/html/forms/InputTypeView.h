@@ -70,7 +70,7 @@ class InputTypeView : public RefCounted<InputTypeView> {
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    static PassRefPtr<InputTypeView> create(HTMLInputElement*);
+    static PassRefPtr<InputTypeView> create(HTMLInputElement&);
     virtual ~InputTypeView();
 
     virtual bool sizeShouldIncludeDecoration(int defaultSize, int& preferredSize) const;
@@ -94,12 +94,15 @@ public:
     virtual void blur();
     virtual RenderObject* createRenderer(RenderStyle*) const;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer(PassRefPtr<RenderStyle>);
-    virtual void attach();
+    virtual void startResourceLoading();
+    virtual void closePopupView();
+    virtual void createShadowSubtree();
+    virtual void destroyShadowSubtree();
     virtual void minOrMaxAttributeChanged();
     virtual void stepAttributeChanged();
     virtual void altAttributeChanged();
     virtual void srcAttributeChanged();
-    virtual void updateInnerTextValue();
+    virtual void updateView();
     virtual void attributeChanged();
     virtual void multipleAttributeChanged();
     virtual void disabledAttributeChanged();
@@ -110,13 +113,13 @@ public:
     virtual void updateClearButtonVisibility();
 
 protected:
-    InputTypeView(HTMLInputElement* element) : m_element(element) { }
-    HTMLInputElement* element() const { return m_element; }
+    InputTypeView(HTMLInputElement& element) : m_element(element) { }
+    HTMLInputElement& element() const { return m_element; }
 
 private:
-    // Raw pointer because the HTMLInputElement object owns this InputTypeView
+    // Not a RefPtr because the HTMLInputElement object owns this InputTypeView
     // object.
-    HTMLInputElement* m_element;
+    HTMLInputElement& m_element;
 };
 
 } // namespace WebCore

@@ -30,29 +30,28 @@ using net::URLRequestStatus;
 
 namespace {
 
-static const char kForceValueFalse[] = "false";
-static const char kForceValueTrue[] = "true";
-static const char kResponseTypeValueNone[] = "none";
-static const char kResponseTypeValueToken[] = "token";
+const char kForceValueFalse[] = "false";
+const char kForceValueTrue[] = "true";
+const char kResponseTypeValueNone[] = "none";
+const char kResponseTypeValueToken[] = "token";
 
-static const char kOAuth2IssueTokenBodyFormat[] =
+const char kOAuth2IssueTokenBodyFormat[] =
     "force=%s"
     "&response_type=%s"
     "&scope=%s"
     "&client_id=%s"
     "&origin=%s";
-static const char kIssueAdviceKey[] = "issueAdvice";
-static const char kIssueAdviceValueAuto[] = "auto";
-static const char kIssueAdviceValueConsent[] = "consent";
-static const char kAccessTokenKey[] = "token";
-static const char kConsentKey[] = "consent";
-static const char kExpiresInKey[] = "expiresIn";
-static const char kScopesKey[] = "scopes";
-static const char kDescriptionKey[] = "description";
-static const char kDetailKey[] = "detail";
-static const char kDetailSeparators[] = "\n";
-static const char kError[] = "error";
-static const char kMessage[] = "message";
+const char kIssueAdviceKey[] = "issueAdvice";
+const char kIssueAdviceValueConsent[] = "consent";
+const char kAccessTokenKey[] = "token";
+const char kConsentKey[] = "consent";
+const char kExpiresInKey[] = "expiresIn";
+const char kScopesKey[] = "scopes";
+const char kDescriptionKey[] = "description";
+const char kDetailKey[] = "detail";
+const char kDetailSeparators[] = "\n";
+const char kError[] = "error";
+const char kMessage[] = "message";
 
 static GoogleServiceAuthError CreateAuthError(const net::URLFetcher* source) {
   URLRequestStatus status = source->GetStatus();
@@ -259,7 +258,7 @@ bool OAuth2MintTokenFlow::ParseIssueAdviceResponse(
   for (size_t index = 0; index < scopes_list->GetSize(); ++index) {
     const base::DictionaryValue* scopes_entry = NULL;
     IssueAdviceInfoEntry entry;
-    string16 detail;
+    base::string16 detail;
     if (!scopes_list->GetDictionary(index, &scopes_entry) ||
         !scopes_entry->GetString(kDescriptionKey, &entry.description) ||
         !scopes_entry->GetString(kDetailKey, &detail)) {
@@ -268,7 +267,8 @@ bool OAuth2MintTokenFlow::ParseIssueAdviceResponse(
     }
 
     TrimWhitespace(entry.description, TRIM_ALL, &entry.description);
-    static const string16 detail_separators = ASCIIToUTF16(kDetailSeparators);
+    static const base::string16 detail_separators =
+        ASCIIToUTF16(kDetailSeparators);
     Tokenize(detail, detail_separators, &entry.details);
     for (size_t i = 0; i < entry.details.size(); i++)
       TrimWhitespace(entry.details[i], TRIM_ALL, &entry.details[i]);

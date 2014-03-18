@@ -26,7 +26,6 @@
 #include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFitToViewBox.h"
 
 namespace WebCore {
 
@@ -70,24 +69,23 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMarkerElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGMarkerElement::SVGMarkerElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGMarkerElement::SVGMarkerElement(Document& document)
+    : SVGElement(SVGNames::markerTag, document)
+    , m_orientType(SVGMarkerOrientAngle)
     , m_refX(LengthModeWidth)
     , m_refY(LengthModeHeight)
     , m_markerWidth(LengthModeWidth, "3")
     , m_markerHeight(LengthModeHeight, "3")
     , m_markerUnits(SVGMarkerUnitsStrokeWidth)
-    , m_orientType(SVGMarkerOrientAngle)
 {
     // Spec: If the markerWidth/markerHeight attribute is not specified, the effect is as if a value of "3" were specified.
-    ASSERT(hasTagName(SVGNames::markerTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGMarkerElement();
 }
 
-PassRefPtr<SVGMarkerElement> SVGMarkerElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGMarkerElement> SVGMarkerElement::create(Document& document)
 {
-    return adoptRef(new SVGMarkerElement(tagName, document));
+    return adoptRef(new SVGMarkerElement(document));
 }
 
 const AtomicString& SVGMarkerElement::orientTypeIdentifier()
@@ -171,8 +169,9 @@ void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::markerHeightAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGMarkerElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)

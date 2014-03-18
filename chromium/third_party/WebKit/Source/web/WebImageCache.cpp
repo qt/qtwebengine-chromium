@@ -31,11 +31,11 @@
 #include "config.h"
 #include "WebImageCache.h"
 
-#include "core/platform/graphics/chromium/ImageDecodingStore.h"
+#include "platform/graphics/ImageDecodingStore.h"
 
 using WebCore::ImageDecodingStore;
 
-namespace WebKit {
+namespace blink {
 
 void WebImageCache::setCacheLimitInBytes(size_t size)
 {
@@ -58,4 +58,4 @@ unsigned WebImageCache::cacheEntries()
     return ImageDecodingStore::instance()->cacheEntries();
 }
 
-}  // namespace WebKit
+}  // namespace blink

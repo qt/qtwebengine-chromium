@@ -21,11 +21,11 @@
 #ifndef SVGFETurbulenceElement_h
 #define SVGFETurbulenceElement_h
 
-#include "core/platform/graphics/filters/FETurbulence.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FETurbulence.h"
 
 namespace WebCore {
 
@@ -95,10 +95,10 @@ struct SVGPropertyTraits<TurbulenceType> {
 
 class SVGFETurbulenceElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFETurbulenceElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFETurbulenceElement> create(Document&);
 
 private:
-    SVGFETurbulenceElement(const QualifiedName&, Document&);
+    explicit SVGFETurbulenceElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

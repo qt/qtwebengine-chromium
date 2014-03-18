@@ -30,8 +30,8 @@
 
 #include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "weborigin/KURL.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -41,7 +41,7 @@ namespace WebCore {
 
     class ResourceRequest;
     class ResourceResponse;
-    class ScriptExecutionContext;
+    class ExecutionContext;
     class TextResourceDecoder;
     class WorkerScriptLoaderClient;
 
@@ -53,10 +53,16 @@ namespace WebCore {
             return adoptRef(new WorkerScriptLoader());
         }
 
-        void loadSynchronously(ScriptExecutionContext*, const KURL&, CrossOriginRequestPolicy);
-        void loadAsynchronously(ScriptExecutionContext*, const KURL&, CrossOriginRequestPolicy, WorkerScriptLoaderClient*);
+        void loadSynchronously(ExecutionContext*, const KURL&, CrossOriginRequestPolicy);
+        void loadAsynchronously(ExecutionContext*, const KURL&, CrossOriginRequestPolicy, WorkerScriptLoaderClient*);
 
         void notifyError();
+
+        // This will immediately lead to notifyFinished() if loadAsynchronously
+        // is in progress.
+        void cancel();
+
+        void setClient(WorkerScriptLoaderClient* client) { m_client = client; }
 
         String script();
         const KURL& url() const { return m_url; }
@@ -84,7 +90,7 @@ namespace WebCore {
         WorkerScriptLoaderClient* m_client;
         RefPtr<ThreadableLoader> m_threadableLoader;
         String m_responseEncoding;
-        RefPtr<TextResourceDecoder> m_decoder;
+        OwnPtr<TextResourceDecoder> m_decoder;
         StringBuilder m_script;
         KURL m_url;
         KURL m_responseURL;

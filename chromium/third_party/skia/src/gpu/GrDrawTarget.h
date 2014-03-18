@@ -100,6 +100,15 @@ public:
      */
     bool canApplyCoverage() const;
 
+    /** When we're using coverage AA but the blend is incompatible (given gpu
+     * limitations) we should disable AA. */
+    bool shouldDisableCoverageAAForBlend() {
+        // Enable below if we should draw with AA even when it produces
+        // incorrect blending.
+        // return false;
+        return !this->canApplyCoverage();
+    }
+
     /**
      * Given the current draw state and hw support, will HW AA lines be used (if
      * a line primitive type is drawn)?
@@ -326,7 +335,13 @@ public:
      * winding (not inverse or hairline). It will respect the HW antialias flag
      * on the draw state (if possible in the 3D API).
      */
-    void stencilPath(const GrPath*, const SkStrokeRec& stroke, SkPath::FillType fill);
+    void stencilPath(const GrPath*, SkPath::FillType fill);
+
+    /**
+     * Draws a path. Fill must not be a hairline. It will respect the HW
+     * antialias flag on the draw state (if possible in the 3D API).
+     */
+    void drawPath(const GrPath*, SkPath::FillType fill);
 
     /**
      * Helper function for drawing rects. It performs a geometry src push and pop
@@ -356,7 +371,7 @@ public:
         this->drawRect(rect, matrix, NULL, NULL);
     }
     void drawSimpleRect(const SkIRect& irect, const SkMatrix* matrix = NULL) {
-        SkRect rect = SkRect::MakeFromIRect(irect);
+        SkRect rect = SkRect::Make(irect);
         this->drawRect(rect, matrix, NULL, NULL);
     }
 
@@ -399,10 +414,12 @@ public:
     /**
      * Clear the current render target if one isn't passed in. Ignores the
      * clip and all other draw state (blend mode, stages, etc). Clears the
-     * whole thing if rect is NULL, otherwise just the rect.
+     * whole thing if rect is NULL, otherwise just the rect. If canIgnoreRect
+     * is set then the entire render target can be optionally cleared.
      */
     virtual void clear(const SkIRect* rect,
                        GrColor color,
+                       bool canIgnoreRect,
                        GrRenderTarget* renderTarget = NULL) = 0;
 
     /**
@@ -447,6 +464,14 @@ public:
      * For subclass internal use to invoke a call to onDraw(). See DrawInfo below.
      */
     void executeDraw(const DrawInfo& info) { this->onDraw(info); }
+
+    /**
+     * For subclass internal use to invoke a call to onDrawPath().
+     */
+    void executeDrawPath(const GrPath* path, SkPath::FillType fill,
+                         const GrDeviceCoordTexture* dstCopy) {
+        this->onDrawPath(path, fill, dstCopy);
+    }
 
     ////////////////////////////////////////////////////////////////////////////
 
@@ -674,7 +699,7 @@ protected:
             case kArray_GeometrySrcType:
                 return src.fIndexCount;
             case kBuffer_GeometrySrcType:
-                return src.fIndexBuffer->sizeInBytes() / sizeof(uint16_t);
+                return static_cast<int>(src.fIndexBuffer->sizeInBytes() / sizeof(uint16_t));
             default:
                 GrCrash("Unexpected Index Source.");
                 return 0;
@@ -761,15 +786,6 @@ protected:
         }
         const SkRect* getDevBounds() const { return fDevBounds; }
 
-        bool getDevIBounds(SkIRect* bounds) const {
-            if (NULL != fDevBounds) {
-                fDevBounds->roundOut(bounds);
-                return true;
-            } else {
-                return false;
-            }
-        }
-
         // NULL if no copy of the dst is needed for the draw.
         const GrDeviceCoordTexture* getDstCopy() const {
             if (NULL != fDstCopy.texture()) {
@@ -833,7 +849,10 @@ private:
                             const SkMatrix* matrix,
                             const SkRect* localRect,
                             const SkMatrix* localMatrix);
-    virtual void onStencilPath(const GrPath*, const SkStrokeRec& stroke, SkPath::FillType fill) = 0;
+
+    virtual void onStencilPath(const GrPath*, SkPath::FillType) = 0;
+    virtual void onDrawPath(const GrPath*, SkPath::FillType,
+                            const GrDeviceCoordTexture* dstCopy) = 0;
 
     // helpers for reserving vertex and index space.
     bool reserveVertexSpace(size_t vertexSize,
@@ -852,7 +871,10 @@ private:
 
     // Makes a copy of the dst if it is necessary for the draw. Returns false if a copy is required
     // but couldn't be made. Otherwise, returns true.
-    bool setupDstReadIfNecessary(DrawInfo* info);
+    bool setupDstReadIfNecessary(DrawInfo* info) {
+        return this->setupDstReadIfNecessary(&info->fDstCopy, info->getDevBounds());
+    }
+    bool setupDstReadIfNecessary(GrDeviceCoordTexture* dstCopy, const SkRect* drawBounds);
 
     // Check to see if this set of draw commands has been sent out
     virtual bool       isIssued(uint32_t drawID) { return true; }

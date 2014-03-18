@@ -26,46 +26,45 @@
 #ifndef MediaStreamTrackSourcesRequest_h
 #define MediaStreamTrackSourcesRequest_h
 
-#include "core/platform/Timer.h"
 #include "modules/mediastream/SourceInfo.h"
+#include "platform/Timer.h"
 #include "public/platform/WebVector.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit {
+namespace blink {
 class WebSourceInfo;
 }
 
 namespace WebCore {
 
 class MediaStreamTrackSourcesCallback;
-class ScriptExecutionContext;
 
-class MediaStreamTrackSourcesRequest : public RefCounted<MediaStreamTrackSourcesRequest> {
+class MediaStreamTrackSourcesRequest FINAL : public RefCounted<MediaStreamTrackSourcesRequest> {
 public:
     class ExtraData : public RefCounted<ExtraData> {
     public:
         virtual ~ExtraData() { }
     };
 
-    static PassRefPtr<MediaStreamTrackSourcesRequest> create(ScriptExecutionContext*, PassRefPtr<MediaStreamTrackSourcesCallback>);
-    virtual ~MediaStreamTrackSourcesRequest();
+    static PassRefPtr<MediaStreamTrackSourcesRequest> create(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
+    ~MediaStreamTrackSourcesRequest();
 
     String origin() { return m_origin; }
 
-    void requestSucceeded(const WebKit::WebVector<WebKit::WebSourceInfo>&);
+    void requestSucceeded(const blink::WebVector<blink::WebSourceInfo>&);
 
     PassRefPtr<ExtraData> extraData() const { return m_extraData; }
     void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
 private:
-    MediaStreamTrackSourcesRequest(ScriptExecutionContext*, PassRefPtr<MediaStreamTrackSourcesCallback>);
+    MediaStreamTrackSourcesRequest(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
 
     void scheduledEventTimerFired(Timer<MediaStreamTrackSourcesRequest>*);
 
-    RefPtr<MediaStreamTrackSourcesCallback> m_callback;
+    OwnPtr<MediaStreamTrackSourcesCallback> m_callback;
     RefPtr<ExtraData> m_extraData;
     String m_origin;
     Timer<MediaStreamTrackSourcesRequest> m_scheduledEventTimer;

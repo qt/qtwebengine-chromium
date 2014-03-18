@@ -33,14 +33,14 @@
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/page/PagePopupClient.h"
-#include "core/platform/DateTimeChooser.h"
+#include "platform/DateTimeChooser.h"
 
 namespace WebCore {
 class PagePopup;
 class DateTimeChooserClient;
 }
 
-namespace WebKit {
+namespace blink {
 
 class ChromeClientImpl;
 

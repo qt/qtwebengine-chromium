@@ -30,7 +30,7 @@
 #include "core/editing/InsertTextCommand.h"
 #include "core/editing/SetSelectionCommand.h"
 #include "core/editing/TextIterator.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -46,9 +46,6 @@ void SpellingCorrectionCommand::doApply()
 {
     m_corrected = plainText(m_rangeToBeCorrected.get());
     if (!m_corrected.length())
-        return;
-
-    if (!document().frame()->selection().shouldChangeSelection(m_selectionToBeCorrected))
         return;
 
     applyCommandToComposite(SetSelectionCommand::create(m_selectionToBeCorrected, FrameSelection::SpellCorrectionTriggered | FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle));

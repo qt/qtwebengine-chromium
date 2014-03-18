@@ -125,16 +125,6 @@ static inline size_t GrSizeAlignDown(size_t x, uint32_t alignment) {
  */
 #define GR_ARRAY_COUNT(array)  SK_ARRAY_COUNT(array)
 
-//!< allocate a block of memory, will never return NULL
-extern void* GrMalloc(size_t bytes);
-
-//!< free block allocated by GrMalloc. ptr may be NULL
-extern void GrFree(void* ptr);
-
-static inline void Gr_bzero(void* dst, size_t size) {
-    memset(dst, 0, size);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -248,19 +238,25 @@ enum GrMaskFormat {
     kA8_GrMaskFormat,    //!< 1-byte per pixel
     kA565_GrMaskFormat,  //!< 2-bytes per pixel
     kA888_GrMaskFormat,  //!< 4-bytes per pixel
+    kARGB_GrMaskFormat,  //!< 4-bytes per pixel, color format
 
-    kCount_GrMaskFormats //!< used to allocate arrays sized for mask formats
+    kLast_GrMaskFormat = kARGB_GrMaskFormat
 };
+static const int kMaskFormatCount = kLast_GrMaskFormat + 1;
 
 /**
  *  Return the number of bytes-per-pixel for the specified mask format.
  */
 static inline int GrMaskFormatBytesPerPixel(GrMaskFormat format) {
-    SkASSERT((unsigned)format <= 2);
+    SkASSERT((unsigned)format <= 3);
     // kA8   (0) -> 1
     // kA565 (1) -> 2
     // kA888 (2) -> 4
-    return 1 << (int)format;
+    // kARGB (3) -> 4
+    static const int sBytesPerPixel[] = { 1, 2, 4, 4 };
+    SK_COMPILE_ASSERT(SK_ARRAY_COUNT(sBytesPerPixel) == kMaskFormatCount, array_size_mismatch);
+
+    return sBytesPerPixel[(int) format];
 }
 
 /**
@@ -617,6 +613,7 @@ enum GrGLBackendState {
     kProgram_GrGLBackendState          = 1 << 8,
     kFixedFunction_GrGLBackendState    = 1 << 9,
     kMisc_GrGLBackendState             = 1 << 10,
+    kPathRendering_GrGLBackendState    = 1 << 11,
     kALL_GrGLBackendState              = 0xffff
 };
 

@@ -27,6 +27,7 @@
 #ifndef ElementShadow_h
 #define ElementShadow_h
 
+#include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "wtf/DoublyLinkedList.h"
@@ -37,8 +38,6 @@
 #include "wtf/Vector.h"
 
 namespace WebCore {
-
-class InsertionPoint;
 
 class ElementShadow {
     WTF_MAKE_NONCOPYABLE(ElementShadow); WTF_MAKE_FAST_ALLOCATED;
@@ -51,7 +50,7 @@ public:
     ShadowRoot* oldestShadowRoot() const { return m_shadowRoots.tail(); }
     ElementShadow* containingShadow() const;
 
-    ShadowRoot* addShadowRoot(Element* shadowHost, ShadowRoot::ShadowRootType);
+    ShadowRoot& addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType);
 
     bool applyAuthorStyles() const { return m_applyAuthorStyles; }
     bool didAffectApplyAuthorStyles();
@@ -69,7 +68,10 @@ public:
     void distributeIfNeeded();
     void setNeedsDistributionRecalc();
 
-    InsertionPoint* findInsertionPointFor(const Node*) const;
+    const InsertionPoint* finalDestinationInsertionPointFor(const Node*) const;
+    const DestinationInsertionPoints* destinationInsertionPointsFor(const Node*) const;
+
+    void didDistributeNode(const Node*, InsertionPoint*);
 
 private:
     ElementShadow();
@@ -79,15 +81,16 @@ private:
 
     void distribute();
     void clearDistribution();
-    void populate(Node*, Vector<Node*>&);
-    void collectSelectFeatureSetFrom(ShadowRoot*);
-    void distributeSelectionsTo(InsertionPoint*, const Vector<Node*>& pool, Vector<bool>& distributed);
+
+    void collectSelectFeatureSetFrom(ShadowRoot&);
     void distributeNodeChildrenTo(InsertionPoint*, ContainerNode*);
 
     bool needsSelectFeatureSet() const { return m_needsSelectFeatureSet; }
     void setNeedsSelectFeatureSet() { m_needsSelectFeatureSet = true; }
 
-    HashMap<const Node*, RefPtr<InsertionPoint> > m_nodeToInsertionPoint;
+    typedef HashMap<const Node*, DestinationInsertionPoints> NodeToDestinationInsertionPoints;
+    NodeToDestinationInsertionPoints m_nodeToInsertionPoints;
+
     SelectRuleFeatureSet m_selectFeatures;
     DoublyLinkedList<ShadowRoot> m_shadowRoots;
     bool m_needsDistributionRecalc;
@@ -103,9 +106,14 @@ inline Element* ElementShadow::host() const
 
 inline ShadowRoot* Node::youngestShadowRoot() const
 {
-    if (!this->isElementNode())
+    if (!isElementNode())
         return 0;
-    if (ElementShadow* shadow = toElement(this)->shadow())
+    return toElement(this)->youngestShadowRoot();
+}
+
+inline ShadowRoot* Element::youngestShadowRoot() const
+{
+    if (ElementShadow* shadow = this->shadow())
         return shadow->youngestShadowRoot();
     return 0;
 }
@@ -122,16 +130,6 @@ inline void ElementShadow::distributeIfNeeded()
     if (m_needsDistributionRecalc)
         distribute();
     m_needsDistributionRecalc = false;
-}
-
-inline ElementShadow* shadowOfParent(const Node* node)
-{
-    if (!node)
-        return 0;
-    if (Node* parent = node->parentNode())
-        if (parent->isElementNode())
-            return toElement(parent)->shadow();
-    return 0;
 }
 
 } // namespace

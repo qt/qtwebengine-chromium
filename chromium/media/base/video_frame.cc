@@ -26,15 +26,13 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
     base::TimeDelta timestamp) {
   DCHECK(IsValidConfig(format, coded_size, visible_rect, natural_size));
   scoped_refptr<VideoFrame> frame(new VideoFrame(
-      format, coded_size, visible_rect, natural_size, timestamp));
+      format, coded_size, visible_rect, natural_size, timestamp, false));
   switch (format) {
-    case VideoFrame::RGB32:
-      frame->AllocateRGB(4u);
-      break;
     case VideoFrame::YV12:
     case VideoFrame::YV12A:
     case VideoFrame::YV16:
     case VideoFrame::I420:
+    case VideoFrame::YV12J:
       frame->AllocateYUV();
       break;
     default:
@@ -46,26 +44,26 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
 // static
 std::string VideoFrame::FormatToString(VideoFrame::Format format) {
   switch (format) {
-    case VideoFrame::INVALID:
-      return "INVALID";
-    case VideoFrame::RGB32:
-      return "RGB32";
+    case VideoFrame::UNKNOWN:
+      return "UNKNOWN";
     case VideoFrame::YV12:
       return "YV12";
     case VideoFrame::YV16:
       return "YV16";
-    case VideoFrame::EMPTY:
-      return "EMPTY";
     case VideoFrame::I420:
       return "I420";
     case VideoFrame::NATIVE_TEXTURE:
       return "NATIVE_TEXTURE";
-#if defined(GOOGLE_TV)
+#if defined(VIDEO_HOLE)
     case VideoFrame::HOLE:
       return "HOLE";
-#endif
+#endif  // defined(VIDEO_HOLE)
     case VideoFrame::YV12A:
       return "YV12A";
+    case VideoFrame::YV12J:
+      return "YV12J";
+    case VideoFrame::HISTOGRAM_MAX:
+      return "HISTOGRAM_MAX";
   }
   NOTREACHED() << "Invalid videoframe format provided: " << format;
   return "";
@@ -76,7 +74,7 @@ bool VideoFrame::IsValidConfig(VideoFrame::Format format,
                                const gfx::Size& coded_size,
                                const gfx::Rect& visible_rect,
                                const gfx::Size& natural_size) {
-  return (format != VideoFrame::INVALID &&
+  return (format != VideoFrame::UNKNOWN &&
           !coded_size.IsEmpty() &&
           coded_size.GetArea() <= limits::kMaxCanvas &&
           coded_size.width() <= limits::kMaxDimension &&
@@ -93,7 +91,7 @@ bool VideoFrame::IsValidConfig(VideoFrame::Format format,
 
 // static
 scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
-    const scoped_refptr<MailboxHolder>& mailbox_holder,
+    scoped_ptr<MailboxHolder> mailbox_holder,
     uint32 texture_target,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
@@ -101,9 +99,13 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
     base::TimeDelta timestamp,
     const ReadPixelsCB& read_pixels_cb,
     const base::Closure& no_longer_needed_cb) {
-  scoped_refptr<VideoFrame> frame(new VideoFrame(
-      NATIVE_TEXTURE, coded_size, visible_rect, natural_size, timestamp));
-  frame->texture_mailbox_holder_ = mailbox_holder;
+  scoped_refptr<VideoFrame> frame(new VideoFrame(NATIVE_TEXTURE,
+                                                 coded_size,
+                                                 visible_rect,
+                                                 natural_size,
+                                                 timestamp,
+                                                 false));
+  frame->texture_mailbox_holder_ = mailbox_holder.Pass();
   frame->texture_target_ = texture_target;
   frame->read_pixels_cb_ = read_pixels_cb;
   frame->no_longer_needed_cb_ = no_longer_needed_cb;
@@ -118,7 +120,7 @@ void VideoFrame::ReadPixelsFromNativeTexture(const SkBitmap& pixels) {
 }
 
 // static
-scoped_refptr<VideoFrame> VideoFrame::WrapExternalSharedMemory(
+scoped_refptr<VideoFrame> VideoFrame::WrapExternalPackedMemory(
     Format format,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
@@ -134,7 +136,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalSharedMemory(
   switch (format) {
     case I420: {
       scoped_refptr<VideoFrame> frame(new VideoFrame(
-          format, coded_size, visible_rect, natural_size, timestamp));
+          format, coded_size, visible_rect, natural_size, timestamp, false));
       frame->shared_memory_handle_ = handle;
       frame->strides_[kYPlane] = coded_size.width();
       frame->strides_[kUPlane] = coded_size.width() / 2;
@@ -167,7 +169,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
     const base::Closure& no_longer_needed_cb) {
   DCHECK(format == YV12 || format == YV16 || format == I420) << format;
   scoped_refptr<VideoFrame> frame(new VideoFrame(
-      format, coded_size, visible_rect, natural_size, timestamp));
+      format, coded_size, visible_rect, natural_size, timestamp, false));
   frame->strides_[kYPlane] = y_stride;
   frame->strides_[kUPlane] = u_stride;
   frame->strides_[kVPlane] = v_stride;
@@ -179,10 +181,30 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
 }
 
 // static
-scoped_refptr<VideoFrame> VideoFrame::CreateEmptyFrame() {
-  return new VideoFrame(
-      VideoFrame::EMPTY, gfx::Size(), gfx::Rect(), gfx::Size(),
-      base::TimeDelta());
+scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
+      const scoped_refptr<VideoFrame>& frame,
+      const base::Closure& no_longer_needed_cb) {
+  scoped_refptr<VideoFrame> wrapped_frame(new VideoFrame(
+      frame->format(), frame->coded_size(), frame->visible_rect(),
+      frame->natural_size(), frame->GetTimestamp(), frame->end_of_stream()));
+
+  for (size_t i = 0; i < NumPlanes(frame->format()); ++i) {
+    wrapped_frame->strides_[i] = frame->stride(i);
+    wrapped_frame->data_[i] = frame->data(i);
+  }
+
+  wrapped_frame->no_longer_needed_cb_ = no_longer_needed_cb;
+  return wrapped_frame;
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::CreateEOSFrame() {
+  return new VideoFrame(VideoFrame::UNKNOWN,
+                        gfx::Size(),
+                        gfx::Rect(),
+                        gfx::Size(),
+                        kNoTimestamp(),
+                        true);
 }
 
 // static
@@ -205,8 +227,8 @@ scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(const gfx::Size& size) {
   return CreateColorFrame(size, kBlackY, kBlackUV, kBlackUV, kZero);
 }
 
-#if defined(GOOGLE_TV)
-// This block and other blocks wrapped around #if defined(GOOGLE_TV) is not
+#if defined(VIDEO_HOLE)
+// This block and other blocks wrapped around #if defined(VIDEO_HOLE) is not
 // maintained by the general compositor team. Please contact the following
 // people instead:
 //
@@ -218,29 +240,28 @@ scoped_refptr<VideoFrame> VideoFrame::CreateHoleFrame(
     const gfx::Size& size) {
   DCHECK(IsValidConfig(VideoFrame::HOLE, size, gfx::Rect(size), size));
   scoped_refptr<VideoFrame> frame(new VideoFrame(
-      VideoFrame::HOLE, size, gfx::Rect(size), size, base::TimeDelta()));
+      VideoFrame::HOLE, size, gfx::Rect(size), size, base::TimeDelta(), false));
   return frame;
 }
-#endif
+#endif  // defined(VIDEO_HOLE)
 
 // static
 size_t VideoFrame::NumPlanes(Format format) {
   switch (format) {
     case VideoFrame::NATIVE_TEXTURE:
-#if defined(GOOGLE_TV)
+#if defined(VIDEO_HOLE)
     case VideoFrame::HOLE:
-#endif
+#endif  // defined(VIDEO_HOLE)
       return 0;
-    case VideoFrame::RGB32:
-      return 1;
     case VideoFrame::YV12:
     case VideoFrame::YV16:
     case VideoFrame::I420:
+    case VideoFrame::YV12J:
       return 3;
     case VideoFrame::YV12A:
       return 4;
-    case VideoFrame::EMPTY:
-    case VideoFrame::INVALID:
+    case VideoFrame::UNKNOWN:
+    case VideoFrame::HISTOGRAM_MAX:
       break;
   }
   NOTREACHED() << "Unsupported video frame format: " << format;
@@ -255,61 +276,78 @@ static inline size_t RoundUp(size_t value, size_t alignment) {
 
 // static
 size_t VideoFrame::AllocationSize(Format format, const gfx::Size& coded_size) {
+  size_t total = 0;
+  for (size_t i = 0; i < NumPlanes(format); ++i)
+    total += PlaneAllocationSize(format, i, coded_size);
+  return total;
+}
+
+// static
+size_t VideoFrame::PlaneAllocationSize(Format format,
+                                       size_t plane,
+                                       const gfx::Size& coded_size) {
+  const size_t area =
+      RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
   switch (format) {
-    case VideoFrame::RGB32:
-      return coded_size.GetArea() * 4;
     case VideoFrame::YV12:
+    case VideoFrame::YV12J:
     case VideoFrame::I420: {
-      const size_t rounded_size =
-          RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
-      return rounded_size * 3 / 2;
+      switch (plane) {
+        case VideoFrame::kYPlane:
+          return area;
+        case VideoFrame::kUPlane:
+        case VideoFrame::kVPlane:
+          return area / 4;
+        default:
+          break;
+      }
     }
     case VideoFrame::YV12A: {
-      const size_t rounded_size =
-          RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
-      return rounded_size * 5 / 2;
+      switch (plane) {
+        case VideoFrame::kYPlane:
+        case VideoFrame::kAPlane:
+          return area;
+        case VideoFrame::kUPlane:
+        case VideoFrame::kVPlane:
+          return area / 4;
+        default:
+          break;
+      }
     }
     case VideoFrame::YV16: {
-      const size_t rounded_size =
-          RoundUp(coded_size.width(), 2) * RoundUp(coded_size.height(), 2);
-      return rounded_size * 2;
+      switch (plane) {
+        case VideoFrame::kYPlane:
+          return area;
+        case VideoFrame::kUPlane:
+        case VideoFrame::kVPlane:
+          return area / 2;
+        default:
+          break;
+      }
     }
-    case VideoFrame::INVALID:
-    case VideoFrame::EMPTY:
+    case VideoFrame::UNKNOWN:
     case VideoFrame::NATIVE_TEXTURE:
-#if defined(GOOGLE_TV)
+    case VideoFrame::HISTOGRAM_MAX:
+#if defined(VIDEO_HOLE)
     case VideoFrame::HOLE:
-#endif
+#endif  // defined(VIDEO_HOLE)
       break;
   }
-  NOTREACHED() << "Unsupported video frame format: " << format;
+  NOTREACHED() << "Unsupported video frame format/plane: "
+               << format << "/" << plane;
   return 0;
 }
 
-// Release data allocated by AllocateRGB() or AllocateYUV().
+// Release data allocated by AllocateYUV().
 static void ReleaseData(uint8* data) {
   DCHECK(data);
   base::AlignedFree(data);
 }
 
-void VideoFrame::AllocateRGB(size_t bytes_per_pixel) {
-  // Round up to align at least at a 16-byte boundary for each row.
-  // This is sufficient for MMX and SSE2 reads (movq/movdqa).
-  size_t bytes_per_row = RoundUp(coded_size_.width(),
-                                 kFrameSizeAlignment) * bytes_per_pixel;
-  size_t aligned_height = RoundUp(coded_size_.height(), kFrameSizeAlignment);
-  strides_[VideoFrame::kRGBPlane] = bytes_per_row;
-  data_[VideoFrame::kRGBPlane] = reinterpret_cast<uint8*>(
-      base::AlignedAlloc(bytes_per_row * aligned_height + kFrameSizePadding,
-                         kFrameAddressAlignment));
-  no_longer_needed_cb_ = base::Bind(&ReleaseData, data_[VideoFrame::kRGBPlane]);
-  DCHECK(!(reinterpret_cast<intptr_t>(data_[VideoFrame::kRGBPlane]) & 7));
-  COMPILE_ASSERT(0 == VideoFrame::kRGBPlane, RGB_data_must_be_index_0);
-}
-
 void VideoFrame::AllocateYUV() {
   DCHECK(format_ == VideoFrame::YV12 || format_ == VideoFrame::YV16 ||
-         format_ == VideoFrame::YV12A || format_ == VideoFrame::I420);
+         format_ == VideoFrame::YV12A || format_ == VideoFrame::I420 ||
+         format_ == VideoFrame::YV12J);
   // Align Y rows at least at 16 byte boundaries.  The stride for both
   // YV12 and YV16 is 1/2 of the stride of Y.  For YV12, every row of bytes for
   // U and V applies to two rows of Y (one byte of UV for 4 bytes of Y), so in
@@ -364,14 +402,16 @@ VideoFrame::VideoFrame(VideoFrame::Format format,
                        const gfx::Size& coded_size,
                        const gfx::Rect& visible_rect,
                        const gfx::Size& natural_size,
-                       base::TimeDelta timestamp)
+                       base::TimeDelta timestamp,
+                       bool end_of_stream)
     : format_(format),
       coded_size_(coded_size),
       visible_rect_(visible_rect),
       natural_size_(natural_size),
       texture_target_(0),
       shared_memory_handle_(base::SharedMemory::NULLHandle()),
-      timestamp_(timestamp) {
+      timestamp_(timestamp),
+      end_of_stream_(end_of_stream) {
   memset(&strides_, 0, sizeof(strides_));
   memset(&data_, 0, sizeof(data_));
 }
@@ -394,10 +434,6 @@ int VideoFrame::row_bytes(size_t plane) const {
   DCHECK(IsValidPlane(plane));
   int width = coded_size_.width();
   switch (format_) {
-    // 32bpp.
-    case RGB32:
-      return width * 4;
-
     // Planar, 8bpp.
     case YV12A:
       if (plane == kAPlane)
@@ -406,6 +442,7 @@ int VideoFrame::row_bytes(size_t plane) const {
     case YV12:
     case YV16:
     case I420:
+    case YV12J:
       if (plane == kYPlane)
         return width;
       return RoundUp(width, 2) / 2;
@@ -423,7 +460,6 @@ int VideoFrame::rows(size_t plane) const {
   DCHECK(IsValidPlane(plane));
   int height = coded_size_.height();
   switch (format_) {
-    case RGB32:
     case YV16:
       return height;
 
@@ -451,10 +487,9 @@ uint8* VideoFrame::data(size_t plane) const {
   return data_[plane];
 }
 
-const scoped_refptr<VideoFrame::MailboxHolder>& VideoFrame::texture_mailbox()
-    const {
+VideoFrame::MailboxHolder* VideoFrame::texture_mailbox() const {
   DCHECK_EQ(format_, NATIVE_TEXTURE);
-  return texture_mailbox_holder_;
+  return texture_mailbox_holder_.get();
 }
 
 uint32 VideoFrame::texture_target() const {
@@ -464,10 +499,6 @@ uint32 VideoFrame::texture_target() const {
 
 base::SharedMemoryHandle VideoFrame::shared_memory_handle() const {
   return shared_memory_handle_;
-}
-
-bool VideoFrame::IsEndOfStream() const {
-  return format_ == VideoFrame::EMPTY;
 }
 
 void VideoFrame::HashFrameForTesting(base::MD5Context* context) {

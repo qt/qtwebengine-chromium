@@ -36,15 +36,15 @@
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "wtf/HashMap.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaConstraintsImpl> MediaConstraintsImpl::create(const Dictionary& constraints, ExceptionState& es)
+PassRefPtr<MediaConstraintsImpl> MediaConstraintsImpl::create(const Dictionary& constraints, ExceptionState& exceptionState)
 {
     RefPtr<MediaConstraintsImpl> object = adoptRef(new MediaConstraintsImpl());
     if (!object->initialize(constraints)) {
-        es.throwDOMException(TypeMismatchError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
     return object.release();

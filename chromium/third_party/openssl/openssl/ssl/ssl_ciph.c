@@ -298,6 +298,7 @@ static const SSL_CIPHER cipher_aliases[]={
 	{0,SSL_TXT_CAMELLIA128,0,0,0,SSL_CAMELLIA128,0,0,0,0,0,0},
 	{0,SSL_TXT_CAMELLIA256,0,0,0,SSL_CAMELLIA256,0,0,0,0,0,0},
 	{0,SSL_TXT_CAMELLIA   ,0,0,0,SSL_CAMELLIA128|SSL_CAMELLIA256,0,0,0,0,0,0},
+	{0,SSL_TXT_CHACHA20   ,0,0,0,SSL_CHACHA20POLY1305,0,0,0,0,0,0},
 
 	/* MAC aliases */	
 	{0,SSL_TXT_MD5,0,     0,0,0,SSL_MD5,   0,0,0,0,0},
@@ -484,32 +485,72 @@ static void load_builtin_compressions(void)
 	}
 #endif
 
+/* ssl_cipher_get_comp sets |comp| to the correct SSL_COMP for the given
+ * session and returns 1. On error it returns 0. */
+int ssl_cipher_get_comp(const SSL_SESSION *s, SSL_COMP **comp)
+	{
+	int i;
+
+	SSL_COMP ctmp;
+#ifndef OPENSSL_NO_COMP
+	load_builtin_compressions();
+#endif
+
+	*comp=NULL;
+	ctmp.id=s->compress_meth;
+	if (ssl_comp_methods != NULL)
+		{
+		i=sk_SSL_COMP_find(ssl_comp_methods,&ctmp);
+		if (i >= 0)
+			*comp=sk_SSL_COMP_value(ssl_comp_methods,i);
+		else
+			*comp=NULL;
+		}
+
+	return 1;
+	}
+
+/* ssl_cipher_get_evp_aead sets |*aead| to point to the correct EVP_AEAD object
+ * for |s->cipher|. It returns 1 on success and 0 on error. */
+int ssl_cipher_get_evp_aead(const SSL_SESSION *s, const EVP_AEAD **aead)
+	{
+	const SSL_CIPHER *c = s->cipher;
+
+	*aead = NULL;
+
+	if (c == NULL)
+		return 0;
+	if ((c->algorithm2 & SSL_CIPHER_ALGORITHM2_AEAD) == 0)
+		return 0;
+
+#ifndef OPENSSL_NO_AES
+	switch (c->algorithm_enc)
+		{
+	case SSL_AES128GCM:
+		*aead = EVP_aead_aes_128_gcm();
+		return 1;
+	case SSL_CHACHA20POLY1305:
+		*aead = EVP_aead_chacha20_poly1305();
+		return 1;
+		}
+#endif
+
+	return 0;
+	}
+
 int ssl_cipher_get_evp(const SSL_SESSION *s, const EVP_CIPHER **enc,
-	     const EVP_MD **md, int *mac_pkey_type, int *mac_secret_size,SSL_COMP **comp)
+	     const EVP_MD **md, int *mac_pkey_type, int *mac_secret_size)
 	{
 	int i;
 	const SSL_CIPHER *c;
 
 	c=s->cipher;
 	if (c == NULL) return(0);
-	if (comp != NULL)
-		{
-		SSL_COMP ctmp;
-#ifndef OPENSSL_NO_COMP
-		load_builtin_compressions();
-#endif
 
-		*comp=NULL;
-		ctmp.id=s->compress_meth;
-		if (ssl_comp_methods != NULL)
-			{
-			i=sk_SSL_COMP_find(ssl_comp_methods,&ctmp);
-			if (i >= 0)
-				*comp=sk_SSL_COMP_value(ssl_comp_methods,i);
-			else
-				*comp=NULL;
-			}
-		}
+	/* This function doesn't deal with EVP_AEAD. See
+	 * |ssl_cipher_get_aead_evp|. */
+	if (c->algorithm2 & SSL_CIPHER_ALGORITHM2_AEAD)
+		return(0);
 
 	if ((enc == NULL) || (md == NULL)) return(0);
 
@@ -1401,7 +1442,9 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_list(const SSL_METHOD *ssl_method,
 	ssl_cipher_apply_rule(0, SSL_kEECDH, 0, 0, 0, 0, 0, CIPHER_ADD, -1, &head, &tail);
 	ssl_cipher_apply_rule(0, SSL_kEECDH, 0, 0, 0, 0, 0, CIPHER_DEL, -1, &head, &tail);
 
-	/* AES is our preferred symmetric cipher */
+	/* CHACHA20 is fast and safe on all hardware and is thus our preferred
+	 * symmetric cipher, with AES second. */
+	ssl_cipher_apply_rule(0, 0, 0, SSL_CHACHA20POLY1305, 0, 0, 0, CIPHER_ADD, -1, &head, &tail);
 	ssl_cipher_apply_rule(0, 0, 0, SSL_AES, 0, 0, 0, CIPHER_ADD, -1, &head, &tail);
 
 	/* Temporarily enable everything else for sorting */
@@ -1674,6 +1717,9 @@ char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf, int len)
 		break;
 	case SSL_SEED:
 		enc="SEED(128)";
+		break;
+	case SSL_CHACHA20POLY1305:
+		enc="ChaCha20-Poly1305";
 		break;
 	default:
 		enc="unknown";

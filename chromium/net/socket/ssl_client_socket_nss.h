@@ -24,6 +24,7 @@
 #include "net/base/net_log.h"
 #include "net/base/nss_memio.h"
 #include "net/cert/cert_verify_result.h"
+#include "net/cert/ct_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/server_bound_cert_service.h"
@@ -37,6 +38,7 @@ namespace net {
 
 class BoundNetLog;
 class CertVerifier;
+class CTVerifier;
 class ClientSocketHandle;
 class ServerBoundCertService;
 class SingleRequestCertVerifier;
@@ -135,12 +137,21 @@ class SSLClientSocketNSS : public SSLClientSocket {
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
 
+  void VerifyCT();
+
   void LogConnectionTypeMetrics() const;
 
   // The following methods are for debugging bug 65948. Will remove this code
   // after fixing bug 65948.
   void EnsureThreadIdAssigned() const;
   bool CalledOnValidThread() const;
+
+  // Adds the SignedCertificateTimestamps from ct_verify_result_ to |ssl_info|.
+  // SCTs are held in three separate vectors in ct_verify_result, each
+  // vetor representing a particular verification state, this method associates
+  // each of the SCTs with the corresponding SCTVerifyStatus as it adds it to
+  // the |ssl_info|.signed_certificate_timestamps list.
+  void AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const;
 
   // The task runner used to perform NSS operations.
   scoped_refptr<base::SequencedTaskRunner> nss_task_runner_;
@@ -157,6 +168,10 @@ class SSLClientSocketNSS : public SSLClientSocket {
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
+
+  // Certificate Transparency: Verifier and result holder.
+  ct::CTVerifyResult ct_verify_result_;
+  CTVerifier* cert_transparency_verifier_;
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ServerBoundCertService* server_bound_cert_service_;

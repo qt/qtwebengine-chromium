@@ -66,6 +66,7 @@
 #include "sync/syncable/syncable_util.h"
 #include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/callback_counter.h"
+#include "sync/test/engine/fake_model_worker.h"
 #include "sync/test/engine/fake_sync_scheduler.h"
 #include "sync/test/engine/test_id_factory.h"
 #include "sync/test/fake_encryptor.h"
@@ -95,8 +96,6 @@ using syncable::SPECIFICS;
 using syncable::kEncryptedString;
 
 namespace {
-
-const char kTestChromeVersion[] = "test chrome version";
 
 void ExpectInt64Value(int64 expected_value,
                       const base::DictionaryValue& value,
@@ -809,13 +808,20 @@ class SyncManagerTest : public testing::Test,
 
     sync_manager_.AddObserver(&manager_observer_);
     EXPECT_CALL(manager_observer_, OnInitializationComplete(_, _, _, _)).
-        WillOnce(SaveArg<0>(&js_backend_));
+        WillOnce(DoAll(SaveArg<0>(&js_backend_),
+            SaveArg<2>(&initialization_succeeded_)));
 
     EXPECT_FALSE(js_backend_.IsInitialized());
 
     std::vector<ModelSafeWorker*> workers;
     ModelSafeRoutingInfo routing_info;
     GetModelSafeRoutingInfo(&routing_info);
+
+    // This works only because all routing info types are GROUP_PASSIVE.
+    // If we had types in other groups, we would need additional workers
+    // to support them.
+    scoped_refptr<ModelSafeWorker> worker = new FakeModelWorker(GROUP_PASSIVE);
+    workers.push_back(worker.get());
 
     // Takes ownership of |fake_invalidator_|.
     sync_manager_.Init(
@@ -837,17 +843,18 @@ class SyncManagerTest : public testing::Test,
         scoped_ptr<UnrecoverableErrorHandler>(
             new TestUnrecoverableErrorHandler).Pass(),
         NULL,
-        false,
         &cancelation_signal_);
 
     sync_manager_.GetEncryptionHandler()->AddObserver(&encryption_observer_);
 
     EXPECT_TRUE(js_backend_.IsInitialized());
 
-    for (ModelSafeRoutingInfo::iterator i = routing_info.begin();
-         i != routing_info.end(); ++i) {
-      type_roots_[i->first] = MakeServerNodeForType(
-          sync_manager_.GetUserShare(), i->first);
+    if (initialization_succeeded_) {
+      for (ModelSafeRoutingInfo::iterator i = routing_info.begin();
+           i != routing_info.end(); ++i) {
+        type_roots_[i->first] = MakeServerNodeForType(
+            sync_manager_.GetUserShare(), i->first);
+      }
     }
     PumpLoop();
   }
@@ -987,9 +994,7 @@ class SyncManagerTest : public testing::Test,
     DCHECK(sync_manager_.thread_checker_.CalledOnValidThread());
     ObjectIdSet id_set = ModelTypeSetToObjectIdSet(model_types);
     ObjectIdInvalidationMap invalidation_map =
-        ObjectIdSetToInvalidationMap(id_set,
-                                     Invalidation::kUnknownVersion,
-                                     std::string());
+        ObjectIdInvalidationMap::InvalidateAll(id_set);
     sync_manager_.OnIncomingInvalidation(invalidation_map);
   }
 
@@ -1023,6 +1028,7 @@ class SyncManagerTest : public testing::Test,
   SyncManagerImpl sync_manager_;
   CancelationSignal cancelation_signal_;
   WeakHandle<JsBackend> js_backend_;
+  bool initialization_succeeded_;
   StrictMock<SyncManagerObserverMock> manager_observer_;
   StrictMock<SyncEncryptionHandlerObserverMock> encryption_observer_;
   InternalComponentsFactory::Switches switches_;
@@ -2785,7 +2791,7 @@ class MockSyncScheduler : public FakeSyncScheduler {
   virtual ~MockSyncScheduler() {}
 
   MOCK_METHOD1(Start, void(SyncScheduler::Mode));
-  MOCK_METHOD1(ScheduleConfiguration, bool(const ConfigurationParams&));
+  MOCK_METHOD1(ScheduleConfiguration, void(const ConfigurationParams&));
 };
 
 class ComponentsFactory : public TestInternalComponentsFactory {
@@ -2843,7 +2849,7 @@ TEST_F(SyncManagerTestWithMockScheduler, BasicConfiguration) {
   ConfigurationParams params;
   EXPECT_CALL(*scheduler(), Start(SyncScheduler::CONFIGURATION_MODE));
   EXPECT_CALL(*scheduler(), ScheduleConfiguration(_)).
-      WillOnce(DoAll(SaveArg<0>(&params), Return(true)));
+      WillOnce(SaveArg<0>(&params));
 
   // Set data for all types.
   ModelTypeSet protocol_types = ProtocolTypes();
@@ -2895,7 +2901,7 @@ TEST_F(SyncManagerTestWithMockScheduler, ReConfiguration) {
   ConfigurationParams params;
   EXPECT_CALL(*scheduler(), Start(SyncScheduler::CONFIGURATION_MODE));
   EXPECT_CALL(*scheduler(), ScheduleConfiguration(_)).
-      WillOnce(DoAll(SaveArg<0>(&params), Return(true)));
+      WillOnce(SaveArg<0>(&params));
 
   // Set data for all types except those recently disabled (so we can verify
   // only those recently disabled are purged) .
@@ -2934,38 +2940,6 @@ TEST_F(SyncManagerTestWithMockScheduler, ReConfiguration) {
   // Verify only the recently disabled types were purged.
   EXPECT_TRUE(sync_manager_.GetTypesWithEmptyProgressMarkerToken(
       ProtocolTypes()).Equals(disabled_types));
-}
-
-// Test that the retry callback is invoked on configuration failure.
-TEST_F(SyncManagerTestWithMockScheduler, ConfigurationRetry) {
-  ConfigureReason reason = CONFIGURE_REASON_RECONFIGURATION;
-  ModelTypeSet types_to_download(BOOKMARKS, PREFERENCES);
-  ModelSafeRoutingInfo new_routing_info;
-  GetModelSafeRoutingInfo(&new_routing_info);
-
-  ConfigurationParams params;
-  EXPECT_CALL(*scheduler(), Start(SyncScheduler::CONFIGURATION_MODE));
-  EXPECT_CALL(*scheduler(), ScheduleConfiguration(_)).
-      WillOnce(DoAll(SaveArg<0>(&params), Return(false)));
-
-  CallbackCounter ready_task_counter, retry_task_counter;
-  sync_manager_.ConfigureSyncer(
-      reason,
-      types_to_download,
-      ModelTypeSet(),
-      ModelTypeSet(),
-      ModelTypeSet(),
-      new_routing_info,
-      base::Bind(&CallbackCounter::Callback,
-                 base::Unretained(&ready_task_counter)),
-      base::Bind(&CallbackCounter::Callback,
-                 base::Unretained(&retry_task_counter)));
-  EXPECT_EQ(0, ready_task_counter.times_called());
-  EXPECT_EQ(1, retry_task_counter.times_called());
-  EXPECT_EQ(sync_pb::GetUpdatesCallerInfo::RECONFIGURATION,
-            params.source);
-  EXPECT_TRUE(types_to_download.Equals(params.types_to_download));
-  EXPECT_EQ(new_routing_info, params.routing_info);
 }
 
 // Test that PurgePartiallySyncedTypes purges only those types that have not
@@ -3517,6 +3491,30 @@ TEST_F(SyncManagerChangeProcessingTest, DeletionsAndChanges) {
   // Deletes should appear before updates.
   EXPECT_LT(child_pos, folder_a_pos);
   EXPECT_LT(folder_b_pos, folder_a_pos);
+}
+
+// During initialization SyncManagerImpl loads sqlite database. If it fails to
+// do so it should fail initialization. This test verifies this behavior.
+// Test reuses SyncManagerImpl initialization from SyncManagerTest but overrides
+// InternalComponentsFactory to return DirectoryBackingStore that always fails
+// to load.
+class SyncManagerInitInvalidStorageTest : public SyncManagerTest {
+ public:
+  SyncManagerInitInvalidStorageTest() {
+  }
+
+  virtual InternalComponentsFactory* GetFactory() OVERRIDE {
+    return new TestInternalComponentsFactory(GetSwitches(), STORAGE_INVALID);
+  }
+};
+
+// SyncManagerInitInvalidStorageTest::GetFactory will return
+// DirectoryBackingStore that ensures that SyncManagerImpl::OpenDirectory fails.
+// SyncManagerImpl initialization is done in SyncManagerTest::SetUp. This test's
+// task is to ensure that SyncManagerImpl reported initialization failure in
+// OnInitializationComplete callback.
+TEST_F(SyncManagerInitInvalidStorageTest, FailToOpenDatabase) {
+  EXPECT_FALSE(initialization_succeeded_);
 }
 
 }  // namespace

@@ -21,14 +21,14 @@
 #ifndef RenderSVGResourcePattern_h
 #define RenderSVGResourcePattern_h
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/Pattern.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/PatternAttributes.h"
 #include "core/svg/SVGPatternElement.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/Pattern.h"
+#include "platform/transforms/AffineTransform.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
@@ -53,10 +53,9 @@ public:
 
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode);
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*);
-    virtual FloatRect resourceBoundingBox(RenderObject*) { return FloatRect(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
 private:
     bool buildTileImageTransform(RenderObject*, const PatternAttributes&, const SVGPatternElement*, FloatRect& patternBoundaries, AffineTransform& tileImageTransform) const;

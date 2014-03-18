@@ -7,10 +7,12 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
+#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/ip_endpoint.h"
@@ -45,6 +47,14 @@ bool AddressListOnlyContainsIPv6(const AddressList& list) {
 }
 
 }  // namespace
+
+// This lock protects |g_last_connect_time|.
+static base::LazyInstance<base::Lock>::Leaky
+    g_last_connect_time_lock = LAZY_INSTANCE_INITIALIZER;
+
+// |g_last_connect_time| has the last time a connect() call is made.
+static base::LazyInstance<base::TimeTicks>::Leaky
+    g_last_connect_time = LAZY_INSTANCE_INITIALIZER;
 
 TransportSocketParams::TransportSocketParams(
     const HostPortPair& host_port_pair,
@@ -85,7 +95,8 @@ TransportConnectJob::TransportConnectJob(
       params_(params),
       client_socket_factory_(client_socket_factory),
       resolver_(host_resolver),
-      next_state_(STATE_NONE) {
+      next_state_(STATE_NONE),
+      interval_between_connects_(CONNECT_INTERVAL_GT_20MS) {
 }
 
 TransportConnectJob::~TransportConnectJob() {
@@ -186,6 +197,25 @@ int TransportConnectJob::DoResolveHostComplete(int result) {
 }
 
 int TransportConnectJob::DoTransportConnect() {
+  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks last_connect_time;
+  {
+    base::AutoLock lock(g_last_connect_time_lock.Get());
+    last_connect_time = g_last_connect_time.Get();
+    *g_last_connect_time.Pointer() = now;
+  }
+  if (last_connect_time.is_null()) {
+    interval_between_connects_ = CONNECT_INTERVAL_GT_20MS;
+  } else {
+    int64 interval = (now - last_connect_time).InMilliseconds();
+    if (interval <= 10)
+      interval_between_connects_ = CONNECT_INTERVAL_LE_10MS;
+    else if (interval <= 20)
+      interval_between_connects_ = CONNECT_INTERVAL_LE_20MS;
+    else
+      interval_between_connects_ = CONNECT_INTERVAL_GT_20MS;
+  }
+
   next_state_ = STATE_TRANSPORT_CONNECT_COMPLETE;
   transport_socket_ = client_socket_factory_->CreateTransportClientSocket(
         addresses_, net_log().net_log(), net_log().source());
@@ -221,6 +251,36 @@ int TransportConnectJob::DoTransportConnectComplete(int result) {
         base::TimeDelta::FromMilliseconds(1),
         base::TimeDelta::FromMinutes(10),
         100);
+
+    switch (interval_between_connects_) {
+      case CONNECT_INTERVAL_LE_10MS:
+        UMA_HISTOGRAM_CUSTOM_TIMES(
+            "Net.TCP_Connection_Latency_Interval_LessThanOrEqual_10ms",
+            connect_duration,
+            base::TimeDelta::FromMilliseconds(1),
+            base::TimeDelta::FromMinutes(10),
+            100);
+        break;
+      case CONNECT_INTERVAL_LE_20MS:
+        UMA_HISTOGRAM_CUSTOM_TIMES(
+            "Net.TCP_Connection_Latency_Interval_LessThanOrEqual_20ms",
+            connect_duration,
+            base::TimeDelta::FromMilliseconds(1),
+            base::TimeDelta::FromMinutes(10),
+            100);
+        break;
+      case CONNECT_INTERVAL_GT_20MS:
+        UMA_HISTOGRAM_CUSTOM_TIMES(
+            "Net.TCP_Connection_Latency_Interval_GreaterThan_20ms",
+            connect_duration,
+            base::TimeDelta::FromMilliseconds(1),
+            base::TimeDelta::FromMinutes(10),
+            100);
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
 
     if (is_ipv4) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.TCP_Connection_Latency_IPv4_No_Race",

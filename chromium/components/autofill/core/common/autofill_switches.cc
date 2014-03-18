@@ -15,14 +15,26 @@ const char kAutofillServiceUrl[]            = "autofill-service-url";
 const char kDisableInteractiveAutocomplete[] =
     "disable-interactive-autocomplete";
 
-// Enable autofill for new elements like checkboxes. crbug.com/157636
-const char kEnableExperimentalFormFilling[] =
-    "enable-experimental-form-filling";
+// Disables password generation when we detect that the user is going through
+// account creation.
+const char kDisablePasswordGeneration[]     = "disable-password-generation";
+
+// Forces the password manager to ignore autocomplete='off' for password forms.
+const char kEnableIgnoreAutocompleteOff[]  = "enable-ignore-autocomplete-off";
 
 // Enables an interactive autocomplete UI and a way to invoke this UI from
 // WebKit by enabling HTMLFormElement#requestAutocomplete (and associated
 // autocomplete* events and logic).
 const char kEnableInteractiveAutocomplete[] = "enable-interactive-autocomplete";
+
+// Enables password generation when we detect that the user is going through
+// account creation.
+const char kEnablePasswordGeneration[]      = "enable-password-generation";
+
+// Removes the requirement that we recieved a ping from the autofill servers.
+// Used in testing.
+const char kNoAutofillNecessaryForPasswordGeneration[] =
+    "no-autofill-for-password-generation";
 
 // Annotates forms with Autofill field type predictions.
 const char kShowAutofillTypePredictions[]   = "show-autofill-type-predictions";

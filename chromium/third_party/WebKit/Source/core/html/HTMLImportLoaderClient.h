@@ -39,6 +39,6 @@ public:
     virtual void didFinish() = 0;
 };
 
-} // namespace WebCore
+}
 
 #endif // HTMLImportLoaderClient_h

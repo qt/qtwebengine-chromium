@@ -25,8 +25,8 @@ bool MockAudioManager::HasAudioInputDevices() {
   return true;
 }
 
-string16 MockAudioManager::GetAudioInputDeviceModel() {
-  return string16();
+base::string16 MockAudioManager::GetAudioInputDeviceModel() {
+  return base::string16();
 }
 
 void MockAudioManager::ShowAudioInputSettings() {
@@ -34,6 +34,11 @@ void MockAudioManager::ShowAudioInputSettings() {
 
 void MockAudioManager::GetAudioInputDeviceNames(
     AudioDeviceNames* device_names) {
+  DCHECK(device_names->empty());
+  device_names->push_back(media::AudioDeviceName("fake_device_name_1",
+                                                 "fake_device_id_1"));
+  device_names->push_back(media::AudioDeviceName("fake_device_name_2",
+                                                 "fake_device_id_2"));
 }
 
 void MockAudioManager::GetAudioOutputDeviceNames(
@@ -97,5 +102,12 @@ std::string MockAudioManager::GetAssociatedOutputDeviceID(
     const std::string& input_device_id) {
   return std::string();
 }
+
+scoped_ptr<AudioLog> MockAudioManager::CreateAudioLog(
+    AudioLogFactory::AudioComponent component) {
+  return scoped_ptr<AudioLog>();
+}
+
+void MockAudioManager::FixWedgedAudio() {}
 
 }  // namespace media.

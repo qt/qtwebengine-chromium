@@ -20,18 +20,20 @@
 #ifndef RenderSVGResourceMasker_h
 #define RenderSVGResourceMasker_h
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGMaskElement.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageBuffer.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
+
+class DisplayList;
 
 class RenderSVGResourceMasker FINAL : public RenderSVGResourceContainer {
 public:
@@ -44,26 +46,24 @@ public:
     virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true);
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE;
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short, const Path*, const RenderSVGShape*) OVERRIDE;
-    virtual FloatRect resourceBoundingBox(RenderObject*);
+    FloatRect resourceBoundingBox(RenderObject*);
 
     SVGUnitTypes::SVGUnitType maskUnits() const { return toSVGMaskElement(element())->maskUnitsCurrentValue(); }
     SVGUnitTypes::SVGUnitType maskContentUnits() const { return toSVGMaskElement(element())->maskContentUnitsCurrentValue(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
 private:
     void calculateMaskContentRepaintRect();
-    void drawMaskContent(GraphicsContext*, const FloatRect& targetBoundingBox);
+    void drawMaskForRenderer(GraphicsContext*, const FloatRect& targetBoundingBox);
+    PassRefPtr<DisplayList> asDisplayList(GraphicsContext*, const AffineTransform&);
 
+    RefPtr<DisplayList> m_maskContentDisplayList;
     FloatRect m_maskContentBoundaries;
 };
 
-inline RenderSVGResourceMasker* toRenderSVGResourceMasker(RenderSVGResource* resource)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == MaskerResourceType);
-    return static_cast<RenderSVGResourceMasker*>(resource);
-}
+DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(RenderSVGResourceMasker, MaskerResourceType);
 
 }
 

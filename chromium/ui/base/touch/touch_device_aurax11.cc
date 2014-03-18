@@ -3,12 +3,16 @@
 // found in the LICENSE file.
 
 #include "ui/base/touch/touch_device.h"
-#include "ui/base/touch/touch_factory_x11.h"
+#include "ui/events/x/touch_factory_x11.h"
 
 namespace ui {
 
 bool IsTouchDevicePresent() {
   return ui::TouchFactory::GetInstance()->IsTouchDevicePresent();
+}
+
+int MaxTouchPoints() {
+  return ui::TouchFactory::GetInstance()->GetMaxTouchPoints();
 }
 
 }  // namespace ui

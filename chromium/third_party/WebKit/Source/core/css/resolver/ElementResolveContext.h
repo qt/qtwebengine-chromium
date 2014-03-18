@@ -45,14 +45,11 @@ public:
     {
     }
 
-    explicit ElementResolveContext(Element*);
-
-    Document& document() const { return m_element->document(); }
-    bool isDocumentElement() const { return m_element && m_element == m_element->document().documentElement(); }
+    explicit ElementResolveContext(Element&);
 
     Element* element() const { return m_element; }
     const ContainerNode* parentNode() const { return m_parentNode; }
-    RenderStyle* rootElementStyle() const { return m_rootElementStyle; }
+    const RenderStyle* rootElementStyle() const { return m_rootElementStyle; }
     EInsideLink elementLinkState() const { return m_elementLinkState; }
     bool distributedToInsertionPoint() const { return m_distributedToInsertionPoint; }
     bool resetStyleInheritance() const { return m_resetStyleInheritance; }

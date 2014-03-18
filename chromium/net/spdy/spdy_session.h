@@ -28,7 +28,6 @@
 #include "net/socket/stream_socket.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_buffer.h"
-#include "net/spdy/spdy_credential_state.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
@@ -207,7 +206,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
               const base::WeakPtr<HttpServerProperties>& http_server_properties,
               bool verify_domain_authentication,
               bool enable_sending_initial_data,
-              bool enable_credential_frames,
               bool enable_compression,
               bool enable_ping_based_connection_checking,
               NextProto default_protocol,
@@ -262,10 +260,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                              int certificate_error_code);
 
   // Returns the protocol used by this session. Always between
-  // kProtoSPDY2 and kProtoSPDYMaximumVersion.
-  //
-  // TODO(akalin): Change the lower bound to kProtoSPDYMinimumVersion
-  // once we stop supporting SPDY/1.
+  // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
   NextProto protocol() const { return protocol_; }
 
   // Check to see if this SPDY session can support an additional domain.
@@ -294,15 +289,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
       uint8 credential_slot,
       SpdyControlFlags flags,
       const SpdyHeaderBlock& headers);
-
-  // Tries to create a CREDENTIAL frame. If successful, fills in
-  // |credential_frame| and returns OK. Returns the error (guaranteed
-  // to not be ERR_IO_PENDING) otherwise.
-  int CreateCredentialFrame(const std::string& origin,
-                            const std::string& key,
-                            const std::string& cert,
-                            RequestPriority priority,
-                            scoped_ptr<SpdyFrame>* credential_frame);
 
   // Creates and returns a SpdyBuffer holding a data frame with the
   // given data. May return NULL if stalled by flow control.
@@ -343,10 +329,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // Fills SSL Certificate Request info |cert_request_info| and returns
   // true when SSL is in use.
   bool GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info);
-
-  // Returns the ServerBoundCertService used by this Socket, or NULL
-  // if server bound certs are not supported in this session.
-  ServerBoundCertService* GetServerBoundCertService() const;
 
   // Send a WINDOW_UPDATE frame for a stream. Called by a stream
   // whenever receive window size is increased.
@@ -410,7 +392,8 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   size_t num_created_streams() const { return created_streams_.size(); }
 
   size_t pending_create_stream_queue_size(RequestPriority priority) const {
-    DCHECK_LT(priority, NUM_PRIORITIES);
+    DCHECK_GE(priority, MINIMUM_PRIORITY);
+    DCHECK_LE(priority, MAXIMUM_PRIORITY);
     return pending_create_stream_queues_[priority].size();
   }
 
@@ -442,11 +425,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
 
-  // Returns true if requests on this session require credentials.
-  bool NeedsCredentials() const;
-
-  SpdyCredentialState* credential_state() { return &credential_state_; }
-
   // Adds |alias| to set of aliases associated with this session.
   void AddPooledAlias(const SpdySessionKey& alias_key);
 
@@ -455,7 +433,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
     return pooled_aliases_;
   }
 
-  int GetProtocolVersion() const;
+  SpdyMajorVersion GetProtocolVersion() const;
 
   size_t GetDataFrameMinimumSize() const {
     return buffered_spdy_framer_->GetDataFrameMinimumSize();
@@ -803,6 +781,9 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                            SpdyRstStreamStatus status) OVERRIDE;
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
                         SpdyGoAwayStatus status) OVERRIDE;
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
+                                 size_t length,
+                                 bool fin) OVERRIDE;
   virtual void OnStreamFrameData(SpdyStreamId stream_id,
                                  const char* data,
                                  size_t len,
@@ -839,7 +820,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   virtual void OnReceiveCompressedFrame(
       SpdyStreamId stream_id,
       SpdyFrameType type,
-      size_t frame_len) OVERRIDE {}
+      size_t frame_len) OVERRIDE;
 
   // Called when bytes are consumed from a SpdyBuffer for a DATA frame
   // that is to be written or is being written. Increases the send
@@ -1055,6 +1036,9 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // This is the last time we had activity in the session.
   base::TimeTicks last_activity_time_;
 
+  // This is the length of the last compressed frame.
+  size_t last_compressed_frame_len_;
+
   // This is the next time that unclaimed push streams should be checked for
   // expirations.
   base::TimeTicks next_unclaimed_push_stream_sweep_time_;
@@ -1096,18 +1080,12 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // Outside of tests, these should always be true.
   bool verify_domain_authentication_;
   bool enable_sending_initial_data_;
-  bool enable_credential_frames_;
   bool enable_compression_;
   bool enable_ping_based_connection_checking_;
 
-  // The SPDY protocol used. Always between kProtoSPDY2 and
+  // The SPDY protocol used. Always between kProtoSPDYMinimumVersion and
   // kProtoSPDYMaximumVersion.
-  //
-  // TODO(akalin): Change the lower bound to kProtoSPDYMinimumVersion
-  // once we stop supporting SPDY/1.
   NextProto protocol_;
-
-  SpdyCredentialState credential_state_;
 
   // |connection_at_risk_of_loss_time_| is an optimization to avoid sending
   // wasteful preface pings (when we just got some data).

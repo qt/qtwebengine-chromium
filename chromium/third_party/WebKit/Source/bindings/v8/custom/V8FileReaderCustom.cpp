@@ -33,11 +33,11 @@
 
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 
 namespace WebCore {
 
-void V8FileReader::resultAttributeGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8FileReader::resultAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     v8::Handle<v8::Object> holder = info.Holder();
     FileReader* imp = V8FileReader::toNative(holder);

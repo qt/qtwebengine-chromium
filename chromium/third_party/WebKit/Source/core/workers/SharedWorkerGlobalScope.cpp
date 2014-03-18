@@ -32,13 +32,12 @@
 
 #include "core/workers/SharedWorkerGlobalScope.h"
 
-#include "core/dom/EventNames.h"
-#include "core/dom/MessageEvent.h"
+#include "core/events/MessageEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "core/workers/SharedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
-#include "core/workers/WorkerThreadStartupData.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -47,7 +46,7 @@ PassRefPtr<MessageEvent> createConnectEvent(PassRefPtr<MessagePort> prpPort)
 {
     RefPtr<MessagePort> port = prpPort;
     RefPtr<MessageEvent> event = MessageEvent::create(adoptPtr(new MessagePortArray(1, port)), String(), String(), port);
-    event->initEvent(eventNames().connectEvent, false, false);
+    event->initEvent(EventTypeNames::connect, false, false);
     return event.release();
 }
 
@@ -72,7 +71,7 @@ SharedWorkerGlobalScope::~SharedWorkerGlobalScope()
 
 const AtomicString& SharedWorkerGlobalScope::interfaceName() const
 {
-    return eventNames().interfaceForSharedWorkerGlobalScope;
+    return EventTargetNames::SharedWorkerGlobalScope;
 }
 
 SharedWorkerThread* SharedWorkerGlobalScope::thread()

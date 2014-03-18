@@ -16,12 +16,9 @@
       'dependencies': [
         '../base/base.gyp:base',
         'chrome_android_core',
-        'chrome_android_auxiliary',
         'chromium_testshell_jni_headers',
         'chrome.gyp:browser_ui',
         '../content/content.gyp:content_app_browser',
-        # TODO(miguelg): This should be indirect, see http://crbug.com/280695 .
-        '../skia/skia.gyp:skia',
       ],
       'sources': [
         # This file must always be included in the shared_library step to ensure
@@ -33,7 +30,6 @@
         "android/testshell/testshell_google_location_settings_helper.h",
         'android/testshell/testshell_tab.cc',
         'android/testshell/testshell_tab.h',
-        'android/testshell/testshell_stubs.cc',
       ],
       'include_dirs': [
         '<(SHARED_INTERMEDIATE_DIR)/chromium_testshell',
@@ -67,8 +63,9 @@
         'manifest_package_name': 'org.chromium.chrome.testshell',
         'java_in_dir': 'android/testshell/java',
         'resource_dir': 'android/testshell/res',
-        'asset_location': '<(ant_build_out)/../assets/<(package_name)',
+        'asset_location': '<(PRODUCT_DIR)/../assets/<(package_name)',
         'native_lib_target': 'libchromiumtestshell',
+        'native_lib_version_name': '<(version_full)',
         'additional_input_paths': [
           '<@(chrome_android_pak_output_resources)',
         ],
@@ -83,6 +80,7 @@
       ],
       'variables': {
         'jni_gen_package': 'chromium_testshell',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },
@@ -119,8 +117,6 @@
       'sources': [
         'app/android/chrome_android_initializer.cc',
         'app/android/chrome_android_initializer.h',
-        'app/android/chrome_data_reduction_proxy_android.cc',
-        'app/android/chrome_data_reduction_proxy_android.h',
         'app/android/chrome_main_delegate_android.cc',
         'app/android/chrome_main_delegate_android.h',
         'app/chrome_main_delegate.cc',
@@ -132,19 +128,6 @@
           '-ljnigraphics',
         ],
       },
-    },
-    {
-       'target_name': 'chrome_android_auxiliary',
-       'type': 'static_library',
-       'include_dirs': [
-         '<(SHARED_INTERMEDIATE_DIR)/chromium_testshell',
-       ],
-       'sources': [
-         'android/testshell/chrome_data_reduction_proxy_testshell_android.cc',
-       ],
-       'dependencies': [
-         '../base/base.gyp:base',
-       ],
     },
     {
       'target_name': 'chromium_testshell_paks',

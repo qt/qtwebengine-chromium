@@ -20,7 +20,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 #include "media/base/text_track.h"
-#include "third_party/WebKit/public/web/WebMediaPlayer.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayer.h"
 
 namespace media {
 class ChunkDemuxer;
@@ -38,12 +38,11 @@ class RendererDemuxerAndroid;
 
 class MediaSourceDelegate : public media::DemuxerHost {
  public:
-  typedef base::Callback<void(WebKit::WebMediaSource*)>
+  typedef base::Callback<void(blink::WebMediaSource*)>
       MediaSourceOpenedCB;
-  typedef base::Callback<void(WebKit::WebMediaPlayer::NetworkState)>
+  typedef base::Callback<void(blink::WebMediaPlayer::NetworkState)>
       UpdateNetworkStateCB;
   typedef base::Callback<void(const base::TimeDelta&)> DurationChangeCB;
-  typedef base::Callback<void(const base::TimeDelta&)> TimeUpdateSeekHackCB;
 
   // Helper class used by scoped_ptr to destroy an instance of
   // MediaSourceDelegate.
@@ -63,11 +62,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // this object after this call.
   void InitializeMediaSource(
       const MediaSourceOpenedCB& media_source_opened_cb,
-      const media::NeedKeyCB& need_key_cb,
+      const media::Demuxer::NeedKeyCB& need_key_cb,
       const media::SetDecryptorReadyCB& set_decryptor_ready_cb,
       const UpdateNetworkStateCB& update_network_state_cb,
-      const DurationChangeCB& duration_change_cb,
-      const TimeUpdateSeekHackCB& time_update_seek_hack_cb);
+      const DurationChangeCB& duration_change_cb);
 
 #if defined(GOOGLE_TV)
   void InitializeMediaStream(
@@ -75,16 +73,32 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb);
 #endif
 
-  const WebKit::WebTimeRanges& Buffered();
+  const blink::WebTimeRanges& Buffered();
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
   size_t AudioDecodedByteCount() const;
   size_t VideoDecodedByteCount() const;
 
-  // Seeks the demuxer and acknowledges the seek request with |seek_request_id|
-  // after the seek has been completed. This method can be called during pending
-  // seeks, in which case only the last seek request will be acknowledged.
-  void Seek(const base::TimeDelta& time, unsigned seek_request_id);
+  // In MSE case, calls ChunkDemuxer::CancelPendingSeek(). Also sets the
+  // expectation that a regular seek will be arriving and to trivially finish
+  // any browser seeks that may be requested prior to the regular seek.
+  void CancelPendingSeek(const base::TimeDelta& seek_time);
+
+  // In MSE case, calls ChunkDemuxer::StartWaitingForSeek(), first calling
+  // ChunkDemuxer::CancelPendingSeek() if a browser seek is in progress.
+  // Also sets the expectation that a regular seek will be arriving and to
+  // trivially finish any browser seeks that may be requested prior to the
+  // regular seek.
+  void StartWaitingForSeek(const base::TimeDelta& seek_time);
+
+  // Seeks the demuxer and later calls OnDemuxerSeekDone() after the seek has
+  // been completed. There must be no other seek of the demuxer currently in
+  // process when this method is called.
+  // If |is_browser_seek| is true, then this is a short-term hack browser
+  // seek.
+  // TODO(wolenetz): Instead of doing browser seek, browser player should replay
+  // cached data since last keyframe. See http://crbug.com/304234.
+  void Seek(const base::TimeDelta& seek_time, bool is_browser_seek);
 
   void NotifyKeyAdded(const std::string& key_system);
 
@@ -113,6 +127,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
                                     base::TimeDelta end) OVERRIDE;
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
   virtual void OnDemuxerError(media::PipelineStatus status) OVERRIDE;
+  virtual void AddTextStream(media::DemuxerStream* text_stream,
+                             const media::TextTrackConfig& config) OVERRIDE;
+  virtual void RemoveTextStream(media::DemuxerStream* text_stream) OVERRIDE;
 
   // Notifies |demuxer_client_| and fires |duration_changed_cb_|.
   void OnDurationChanged(const base::TimeDelta& duration);
@@ -132,8 +149,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // decrypted audio/video streams if present.
   //
   // Runs on the media thread.
-  void OnDemuxerSeekDone(unsigned seek_request_id,
-                         media::PipelineStatus status);
+  void OnDemuxerSeekDone(media::PipelineStatus status);
   void ResetAudioDecryptingDemuxerStream();
   void ResetVideoDecryptingDemuxerStream();
   void FinishResettingDecryptingDemuxerStreams();
@@ -147,7 +163,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   void StopDemuxer();
   void InitializeDemuxer();
-  void SeekInternal(const base::TimeDelta& time, unsigned seek_request_id);
+  void SeekInternal(const base::TimeDelta& seek_time);
   // Reads an access unit from the demuxer stream |stream| and stores it in
   // the |index|th access unit in |params|.
   void ReadFromDemuxerStream(media::DemuxerStream::Type type,
@@ -164,8 +180,15 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   bool HasEncryptedStream();
 
-  void SetSeeking(bool seeking);
   bool IsSeeking() const;
+
+  // Returns |seek_time| if it is still buffered or if there is no currently
+  // buffered range including or soon after |seek_time|. If |seek_time| is not
+  // buffered, but there is a later range buffered near to |seek_time|, returns
+  // next buffered range's start time instead. Only call this for browser seeks.
+  // |seeking_lock_| must be held by caller.
+  base::TimeDelta FindBufferedBrowserSeekTime_Locked(
+      const base::TimeDelta& seek_time) const;
 
   // Message loop for main renderer thread and corresponding weak pointer.
   const scoped_refptr<base::MessageLoopProxy> main_loop_;
@@ -182,7 +205,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   scoped_refptr<media::MediaLog> media_log_;
   UpdateNetworkStateCB update_network_state_cb_;
   DurationChangeCB duration_change_cb_;
-  TimeUpdateSeekHackCB time_update_seek_hack_cb_;
 
   scoped_ptr<media::ChunkDemuxer> chunk_demuxer_;
   media::Demuxer* demuxer_;
@@ -199,14 +221,14 @@ class MediaSourceDelegate : public media::DemuxerHost {
   media::PipelineStatistics statistics_;
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
   // Keep a list of buffered time ranges.
-  WebKit::WebTimeRanges buffered_web_time_ranges_;
+  blink::WebTimeRanges buffered_web_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
-  media::NeedKeyCB need_key_cb_;
+  media::Demuxer::NeedKeyCB need_key_cb_;
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
-  WebKit::WebString current_key_system_;
+  blink::WebString current_key_system_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.
@@ -216,8 +238,14 @@ class MediaSourceDelegate : public media::DemuxerHost {
   mutable base::Lock seeking_lock_;
   bool seeking_;
 
-  base::TimeDelta last_seek_time_;
-  unsigned last_seek_request_id_;
+  // Track if we are currently performing a browser seek, and track whether or
+  // not a regular seek is expected soon. If a regular seek is expected soon,
+  // then any in-progress browser seek will be canceled pending the
+  // regular seek, if using |chunk_demuxer_|, and any requested browser seek
+  // will be trivially finished. Access is serialized by |seeking_lock_|.
+  bool doing_browser_seek_;
+  base::TimeDelta browser_seek_time_;
+  bool expecting_regular_seek_;
 
 #if defined(GOOGLE_TV)
   bool key_added_;

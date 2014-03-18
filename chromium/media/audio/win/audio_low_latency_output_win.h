@@ -138,17 +138,6 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   virtual void SetVolume(double volume) OVERRIDE;
   virtual void GetVolume(double* volume) OVERRIDE;
 
-  // Retrieves the number of channels the audio engine uses for its internal
-  // processing/mixing of shared-mode streams for the default endpoint device.
-  static int HardwareChannelCount();
-
-  // Retrieves the channel layout the audio engine uses for its internal
-  // processing/mixing of shared-mode streams for the default endpoint device.
-  // Note that we convert an internal channel layout mask (see ChannelMask())
-  // into a Chrome-specific channel layout enumerator in this method, hence
-  // the match might not be perfect.
-  static ChannelLayout HardwareChannelLayout();
-
   // Retrieves the sample rate the audio engine uses for its internal
   // processing/mixing of shared-mode streams.  To fetch the settings for the
   // default device, pass an empty string as the |device_id|.
@@ -168,10 +157,7 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   // Checks available amount of space in the endpoint buffer and reads
   // data from the client to fill up the buffer without causing audio
   // glitches.
-  void RenderAudioFromSource(IAudioClock* audio_clock, UINT64 device_frequency);
-
-  // Issues the OnError() callback to the |sink_|.
-  void HandleError(HRESULT err);
+  bool RenderAudioFromSource(UINT64 device_frequency);
 
   // Called when the device will be opened in exclusive mode and use the
   // application specified format.
@@ -180,6 +166,11 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   HRESULT ExclusiveModeInitialization(IAudioClient* client,
                                       HANDLE event_handle,
                                       uint32* endpoint_buffer_size);
+
+  // If |render_thread_| is valid, sets |stop_render_event_| and blocks until
+  // the thread has stopped.  |stop_render_event_| is reset after the call.
+  // |source_| is set to NULL.
+  void StopThread();
 
   // Contains the thread ID of the creating thread.
   base::PlatformThreadId creating_thread_id_;
@@ -215,9 +206,6 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   // Size in bytes of each audio packet.
   size_t packet_size_bytes_;
 
-  // Size in milliseconds of each audio packet.
-  float packet_size_ms_;
-
   // Length of the audio endpoint buffer.
   uint32 endpoint_buffer_size_frames_;
 
@@ -238,9 +226,6 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   // Pointer to the client that will deliver audio samples to be played out.
   AudioSourceCallback* source_;
 
-  // An IMMDeviceEnumerator interface which represents a device enumerator.
-  base::win::ScopedComPtr<IMMDeviceEnumerator> device_enumerator_;
-
   // An IAudioClient interface which enables a client to create and initialize
   // an audio stream between an audio application and the audio engine.
   base::win::ScopedComPtr<IAudioClient> audio_client_;
@@ -258,6 +243,8 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
 
   // Container for retrieving data from AudioSourceCallback::OnMoreData().
   scoped_ptr<AudioBus> audio_bus_;
+
+  base::win::ScopedComPtr<IAudioClock> audio_clock_;
 
   DISALLOW_COPY_AND_ASSIGN(WASAPIAudioOutputStream);
 };

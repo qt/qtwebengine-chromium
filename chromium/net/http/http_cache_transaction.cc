@@ -101,6 +101,23 @@ void RecordOfflineStatus(int load_flags, RequestOfflineStatus status) {
   }
 }
 
+// TODO(rvargas): Remove once we get the data.
+void RecordVaryHeaderHistogram(const net::HttpResponseInfo* response) {
+  enum VaryType {
+    VARY_NOT_PRESENT,
+    VARY_UA,
+    VARY_OTHER,
+    VARY_MAX
+  };
+  VaryType vary = VARY_NOT_PRESENT;
+  if (response->vary_data.is_valid()) {
+    vary = VARY_OTHER;
+    if (response->headers->HasHeaderValue("vary", "user-agent"))
+      vary = VARY_UA;
+  }
+  UMA_HISTOGRAM_ENUMERATION("HttpCache.Vary", vary, VARY_MAX);
+}
+
 }  // namespace
 
 namespace net {
@@ -196,7 +213,8 @@ HttpCache::Transaction::Transaction(
       io_callback_(base::Bind(&Transaction::OnIOComplete,
                               weak_factory_.GetWeakPtr())),
       transaction_pattern_(PATTERN_UNDEFINED),
-      transaction_delegate_(transaction_delegate) {
+      transaction_delegate_(transaction_delegate),
+      websocket_handshake_stream_base_create_helper_(NULL) {
   COMPILE_ASSERT(HttpCache::Transaction::kNumValidationHeaders ==
                  arraysize(kValidationHeaders),
                  Invalid_number_of_validation_headers);
@@ -514,6 +532,13 @@ void HttpCache::Transaction::SetPriority(RequestPriority priority) {
   priority_ = priority;
   if (network_trans_)
     network_trans_->SetPriority(priority_);
+}
+
+void HttpCache::Transaction::SetWebSocketHandshakeStreamCreateHelper(
+    WebSocketHandshakeStreamBase::CreateHelper* create_helper) {
+  websocket_handshake_stream_base_create_helper_ = create_helper;
+  if (network_trans_)
+    network_trans_->SetWebSocketHandshakeStreamCreateHelper(create_helper);
 }
 
 //-----------------------------------------------------------------------------
@@ -843,6 +868,10 @@ int HttpCache::Transaction::DoSendRequest() {
   // Old load timing information, if any, is now obsolete.
   old_network_trans_load_timing_.reset();
 
+  if (websocket_handshake_stream_base_create_helper_)
+    network_trans_->SetWebSocketHandshakeStreamCreateHelper(
+        websocket_handshake_stream_base_create_helper_);
+
   ReportNetworkActionStart();
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
   rv = network_trans_->Start(request_, io_callback_, net_log_);
@@ -962,6 +991,8 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
       NonErrorResponse(new_response->headers->response_code())) {
     cache_->DoomMainEntryForUrl(request_->url);
   }
+
+  RecordVaryHeaderHistogram(new_response);
 
   // Are we expecting a response to a conditional query?
   if (mode_ == READ_WRITE || mode_ == UPDATE) {
@@ -1499,20 +1530,12 @@ int HttpCache::Transaction::DoCacheQueryData() {
 }
 
 int HttpCache::Transaction::DoCacheQueryDataComplete(int result) {
-#if defined(OS_ANDROID)
   if (result == ERR_NOT_IMPLEMENTED) {
     // Restart the request overwriting the cache entry.
-    //
-    // Note: this would have fixed range requests for debug builds on all OSes,
-    // not just Android, but karen@ prefers to limit the effect based on OS for
-    // cherry-picked fixes.
-    // TODO(pasko): remove the OS_ANDROID limitation as soon as the fix proves
-    // useful after the cherry-pick.
     // TODO(pasko): remove this workaround as soon as the SimpleBackendImpl
     // supports Sparse IO.
     return DoRestartPartialRequest();
   }
-#endif
   DCHECK_EQ(OK, result);
   if (!cache_.get())
     return ERR_UNEXPECTED;
@@ -2388,6 +2411,8 @@ bool HttpCache::Transaction::CanResume(bool has_data) {
   if (request_->method != "GET")
     return false;
 
+  // Note that if this is a 206, content-length was already fixed after calling
+  // PartialData::ResponseHeadersOK().
   if (response_.headers->GetContentLength() <= 0 ||
       response_.headers->HasHeaderValue("Accept-Ranges", "none") ||
       !response_.headers->HasStrongValidators()) {

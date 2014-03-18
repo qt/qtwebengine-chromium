@@ -31,16 +31,16 @@
 
 #include "core/rendering/RenderLayerFilterInfo.h"
 
-#include "core/fetch/DocumentResource.h"
 #include "core/fetch/DocumentResourceReference.h"
-#include "core/platform/graphics/filters/custom/CustomFilterOperation.h"
-#include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/rendering/FilterEffectRenderer.h"
 #include "core/rendering/RenderLayer.h"
+#include "core/rendering/svg/ReferenceFilterBuilder.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGFilterElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/graphics/filters/SVGFilter.h"
+#include "platform/graphics/filters/custom/CustomFilterOperation.h"
+#include "platform/graphics/filters/custom/CustomFilterProgram.h"
 
 namespace WebCore {
 
@@ -116,10 +116,10 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
     removeReferenceFilterClients();
     for (size_t i = 0; i < operations.size(); ++i) {
         RefPtr<FilterOperation> filterOperation = operations.operations().at(i);
-        if (filterOperation->getOperationType() != FilterOperation::REFERENCE)
+        if (filterOperation->type() != FilterOperation::REFERENCE)
             continue;
-        ReferenceFilterOperation* referenceFilterOperation = static_cast<ReferenceFilterOperation*>(filterOperation.get());
-        DocumentResourceReference* documentReference = referenceFilterOperation->documentResourceReference();
+        ReferenceFilterOperation* referenceFilterOperation = toReferenceFilterOperation(filterOperation.get());
+        DocumentResourceReference* documentReference = ReferenceFilterBuilder::documentResourceReference(referenceFilterOperation);
         DocumentResource* cachedSVGDocument = documentReference ? documentReference->document() : 0;
 
         if (cachedSVGDocument) {
@@ -133,7 +133,7 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
             if (!filter || !filter->hasTagName(SVGNames::filterTag))
                 continue;
             if (filter->renderer())
-                filter->renderer()->toRenderSVGResourceContainer()->addClientRenderLayer(m_layer);
+                toRenderSVGResourceContainer(filter->renderer())->addClientRenderLayer(m_layer);
             else
                 toSVGFilterElement(filter)->addClient(m_layer->renderer()->node());
             m_internalSVGReferences.append(filter);
@@ -149,7 +149,7 @@ void RenderLayerFilterInfo::removeReferenceFilterClients()
     for (size_t i = 0; i < m_internalSVGReferences.size(); ++i) {
         Element* filter = m_internalSVGReferences.at(i).get();
         if (filter->renderer())
-            filter->renderer()->toRenderSVGResourceContainer()->removeClientRenderLayer(m_layer);
+            toRenderSVGResourceContainer(filter->renderer())->removeClientRenderLayer(m_layer);
         else
             toSVGFilterElement(filter)->removeClient(m_layer->renderer()->node());
     }
@@ -172,10 +172,9 @@ void RenderLayerFilterInfo::updateCustomFilterClients(const FilterOperations& op
     CustomFilterProgramList cachedCustomFilterPrograms;
     for (size_t i = 0; i < operations.size(); ++i) {
         const FilterOperation* filterOperation = operations.at(i);
-        if (filterOperation->getOperationType() != FilterOperation::CUSTOM)
+        if (filterOperation->type() != FilterOperation::CUSTOM)
             continue;
-        const CustomFilterOperation* customFilterOperation = static_cast<const CustomFilterOperation*>(filterOperation);
-        RefPtr<CustomFilterProgram> program = customFilterOperation->program();
+        RefPtr<CustomFilterProgram> program = toCustomFilterOperation(filterOperation)->program();
         cachedCustomFilterPrograms.append(program);
         program->addClient(this);
     }

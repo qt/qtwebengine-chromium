@@ -29,10 +29,10 @@
  */
 
 [
-    GlobalContext=Window&WorkerGlobalScope,
-    CustomToV8,
     CustomConstructor,
-    CustomConstructor(sequence<any> blobParts, optional BlobPropertyBag options)
+    CustomConstructor(sequence<any> blobParts, optional BlobPropertyBag options),
+    GlobalContext=Window&WorkerGlobalScope,
+    SpecialWrapFor=File,
 ] interface Blob {
     readonly attribute unsigned long long size;
     readonly attribute DOMString type;

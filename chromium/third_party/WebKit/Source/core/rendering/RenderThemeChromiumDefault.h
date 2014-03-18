@@ -43,6 +43,8 @@ public:
     // A method asking if the control changes its tint when the window has focus or not.
     virtual bool controlSupportsTints(const RenderObject*) const;
 
+    virtual bool supportsFocusRing(const RenderStyle*) const OVERRIDE;
+
     // List Box selection color
     virtual Color activeListBoxSelectionBackgroundColor() const;
     virtual Color activeListBoxSelectionForegroundColor() const;
@@ -67,11 +69,12 @@ public:
     virtual bool paintRadio(RenderObject*, const PaintInfo&, const IntRect&);
     virtual void setRadioSize(RenderStyle*) const;
 
-    virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual bool paintSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
     virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&);
@@ -87,6 +90,7 @@ public:
 protected:
     RenderThemeChromiumDefault();
     virtual ~RenderThemeChromiumDefault();
+    virtual bool shouldUseFallbackTheme(RenderStyle*) const OVERRIDE;
 
 private:
     // A general method asking if any control tinting is supported at all.

@@ -35,10 +35,10 @@ class SVGMaskElement FINAL : public SVGElement,
                              public SVGTests,
                              public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGMaskElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGMaskElement> create(Document&);
 
 private:
-    SVGMaskElement(const QualifiedName&, Document&);
+    explicit SVGMaskElement(Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool needsPendingResourceHandling() const { return false; }
@@ -68,11 +68,7 @@ private:
     virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
 
-inline SVGMaskElement* toSVGMaskElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::maskTag));
-    return static_cast<SVGMaskElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGMaskElement, hasTagName(SVGNames::maskTag));
 
 }
 

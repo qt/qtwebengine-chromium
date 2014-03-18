@@ -104,8 +104,9 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   void Terminate();
 
   int GetCapabilities();
-  bool SetOptions(int options);
+  bool SetOptions(const VideoOptions &options);
   bool SetDefaultEncoderConfig(const VideoEncoderConfig& config);
+  VideoEncoderConfig GetDefaultEncoderConfig() const;
 
   WebRtcVideoMediaChannel* CreateChannel(VoiceMediaChannel* voice_channel);
 
@@ -179,6 +180,9 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   struct VideoCodecPref {
     const char* name;
     int payload_type;
+    // For RTX, this field is the payload-type that RTX applies to.
+    // For other codecs, it should be set to -1.
+    int associated_payload_type;
     int pref;
   };
 
@@ -262,8 +266,10 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   virtual bool SendIntraFrame();
   virtual bool RequestIntraFrame();
 
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet);
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time);
   virtual void OnReadyToSend(bool ready);
   virtual bool MuteStream(uint32 ssrc, bool on);
   virtual bool SetRecvRtpHeaderExtensions(
@@ -285,8 +291,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   void SendFrame(VideoCapturer* capturer, const VideoFrame* frame);
   bool SendFrame(WebRtcVideoChannelSendInfo* channel_info,
                  const VideoFrame* frame, bool is_screencast);
-
-  void AdaptAndSendFrame(VideoCapturer* capturer, const VideoFrame* frame);
 
   // Thunk functions for use with HybridVideoEngine
   void OnLocalFrame(VideoCapturer* capturer, const VideoFrame* frame) {
@@ -355,9 +359,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool StopSend(WebRtcVideoChannelSendInfo* send_channel);
   bool SendIntraFrame(int channel_id);
 
-  // Send with one local SSRC. Normal case.
-  bool IsOneSsrcStream(const StreamParams& sp);
-
   bool HasReadySendChannels();
 
   // Send channel key returns the key corresponding to the provided local SSRC
@@ -365,11 +366,12 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // If the local ssrc correspond to that of the default channel the key is 0.
   // For all other channels the returned key will be the same as the local ssrc.
   bool GetSendChannelKey(uint32 local_ssrc, uint32* key);
-  WebRtcVideoChannelSendInfo* GetSendChannel(VideoCapturer* video_capturer);
   WebRtcVideoChannelSendInfo* GetSendChannel(uint32 local_ssrc);
   // Creates a new unique key that can be used for inserting a new send channel
   // into |send_channels_|
   bool CreateSendChannelKey(uint32 local_ssrc, uint32* key);
+  // Get the number of the send channels |capturer| registered with.
+  int GetSendChannelNum(VideoCapturer* capturer);
 
   bool IsDefaultChannel(int channel_id) const {
     return channel_id == vie_channel_;
@@ -399,6 +401,17 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // Signal when cpu adaptation has no further scope to adapt.
   void OnCpuAdaptationUnable();
 
+  // Set the local (send-side) RTX SSRC corresponding to primary_ssrc.
+  bool SetLocalRtxSsrc(int channel_id, const StreamParams& send_params,
+                       uint32 primary_ssrc, int stream_idx);
+
+  // Connect |capturer| to WebRtcVideoMediaChannel if it is only registered
+  // to one send channel, i.e. the first send channel.
+  void MaybeConnectCapturer(VideoCapturer* capturer);
+  // Disconnect |capturer| from WebRtcVideoMediaChannel if it is only registered
+  // to one send channel, i.e. the last send channel.
+  void MaybeDisconnectCapturer(VideoCapturer* capturer);
+
   // Global state.
   WebRtcVideoEngine* engine_;
   VoiceMediaChannel* voice_channel_;
@@ -422,6 +435,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // Global send side state.
   SendChannelMap send_channels_;
   talk_base::scoped_ptr<webrtc::VideoCodec> send_codec_;
+  int send_rtx_type_;
   int send_red_type_;
   int send_fec_type_;
   int send_min_bitrate_;

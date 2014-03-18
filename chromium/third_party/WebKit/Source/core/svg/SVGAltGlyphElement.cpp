@@ -42,22 +42,21 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAltGlyphElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTextPositioningElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGAltGlyphElement::SVGAltGlyphElement(const QualifiedName& tagName, Document& document)
-    : SVGTextPositioningElement(tagName, document)
+inline SVGAltGlyphElement::SVGAltGlyphElement(Document& document)
+    : SVGTextPositioningElement(SVGNames::altGlyphTag, document)
 {
-    ASSERT(hasTagName(SVGNames::altGlyphTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGAltGlyphElement();
 }
 
-PassRefPtr<SVGAltGlyphElement> SVGAltGlyphElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGAltGlyphElement> SVGAltGlyphElement::create(Document& document)
 {
-    return adoptRef(new SVGAltGlyphElement(tagName, document));
+    return adoptRef(new SVGAltGlyphElement(document));
 }
 
-void SVGAltGlyphElement::setGlyphRef(const AtomicString&, ExceptionState& es)
+void SVGAltGlyphElement::setGlyphRef(const AtomicString&, ExceptionState& exceptionState)
 {
-    es.throwDOMException(NoModificationAllowedError);
+    exceptionState.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
 }
 
 const AtomicString& SVGAltGlyphElement::glyphRef() const
@@ -65,9 +64,9 @@ const AtomicString& SVGAltGlyphElement::glyphRef() const
     return fastGetAttribute(SVGNames::glyphRefAttr);
 }
 
-void SVGAltGlyphElement::setFormat(const AtomicString&, ExceptionState& es)
+void SVGAltGlyphElement::setFormat(const AtomicString&, ExceptionState& exceptionState)
 {
-    es.throwDOMException(NoModificationAllowedError);
+    exceptionState.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
 }
 
 const AtomicString& SVGAltGlyphElement::format() const

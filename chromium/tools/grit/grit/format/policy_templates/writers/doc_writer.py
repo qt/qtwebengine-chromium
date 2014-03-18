@@ -227,9 +227,12 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       policy: The data structure of a policy.
     '''
     examples = self._AddStyledElement(parent, 'dl', ['dd dl'])
-    self._AddListExampleWindows(examples, policy)
-    self._AddListExampleLinux(examples, policy)
-    self._AddListExampleMac(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'win'):
+      self._AddListExampleWindows(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'linux'):
+      self._AddListExampleLinux(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'mac'):
+      self._AddListExampleMac(examples, policy)
 
   def _PythonDictionaryToMacDictionary(self, dictionary, indent=''):
     '''Converts a python dictionary to an equivalent XML plist.
@@ -336,9 +339,12 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       policy: The data structure of a policy.
     '''
     examples = self._AddStyledElement(parent, 'dl', ['dd dl'])
-    self._AddDictionaryExampleWindows(examples, policy)
-    self._AddDictionaryExampleLinux(examples, policy)
-    self._AddDictionaryExampleMac(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'win'):
+      self._AddDictionaryExampleWindows(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'linux'):
+      self._AddDictionaryExampleLinux(examples, policy)
+    if self.IsPolicySupportedOnPlatform(policy, 'mac'):
+      self._AddDictionaryExampleMac(examples, policy)
 
   def _AddExample(self, parent, policy):
     '''Adds the HTML DOM representation of the example value of a policy to
@@ -358,20 +364,28 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     example_value = policy['example_value']
     policy_type = policy['type']
     if policy_type == 'main':
-      if example_value == True:
-        self.AddText(
-            parent, '0x00000001 (Windows), true (Linux), <true /> (Mac)')
-      elif example_value == False:
-        self.AddText(
-            parent, '0x00000000 (Windows), false (Linux), <false /> (Mac)')
-      else:
-        raise Exception('Expected boolean value.')
+      pieces = []
+      if self.IsPolicySupportedOnPlatform(policy, 'win'):
+        value = '0x00000001' if example_value else '0x00000000'
+        pieces.append(value + ' (Windows)')
+      if self.IsPolicySupportedOnPlatform(policy, 'linux'):
+        value = 'true' if example_value else 'false'
+        pieces.append(value + ' (Linux)')
+      if self.IsPolicySupportedOnPlatform(policy, 'mac'):
+        value = '<true />' if example_value else '<false />'
+        pieces.append(value + ' (Mac)')
+      self.AddText(parent, ', '.join(pieces))
     elif policy_type == 'string':
       self.AddText(parent, '"%s"' % example_value)
     elif policy_type in ('int', 'int-enum'):
-      self.AddText(
-          parent,
-          '0x%08x (Windows), %d (Linux/Mac)' % (example_value, example_value))
+      pieces = []
+      if self.IsPolicySupportedOnPlatform(policy, 'win'):
+        pieces.append('0x%08x (Windows)' % example_value)
+      if self.IsPolicySupportedOnPlatform(policy, 'linux'):
+        pieces.append('%d (Linux)' % example_value)
+      if self.IsPolicySupportedOnPlatform(policy, 'mac'):
+        pieces.append('%d (Mac)' % example_value)
+      self.AddText(parent, ', '.join(pieces))
     elif policy_type == 'string-enum':
       self.AddText(parent, '"%s"' % (example_value))
     elif policy_type == 'list':
@@ -445,28 +459,40 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
 
     dl = self.AddElement(parent, 'dl')
-    self._AddPolicyAttribute(
-        dl,
-        'data_type',
-        self._TYPE_MAP[policy['type']])
-    self._AddPolicyAttribute(
-        dl,
-        'win_reg_loc',
-        self.config['win_reg_mandatory_key_name'] + '\\' + policy['name'],
-        ['.monospace'])
-    self._AddPolicyAttribute(
-        dl,
-        'mac_linux_pref_name',
-        policy['name'],
-        ['.monospace'])
+    data_type = self._TYPE_MAP[policy['type']]
+    if (self.IsPolicySupportedOnPlatform(policy, 'win') and
+        self._REG_TYPE_MAP.get(policy['type'], None)):
+      data_type += ' (%s)' % self._REG_TYPE_MAP[policy['type']]
+    self._AddPolicyAttribute(dl, 'data_type', data_type)
+    if policy['type'] != 'external':
+      # All types except 'external' can be set through platform policy.
+      if self.IsPolicySupportedOnPlatform(policy, 'win'):
+        self._AddPolicyAttribute(
+            dl,
+            'win_reg_loc',
+            self.config['win_reg_mandatory_key_name'] + '\\' + policy['name'],
+            ['.monospace'])
+      if (self.IsPolicySupportedOnPlatform(policy, 'linux') or
+          self.IsPolicySupportedOnPlatform(policy, 'mac')):
+        self._AddPolicyAttribute(
+            dl,
+            'mac_linux_pref_name',
+            policy['name'],
+            ['.monospace'])
     dd = self._AddPolicyAttribute(dl, 'supported_on')
     self._AddSupportedOnList(dd, policy['supported_on'])
     dd = self._AddPolicyAttribute(dl, 'supported_features')
     self._AddFeatures(dd, policy)
     dd = self._AddPolicyAttribute(dl, 'description')
     self._AddDescription(dd, policy)
-    dd = self._AddPolicyAttribute(dl, 'example_value')
-    self._AddExample(dd, policy)
+    if (self.IsPolicySupportedOnPlatform(policy, 'win') or
+        self.IsPolicySupportedOnPlatform(policy, 'linux') or
+        self.IsPolicySupportedOnPlatform(policy, 'mac')):
+      # Don't add an example for ChromeOS-only policies.
+      if policy['type'] != 'external':
+        # All types except 'external' can be set through platform policy.
+        dd = self._AddPolicyAttribute(dl, 'example_value')
+        self._AddExample(dd, policy)
 
   def _AddPolicyNote(self, parent, policy):
     '''If a policy has an additional web page assigned with it, then add
@@ -615,13 +641,22 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
         self._FEATURE_MAP[message[12:]] = self.messages[message]['text']
     # Human-readable names of types.
     self._TYPE_MAP = {
-      'string': 'String (REG_SZ)',
-      'int': 'Integer (REG_DWORD)',
-      'main': 'Boolean (REG_DWORD)',
-      'int-enum': 'Integer (REG_DWORD)',
-      'string-enum': 'String (REG_SZ)',
+      'string': 'String',
+      'int': 'Integer',
+      'main': 'Boolean',
+      'int-enum': 'Integer',
+      'string-enum': 'String',
       'list': 'List of strings',
-      'dict': 'Dictionary (REG_SZ, encoded as a JSON string)',
+      'dict': 'Dictionary',
+      'external': 'External data reference',
+    }
+    self._REG_TYPE_MAP = {
+      'string': 'REG_SZ',
+      'int': 'REG_DWORD',
+      'main': 'REG_DWORD',
+      'int-enum': 'REG_DWORD',
+      'string-enum': 'REG_SZ',
+      'dict': 'REG_SZ, encoded as a JSON string',
     }
     # The CSS style-sheet used for the document. It will be used in Google
     # Sites, which strips class attributes from HTML tags. To work around this,

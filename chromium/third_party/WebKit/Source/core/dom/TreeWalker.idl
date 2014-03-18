@@ -20,13 +20,13 @@
 
 // Introduced in DOM Level 2:
 [
-    CustomToV8
+    SetReference(NodeFilter filter)
 ] interface TreeWalker {
     readonly attribute Node root;
     readonly attribute unsigned long whatToShow;
     readonly attribute NodeFilter filter;
     readonly attribute boolean expandEntityReferences;
-             [SetterRaisesException] attribute Node currentNode;
+             [RaisesException=Setter] attribute Node currentNode;
 
     [CallWith=ScriptState] Node parentNode();
     [CallWith=ScriptState] Node firstChild();

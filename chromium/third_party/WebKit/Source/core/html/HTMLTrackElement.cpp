@@ -28,11 +28,10 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "RuntimeEnabledFeatures.h"
-#include "core/platform/Logging.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "platform/Logging.h"
 
 using namespace std;
 
@@ -51,12 +50,11 @@ static String urlForLoggingTrack(const KURL& url)
 }
 #endif
 
-inline HTMLTrackElement::HTMLTrackElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLTrackElement::HTMLTrackElement(Document& document)
+    : HTMLElement(trackTag, document)
     , m_loadTimer(this, &HTMLTrackElement::loadTimerFired)
 {
-    LOG(Media, "HTMLTrackElement::HTMLTrackElement - %p", this);
-    ASSERT(hasTagName(trackTag));
+    WTF_LOG(Media, "HTMLTrackElement::HTMLTrackElement - %p", this);
     ScriptWrappable::init(this);
 }
 
@@ -66,14 +64,14 @@ HTMLTrackElement::~HTMLTrackElement()
         m_track->clearClient();
 }
 
-PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(Document& document)
 {
-    return adoptRef(new HTMLTrackElement(tagName, document));
+    return adoptRef(new HTMLTrackElement(document));
 }
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)
 {
-    LOG(Media, "HTMLTrackElement::insertedInto");
+    WTF_LOG(Media, "HTMLTrackElement::insertedInto");
 
     // Since we've moved to a new parent, we may now be able to load.
     scheduleLoad();
@@ -94,86 +92,44 @@ void HTMLTrackElement::removedFrom(ContainerNode* insertionPoint)
 
 void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (RuntimeEnabledFeatures::videoTrackEnabled()) {
-        if (name == srcAttr) {
-            if (!value.isEmpty())
-                scheduleLoad();
-            else if (m_track)
-                m_track->removeAllCues();
+    if (name == srcAttr) {
+        if (!value.isEmpty())
+            scheduleLoad();
+        else if (m_track)
+            m_track->removeAllCues();
 
-        // 4.8.10.12.3 Sourcing out-of-band text tracks
-        // As the kind, label, and srclang attributes are set, changed, or removed, the text track must update accordingly...
-        } else if (name == kindAttr)
-            track()->setKind(value.lower());
-        else if (name == labelAttr)
-            track()->setLabel(value);
-        else if (name == srclangAttr)
-            track()->setLanguage(value);
-        else if (name == defaultAttr)
-            track()->setIsDefault(!value.isNull());
+    // 4.8.10.12.3 Sourcing out-of-band text tracks
+    // As the kind, label, and srclang attributes are set, changed, or removed, the text track must update accordingly...
+    } else if (name == kindAttr) {
+        track()->setKind(value.lower());
+    } else if (name == labelAttr) {
+        track()->setLabel(value);
+    } else if (name == srclangAttr) {
+        track()->setLanguage(value);
+    } else if (name == idAttr) {
+        track()->setId(value);
+    } else if (name == defaultAttr) {
+        track()->setIsDefault(!value.isNull());
     }
 
     HTMLElement::parseAttribute(name, value);
 }
 
-KURL HTMLTrackElement::src() const
-{
-    return document().completeURL(getAttribute(srcAttr));
-}
-
-void HTMLTrackElement::setSrc(const String& url)
-{
-    setAttribute(srcAttr, url);
-}
-
-String HTMLTrackElement::kind()
+const AtomicString& HTMLTrackElement::kind()
 {
     return track()->kind();
 }
 
-void HTMLTrackElement::setKind(const String& kind)
+void HTMLTrackElement::setKind(const AtomicString& kind)
 {
     setAttribute(kindAttr, kind);
-}
-
-String HTMLTrackElement::srclang() const
-{
-    return getAttribute(srclangAttr);
-}
-
-void HTMLTrackElement::setSrclang(const String& srclang)
-{
-    setAttribute(srclangAttr, srclang);
-}
-
-String HTMLTrackElement::label() const
-{
-    return getAttribute(labelAttr);
-}
-
-void HTMLTrackElement::setLabel(const String& label)
-{
-    setAttribute(labelAttr, label);
-}
-
-bool HTMLTrackElement::isDefault() const
-{
-    return fastHasAttribute(defaultAttr);
-}
-
-void HTMLTrackElement::setIsDefault(bool isDefault)
-{
-    setBooleanAttribute(defaultAttr, isDefault);
 }
 
 LoadableTextTrack* HTMLTrackElement::ensureTrack()
 {
     if (!m_track) {
-        // The kind attribute is an enumerated attribute, limited only to know values. It defaults to 'subtitles' if missing or invalid.
-        String kind = getAttribute(kindAttr).lower();
-        if (!TextTrack::isValidKindKeyword(kind))
-            kind = TextTrack::subtitlesKeyword();
-        m_track = LoadableTextTrack::create(this, kind, label(), srclang());
+        // kind, label and language are updated by parseAttribute
+        m_track = LoadableTextTrack::create(this);
     }
     return m_track.get();
 }
@@ -190,14 +146,11 @@ bool HTMLTrackElement::isURLAttribute(const Attribute& attribute) const
 
 void HTMLTrackElement::scheduleLoad()
 {
-    LOG(Media, "HTMLTrackElement::scheduleLoad");
+    WTF_LOG(Media, "HTMLTrackElement::scheduleLoad");
 
     // 1. If another occurrence of this algorithm is already running for this text track and its track element,
     // abort these steps, letting that other algorithm take care of this element.
     if (m_loadTimer.isActive())
-        return;
-
-    if (!RuntimeEnabledFeatures::videoTrackEnabled())
         return;
 
     // 2. If the text track's text track mode is not set to one of hidden or showing, abort these steps.
@@ -217,7 +170,7 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
     if (!fastHasAttribute(srcAttr))
         return;
 
-    LOG(Media, "HTMLTrackElement::loadTimerFired");
+    WTF_LOG(Media, "HTMLTrackElement::loadTimerFired");
 
     // 6. Set the text track readiness state to loading.
     setReadyState(HTMLTrackElement::LOADING);
@@ -228,7 +181,7 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
     // 8. If the track element's parent is a media element then let CORS mode be the state of the parent media
     // element's crossorigin content attribute. Otherwise, let CORS mode be No CORS.
     if (!canLoadUrl(url)) {
-        didCompleteLoad(ensureTrack(), HTMLTrackElement::Failure);
+        didCompleteLoad(HTMLTrackElement::Failure);
         return;
     }
 
@@ -237,9 +190,6 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
 
 bool HTMLTrackElement::canLoadUrl(const KURL& url)
 {
-    if (!RuntimeEnabledFeatures::videoTrackEnabled())
-        return false;
-
     HTMLMediaElement* parent = mediaElement();
     if (!parent)
         return false;
@@ -253,14 +203,14 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
         return false;
 
     if (!document().contentSecurityPolicy()->allowMediaFromSource(url)) {
-        LOG(Media, "HTMLTrackElement::canLoadUrl(%s) -> rejected by Content Security Policy", urlForLoggingTrack(url).utf8().data());
+        WTF_LOG(Media, "HTMLTrackElement::canLoadUrl(%s) -> rejected by Content Security Policy", urlForLoggingTrack(url).utf8().data());
         return false;
     }
 
     return dispatchBeforeLoadEvent(url.string());
 }
 
-void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
+void HTMLTrackElement::didCompleteLoad(LoadStatus status)
 {
     // 4.8.10.12.3 Sourcing out-of-band text tracks (continued)
 
@@ -274,7 +224,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     if (status == Failure) {
         setReadyState(HTMLTrackElement::TRACK_ERROR);
-        dispatchEvent(Event::create(eventNames().errorEvent), IGNORE_EXCEPTION);
+        dispatchEvent(Event::create(EventTypeNames::error), IGNORE_EXCEPTION);
         return;
     }
 
@@ -285,7 +235,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     //     2. If the file was successfully processed, fire a simple event named load at the
     //        track element.
-    dispatchEvent(Event::create(eventNames().loadEvent), IGNORE_EXCEPTION);
+    dispatchEvent(Event::create(EventTypeNames::load), IGNORE_EXCEPTION);
 }
 
 // NOTE: The values in the TextTrack::ReadinessState enum must stay in sync with those in HTMLTrackElement::ReadyState.

@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 
-using WebKit::WebURLRequest;
+using blink::WebURLRequest;
 
 // static
 ResourceType::Type ResourceType::FromTargetType(
@@ -40,6 +40,8 @@ ResourceType::Type ResourceType::FromTargetType(
       return ResourceType::FAVICON;
     case WebURLRequest::TargetIsXHR:
       return ResourceType::XHR;
+    case WebURLRequest::TargetIsPing:
+      return ResourceType::PING;
     default:
       NOTREACHED();
       return ResourceType::SUB_RESOURCE;

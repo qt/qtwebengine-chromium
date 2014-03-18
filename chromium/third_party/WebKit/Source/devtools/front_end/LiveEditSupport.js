@@ -30,7 +30,7 @@
 
 /**
  * @constructor
- * @param {WebInspector.Workspace} workspace
+ * @param {!WebInspector.Workspace} workspace
  */
 WebInspector.LiveEditSupport = function(workspace)
 {
@@ -41,13 +41,13 @@ WebInspector.LiveEditSupport = function(workspace)
 
 WebInspector.LiveEditSupport.prototype = {
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
-     * @return {WebInspector.UISourceCode}
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @return {!WebInspector.UISourceCode}
      */
     uiSourceCodeForLiveEdit: function(uiSourceCode)
     {
         var rawLocation = uiSourceCode.uiLocationToRawLocation(0, 0);
-        var debuggerModelLocation = /** @type {WebInspector.DebuggerModel.Location} */ (rawLocation);
+        var debuggerModelLocation = /** @type {!WebInspector.DebuggerModel.Location} */ (rawLocation);
         var script = WebInspector.debuggerModel.scriptForId(debuggerModelLocation.scriptId);
         var uiLocation = script.rawLocationToUILocation(0, 0);
 
@@ -68,9 +68,9 @@ WebInspector.LiveEditSupport.prototype = {
 
     _debuggerReset: function()
     {
-        /** @type {!Object.<string, WebInspector.UISourceCode>} */
+        /** @type {!Object.<string, !WebInspector.UISourceCode>} */
         this._uiSourceCodeForScriptId = {};
-        /** @type {!Map.<WebInspector.UISourceCode, string>} */
+        /** @type {!Map.<!WebInspector.UISourceCode, string>} */
         this._scriptIdForUISourceCode = new Map();
         this._workspaceProvider.reset();
     },
@@ -78,32 +78,39 @@ WebInspector.LiveEditSupport.prototype = {
 
 /**
  * @param {?string} error
- * @param {DebuggerAgent.SetScriptSourceError=} errorData
- * @param {WebInspector.Script=} contextScript
+ * @param {!DebuggerAgent.SetScriptSourceError=} errorData
+ * @param {!WebInspector.Script=} contextScript
  */
 WebInspector.LiveEditSupport.logDetailedError = function(error, errorData, contextScript)
 {
+    var warningLevel = WebInspector.ConsoleMessage.MessageLevel.Warning;
     if (!errorData) {
-        WebInspector.showErrorMessage(error);
+        if (error)
+            WebInspector.log(WebInspector.UIString("LiveEdit failed: %s", error), warningLevel, false);
         return;
     }
     var compileError = errorData.compileError;
     if (compileError) {
-        var message = compileError.message;
+        var message = "LiveEdit compile failed: " + compileError.message;
         if (contextScript)
             message += " at " + contextScript.sourceURL + ":" + compileError.lineNumber + ":" + compileError.columnNumber;
-        WebInspector.showErrorMessage(message);
+        WebInspector.log(message, WebInspector.ConsoleMessage.MessageLevel.Error, false);
     } else {
-        WebInspector.showErrorMessage("Unknown LiveEdit error: " + JSON.stringify(errorData) + "; " + error);
+        WebInspector.log("Unknown LiveEdit error: " + JSON.stringify(errorData) + "; " + error, warningLevel, false);
     }
+}
+
+WebInspector.LiveEditSupport.logSuccess = function()
+{
+    WebInspector.log(WebInspector.UIString("Recompilation and update succeeded."), WebInspector.ConsoleMessage.MessageLevel.Debug, false);
 }
 
 /**
  * @constructor
  * @implements {WebInspector.ScriptFile}
  * @extends {WebInspector.Object}
- * @param {WebInspector.UISourceCode} uiSourceCode
- * @param {WebInspector.UISourceCode} liveEditUISourceCode
+ * @param {!WebInspector.UISourceCode} uiSourceCode
+ * @param {!WebInspector.UISourceCode} liveEditUISourceCode
  * @param {string} scriptId
  */
 WebInspector.LiveEditScriptFile = function(uiSourceCode, liveEditUISourceCode, scriptId)
@@ -120,7 +127,8 @@ WebInspector.LiveEditScriptFile.prototype = {
     {
         /**
          * @param {?string} error
-         * @param {DebuggerAgent.SetScriptSourceError=} errorData
+         * @param {!DebuggerAgent.SetScriptSourceError=} errorData
+         * @this {WebInspector.LiveEditScriptFile}
          */
         function innerCallback(error, errorData)
         {
@@ -129,6 +137,7 @@ WebInspector.LiveEditScriptFile.prototype = {
                 WebInspector.LiveEditSupport.logDetailedError(error, errorData, script);
                 return;
             }
+            WebInspector.LiveEditSupport.logSuccess();
         }
 
         var script = WebInspector.debuggerModel.scriptForId(this._scriptId);
@@ -166,5 +175,5 @@ WebInspector.LiveEditScriptFile.prototype = {
     __proto__: WebInspector.Object.prototype
 }
 
-/** @type {WebInspector.LiveEditSupport} */
-WebInspector.liveEditSupport = null;
+/** @type {!WebInspector.LiveEditSupport} */
+WebInspector.liveEditSupport;

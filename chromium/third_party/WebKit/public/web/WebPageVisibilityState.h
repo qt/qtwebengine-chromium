@@ -31,7 +31,7 @@
 #ifndef WebPageVisibilityState_h
 #define WebPageVisibilityState_h
 
-namespace WebKit {
+namespace blink {
 
 // The following enum should be consistent with the PageVisibilityState enum
 // defined in WebCore.
@@ -39,9 +39,8 @@ enum WebPageVisibilityState {
     WebPageVisibilityStateVisible,
     WebPageVisibilityStateHidden,
     WebPageVisibilityStatePrerender,
-    WebPageVisibilityStatePreview
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

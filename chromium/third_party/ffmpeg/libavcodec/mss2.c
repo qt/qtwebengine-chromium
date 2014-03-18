@@ -377,14 +377,8 @@ static int decode_wmv9(AVCodecContext *avctx, const uint8_t *buf, int buf_size,
 
     ff_mpeg_flush(avctx);
 
-    if (s->current_picture_ptr == NULL || s->current_picture_ptr->f.data[0]) {
-        int i = ff_find_unused_picture(s, 0);
-        if (i < 0)
-            return i;
-        s->current_picture_ptr = &s->picture[i];
-    }
-
-    init_get_bits(&s->gb, buf, buf_size * 8);
+    if ((ret = init_get_bits8(&s->gb, buf, buf_size)) < 0)
+        return ret;
 
     s->loop_filter = avctx->skip_loop_filter < AVDISCARD_ALL;
 
@@ -482,7 +476,8 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     av_assert0(FF_INPUT_BUFFER_PADDING_SIZE >=
                ARITH2_PADDING + (MIN_CACHE_BITS + 7) / 8);
 
-    init_get_bits(&gb, buf, buf_size * 8);
+    if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
+        return ret;
 
     if (keyframe = get_bits1(&gb))
         skip_bits(&gb, 7);
@@ -640,7 +635,8 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                 ff_mss12_slicecontext_reset(&ctx->sc[1]);
         }
         if (is_rle) {
-            init_get_bits(&gb, buf, buf_size * 8);
+            if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
+                return ret;
             if (ret = decode_rle(&gb, c->pal_pic, c->pal_stride,
                                  c->rgb_pic, c->rgb_stride, c->pal, keyframe,
                                  ctx->split_position, 0,
@@ -775,7 +771,7 @@ static av_cold int wmv9_init(AVCodecContext *avctx)
 
     v->overlap         = 0;
 
-    v->s.resync_marker = 0;
+    v->resync_marker   = 0;
     v->rangered        = 0;
 
     v->s.max_b_frames = avctx->max_b_frames = 0;
@@ -837,11 +833,13 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
     avctx->pix_fmt = c->free_colours == 127 ? AV_PIX_FMT_RGB555
                                             : AV_PIX_FMT_RGB24;
 
+
     return 0;
 }
 
 AVCodec ff_mss2_decoder = {
     .name           = "mss2",
+    .long_name      = NULL_IF_CONFIG_SMALL("MS Windows Media Video V9 Screen"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MSS2,
     .priv_data_size = sizeof(MSS2Context),
@@ -849,5 +847,4 @@ AVCodec ff_mss2_decoder = {
     .close          = mss2_decode_end,
     .decode         = mss2_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("MS Windows Media Video V9 Screen"),
 };

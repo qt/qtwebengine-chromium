@@ -34,18 +34,18 @@
 #include "../platform/WebCommon.h"
 #include "WebWidget.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebWidgetClient;
 
 class WebPopupMenu : public WebWidget {
 public:
-    WEBKIT_EXPORT static WebPopupMenu* create(WebWidgetClient*);
+    BLINK_EXPORT static WebPopupMenu* create(WebWidgetClient*);
 
     // Sets the minimum height of a popup listbox row.
-    WEBKIT_EXPORT static void setMinimumRowHeight(int);
+    BLINK_EXPORT static void setMinimumRowHeight(int);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

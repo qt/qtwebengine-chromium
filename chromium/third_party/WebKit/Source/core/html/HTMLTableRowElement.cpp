@@ -37,21 +37,15 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableRowElement::HTMLTableRowElement(const QualifiedName& tagName, Document& document)
-    : HTMLTablePartElement(tagName, document)
+HTMLTableRowElement::HTMLTableRowElement(Document& document)
+    : HTMLTablePartElement(trTag, document)
 {
-    ASSERT(hasTagName(trTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
 {
-    return adoptRef(new HTMLTableRowElement(trTag, document));
-}
-
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLTableRowElement(tagName, document));
+    return adoptRef(new HTMLTableRowElement(document));
 }
 
 int HTMLTableRowElement::rowIndex() const
@@ -118,30 +112,30 @@ int HTMLTableRowElement::sectionRowIndex() const
     return rIndex;
 }
 
-PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& es)
+PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
 {
     RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if (index < -1 || index > numCells) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [-1, " + String::number(numCells) + "].");
         return 0;
     }
 
     RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
     if (index < 0 || index >= numCells)
-        appendChild(cell, es);
+        appendChild(cell, exceptionState);
     else {
         Node* n;
         if (index < 1)
             n = firstChild();
         else
             n = children->item(index);
-        insertBefore(cell, n, es);
+        insertBefore(cell, n, exceptionState);
     }
     return cell.release();
 }
 
-void HTMLTableRowElement::deleteCell(int index, ExceptionState& es)
+void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
 {
     RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
@@ -149,20 +143,15 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionState& es)
         index = numCells-1;
     if (index >= 0 && index < numCells) {
         RefPtr<Node> cell = children->item(index);
-        HTMLElement::removeChild(cell.get(), es);
+        HTMLElement::removeChild(cell.get(), exceptionState);
     } else {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [0, " + String::number(numCells) + ").");
     }
 }
 
 PassRefPtr<HTMLCollection> HTMLTableRowElement::cells()
 {
     return ensureCachedHTMLCollection(TRCells);
-}
-
-void HTMLTableRowElement::setCells(HTMLCollection*, ExceptionState& es)
-{
-    es.throwDOMException(NoModificationAllowedError);
 }
 
 }

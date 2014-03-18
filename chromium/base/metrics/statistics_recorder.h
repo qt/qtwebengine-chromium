@@ -49,11 +49,15 @@ class BASE_EXPORT StatisticsRecorder {
   static const BucketRanges* RegisterOrDeleteDuplicateRanges(
       const BucketRanges* ranges);
 
-  // Methods for printing histograms.  Only histograms which have query as
-  // a substring are written to output (an empty string will process all
-  // registered histograms).
+  // Methods for appending histogram data to a string.  Only histograms which
+  // have |query| as a substring are written to |output| (an empty string will
+  // process all registered histograms).
   static void WriteHTMLGraph(const std::string& query, std::string* output);
   static void WriteGraph(const std::string& query, std::string* output);
+
+  // Returns the histograms with |query| as a substring as JSON text (an empty
+  // |query| will process all registered histograms).
+  static std::string ToJSON(const std::string& query);
 
   // Method for extracting histograms which were marked for use by UMA.
   static void GetHistograms(Histograms* output);
@@ -85,6 +89,8 @@ class BASE_EXPORT StatisticsRecorder {
   friend class HistogramTest;
   friend class SparseHistogramTest;
   friend class StatisticsRecorderTest;
+  FRIEND_TEST_ALL_PREFIXES(HistogramDeltaSerializationTest,
+                           DeserializeHistogramAndAddSamples);
 
   // The constructor just initializes static members. Usually client code should
   // use Initialize to do this. But in test code, you can friend this class and

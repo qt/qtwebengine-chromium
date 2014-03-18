@@ -38,7 +38,7 @@ public:
         case PathSegUndefinedRole:
             return 0;
         case PathSegUnalteredRole:
-            return SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(m_element.get(), SVGPathElement::dPropertyInfo());
+            return SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(m_element, SVGPathElement::dPropertyInfo());
         case PathSegNormalizedRole:
             // FIXME: https://bugs.webkit.org/show_bug.cgi?id=15412 - Implement normalized path segment lists!
             return 0;
@@ -47,7 +47,7 @@ public:
         return 0;
     }
 
-    SVGPathElement* contextElement() const { return m_element.get(); }
+    SVGPathElement* contextElement() const { return m_element; }
     SVGPathSegRole role() const { return m_role; }
 
     void setContextAndRole(SVGPathElement* element, SVGPathSegRole role)
@@ -64,13 +64,12 @@ protected:
             return;
         }
 
-        ASSERT(m_role != PathSegUndefinedRole);
         m_element->pathSegListChanged(m_role);
     }
 
 private:
     SVGPathSegRole m_role;
-    RefPtr<SVGPathElement> m_element;
+    SVGPathElement* m_element;
 };
 
 class SVGPathSegSingleCoordinate : public SVGPathSegWithContext {

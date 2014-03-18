@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
+#include "cc/base/util.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/video_layer_impl.h"
 #include "cc/output/compositor_frame.h"
@@ -32,12 +33,14 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/layer_quad.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/sync_point_helper.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -53,7 +56,8 @@
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
 
-using WebKit::WebGraphicsContext3D;
+using blink::WebGraphicsContext3D;
+using gpu::gles2::GLES2Interface;
 
 namespace cc {
 
@@ -71,6 +75,7 @@ class SimpleSwapFence : public ResourceProvider::Fence {
   SimpleSwapFence() : has_passed_(false) {}
   virtual bool HasPassed() OVERRIDE { return has_passed_; }
   void SetHasPassed() { has_passed_ = true; }
+
  private:
   virtual ~SimpleSwapFence() {}
   bool has_passed_;
@@ -89,7 +94,7 @@ bool NeedsIOSurfaceReadbackWorkaround() {
 Float4 UVTransform(const TextureDrawQuad* quad) {
   gfx::PointF uv0 = quad->uv_top_left;
   gfx::PointF uv1 = quad->uv_bottom_right;
-  Float4 xform = { { uv0.x(), uv0.y(), uv1.x() - uv0.x(), uv1.y() - uv0.y() } };
+  Float4 xform = {{uv0.x(), uv0.y(), uv1.x() - uv0.x(), uv1.y() - uv0.y()}};
   if (quad->flipped) {
     xform.data[1] = 1.0f - xform.data[1];
     xform.data[3] = -xform.data[3];
@@ -101,13 +106,24 @@ Float4 PremultipliedColor(SkColor color) {
   const float factor = 1.0f / 255.0f;
   const float alpha = SkColorGetA(color) * factor;
 
-  Float4 result = { {
-      SkColorGetR(color) * factor * alpha,
-      SkColorGetG(color) * factor * alpha,
-      SkColorGetB(color) * factor * alpha,
-      alpha
-  } };
+  Float4 result = {
+      {SkColorGetR(color) * factor * alpha, SkColorGetG(color) * factor * alpha,
+       SkColorGetB(color) * factor * alpha, alpha}};
   return result;
+}
+
+SamplerType SamplerTypeFromTextureTarget(GLenum target) {
+  switch (target) {
+    case GL_TEXTURE_2D:
+      return SamplerType2D;
+    case GL_TEXTURE_RECTANGLE_ARB:
+      return SamplerType2DRect;
+    case GL_TEXTURE_EXTERNAL_OES:
+      return SamplerTypeExternalOES;
+    default:
+      NOTREACHED();
+      return SamplerType2D;
+  }
 }
 
 // Smallest unit that impact anti-aliasing output. We use this to
@@ -133,23 +149,13 @@ scoped_ptr<GLRenderer> GLRenderer::Create(
     OutputSurface* output_surface,
     ResourceProvider* resource_provider,
     TextureMailboxDeleter* texture_mailbox_deleter,
-    int highp_threshold_min,
-    bool use_skia_gpu_backend) {
-  scoped_ptr<GLRenderer> renderer(new GLRenderer(client,
-                                                 settings,
-                                                 output_surface,
-                                                 resource_provider,
-                                                 texture_mailbox_deleter,
-                                                 highp_threshold_min));
-  if (!renderer->Initialize())
-    return scoped_ptr<GLRenderer>();
-  if (use_skia_gpu_backend) {
-    renderer->InitializeGrContext();
-    DCHECK(renderer->CanUseSkiaGPUBackend())
-        << "Requested Skia GPU backend, but can't use it.";
-  }
-
-  return renderer.Pass();
+    int highp_threshold_min) {
+  return make_scoped_ptr(new GLRenderer(client,
+                                        settings,
+                                        output_surface,
+                                        resource_provider,
+                                        texture_mailbox_deleter,
+                                        highp_threshold_min));
 }
 
 GLRenderer::GLRenderer(RendererClient* client,
@@ -162,31 +168,26 @@ GLRenderer::GLRenderer(RendererClient* client,
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
       context_(output_surface->context_provider()->Context3d()),
+      gl_(output_surface->context_provider()->ContextGL()),
+      context_support_(output_surface->context_provider()->ContextSupport()),
       texture_mailbox_deleter_(texture_mailbox_deleter),
       is_backbuffer_discarded_(false),
-      discard_backbuffer_when_not_visible_(false),
-      is_using_bind_uniform_(false),
       visible_(true),
       is_scissor_enabled_(false),
+      scissor_rect_needs_reset_(true),
       stencil_shadow_(false),
       blend_shadow_(false),
       highp_threshold_min_(highp_threshold_min),
       highp_threshold_cache_(0),
       on_demand_tile_raster_resource_id_(0) {
   DCHECK(context_);
-}
-
-bool GLRenderer::Initialize() {
-  if (!context_->makeContextCurrent())
-    return false;
+  DCHECK(context_support_);
 
   ContextProvider::Capabilities context_caps =
-    output_surface_->context_provider()->ContextCapabilities();
+      output_surface_->context_provider()->ContextCapabilities();
 
   capabilities_.using_partial_swap =
       settings_->partial_swap_enabled && context_caps.post_sub_buffer;
-
-  capabilities_.using_set_visibility = context_caps.set_visibility;
 
   DCHECK(!context_caps.iosurface || context_caps.texture_rectangle);
 
@@ -207,29 +208,9 @@ bool GLRenderer::Initialize() {
   capabilities_.using_map_image =
       settings_->use_map_image && context_caps.map_image;
 
-  capabilities_.using_discard_framebuffer =
-      context_caps.discard_framebuffer;
+  capabilities_.using_discard_framebuffer = context_caps.discard_framebuffer;
 
-  is_using_bind_uniform_ = context_caps.bind_uniform_location;
-
-  if (!InitializeSharedObjects())
-    return false;
-
-  // Make sure the viewport and context gets initialized, even if it is to zero.
-  ViewportChanged();
-  return true;
-}
-
-void GLRenderer::InitializeGrContext() {
-  skia::RefPtr<GrGLInterface> interface = skia::AdoptRef(
-      context_->createGrGLInterface());
-  if (!interface)
-    return;
-
-  gr_context_ = skia::AdoptRef(GrContext::Create(
-      kOpenGL_GrBackend,
-      reinterpret_cast<GrBackendContext>(interface.get())));
-  ReinitializeGrCanvas();
+  InitializeSharedObjects();
 }
 
 GLRenderer::~GLRenderer() {
@@ -248,11 +229,11 @@ const RendererCapabilities& GLRenderer::Capabilities() const {
 
 WebGraphicsContext3D* GLRenderer::Context() { return context_; }
 
-void GLRenderer::DebugGLCall(WebGraphicsContext3D* context,
+void GLRenderer::DebugGLCall(GLES2Interface* gl,
                              const char* command,
                              const char* file,
                              int line) {
-  unsigned error = context->getError();
+  GLuint error = gl->GetError();
   if (error != GL_NO_ERROR)
     LOG(ERROR) << "GL command failed: File: " << file << "\n\tLine " << line
                << "\n\tcommand: " << command << ", error "
@@ -266,29 +247,21 @@ void GLRenderer::SetVisible(bool visible) {
 
   EnforceMemoryPolicy();
 
-  // TODO(jamesr): Replace setVisibilityCHROMIUM() with an extension to
-  // explicitly manage front/backbuffers
-  // crbug.com/116049
-  if (capabilities_.using_set_visibility)
-    context_->setVisibilityCHROMIUM(visible);
+  context_support_->SetSurfaceVisible(visible);
 }
 
 void GLRenderer::SendManagedMemoryStats(size_t bytes_visible,
                                         size_t bytes_visible_and_nearby,
                                         size_t bytes_allocated) {
-  WebKit::WebGraphicsManagedMemoryStats stats;
-  stats.bytesVisible = bytes_visible;
-  stats.bytesVisibleAndNearby = bytes_visible_and_nearby;
-  stats.bytesAllocated = bytes_allocated;
-  stats.backbufferRequested = !is_backbuffer_discarded_;
-  context_->sendManagedMemoryStatsCHROMIUM(&stats);
+  gpu::ManagedMemoryStats stats;
+  stats.bytes_required = bytes_visible;
+  stats.bytes_nice_to_have = bytes_visible_and_nearby;
+  stats.bytes_allocated = bytes_allocated;
+  stats.backbuffer_requested = !is_backbuffer_discarded_;
+  context_support_->SendManagedMemoryStats(stats);
 }
 
 void GLRenderer::ReleaseRenderPassTextures() { render_pass_textures_.clear(); }
-
-void GLRenderer::ViewportChanged() {
-  ReinitializeGrCanvas();
-}
 
 void GLRenderer::DiscardPixels(bool has_external_stencil_test,
                                bool draw_rect_covers_full_surface) {
@@ -300,7 +273,7 @@ void GLRenderer::DiscardPixels(bool has_external_stencil_test,
       output_surface_->capabilities().uses_default_gl_framebuffer;
   GLenum attachments[] = {static_cast<GLenum>(
       using_default_framebuffer ? GL_COLOR_EXT : GL_COLOR_ATTACHMENT0_EXT)};
-  context_->discardFramebufferEXT(
+  gl_->DiscardFramebufferEXT(
       GL_FRAMEBUFFER, arraysize(attachments), attachments);
 }
 
@@ -316,9 +289,9 @@ void GLRenderer::ClearFramebuffer(DrawingFrame* frame,
   // On DEBUG builds, opaque render passes are cleared to blue to easily see
   // regions that were not drawn on the screen.
   if (frame->current_render_pass->has_transparent_background)
-    GLC(context_, context_->clearColor(0, 0, 0, 0));
+    GLC(gl_, gl_->ClearColor(0, 0, 0, 0));
   else
-    GLC(context_, context_->clearColor(0, 0, 1, 1));
+    GLC(gl_, gl_->ClearColor(0, 0, 1, 1));
 
   bool always_clear = false;
 #ifndef NDEBUG
@@ -326,30 +299,25 @@ void GLRenderer::ClearFramebuffer(DrawingFrame* frame,
 #endif
   if (always_clear || frame->current_render_pass->has_transparent_background) {
     GLbitfield clear_bits = GL_COLOR_BUFFER_BIT;
-    // Only the Skia GPU backend uses the stencil buffer.  No need to clear it
-    // otherwise.
-    if (always_clear || CanUseSkiaGPUBackend()) {
-      GLC(context_, context_->clearStencil(0));
+    if (always_clear)
       clear_bits |= GL_STENCIL_BUFFER_BIT;
-    }
-    context_->clear(clear_bits);
+    gl_->Clear(clear_bits);
   }
 }
 
 void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
-  if (client_->DeviceViewport().IsEmpty())
+  if (frame->device_viewport_rect.IsEmpty())
     return;
 
-  TRACE_EVENT0("cc", "GLRenderer::DrawLayers");
+  TRACE_EVENT0("cc", "GLRenderer::BeginDrawingFrame");
 
-  MakeContextCurrent();
-
+  // TODO(enne): Do we need to reinitialize all of this state per frame?
   ReinitializeGLState();
 }
 
 void GLRenderer::DoNoOp() {
-  GLC(context_, context_->bindFramebuffer(GL_FRAMEBUFFER, 0));
-  GLC(context_, context_->flush());
+  GLC(gl_, gl_->BindFramebuffer(GL_FRAMEBUFFER, 0));
+  GLC(gl_, gl_->Flush());
 }
 
 void GLRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
@@ -404,12 +372,12 @@ void GLRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
   SetUseProgram(program->program());
 
   SkColor color = quad->color;
-  GLC(Context(),
-      Context()->uniform4f(program->fragment_shader().color_location(),
-                           SkColorGetR(color) * (1.0f / 255.0f),
-                           SkColorGetG(color) * (1.0f / 255.0f),
-                           SkColorGetB(color) * (1.0f / 255.0f),
-                           1));
+  GLC(gl_,
+      gl_->Uniform4f(program->fragment_shader().color_location(),
+                     SkColorGetR(color) * (1.0f / 255.0f),
+                     SkColorGetG(color) * (1.0f / 255.0f),
+                     SkColorGetB(color) * (1.0f / 255.0f),
+                     1));
 
   const int checkerboard_width = 16;
   float frequency = 1.0f / checkerboard_width;
@@ -419,16 +387,16 @@ void GLRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
   float tex_offset_y = tile_rect.y() % checkerboard_width;
   float tex_scale_x = tile_rect.width();
   float tex_scale_y = tile_rect.height();
-  GLC(Context(),
-      Context()->uniform4f(program->fragment_shader().tex_transform_location(),
-                           tex_offset_x,
-                           tex_offset_y,
-                           tex_scale_x,
-                           tex_scale_y));
+  GLC(gl_,
+      gl_->Uniform4f(program->fragment_shader().tex_transform_location(),
+                     tex_offset_x,
+                     tex_offset_y,
+                     tex_scale_x,
+                     tex_scale_y));
 
-  GLC(Context(),
-      Context()->uniform1f(program->fragment_shader().frequency_location(),
-                           frequency));
+  GLC(gl_,
+      gl_->Uniform1f(program->fragment_shader().frequency_location(),
+                     frequency));
 
   SetShaderOpacity(quad->opacity(),
                    program->fragment_shader().alpha_location());
@@ -456,66 +424,25 @@ void GLRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
   render_matrix.Scale(layer_rect.width(), layer_rect.height());
   GLRenderer::ToGLMatrix(&gl_matrix[0],
                          frame->projection_matrix * render_matrix);
-  GLC(Context(),
-      Context()->uniformMatrix4fv(
+  GLC(gl_,
+      gl_->UniformMatrix4fv(
           program->vertex_shader().matrix_location(), 1, false, &gl_matrix[0]));
 
   SkColor color = quad->color;
   float alpha = SkColorGetA(color) * (1.0f / 255.0f);
 
-  GLC(Context(),
-      Context()->uniform4f(program->fragment_shader().color_location(),
-                           (SkColorGetR(color) * (1.0f / 255.0f)) * alpha,
-                           (SkColorGetG(color) * (1.0f / 255.0f)) * alpha,
-                           (SkColorGetB(color) * (1.0f / 255.0f)) * alpha,
-                           alpha));
+  GLC(gl_,
+      gl_->Uniform4f(program->fragment_shader().color_location(),
+                     (SkColorGetR(color) * (1.0f / 255.0f)) * alpha,
+                     (SkColorGetG(color) * (1.0f / 255.0f)) * alpha,
+                     (SkColorGetB(color) * (1.0f / 255.0f)) * alpha,
+                     alpha));
 
-  GLC(Context(), Context()->lineWidth(quad->width));
+  GLC(gl_, gl_->LineWidth(quad->width));
 
   // The indices for the line are stored in the same array as the triangle
   // indices.
-  GLC(Context(),
-      Context()->drawElements(GL_LINE_LOOP, 4, GL_UNSIGNED_SHORT, 0));
-}
-
-static inline SkBitmap ApplyFilters(GLRenderer* renderer,
-                                    ContextProvider* offscreen_contexts,
-                                    const FilterOperations& filters,
-                                    ScopedResource* source_texture_resource) {
-  if (filters.IsEmpty())
-    return SkBitmap();
-
-  if (!offscreen_contexts || !offscreen_contexts->GrContext())
-    return SkBitmap();
-
-  ResourceProvider::ScopedWriteLockGL lock(renderer->resource_provider(),
-                                           source_texture_resource->id());
-
-  // Flush the compositor context to ensure that textures there are available
-  // in the shared context.  Do this after locking/creating the compositor
-  // texture.
-  renderer->resource_provider()->Flush();
-
-  // Make sure skia uses the correct GL context.
-  offscreen_contexts->Context3d()->makeContextCurrent();
-
-  SkBitmap source =
-      RenderSurfaceFilters::Apply(filters,
-                                  lock.texture_id(),
-                                  source_texture_resource->size(),
-                                  offscreen_contexts->GrContext());
-
-  // Flush skia context so that all the rendered stuff appears on the
-  // texture.
-  offscreen_contexts->GrContext()->flush();
-
-  // Flush the GL context so rendering results from this context are
-  // visible in the compositor's context.
-  offscreen_contexts->Context3d()->flush();
-
-  // Use the compositor's GL context again.
-  renderer->Context()->makeContextCurrent();
-  return source;
+  GLC(gl_, gl_->DrawElements(GL_LINE_LOOP, 4, GL_UNSIGNED_SHORT, 0));
 }
 
 static SkBitmap ApplyImageFilter(GLRenderer* renderer,
@@ -538,7 +465,7 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   renderer->resource_provider()->Flush();
 
   // Make sure skia uses the correct GL context.
-  offscreen_contexts->Context3d()->makeContextCurrent();
+  offscreen_contexts->MakeGrContextCurrent();
 
   // Wrap the source texture in a Ganesh platform texture.
   GrBackendTextureDesc backend_texture_description;
@@ -552,13 +479,17 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
       skia::AdoptRef(offscreen_contexts->GrContext()->wrapBackendTexture(
           backend_texture_description));
 
+  SkImageInfo info = {
+    source_texture_resource->size().width(),
+    source_texture_resource->size().height(),
+    kPMColor_SkColorType,
+    kPremul_SkAlphaType
+  };
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
-  source.setConfig(SkBitmap::kARGB_8888_Config,
-                   source_texture_resource->size().width(),
-                   source_texture_resource->size().height());
+  source.setConfig(info);
   skia::RefPtr<SkGrPixelRef> pixel_ref =
-      skia::AdoptRef(new SkGrPixelRef(texture.get()));
+      skia::AdoptRef(new SkGrPixelRef(info, texture.get()));
   source.setPixelRef(pixel_ref.get());
 
   // Create a scratch texture for backing store.
@@ -597,17 +528,140 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
   // visible in the compositor's context.
   offscreen_contexts->Context3d()->flush();
 
-  // Use the compositor's GL context again.
-  renderer->Context()->makeContextCurrent();
+  return device.accessBitmap(false);
+}
+
+static SkBitmap ApplyBlendModeWithBackdrop(
+    GLRenderer* renderer,
+    ContextProvider* offscreen_contexts,
+    SkBitmap source_bitmap_with_filters,
+    ScopedResource* source_texture_resource,
+    ScopedResource* background_texture_resource,
+    SkXfermode::Mode blend_mode) {
+  if (!offscreen_contexts || !offscreen_contexts->GrContext())
+    return source_bitmap_with_filters;
+
+  DCHECK(background_texture_resource);
+  DCHECK(source_texture_resource);
+
+  gfx::Size source_size = source_texture_resource->size();
+  gfx::Size background_size = background_texture_resource->size();
+
+  DCHECK_LE(background_size.width(), source_size.width());
+  DCHECK_LE(background_size.height(), source_size.height());
+
+  int source_texture_with_filters_id;
+  scoped_ptr<ResourceProvider::ScopedReadLockGL> lock;
+  if (source_bitmap_with_filters.getTexture()) {
+    DCHECK_EQ(source_size.width(), source_bitmap_with_filters.width());
+    DCHECK_EQ(source_size.height(), source_bitmap_with_filters.height());
+    GrTexture* texture =
+        reinterpret_cast<GrTexture*>(source_bitmap_with_filters.getTexture());
+    source_texture_with_filters_id = texture->getTextureHandle();
+  } else {
+    lock.reset(new ResourceProvider::ScopedReadLockGL(
+        renderer->resource_provider(), source_texture_resource->id()));
+    source_texture_with_filters_id = lock->texture_id();
+  }
+
+  ResourceProvider::ScopedReadLockGL lock_background(
+      renderer->resource_provider(), background_texture_resource->id());
+
+  // Flush the compositor context to ensure that textures there are available
+  // in the shared context.  Do this after locking/creating the compositor
+  // texture.
+  renderer->resource_provider()->Flush();
+
+  // Make sure skia uses the correct GL context.
+  offscreen_contexts->MakeGrContextCurrent();
+
+  // Wrap the source texture in a Ganesh platform texture.
+  GrBackendTextureDesc backend_texture_description;
+  backend_texture_description.fConfig = kSkia8888_GrPixelConfig;
+  backend_texture_description.fOrigin = kBottomLeft_GrSurfaceOrigin;
+
+  backend_texture_description.fWidth = source_size.width();
+  backend_texture_description.fHeight = source_size.height();
+  backend_texture_description.fTextureHandle = source_texture_with_filters_id;
+  skia::RefPtr<GrTexture> source_texture =
+      skia::AdoptRef(offscreen_contexts->GrContext()->wrapBackendTexture(
+          backend_texture_description));
+
+  backend_texture_description.fWidth = background_size.width();
+  backend_texture_description.fHeight = background_size.height();
+  backend_texture_description.fTextureHandle = lock_background.texture_id();
+  skia::RefPtr<GrTexture> background_texture =
+      skia::AdoptRef(offscreen_contexts->GrContext()->wrapBackendTexture(
+          backend_texture_description));
+
+  SkImageInfo source_info = {
+    source_size.width(),
+    source_size.height(),
+    kPMColor_SkColorType,
+    kPremul_SkAlphaType
+  };
+  // Place the platform texture inside an SkBitmap.
+  SkBitmap source;
+  source.setConfig(source_info);
+  skia::RefPtr<SkGrPixelRef> source_pixel_ref =
+      skia::AdoptRef(new SkGrPixelRef(source_info, source_texture.get()));
+  source.setPixelRef(source_pixel_ref.get());
+
+  SkImageInfo background_info = {
+    background_size.width(),
+    background_size.height(),
+    kPMColor_SkColorType,
+    kPremul_SkAlphaType
+  };
+
+  SkBitmap background;
+  background.setConfig(background_info);
+  skia::RefPtr<SkGrPixelRef> background_pixel_ref =
+      skia::AdoptRef(new SkGrPixelRef(
+          background_info, background_texture.get()));
+  background.setPixelRef(background_pixel_ref.get());
+
+  // Create a scratch texture for backing store.
+  GrTextureDesc desc;
+  desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
+  desc.fSampleCnt = 0;
+  desc.fWidth = source.width();
+  desc.fHeight = source.height();
+  desc.fConfig = kSkia8888_GrPixelConfig;
+  desc.fOrigin = kBottomLeft_GrSurfaceOrigin;
+  GrAutoScratchTexture scratch_texture(
+      offscreen_contexts->GrContext(), desc, GrContext::kExact_ScratchTexMatch);
+  skia::RefPtr<GrTexture> backing_store =
+      skia::AdoptRef(scratch_texture.detach());
+
+  // Create a device and canvas using that backing store.
+  SkGpuDevice device(offscreen_contexts->GrContext(), backing_store.get());
+  SkCanvas canvas(&device);
+
+  // Draw the source bitmap through the filter to the canvas.
+  canvas.clear(SK_ColorTRANSPARENT);
+  canvas.drawSprite(background, 0, 0);
+  SkPaint paint;
+  paint.setXfermodeMode(blend_mode);
+  canvas.drawSprite(source, 0, 0, &paint);
+
+  // Flush skia context so that all the rendered stuff appears on the
+  // texture.
+  offscreen_contexts->GrContext()->flush();
+
+  // Flush the GL context so rendering results from this context are
+  // visible in the compositor's context.
+  offscreen_contexts->Context3d()->flush();
 
   return device.accessBitmap(false);
 }
 
-scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
+scoped_ptr<ScopedResource> GLRenderer::GetBackgroundWithFilters(
     DrawingFrame* frame,
     const RenderPassDrawQuad* quad,
     const gfx::Transform& contents_device_transform,
-    const gfx::Transform& contents_device_transform_inverse) {
+    const gfx::Transform& contents_device_transform_inverse,
+    bool* background_changed) {
   // This method draws a background filter, which applies a filter to any pixels
   // behind the quad and seen through its background.  The algorithm works as
   // follows:
@@ -631,16 +685,17 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
   // TODO(danakj): When this algorithm changes, update
   // LayerTreeHost::PrioritizeTextures() accordingly.
 
-  FilterOperations filters =
-      RenderSurfaceFilters::Optimize(quad->background_filters);
-  DCHECK(!filters.IsEmpty());
-
   // TODO(danakj): We only allow background filters on an opaque render surface
   // because other surfaces may contain translucent pixels, and the contents
   // behind those translucent pixels wouldn't have the filter applied.
-  if (frame->current_render_pass->has_transparent_background)
-    return scoped_ptr<ScopedResource>();
+  bool apply_background_filters =
+      !frame->current_render_pass->has_transparent_background;
   DCHECK(!frame->current_texture);
+
+  // TODO(ajuma): Add support for reference filters once
+  // FilterOperations::GetOutsets supports reference filters.
+  if (apply_background_filters && quad->background_filters.HasReferenceFilter())
+    apply_background_filters = false;
 
   // TODO(danakj): Do a single readback for both the surface and replica and
   // cache the filtered results (once filter textures are not reused).
@@ -648,44 +703,56 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
       contents_device_transform, SharedGeometryQuad().BoundingBox()));
 
   int top, right, bottom, left;
-  filters.GetOutsets(&top, &right, &bottom, &left);
+  quad->background_filters.GetOutsets(&top, &right, &bottom, &left);
   window_rect.Inset(-left, -top, -right, -bottom);
 
   window_rect.Intersect(
       MoveFromDrawToWindowSpace(frame->current_render_pass->output_rect));
 
   scoped_ptr<ScopedResource> device_background_texture =
-      ScopedResource::create(resource_provider_);
-  if (!device_background_texture->Allocate(window_rect.size(),
-                                           ResourceProvider::TextureUsageAny,
-                                           RGBA_8888)) {
-    return scoped_ptr<ScopedResource>();
-  } else {
+      ScopedResource::Create(resource_provider_);
+  // The TextureUsageFramebuffer hint makes ResourceProvider avoid immutable
+  // storage allocation (texStorage2DEXT) for this texture. copyTexImage2D fails
+  // when called on a texture having immutable storage.
+  device_background_texture->Allocate(
+      window_rect.size(), ResourceProvider::TextureUsageFramebuffer, RGBA_8888);
+  {
     ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
                                              device_background_texture->id());
-    GetFramebufferTexture(lock.texture_id(),
-                          device_background_texture->format(),
-                          window_rect);
+    GetFramebufferTexture(
+        lock.texture_id(), device_background_texture->format(), window_rect);
   }
 
-  SkBitmap filtered_device_background =
-      ApplyFilters(this,
-                   frame->offscreen_context_provider,
-                   filters,
-                   device_background_texture.get());
-  if (!filtered_device_background.getTexture())
-    return scoped_ptr<ScopedResource>();
+  skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+      quad->background_filters, device_background_texture->size());
 
-  GrTexture* texture =
-      reinterpret_cast<GrTexture*>(filtered_device_background.getTexture());
-  int filtered_device_background_texture_id = texture->getTextureHandle();
+  SkBitmap filtered_device_background;
+  if (apply_background_filters) {
+    filtered_device_background =
+        ApplyImageFilter(this,
+                         frame->offscreen_context_provider,
+                         quad->rect.origin(),
+                         filter.get(),
+                         device_background_texture.get());
+  }
+  *background_changed = (filtered_device_background.getTexture() != NULL);
+
+  int filtered_device_background_texture_id = 0;
+  scoped_ptr<ResourceProvider::ScopedReadLockGL> lock;
+  if (filtered_device_background.getTexture()) {
+    GrTexture* texture =
+        reinterpret_cast<GrTexture*>(filtered_device_background.getTexture());
+    filtered_device_background_texture_id = texture->getTextureHandle();
+  } else {
+    lock.reset(new ResourceProvider::ScopedReadLockGL(
+        resource_provider_, device_background_texture->id()));
+    filtered_device_background_texture_id = lock->texture_id();
+  }
 
   scoped_ptr<ScopedResource> background_texture =
-      ScopedResource::create(resource_provider_);
-  if (!background_texture->Allocate(quad->rect.size(),
-                                    ResourceProvider::TextureUsageFramebuffer,
-                                    RGBA_8888))
-    return scoped_ptr<ScopedResource>();
+      ScopedResource::Create(resource_provider_);
+  background_texture->Allocate(
+      quad->rect.size(), ResourceProvider::TextureUsageFramebuffer, RGBA_8888);
 
   const RenderPass* target_render_pass = frame->current_render_pass;
   bool using_background_texture =
@@ -704,8 +771,8 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
         contents_device_transform_inverse);
 
 #ifndef NDEBUG
-    GLC(Context(), Context()->clearColor(0, 0, 1, 1));
-    Context()->clear(GL_COLOR_BUFFER_BIT);
+    GLC(gl_, gl_->ClearColor(0, 0, 1, 1));
+    gl_->Clear(GL_COLOR_BUFFER_BIT);
 #endif
 
     // The filtered_deveice_background_texture is oriented the same as the frame
@@ -732,7 +799,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
                                     const RenderPassDrawQuad* quad) {
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
-  CachedResource* contents_texture =
+  ScopedResource* contents_texture =
       render_pass_textures_.get(quad->render_pass_id);
   if (!contents_texture || !contents_texture->id())
     return;
@@ -749,19 +816,24 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   if (!contents_device_transform.GetInverse(&contents_device_transform_inverse))
     return;
 
+  bool need_background_texture =
+      quad->shared_quad_state->blend_mode != SkXfermode::kSrcOver_Mode ||
+      !quad->background_filters.IsEmpty();
+  bool background_changed = false;
   scoped_ptr<ScopedResource> background_texture;
-  if (!quad->background_filters.IsEmpty()) {
+  if (need_background_texture) {
     // The pixels from the filtered background should completely replace the
     // current pixel values.
     bool disable_blending = blend_enabled();
     if (disable_blending)
       SetBlendEnabled(false);
 
-    background_texture = DrawBackgroundFilters(
-        frame,
-        quad,
-        contents_device_transform,
-        contents_device_transform_inverse);
+    background_texture =
+        GetBackgroundWithFilters(frame,
+                                 quad,
+                                 contents_device_transform,
+                                 contents_device_transform_inverse,
+                                 &background_changed);
 
     if (disable_blending)
       SetBlendEnabled(true);
@@ -772,45 +844,47 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   SkBitmap filter_bitmap;
   SkScalar color_matrix[20];
   bool use_color_matrix = false;
-  if (quad->filter) {
-    skia::RefPtr<SkColorFilter> cf;
+  // TODO(ajuma): Always use RenderSurfaceFilters::BuildImageFilter, not just
+  // when we have a reference filter.
+  if (!quad->filters.IsEmpty()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, contents_texture->size());
+    if (filter) {
+      skia::RefPtr<SkColorFilter> cf;
 
-    {
-      SkColorFilter* colorfilter_rawptr = NULL;
-      quad->filter->asColorFilter(&colorfilter_rawptr);
-      cf = skia::AdoptRef(colorfilter_rawptr);
-    }
+      {
+        SkColorFilter* colorfilter_rawptr = NULL;
+        filter->asColorFilter(&colorfilter_rawptr);
+        cf = skia::AdoptRef(colorfilter_rawptr);
+      }
 
-    if (cf && cf->asColorMatrix(color_matrix) && !quad->filter->getInput(0)) {
-      // We have a single color matrix as a filter; apply it locally
-      // in the compositor.
-      use_color_matrix = true;
-    } else {
-      filter_bitmap = ApplyImageFilter(this,
-                                       frame->offscreen_context_provider,
-                                       quad->rect.origin(),
-                                       quad->filter.get(),
-                                       contents_texture);
-    }
-  } else if (!quad->filters.IsEmpty()) {
-    FilterOperations optimized_filters =
-        RenderSurfaceFilters::Optimize(quad->filters);
-
-    if ((optimized_filters.size() == 1) &&
-        (optimized_filters.at(0).type() == FilterOperation::COLOR_MATRIX)) {
-      memcpy(
-          color_matrix, optimized_filters.at(0).matrix(), sizeof(color_matrix));
-      use_color_matrix = true;
-    } else {
-      filter_bitmap = ApplyFilters(this,
-                                   frame->offscreen_context_provider,
-                                   optimized_filters,
-                                   contents_texture);
+      if (cf && cf->asColorMatrix(color_matrix) && !filter->getInput(0)) {
+        // We have a single color matrix as a filter; apply it locally
+        // in the compositor.
+        use_color_matrix = true;
+      } else {
+        filter_bitmap = ApplyImageFilter(this,
+                                         frame->offscreen_context_provider,
+                                         quad->rect.origin(),
+                                         filter.get(),
+                                         contents_texture);
+      }
     }
   }
 
-  // Draw the background texture if there is one.
-  if (background_texture) {
+  if (quad->shared_quad_state->blend_mode != SkXfermode::kSrcOver_Mode &&
+      background_texture) {
+    filter_bitmap =
+        ApplyBlendModeWithBackdrop(this,
+                                   frame->offscreen_context_provider,
+                                   filter_bitmap,
+                                   contents_texture,
+                                   background_texture.get(),
+                                   quad->shared_quad_state->blend_mode);
+  }
+
+  // Draw the background texture if it has some filters applied.
+  if (background_texture && background_changed) {
     DCHECK(background_texture->size() == quad->rect.size());
     ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                             background_texture->id());
@@ -834,10 +908,10 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   LayerQuad device_layer_edges(device_quad);
 
   // Use anti-aliasing programs only when necessary.
-  bool use_aa = !clipped &&
-      (!device_quad.IsRectilinear() ||
-       !gfx::IsNearestRectWithinDistance(device_quad.BoundingBox(),
-                                         kAntiAliasingEpsilon));
+  bool use_aa =
+      !clipped && (!device_quad.IsRectilinear() ||
+                   !gfx::IsNearestRectWithinDistance(device_quad.BoundingBox(),
+                                                     kAntiAliasingEpsilon));
   if (use_aa) {
     device_layer_bounds.InflateAntiAliasingDistance();
     device_layer_edges.InflateAntiAliasingDistance();
@@ -854,22 +928,24 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   // TODO(danakj): use the background_texture and blend the background in with
   // this draw instead of having a separate copy of the background texture.
 
-  scoped_ptr<ResourceProvider::ScopedReadLockGL> contents_resource_lock;
+  scoped_ptr<ResourceProvider::ScopedSamplerGL> contents_resource_lock;
   if (filter_bitmap.getTexture()) {
     GrTexture* texture =
         reinterpret_cast<GrTexture*>(filter_bitmap.getTexture());
-    DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(Context()));
-    Context()->bindTexture(GL_TEXTURE_2D, texture->getTextureHandle());
+    DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+    gl_->BindTexture(GL_TEXTURE_2D, texture->getTextureHandle());
   } else {
-    contents_resource_lock = make_scoped_ptr(
-        new ResourceProvider::ScopedSamplerGL(resource_provider_,
-                                              contents_texture->id(),
-                                              GL_TEXTURE_2D,
-                                              GL_LINEAR));
+    contents_resource_lock =
+        make_scoped_ptr(new ResourceProvider::ScopedSamplerGL(
+            resource_provider_, contents_texture->id(), GL_LINEAR));
+    DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D),
+              contents_resource_lock->target());
   }
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
+      gl_,
+      &highp_threshold_cache_,
+      highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   int shader_quad_location = -1;
@@ -888,8 +964,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassMaskProgramAA* program =
         GetRenderPassMaskProgramAA(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_quad_location = program->vertex_shader().quad_location();
     shader_edge_location = program->vertex_shader().edge_location();
@@ -908,8 +983,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassMaskProgram* program =
         GetRenderPassMaskProgram(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_mask_sampler_location =
         program->fragment_shader().mask_sampler_location();
@@ -925,8 +999,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassProgramAA* program =
         GetRenderPassProgramAA(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_quad_location = program->vertex_shader().quad_location();
     shader_edge_location = program->vertex_shader().edge_location();
@@ -939,8 +1012,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassMaskColorMatrixProgramAA* program =
         GetRenderPassMaskColorMatrixProgramAA(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_quad_location = program->vertex_shader().quad_location();
@@ -963,8 +1035,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassColorMatrixProgramAA* program =
         GetRenderPassColorMatrixProgramAA(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_quad_location = program->vertex_shader().quad_location();
@@ -981,8 +1052,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassMaskColorMatrixProgram* program =
         GetRenderPassMaskColorMatrixProgram(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_tex_transform_location =
@@ -1002,8 +1072,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassColorMatrixProgram* program =
         GetRenderPassColorMatrixProgram(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_tex_transform_location =
@@ -1017,8 +1086,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     const RenderPassProgram* program =
         GetRenderPassProgram(tex_coord_precision);
     SetUseProgram(program->program());
-    GLC(Context(),
-        Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+    GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
     shader_matrix_location = program->vertex_shader().matrix_location();
     shader_alpha_location = program->fragment_shader().alpha_location();
@@ -1036,17 +1104,18 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   // Flip the content vertically in the shader, as the RenderPass input
   // texture is already oriented the same way as the framebuffer, but the
   // projection transform does a flip.
-  GLC(Context(), Context()->uniform4f(shader_tex_transform_location,
-                                      0.0f,
-                                      tex_scale_y,
-                                      tex_scale_x,
-                                      -tex_scale_y));
+  GLC(gl_,
+      gl_->Uniform4f(shader_tex_transform_location,
+                     0.0f,
+                     tex_scale_y,
+                     tex_scale_x,
+                     -tex_scale_y));
 
-  scoped_ptr<ResourceProvider::ScopedReadLockGL> shader_mask_sampler_lock;
+  scoped_ptr<ResourceProvider::ScopedSamplerGL> shader_mask_sampler_lock;
   if (shader_mask_sampler_location != -1) {
     DCHECK_NE(shader_mask_tex_coord_scale_location, 1);
     DCHECK_NE(shader_mask_tex_coord_offset_location, 1);
-    GLC(Context(), Context()->uniform1i(shader_mask_sampler_location, 1));
+    GLC(gl_, gl_->Uniform1i(shader_mask_sampler_location, 1));
 
     float mask_tex_scale_x = quad->mask_uv_rect.width() / tex_scale_x;
     float mask_tex_scale_y = quad->mask_uv_rect.height() / tex_scale_y;
@@ -1054,38 +1123,36 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     // Mask textures are oriented vertically flipped relative to the framebuffer
     // and the RenderPass contents texture, so we flip the tex coords from the
     // RenderPass texture to find the mask texture coords.
-    GLC(Context(),
-        Context()->uniform2f(shader_mask_tex_coord_offset_location,
-                             quad->mask_uv_rect.x(),
-                             quad->mask_uv_rect.y() + mask_tex_scale_y));
-    GLC(Context(),
-        Context()->uniform2f(shader_mask_tex_coord_scale_location,
-                             mask_tex_scale_x,
-                             -mask_tex_scale_y));
+    GLC(gl_,
+        gl_->Uniform2f(shader_mask_tex_coord_offset_location,
+                       quad->mask_uv_rect.x(),
+                       quad->mask_uv_rect.y() + quad->mask_uv_rect.height()));
+    GLC(gl_,
+        gl_->Uniform2f(shader_mask_tex_coord_scale_location,
+                       mask_tex_scale_x,
+                       -mask_tex_scale_y));
     shader_mask_sampler_lock = make_scoped_ptr(
         new ResourceProvider::ScopedSamplerGL(resource_provider_,
                                               quad->mask_resource_id,
-                                              GL_TEXTURE_2D,
                                               GL_TEXTURE1,
                                               GL_LINEAR));
+    DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D),
+              shader_mask_sampler_lock->target());
   }
 
   if (shader_edge_location != -1) {
     float edge[24];
     device_layer_edges.ToFloatArray(edge);
     device_layer_bounds.ToFloatArray(&edge[12]);
-    GLC(Context(), Context()->uniform3fv(shader_edge_location, 8, edge));
+    GLC(gl_, gl_->Uniform3fv(shader_edge_location, 8, edge));
   }
 
   if (shader_viewport_location != -1) {
-    float viewport[4] = {
-      static_cast<float>(viewport_.x()),
-      static_cast<float>(viewport_.y()),
-      static_cast<float>(viewport_.width()),
-      static_cast<float>(viewport_.height()),
-    };
-    GLC(Context(),
-        Context()->uniform4fv(shader_viewport_location, 1, viewport));
+    float viewport[4] = {static_cast<float>(viewport_.x()),
+                         static_cast<float>(viewport_.y()),
+                         static_cast<float>(viewport_.width()),
+                         static_cast<float>(viewport_.height()), };
+    GLC(gl_, gl_->Uniform4fv(shader_viewport_location, 1, viewport));
   }
 
   if (shader_color_matrix_location != -1) {
@@ -1094,9 +1161,8 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
       for (int j = 0; j < 4; ++j)
         matrix[i * 4 + j] = SkScalarToFloat(color_matrix[j * 5 + i]);
     }
-    GLC(Context(),
-        Context()->uniformMatrix4fv(
-            shader_color_matrix_location, 1, false, matrix));
+    GLC(gl_,
+        gl_->UniformMatrix4fv(shader_color_matrix_location, 1, false, matrix));
   }
   static const float kScale = 1.0f / 255.0f;
   if (shader_color_offset_location != -1) {
@@ -1104,8 +1170,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     for (int i = 0; i < 4; ++i)
       offset[i] = SkScalarToFloat(color_matrix[i * 5 + 4]) * kScale;
 
-    GLC(Context(),
-        Context()->uniform4fv(shader_color_offset_location, 1, offset));
+    GLC(gl_, gl_->Uniform4fv(shader_color_offset_location, 1, offset));
   }
 
   // Map device space quad to surface space. contents_device_transform has no 3d
@@ -1122,7 +1187,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   // Flush the compositor context before the filter bitmap goes out of
   // scope, so the draw gets processed before the filter texture gets deleted.
   if (filter_bitmap.getTexture())
-    context_->flush();
+    GLC(gl_, gl_->Flush());
 }
 
 struct SolidColorProgramUniforms {
@@ -1134,7 +1199,7 @@ struct SolidColorProgramUniforms {
   unsigned color_location;
 };
 
-template<class T>
+template <class T>
 static void SolidColorUniformLocation(T program,
                                       SolidColorProgramUniforms* uniforms) {
   uniforms->program = program->program();
@@ -1158,7 +1223,8 @@ bool GLRenderer::SetupQuadForAntialiasing(
       device_transform, gfx::QuadF(quad->visibleContentRect()), &clipped);
 
   bool is_axis_aligned_in_target = device_layer_quad.IsRectilinear();
-  bool is_nearest_rect_within_epsilon = is_axis_aligned_in_target &&
+  bool is_nearest_rect_within_epsilon =
+      is_axis_aligned_in_target &&
       gfx::IsNearestRectWithinDistance(device_layer_quad.BoundingBox(),
                                        kAntiAliasingEpsilon);
   // AAing clipped quads is not supported by the code yet.
@@ -1217,8 +1283,7 @@ bool GLRenderer::SetupQuadForAntialiasing(
   // Map device space quad to local space. device_transform has no 3d
   // component since it was flattened, so we don't need to project.  We should
   // have already checked that the transform was uninvertible above.
-  gfx::Transform inverse_device_transform(
-      gfx::Transform::kSkipInitialization);
+  gfx::Transform inverse_device_transform(gfx::Transform::kSkipInitialization);
   bool did_invert = device_transform.GetInverse(&inverse_device_transform);
   DCHECK(did_invert);
   *local_quad = MathUtil::MapQuad(
@@ -1262,22 +1327,19 @@ void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
     SolidColorUniformLocation(GetSolidColorProgram(), &uniforms);
   SetUseProgram(uniforms.program);
 
-  GLC(Context(),
-      Context()->uniform4f(uniforms.color_location,
-                           (SkColorGetR(color) * (1.0f / 255.0f)) * alpha,
-                           (SkColorGetG(color) * (1.0f / 255.0f)) * alpha,
-                           (SkColorGetB(color) * (1.0f / 255.0f)) * alpha,
-                           alpha));
+  GLC(gl_,
+      gl_->Uniform4f(uniforms.color_location,
+                     (SkColorGetR(color) * (1.0f / 255.0f)) * alpha,
+                     (SkColorGetG(color) * (1.0f / 255.0f)) * alpha,
+                     (SkColorGetB(color) * (1.0f / 255.0f)) * alpha,
+                     alpha));
   if (use_aa) {
-    float viewport[4] = {
-      static_cast<float>(viewport_.x()),
-      static_cast<float>(viewport_.y()),
-      static_cast<float>(viewport_.width()),
-      static_cast<float>(viewport_.height()),
-    };
-    GLC(Context(),
-        Context()->uniform4fv(uniforms.viewport_location, 1, viewport));
-    GLC(Context(), Context()->uniform3fv(uniforms.edge_location, 8, edge));
+    float viewport[4] = {static_cast<float>(viewport_.x()),
+                         static_cast<float>(viewport_.y()),
+                         static_cast<float>(viewport_.width()),
+                         static_cast<float>(viewport_.height()), };
+    GLC(gl_, gl_->Uniform4fv(uniforms.viewport_location, 1, viewport));
+    GLC(gl_, gl_->Uniform3fv(uniforms.edge_location, 8, edge));
   }
 
   // Enable blending when the quad properties require it or if we decided
@@ -1293,11 +1355,11 @@ void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
   // un-antialiased quad should have and which vertex this is and the float
   // quad passed in via uniform is the actual geometry that gets used to draw
   // it. This is why this centered rect is used and not the original quad_rect.
-  gfx::RectF centered_rect(gfx::PointF(-0.5f * tile_rect.width(),
-                                       -0.5f * tile_rect.height()),
-                           tile_rect.size());
-  DrawQuadGeometry(frame, quad->quadTransform(),
-                   centered_rect, uniforms.matrix_location);
+  gfx::RectF centered_rect(
+      gfx::PointF(-0.5f * tile_rect.width(), -0.5f * tile_rect.height()),
+      tile_rect.size());
+  DrawQuadGeometry(
+      frame, quad->quadTransform(), centered_rect, uniforms.matrix_location);
 }
 
 struct TileProgramUniforms {
@@ -1352,16 +1414,16 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   // is mapped to the unit square by the vertex shader and mapped
   // back to normalized texture coordinates by the fragment shader
   // after being clamped to 0-1 range.
-  float tex_clamp_x = std::min(
-      0.5f, 0.5f * clamp_tex_rect.width() - kAntiAliasingEpsilon);
-  float tex_clamp_y = std::min(
-      0.5f, 0.5f * clamp_tex_rect.height() - kAntiAliasingEpsilon);
-  float geom_clamp_x = std::min(
-      tex_clamp_x * tex_to_geom_scale_x,
-      0.5f * clamp_geom_rect.width() - kAntiAliasingEpsilon);
-  float geom_clamp_y = std::min(
-      tex_clamp_y * tex_to_geom_scale_y,
-      0.5f * clamp_geom_rect.height() - kAntiAliasingEpsilon);
+  float tex_clamp_x =
+      std::min(0.5f, 0.5f * clamp_tex_rect.width() - kAntiAliasingEpsilon);
+  float tex_clamp_y =
+      std::min(0.5f, 0.5f * clamp_tex_rect.height() - kAntiAliasingEpsilon);
+  float geom_clamp_x =
+      std::min(tex_clamp_x * tex_to_geom_scale_x,
+               0.5f * clamp_geom_rect.width() - kAntiAliasingEpsilon);
+  float geom_clamp_y =
+      std::min(tex_clamp_y * tex_to_geom_scale_y,
+               0.5f * clamp_geom_rect.height() - kAntiAliasingEpsilon);
   clamp_geom_rect.Inset(geom_clamp_x, geom_clamp_y, geom_clamp_x, geom_clamp_y);
   clamp_tex_rect.Inset(tex_clamp_x, tex_clamp_y, tex_clamp_x, tex_clamp_y);
 
@@ -1373,15 +1435,7 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   float vertex_tex_scale_y = tile_rect.height() / clamp_geom_rect.height();
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
-      quad->texture_size);
-
-  // Map to normalized texture coordinates.
-  gfx::Size texture_size = quad->texture_size;
-  float fragment_tex_translate_x = clamp_tex_rect.x() / texture_size.width();
-  float fragment_tex_translate_y = clamp_tex_rect.y() / texture_size.height();
-  float fragment_tex_scale_x = clamp_tex_rect.width() / texture_size.width();
-  float fragment_tex_scale_y = clamp_tex_rect.height() / texture_size.height();
+      gl_, &highp_threshold_cache_, highp_threshold_min_, quad->texture_size);
 
   gfx::Transform device_transform =
       frame->window_matrix * frame->projection_matrix * quad->quadTransform();
@@ -1391,69 +1445,88 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
 
   gfx::QuadF local_quad = gfx::QuadF(gfx::RectF(tile_rect));
   float edge[24];
-  bool use_aa = settings_->allow_antialiasing && SetupQuadForAntialiasing(
-      device_transform, quad, &local_quad, edge);
+  bool use_aa =
+      settings_->allow_antialiasing &&
+      SetupQuadForAntialiasing(device_transform, quad, &local_quad, edge);
+
+  bool scaled = (tex_to_geom_scale_x != 1.f || tex_to_geom_scale_y != 1.f);
+  GLenum filter = (use_aa || scaled ||
+                   !quad->quadTransform().IsIdentityOrIntegerTranslation())
+                      ? GL_LINEAR
+                      : GL_NEAREST;
+  ResourceProvider::ScopedSamplerGL quad_resource_lock(
+      resource_provider_, resource_id, filter);
+  SamplerType sampler =
+      SamplerTypeFromTextureTarget(quad_resource_lock.target());
+
+  float fragment_tex_translate_x = clamp_tex_rect.x();
+  float fragment_tex_translate_y = clamp_tex_rect.y();
+  float fragment_tex_scale_x = clamp_tex_rect.width();
+  float fragment_tex_scale_y = clamp_tex_rect.height();
+
+  // Map to normalized texture coordinates.
+  if (sampler != SamplerType2DRect) {
+    gfx::Size texture_size = quad->texture_size;
+    DCHECK(!texture_size.IsEmpty());
+    fragment_tex_translate_x /= texture_size.width();
+    fragment_tex_translate_y /= texture_size.height();
+    fragment_tex_scale_x /= texture_size.width();
+    fragment_tex_scale_y /= texture_size.height();
+  }
 
   TileProgramUniforms uniforms;
   if (use_aa) {
     if (quad->swizzle_contents) {
-      TileUniformLocation(GetTileProgramSwizzleAA(tex_coord_precision),
+      TileUniformLocation(GetTileProgramSwizzleAA(tex_coord_precision, sampler),
                           &uniforms);
     } else {
-      TileUniformLocation(GetTileProgramAA(tex_coord_precision), &uniforms);
+      TileUniformLocation(GetTileProgramAA(tex_coord_precision, sampler),
+                          &uniforms);
     }
   } else {
     if (quad->ShouldDrawWithBlending()) {
       if (quad->swizzle_contents) {
-        TileUniformLocation(GetTileProgramSwizzle(tex_coord_precision),
+        TileUniformLocation(GetTileProgramSwizzle(tex_coord_precision, sampler),
                             &uniforms);
       } else {
-        TileUniformLocation(GetTileProgram(tex_coord_precision), &uniforms);
+        TileUniformLocation(GetTileProgram(tex_coord_precision, sampler),
+                            &uniforms);
       }
     } else {
       if (quad->swizzle_contents) {
-        TileUniformLocation(GetTileProgramSwizzleOpaque(tex_coord_precision),
-                            &uniforms);
+        TileUniformLocation(
+            GetTileProgramSwizzleOpaque(tex_coord_precision, sampler),
+            &uniforms);
       } else {
-        TileUniformLocation(GetTileProgramOpaque(tex_coord_precision),
+        TileUniformLocation(GetTileProgramOpaque(tex_coord_precision, sampler),
                             &uniforms);
       }
     }
   }
 
   SetUseProgram(uniforms.program);
-  GLC(Context(), Context()->uniform1i(uniforms.sampler_location, 0));
-  bool scaled = (tex_to_geom_scale_x != 1.f || tex_to_geom_scale_y != 1.f);
-  GLenum filter = (use_aa || scaled ||
-                   !quad->quadTransform().IsIdentityOrIntegerTranslation())
-                  ? GL_LINEAR
-                  : GL_NEAREST;
-  ResourceProvider::ScopedSamplerGL quad_resource_lock(
-      resource_provider_, resource_id, GL_TEXTURE_2D, filter);
+  GLC(gl_, gl_->Uniform1i(uniforms.sampler_location, 0));
 
   if (use_aa) {
-    float viewport[4] = {
-      static_cast<float>(viewport_.x()),
-      static_cast<float>(viewport_.y()),
-      static_cast<float>(viewport_.width()),
-      static_cast<float>(viewport_.height()),
-    };
-    GLC(Context(),
-        Context()->uniform4fv(uniforms.viewport_location, 1, viewport));
-    GLC(Context(), Context()->uniform3fv(uniforms.edge_location, 8, edge));
+    float viewport[4] = {static_cast<float>(viewport_.x()),
+                         static_cast<float>(viewport_.y()),
+                         static_cast<float>(viewport_.width()),
+                         static_cast<float>(viewport_.height()), };
+    GLC(gl_, gl_->Uniform4fv(uniforms.viewport_location, 1, viewport));
+    GLC(gl_, gl_->Uniform3fv(uniforms.edge_location, 8, edge));
 
-    GLC(Context(),
-        Context()->uniform4f(uniforms.vertex_tex_transform_location,
-                             vertex_tex_translate_x,
-                             vertex_tex_translate_y,
-                             vertex_tex_scale_x,
-                             vertex_tex_scale_y));
-    GLC(Context(),
-        Context()->uniform4f(uniforms.fragment_tex_transform_location,
-                             fragment_tex_translate_x,
-                             fragment_tex_translate_y,
-                             fragment_tex_scale_x,
-                             fragment_tex_scale_y));
+    GLC(gl_,
+        gl_->Uniform4f(uniforms.vertex_tex_transform_location,
+                       vertex_tex_translate_x,
+                       vertex_tex_translate_y,
+                       vertex_tex_scale_x,
+                       vertex_tex_scale_y));
+    GLC(gl_,
+        gl_->Uniform4f(uniforms.fragment_tex_transform_location,
+                       fragment_tex_translate_x,
+                       fragment_tex_translate_y,
+                       fragment_tex_scale_x,
+                       fragment_tex_scale_y));
   } else {
     // Move fragment shader transform to vertex shader. We can do this while
     // still producing correct results as fragment_tex_transform_location
@@ -1466,12 +1539,12 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
     vertex_tex_translate_x += fragment_tex_translate_x;
     vertex_tex_translate_y += fragment_tex_translate_y;
 
-    GLC(Context(),
-        Context()->uniform4f(uniforms.vertex_tex_transform_location,
-                             vertex_tex_translate_x,
-                             vertex_tex_translate_y,
-                             vertex_tex_scale_x,
-                             vertex_tex_scale_y));
+    GLC(gl_,
+        gl_->Uniform4f(uniforms.vertex_tex_transform_location,
+                       vertex_tex_translate_x,
+                       vertex_tex_translate_y,
+                       vertex_tex_scale_x,
+                       vertex_tex_scale_y));
   }
 
   // Enable blending when the quad properties require it or if we decided
@@ -1500,37 +1573,27 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
+      gl_,
+      &highp_threshold_cache_,
+      highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   bool use_alpha_plane = quad->a_plane_resource_id != 0;
 
   ResourceProvider::ScopedSamplerGL y_plane_lock(
-      resource_provider_,
-      quad->y_plane_resource_id,
-      GL_TEXTURE_2D,
-      GL_TEXTURE1,
-      GL_LINEAR);
+      resource_provider_, quad->y_plane_resource_id, GL_TEXTURE1, GL_LINEAR);
+  DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), y_plane_lock.target());
   ResourceProvider::ScopedSamplerGL u_plane_lock(
-      resource_provider_,
-      quad->u_plane_resource_id,
-      GL_TEXTURE_2D,
-      GL_TEXTURE2,
-      GL_LINEAR);
+      resource_provider_, quad->u_plane_resource_id, GL_TEXTURE2, GL_LINEAR);
+  DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), u_plane_lock.target());
   ResourceProvider::ScopedSamplerGL v_plane_lock(
-      resource_provider_,
-      quad->v_plane_resource_id,
-      GL_TEXTURE_2D,
-      GL_TEXTURE3,
-      GL_LINEAR);
+      resource_provider_, quad->v_plane_resource_id, GL_TEXTURE3, GL_LINEAR);
+  DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), v_plane_lock.target());
   scoped_ptr<ResourceProvider::ScopedSamplerGL> a_plane_lock;
   if (use_alpha_plane) {
     a_plane_lock.reset(new ResourceProvider::ScopedSamplerGL(
-        resource_provider_,
-        quad->a_plane_resource_id,
-        GL_TEXTURE_2D,
-        GL_TEXTURE4,
-        GL_LINEAR));
+        resource_provider_, quad->a_plane_resource_id, GL_TEXTURE4, GL_LINEAR));
+    DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), a_plane_lock->target());
   }
 
   int tex_scale_location = -1;
@@ -1569,26 +1632,22 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
     alpha_location = program->fragment_shader().alpha_location();
   }
 
-  GLC(Context(),
-      Context()->uniform2f(tex_scale_location,
-                           quad->tex_scale.width(),
-                           quad->tex_scale.height()));
-  GLC(Context(), Context()->uniform1i(y_texture_location, 1));
-  GLC(Context(), Context()->uniform1i(u_texture_location, 2));
-  GLC(Context(), Context()->uniform1i(v_texture_location, 3));
+  GLC(gl_,
+      gl_->Uniform2f(tex_scale_location,
+                     quad->tex_scale.width(),
+                     quad->tex_scale.height()));
+  GLC(gl_, gl_->Uniform1i(y_texture_location, 1));
+  GLC(gl_, gl_->Uniform1i(u_texture_location, 2));
+  GLC(gl_, gl_->Uniform1i(v_texture_location, 3));
   if (use_alpha_plane)
-    GLC(Context(), Context()->uniform1i(a_texture_location, 4));
+    GLC(gl_, gl_->Uniform1i(a_texture_location, 4));
 
   // These values are magic numbers that are used in the transformation from YUV
   // to RGB color values.  They are taken from the following webpage:
   // http://www.fourcc.org/fccyvrgb.php
-  float yuv_to_rgb[9] = {
-      1.164f, 1.164f, 1.164f,
-      0.0f, -.391f, 2.018f,
-      1.596f, -.813f, 0.0f,
-  };
-  GLC(Context(),
-      Context()->uniformMatrix3fv(yuv_matrix_location, 1, 0, yuv_to_rgb));
+  float yuv_to_rgb[9] = {1.164f, 1.164f, 1.164f, 0.0f, -.391f,
+                         2.018f, 1.596f, -.813f, 0.0f, };
+  GLC(gl_, gl_->UniformMatrix3fv(yuv_matrix_location, 1, 0, yuv_to_rgb));
 
   // These values map to 16, 128, and 128 respectively, and are computed
   // as a fraction over 256 (e.g. 16 / 256 = 0.0625).
@@ -1596,9 +1655,8 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   //   Y - 16   : Gives 16 values of head and footroom for overshooting
   //   U - 128  : Turns unsigned U into signed U [-128,127]
   //   V - 128  : Turns unsigned V into signed V [-128,127]
-  float yuv_adjust[3] = { -0.0625f, -0.5f, -0.5f, };
-  GLC(Context(), Context()->uniform3fv(yuv_adj_location, 1, yuv_adjust));
-
+  float yuv_adjust[3] = {-0.0625f, -0.5f, -0.5f, };
+  GLC(gl_, gl_->Uniform3fv(yuv_adj_location, 1, yuv_adjust));
 
   SetShaderOpacity(quad->opacity(), alpha_location);
   DrawQuadGeometry(frame, quad->quadTransform(), quad->rect, matrix_location);
@@ -1613,7 +1671,9 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
   DCHECK(capabilities_.using_egl_image);
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
+      gl_,
+      &highp_threshold_cache_,
+      highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   const VideoStreamTextureProgram* program =
@@ -1621,18 +1681,16 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
   SetUseProgram(program->program());
 
   ToGLMatrix(&gl_matrix[0], quad->matrix);
-  GLC(Context(),
-      Context()->uniformMatrix4fv(
+  GLC(gl_,
+      gl_->UniformMatrix4fv(
           program->vertex_shader().tex_matrix_location(), 1, false, gl_matrix));
 
   ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                           quad->resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(Context()));
-  GLC(Context(),
-      Context()->bindTexture(GL_TEXTURE_EXTERNAL_OES, lock.texture_id()));
+  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_EXTERNAL_OES, lock.texture_id()));
 
-  GLC(Context(),
-      Context()->uniform1i(program->fragment_shader().sampler_location(), 0));
+  GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
   SetShaderOpacity(quad->opacity(),
                    program->fragment_shader().alpha_location());
@@ -1642,85 +1700,36 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
                    program->vertex_shader().matrix_location());
 }
 
-void GLRenderer::DrawPictureQuadDirectToBackbuffer(
-    const DrawingFrame* frame,
-    const PictureDrawQuad* quad) {
-  DCHECK(CanUseSkiaGPUBackend());
-  DCHECK_EQ(quad->opacity(), 1.f) << "Need to composite to a bitmap or a "
-                                     "render surface for non-1 opacity quads";
-
-  // TODO(enne): This should be done more lazily / efficiently.
-  gr_context_->resetContext();
-
-  // Reset the canvas matrix to identity because the clip rect is in target
-  // space.
-  SkMatrix sk_identity;
-  sk_identity.setIdentity();
-  sk_canvas_->setMatrix(sk_identity);
-
-  if (is_scissor_enabled_) {
-    sk_canvas_->clipRect(gfx::RectToSkRect(scissor_rect_),
-                         SkRegion::kReplace_Op);
-  } else {
-    sk_canvas_->clipRect(gfx::RectToSkRect(client_->DeviceViewport()),
-                         SkRegion::kReplace_Op);
-  }
-
-  gfx::Transform contents_device_transform = frame->window_matrix *
-    frame->projection_matrix * quad->quadTransform();
-  contents_device_transform.Translate(quad->rect.x(),
-                                      quad->rect.y());
-  contents_device_transform.FlattenTo2d();
-  SkMatrix sk_device_matrix;
-  gfx::TransformToFlattenedSkMatrix(contents_device_transform,
-                                    &sk_device_matrix);
-  sk_canvas_->setMatrix(sk_device_matrix);
-
-  quad->picture_pile->RasterDirect(
-      sk_canvas_.get(), quad->content_rect, quad->contents_scale, NULL);
-
-  // Flush any drawing buffers that have been deferred.
-  sk_canvas_->flush();
-
-  // TODO(enne): This should be done more lazily / efficiently.
-  ReinitializeGLState();
-}
-
 void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  const PictureDrawQuad* quad) {
-  if (quad->can_draw_direct_to_backbuffer && CanUseSkiaGPUBackend()) {
-    DrawPictureQuadDirectToBackbuffer(frame, quad);
-    return;
-  }
-
   if (on_demand_tile_raster_bitmap_.width() != quad->texture_size.width() ||
       on_demand_tile_raster_bitmap_.height() != quad->texture_size.height()) {
-    on_demand_tile_raster_bitmap_.setConfig(
-        SkBitmap::kARGB_8888_Config,
-        quad->texture_size.width(),
-        quad->texture_size.height());
+    on_demand_tile_raster_bitmap_.setConfig(SkBitmap::kARGB_8888_Config,
+                                            quad->texture_size.width(),
+                                            quad->texture_size.height());
     on_demand_tile_raster_bitmap_.allocPixels();
 
     if (on_demand_tile_raster_resource_id_)
       resource_provider_->DeleteResource(on_demand_tile_raster_resource_id_);
 
-    on_demand_tile_raster_resource_id_ = resource_provider_->CreateGLTexture(
-        quad->texture_size,
-        GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
-        GL_CLAMP_TO_EDGE,
-        ResourceProvider::TextureUsageAny,
-        quad->texture_format);
+    on_demand_tile_raster_resource_id_ =
+        resource_provider_->CreateGLTexture(quad->texture_size,
+                                            GL_TEXTURE_2D,
+                                            GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+                                            GL_CLAMP_TO_EDGE,
+                                            ResourceProvider::TextureUsageAny,
+                                            quad->texture_format);
   }
 
   SkBitmapDevice device(on_demand_tile_raster_bitmap_);
   SkCanvas canvas(&device);
 
-  quad->picture_pile->RasterToBitmap(&canvas, quad->content_rect,
-                                     quad->contents_scale, NULL);
+  quad->picture_pile->RasterToBitmap(
+      &canvas, quad->content_rect, quad->contents_scale, NULL);
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
-  SkBitmap::Config config = SkBitmapConfigFromFormat(quad->texture_format);
+  SkBitmap::Config config = SkBitmapConfig(quad->texture_format);
   if (on_demand_tile_raster_bitmap_.getConfig() != config) {
     on_demand_tile_raster_bitmap_.copyTo(&on_demand_tile_raster_bitmap_dest,
                                          config);
@@ -1730,24 +1739,23 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
     bitmap_pixels = reinterpret_cast<uint8_t*>(
         on_demand_tile_raster_bitmap_dest.getPixels());
   } else {
-    bitmap_pixels = reinterpret_cast<uint8_t*>(
-        on_demand_tile_raster_bitmap_.getPixels());
+    bitmap_pixels =
+        reinterpret_cast<uint8_t*>(on_demand_tile_raster_bitmap_.getPixels());
   }
 
-  resource_provider_->SetPixels(
-      on_demand_tile_raster_resource_id_,
-      bitmap_pixels,
-      gfx::Rect(quad->texture_size),
-      gfx::Rect(quad->texture_size),
-      gfx::Vector2d());
+  resource_provider_->SetPixels(on_demand_tile_raster_resource_id_,
+                                bitmap_pixels,
+                                gfx::Rect(quad->texture_size),
+                                gfx::Rect(quad->texture_size),
+                                gfx::Vector2d());
 
   DrawContentQuad(frame, quad, on_demand_tile_raster_resource_id_);
 }
 
 struct TextureProgramBinding {
   template <class Program>
-  void Set(Program* program, WebKit::WebGraphicsContext3D* context) {
-    DCHECK(program && (program->initialized() || context->isContextLost()));
+  void Set(Program* program) {
+    DCHECK(program);
     program_id = program->program();
     sampler_location = program->fragment_shader().sampler_location();
     matrix_location = program->vertex_shader().matrix_location();
@@ -1762,8 +1770,8 @@ struct TextureProgramBinding {
 
 struct TexTransformTextureProgramBinding : TextureProgramBinding {
   template <class Program>
-  void Set(Program* program, WebKit::WebGraphicsContext3D* context) {
-    TextureProgramBinding::Set(program, context);
+  void Set(Program* program) {
+    TextureProgramBinding::Set(program);
     tex_transform_location = program->vertex_shader().tex_transform_location();
     vertex_opacity_location =
         program->vertex_shader().vertex_opacity_location();
@@ -1784,54 +1792,52 @@ void GLRenderer::FlushTextureQuadCache() {
   SetUseProgram(draw_cache_.program_id);
 
   // Bind the correct texture sampler location.
-  GLC(Context(), Context()->uniform1i(draw_cache_.sampler_location, 0));
+  GLC(gl_, gl_->Uniform1i(draw_cache_.sampler_location, 0));
 
   // Assume the current active textures is 0.
   ResourceProvider::ScopedReadLockGL locked_quad(resource_provider_,
                                                  draw_cache_.resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(Context()));
-  GLC(Context(),
-      Context()->bindTexture(GL_TEXTURE_2D, locked_quad.texture_id()));
+  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, locked_quad.texture_id()));
 
-  COMPILE_ASSERT(
-      sizeof(Float4) == 4 * sizeof(float),  // NOLINT(runtime/sizeof)
-      struct_is_densely_packed);
+  COMPILE_ASSERT(sizeof(Float4) == 4 * sizeof(float),  // NOLINT(runtime/sizeof)
+                 struct_is_densely_packed);
   COMPILE_ASSERT(
       sizeof(Float16) == 16 * sizeof(float),  // NOLINT(runtime/sizeof)
       struct_is_densely_packed);
 
   // Upload the tranforms for both points and uvs.
-  GLC(context_,
-      context_->uniformMatrix4fv(
+  GLC(gl_,
+      gl_->UniformMatrix4fv(
           static_cast<int>(draw_cache_.matrix_location),
           static_cast<int>(draw_cache_.matrix_data.size()),
           false,
           reinterpret_cast<float*>(&draw_cache_.matrix_data.front())));
-  GLC(context_,
-      context_->uniform4fv(
+  GLC(gl_,
+      gl_->Uniform4fv(
           static_cast<int>(draw_cache_.uv_xform_location),
           static_cast<int>(draw_cache_.uv_xform_data.size()),
           reinterpret_cast<float*>(&draw_cache_.uv_xform_data.front())));
 
   if (draw_cache_.background_color != SK_ColorTRANSPARENT) {
     Float4 background_color = PremultipliedColor(draw_cache_.background_color);
-    GLC(context_,
-        context_->uniform4fv(
+    GLC(gl_,
+        gl_->Uniform4fv(
             draw_cache_.background_color_location, 1, background_color.data));
   }
 
-  GLC(context_,
-      context_->uniform1fv(
+  GLC(gl_,
+      gl_->Uniform1fv(
           static_cast<int>(draw_cache_.vertex_opacity_location),
           static_cast<int>(draw_cache_.vertex_opacity_data.size()),
           static_cast<float*>(&draw_cache_.vertex_opacity_data.front())));
 
   // Draw the quads!
-  GLC(context_,
-      context_->drawElements(GL_TRIANGLES,
-                             6 * draw_cache_.matrix_data.size(),
-                             GL_UNSIGNED_SHORT,
-                             0));
+  GLC(gl_,
+      gl_->DrawElements(GL_TRIANGLES,
+                        6 * draw_cache_.matrix_data.size(),
+                        GL_UNSIGNED_SHORT,
+                        0));
 
   // Clear the cache.
   draw_cache_.program_id = 0;
@@ -1843,25 +1849,25 @@ void GLRenderer::FlushTextureQuadCache() {
 void GLRenderer::EnqueueTextureQuad(const DrawingFrame* frame,
                                     const TextureDrawQuad* quad) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
+      gl_,
+      &highp_threshold_cache_,
+      highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   // Choose the correct texture program binding
   TexTransformTextureProgramBinding binding;
   if (quad->premultiplied_alpha) {
     if (quad->background_color == SK_ColorTRANSPARENT) {
-      binding.Set(GetTextureProgram(tex_coord_precision), Context());
+      binding.Set(GetTextureProgram(tex_coord_precision));
     } else {
-      binding.Set(GetTextureBackgroundProgram(tex_coord_precision), Context());
+      binding.Set(GetTextureBackgroundProgram(tex_coord_precision));
     }
   } else {
     if (quad->background_color == SK_ColorTRANSPARENT) {
-      binding.Set(GetNonPremultipliedTextureProgram(tex_coord_precision),
-                  Context());
+      binding.Set(GetNonPremultipliedTextureProgram(tex_coord_precision));
     } else {
       binding.Set(
-          GetNonPremultipliedTextureBackgroundProgram(tex_coord_precision),
-          Context());
+          GetNonPremultipliedTextureBackgroundProgram(tex_coord_precision));
     }
   }
 
@@ -1910,54 +1916,52 @@ void GLRenderer::DrawIOSurfaceQuad(const DrawingFrame* frame,
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_,  &highp_threshold_cache_, highp_threshold_min_,
+      gl_,
+      &highp_threshold_cache_,
+      highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
   TexTransformTextureProgramBinding binding;
-  binding.Set(GetTextureIOSurfaceProgram(tex_coord_precision), Context());
+  binding.Set(GetTextureIOSurfaceProgram(tex_coord_precision));
 
   SetUseProgram(binding.program_id);
-  GLC(Context(), Context()->uniform1i(binding.sampler_location, 0));
+  GLC(gl_, gl_->Uniform1i(binding.sampler_location, 0));
   if (quad->orientation == IOSurfaceDrawQuad::FLIPPED) {
-    GLC(Context(),
-        Context()->uniform4f(binding.tex_transform_location,
-                             0,
-                             quad->io_surface_size.height(),
-                             quad->io_surface_size.width(),
-                             quad->io_surface_size.height() * -1.0f));
+    GLC(gl_,
+        gl_->Uniform4f(binding.tex_transform_location,
+                       0,
+                       quad->io_surface_size.height(),
+                       quad->io_surface_size.width(),
+                       quad->io_surface_size.height() * -1.0f));
   } else {
-    GLC(Context(),
-        Context()->uniform4f(binding.tex_transform_location,
-                             0,
-                             0,
-                             quad->io_surface_size.width(),
-                             quad->io_surface_size.height()));
+    GLC(gl_,
+        gl_->Uniform4f(binding.tex_transform_location,
+                       0,
+                       0,
+                       quad->io_surface_size.width(),
+                       quad->io_surface_size.height()));
   }
 
-  const float vertex_opacity[] = { quad->opacity(), quad->opacity(),
-                                   quad->opacity(), quad->opacity() };
-  GLC(Context(),
-      Context()->uniform1fv(
-          binding.vertex_opacity_location, 4, vertex_opacity));
+  const float vertex_opacity[] = {quad->opacity(), quad->opacity(),
+                                  quad->opacity(), quad->opacity()};
+  GLC(gl_, gl_->Uniform1fv(binding.vertex_opacity_location, 4, vertex_opacity));
 
   ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                           quad->io_surface_resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(Context()));
-  GLC(Context(),
-      Context()->bindTexture(GL_TEXTURE_RECTANGLE_ARB,
-                             lock.texture_id()));
+  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_RECTANGLE_ARB, lock.texture_id()));
 
   DrawQuadGeometry(
       frame, quad->quadTransform(), quad->rect, binding.matrix_location);
 
-  GLC(Context(), Context()->bindTexture(GL_TEXTURE_RECTANGLE_ARB, 0));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_RECTANGLE_ARB, 0));
 }
 
 void GLRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   current_framebuffer_lock_.reset();
   swap_buffer_rect_.Union(gfx::ToEnclosingRect(frame->root_damage_rect));
 
-  GLC(context_, context_->disable(GL_BLEND));
+  GLC(gl_, gl_->Disable(GL_BLEND));
   blend_shadow_ = false;
 }
 
@@ -1970,7 +1974,7 @@ void GLRenderer::EnsureScissorTestEnabled() {
     return;
 
   FlushTextureQuadCache();
-  GLC(context_, context_->enable(GL_SCISSOR_TEST));
+  GLC(gl_, gl_->Enable(GL_SCISSOR_TEST));
   is_scissor_enabled_ = true;
 }
 
@@ -1979,7 +1983,7 @@ void GLRenderer::EnsureScissorTestDisabled() {
     return;
 
   FlushTextureQuadCache();
-  GLC(context_, context_->disable(GL_SCISSOR_TEST));
+  GLC(gl_, gl_->Disable(GL_SCISSOR_TEST));
   is_scissor_enabled_ = false;
 }
 
@@ -2009,12 +2013,12 @@ void GLRenderer::SetShaderQuadF(const gfx::QuadF& quad, int quad_location) {
   gl_quad[5] = quad.p3().y();
   gl_quad[6] = quad.p4().x();
   gl_quad[7] = quad.p4().y();
-  GLC(context_, context_->uniform2fv(quad_location, 4, gl_quad));
+  GLC(gl_, gl_->Uniform2fv(quad_location, 4, gl_quad));
 }
 
 void GLRenderer::SetShaderOpacity(float opacity, int alpha_location) {
   if (alpha_location != -1)
-    GLC(context_, context_->uniform1f(alpha_location, opacity));
+    GLC(gl_, gl_->Uniform1f(alpha_location, opacity));
 }
 
 void GLRenderer::SetStencilEnabled(bool enabled) {
@@ -2022,9 +2026,9 @@ void GLRenderer::SetStencilEnabled(bool enabled) {
     return;
 
   if (enabled)
-    GLC(context_, context_->enable(GL_STENCIL_TEST));
+    GLC(gl_, gl_->Enable(GL_STENCIL_TEST));
   else
-    GLC(context_, context_->disable(GL_STENCIL_TEST));
+    GLC(gl_, gl_->Disable(GL_STENCIL_TEST));
   stencil_shadow_ = enabled;
 }
 
@@ -2033,16 +2037,16 @@ void GLRenderer::SetBlendEnabled(bool enabled) {
     return;
 
   if (enabled)
-    GLC(context_, context_->enable(GL_BLEND));
+    GLC(gl_, gl_->Enable(GL_BLEND));
   else
-    GLC(context_, context_->disable(GL_BLEND));
+    GLC(gl_, gl_->Disable(GL_BLEND));
   blend_shadow_ = enabled;
 }
 
 void GLRenderer::SetUseProgram(unsigned program) {
   if (program == program_shadow_)
     return;
-  GLC(context_, context_->useProgram(program));
+  gl_->UseProgram(program);
   program_shadow_ = program;
 }
 
@@ -2054,10 +2058,9 @@ void GLRenderer::DrawQuadGeometry(const DrawingFrame* frame,
   QuadRectTransform(&quad_rect_matrix, draw_transform, quad_rect);
   static float gl_matrix[16];
   ToGLMatrix(&gl_matrix[0], frame->projection_matrix * quad_rect_matrix);
-  GLC(context_,
-      context_->uniformMatrix4fv(matrix_location, 1, false, &gl_matrix[0]));
+  GLC(gl_, gl_->UniformMatrix4fv(matrix_location, 1, false, &gl_matrix[0]));
 
-  GLC(context_, context_->drawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0));
+  GLC(gl_, gl_->DrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0));
 }
 
 void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
@@ -2066,61 +2069,60 @@ void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
                                           const gfx::Transform& draw_matrix,
                                           bool flip_vertically) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      context_, &highp_threshold_cache_, highp_threshold_min_,
-      rect.bottom_right());
+      gl_, &highp_threshold_cache_, highp_threshold_min_, rect.bottom_right());
 
   const RenderPassProgram* program = GetRenderPassProgram(tex_coord_precision);
   SetUseProgram(program->program());
 
-  GLC(Context(), Context()->uniform1i(
-      program->fragment_shader().sampler_location(), 0));
+  GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
 
   if (flip_vertically) {
-    GLC(Context(), Context()->uniform4f(
-        program->vertex_shader().tex_transform_location(),
-        0.f,
-        1.f,
-        1.f,
-        -1.f));
+    GLC(gl_,
+        gl_->Uniform4f(program->vertex_shader().tex_transform_location(),
+                       0.f,
+                       1.f,
+                       1.f,
+                       -1.f));
   } else {
-    GLC(Context(), Context()->uniform4f(
-        program->vertex_shader().tex_transform_location(),
-        0.f,
-        0.f,
-        1.f,
-        1.f));
+    GLC(gl_,
+        gl_->Uniform4f(program->vertex_shader().tex_transform_location(),
+                       0.f,
+                       0.f,
+                       1.f,
+                       1.f));
   }
 
   SetShaderOpacity(1.f, program->fragment_shader().alpha_location());
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(Context()));
-  GLC(Context(), Context()->bindTexture(GL_TEXTURE_2D, texture_id));
+  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
   DrawQuadGeometry(
       frame, draw_matrix, rect, program->vertex_shader().matrix_location());
 }
 
 void GLRenderer::Finish() {
-  TRACE_EVENT0("cc", "GLRenderer::finish");
-  context_->finish();
+  TRACE_EVENT0("cc", "GLRenderer::Finish");
+  GLC(gl_, gl_->Finish());
 }
 
-void GLRenderer::SwapBuffers() {
-  DCHECK(visible_);
+void GLRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   DCHECK(!is_backbuffer_discarded_);
 
   TRACE_EVENT0("cc", "GLRenderer::SwapBuffers");
   // We're done! Time to swapbuffers!
 
+  gfx::Size surface_size = output_surface_->SurfaceSize();
+
   CompositorFrame compositor_frame;
-  compositor_frame.metadata = client_->MakeCompositorFrameMetadata();
+  compositor_frame.metadata = metadata;
   compositor_frame.gl_frame_data = make_scoped_ptr(new GLFrameData);
-  compositor_frame.gl_frame_data->size = output_surface_->SurfaceSize();
+  compositor_frame.gl_frame_data->size = surface_size;
   if (capabilities_.using_partial_swap) {
     // If supported, we can save significant bandwidth by only swapping the
-    // damaged/scissored region (clamped to the viewport)
-    swap_buffer_rect_.Intersect(client_->DeviceViewport());
-    int flipped_y_pos_of_rect_bottom =
-        client_->DeviceViewport().height() - swap_buffer_rect_.y() -
-        swap_buffer_rect_.height();
+    // damaged/scissored region (clamped to the viewport).
+    swap_buffer_rect_.Intersect(gfx::Rect(surface_size));
+    int flipped_y_pos_of_rect_bottom = surface_size.height() -
+                                       swap_buffer_rect_.y() -
+                                       swap_buffer_rect_.height();
     compositor_frame.gl_frame_data->sub_buffer_rect =
         gfx::Rect(swap_buffer_rect_.x(),
                   flipped_y_pos_of_rect_bottom,
@@ -2143,19 +2145,13 @@ void GLRenderer::SwapBuffers() {
   resource_provider_->SetReadLockFence(new SimpleSwapFence());
 }
 
-void GLRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  discard_backbuffer_when_not_visible_ = discard;
-  EnforceMemoryPolicy();
-}
-
 void GLRenderer::EnforceMemoryPolicy() {
   if (!visible_) {
     TRACE_EVENT0("cc", "GLRenderer::EnforceMemoryPolicy dropping resources");
     ReleaseRenderPassTextures();
-    if (discard_backbuffer_when_not_visible_)
-      DiscardBackbuffer();
+    DiscardBackbuffer();
     resource_provider_->ReleaseCachedData();
-    GLC(context_, context_->flush());
+    GLC(gl_, gl_->Flush());
   }
 }
 
@@ -2198,7 +2194,8 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
 }
 
 void GLRenderer::GetFramebufferPixelsAsync(
-    gfx::Rect rect, scoped_ptr<CopyOutputRequest> request) {
+    gfx::Rect rect,
+    scoped_ptr<CopyOutputRequest> request) {
   DCHECK(!request->IsEmpty());
   if (request->IsEmpty())
     return;
@@ -2208,48 +2205,69 @@ void GLRenderer::GetFramebufferPixelsAsync(
   gfx::Rect window_rect = MoveFromDrawToWindowSpace(rect);
 
   if (!request->force_bitmap_result()) {
-    unsigned int texture_id = context_->createTexture();
-    GLC(context_, context_->bindTexture(GL_TEXTURE_2D, texture_id));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    GetFramebufferTexture(texture_id, RGBA_8888, window_rect);
+    bool own_mailbox = !request->has_texture_mailbox();
+
+    GLuint texture_id = 0;
+    gl_->GenTextures(1, &texture_id);
 
     gpu::Mailbox mailbox;
-    unsigned sync_point = 0;
-    GLC(context_, context_->genMailboxCHROMIUM(mailbox.name));
-    if (mailbox.IsZero()) {
-      context_->deleteTexture(texture_id);
-      request->SendEmptyResult();
-      return;
+    if (own_mailbox) {
+      GLC(gl_, gl_->GenMailboxCHROMIUM(mailbox.name));
+      if (mailbox.IsZero()) {
+        gl_->DeleteTextures(1, &texture_id);
+        request->SendEmptyResult();
+        return;
+      }
+    } else {
+      mailbox = request->texture_mailbox().name();
+      DCHECK_EQ(static_cast<unsigned>(GL_TEXTURE_2D),
+                request->texture_mailbox().target());
+      DCHECK(!mailbox.IsZero());
+      unsigned incoming_sync_point = request->texture_mailbox().sync_point();
+      if (incoming_sync_point)
+        GLC(gl_, gl_->WaitSyncPointCHROMIUM(incoming_sync_point));
     }
 
-    GLC(context_, context_->bindTexture(GL_TEXTURE_2D, texture_id));
-    GLC(context_, context_->produceTextureCHROMIUM(
-        GL_TEXTURE_2D, mailbox.name));
-    GLC(context_, context_->bindTexture(GL_TEXTURE_2D, 0));
-    sync_point = context_->insertSyncPoint();
+    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
+    if (own_mailbox) {
+      GLC(gl_,
+          gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+      GLC(gl_,
+          gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+      GLC(gl_,
+          gl_->TexParameteri(
+              GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+      GLC(gl_,
+          gl_->TexParameteri(
+              GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+      GLC(gl_, gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
+    } else {
+      GLC(gl_, gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
+    }
+    GetFramebufferTexture(texture_id, RGBA_8888, window_rect);
+    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, 0));
+
+    unsigned sync_point = gl_->InsertSyncPointCHROMIUM();
     TextureMailbox texture_mailbox(mailbox, GL_TEXTURE_2D, sync_point);
-    scoped_ptr<SingleReleaseCallback> release_callback =
-        texture_mailbox_deleter_->GetReleaseCallback(
-            output_surface_->context_provider(), texture_id);
-    request->SendTextureResult(window_rect.size(),
-                               texture_mailbox,
-                               release_callback.Pass());
+
+    scoped_ptr<SingleReleaseCallback> release_callback;
+    if (own_mailbox) {
+      release_callback = texture_mailbox_deleter_->GetReleaseCallback(
+          output_surface_->context_provider(), texture_id);
+    } else {
+      gl_->DeleteTextures(1, &texture_id);
+    }
+
+    request->SendTextureResult(
+        window_rect.size(), texture_mailbox, release_callback.Pass());
     return;
   }
 
   DCHECK(request->force_bitmap_result());
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    window_rect.width(),
-                    window_rect.height());
+  bitmap->setConfig(
+      SkBitmap::kARGB_8888_Config, window_rect.width(), window_rect.height());
   bitmap->allocPixels();
 
   scoped_ptr<SkAutoLockPixels> lock(new SkAutoLockPixels(*bitmap));
@@ -2257,11 +2275,11 @@ void GLRenderer::GetFramebufferPixelsAsync(
   // Save a pointer to the pixels, the bitmap is owned by the cleanup_callback.
   uint8* pixels = static_cast<uint8*>(bitmap->getPixels());
 
-  AsyncGetFramebufferPixelsCleanupCallback cleanup_callback = base::Bind(
-      &GLRenderer::PassOnSkBitmap,
-      base::Unretained(this),
-      base::Passed(&bitmap),
-      base::Passed(&lock));
+  AsyncGetFramebufferPixelsCleanupCallback cleanup_callback =
+      base::Bind(&GLRenderer::PassOnSkBitmap,
+                 base::Unretained(this),
+                 base::Passed(&bitmap),
+                 base::Passed(&lock));
 
   scoped_ptr<PendingAsyncReadPixels> pending_read(new PendingAsyncReadPixels);
   pending_read->copy_request = request.Pass();
@@ -2283,8 +2301,6 @@ void GLRenderer::DoGetFramebufferPixels(
 
   bool is_async = !cleanup_callback.is_null();
 
-  MakeContextCurrent();
-
   bool do_workaround = NeedsIOSurfaceReadbackWorkaround();
 
   unsigned temporary_texture = 0;
@@ -2297,78 +2313,75 @@ void GLRenderer::DoGetFramebufferPixels(
     // is the root cause of top crasher
     // http://crbug.com/99393. <rdar://problem/10949687>
 
-    temporary_texture = context_->createTexture();
-    GLC(context_, context_->bindTexture(GL_TEXTURE_2D, temporary_texture));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-    GLC(context_, context_->texParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    gl_->GenTextures(1, &temporary_texture);
+    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, temporary_texture));
+    GLC(gl_,
+        gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GLC(gl_,
+        gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GLC(gl_,
+        gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GLC(gl_,
+        gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
     // Copy the contents of the current (IOSurface-backed) framebuffer into a
     // temporary texture.
-    GetFramebufferTexture(temporary_texture,
-                          RGBA_8888,
-                          gfx::Rect(current_surface_size_));
-    temporary_fbo = context_->createFramebuffer();
+    GetFramebufferTexture(
+        temporary_texture, RGBA_8888, gfx::Rect(current_surface_size_));
+    gl_->GenFramebuffers(1, &temporary_fbo);
     // Attach this texture to an FBO, and perform the readback from that FBO.
-    GLC(context_, context_->bindFramebuffer(GL_FRAMEBUFFER, temporary_fbo));
-    GLC(context_, context_->framebufferTexture2D(GL_FRAMEBUFFER,
-                                                 GL_COLOR_ATTACHMENT0,
-                                                 GL_TEXTURE_2D,
-                                                 temporary_texture,
-                                                 0));
+    GLC(gl_, gl_->BindFramebuffer(GL_FRAMEBUFFER, temporary_fbo));
+    GLC(gl_,
+        gl_->FramebufferTexture2D(GL_FRAMEBUFFER,
+                                  GL_COLOR_ATTACHMENT0,
+                                  GL_TEXTURE_2D,
+                                  temporary_texture,
+                                  0));
 
     DCHECK_EQ(static_cast<unsigned>(GL_FRAMEBUFFER_COMPLETE),
-              context_->checkFramebufferStatus(GL_FRAMEBUFFER));
+              gl_->CheckFramebufferStatus(GL_FRAMEBUFFER));
   }
 
-  unsigned buffer = context_->createBuffer();
-  GLC(context_, context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                     buffer));
-  GLC(context_, context_->bufferData(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                     4 * window_rect.size().GetArea(),
-                                     NULL,
-                                     GL_STREAM_READ));
+  GLuint buffer = 0;
+  gl_->GenBuffers(1, &buffer);
+  GLC(gl_, gl_->BindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, buffer));
+  GLC(gl_,
+      gl_->BufferData(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
+                      4 * window_rect.size().GetArea(),
+                      NULL,
+                      GL_STREAM_READ));
 
-  WebKit::WebGLId query = 0;
+  GLuint query = 0;
   if (is_async) {
-    query = context_->createQueryEXT();
-    GLC(context_, context_->beginQueryEXT(
-        GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM,
-        query));
+    gl_->GenQueriesEXT(1, &query);
+    GLC(gl_, gl_->BeginQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM, query));
   }
 
-  GLC(context_,
-      context_->readPixels(window_rect.x(),
-                           window_rect.y(),
-                           window_rect.width(),
-                           window_rect.height(),
-                           GL_RGBA,
-                           GL_UNSIGNED_BYTE,
-                           NULL));
+  GLC(gl_,
+      gl_->ReadPixels(window_rect.x(),
+                      window_rect.y(),
+                      window_rect.width(),
+                      window_rect.height(),
+                      GL_RGBA,
+                      GL_UNSIGNED_BYTE,
+                      NULL));
 
-  GLC(context_, context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                     0));
+  GLC(gl_, gl_->BindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0));
 
   if (do_workaround) {
     // Clean up.
-    GLC(context_, context_->bindFramebuffer(GL_FRAMEBUFFER, 0));
-    GLC(context_, context_->bindTexture(GL_TEXTURE_2D, 0));
-    GLC(context_, context_->deleteFramebuffer(temporary_fbo));
-    GLC(context_, context_->deleteTexture(temporary_texture));
+    GLC(gl_, gl_->BindFramebuffer(GL_FRAMEBUFFER, 0));
+    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, 0));
+    GLC(gl_, gl_->DeleteFramebuffers(1, &temporary_fbo));
+    GLC(gl_, gl_->DeleteTextures(1, &temporary_texture));
   }
 
-  base::Closure finished_callback =
-      base::Bind(&GLRenderer::FinishedReadback,
-                 base::Unretained(this),
-                 cleanup_callback,
-                 buffer,
-                 query,
-                 dest_pixels,
-                 window_rect.size());
+  base::Closure finished_callback = base::Bind(&GLRenderer::FinishedReadback,
+                                               base::Unretained(this),
+                                               cleanup_callback,
+                                               buffer,
+                                               query,
+                                               dest_pixels,
+                                               window_rect.size());
   // Save the finished_callback so it can be cancelled.
   pending_async_read_pixels_.front()->finished_read_pixels_callback.Reset(
       finished_callback);
@@ -2377,12 +2390,8 @@ void GLRenderer::DoGetFramebufferPixels(
   pending_async_read_pixels_.front()->buffer = buffer;
 
   if (is_async) {
-    GLC(context_, context_->endQueryEXT(
-        GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
-    SyncPointHelper::SignalQuery(
-        context_,
-        query,
-        finished_callback);
+    GLC(gl_, gl_->EndQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
+    context_support_->SignalQuery(query, finished_callback);
   } else {
     resource_provider_->Finish();
     finished_callback.Run();
@@ -2400,7 +2409,7 @@ void GLRenderer::FinishedReadback(
   DCHECK(!pending_async_read_pixels_.empty());
 
   if (query != 0) {
-    GLC(context_, context_->deleteQueryEXT(query));
+    GLC(gl_, gl_->DeleteQueriesEXT(1, &query));
   }
 
   PendingAsyncReadPixels* current_read = pending_async_read_pixels_.back();
@@ -2410,11 +2419,10 @@ void GLRenderer::FinishedReadback(
   uint8* src_pixels = NULL;
 
   if (source_buffer != 0) {
-    GLC(context_, context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                       source_buffer));
-    src_pixels = static_cast<uint8*>(
-        context_->mapBufferCHROMIUM(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                    GL_READ_ONLY));
+    GLC(gl_,
+        gl_->BindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, source_buffer));
+    src_pixels = static_cast<uint8*>(gl_->MapBufferCHROMIUM(
+        GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY));
 
     if (src_pixels) {
       size_t row_bytes = size.width() * 4;
@@ -2425,19 +2433,22 @@ void GLRenderer::FinishedReadback(
         size_t src_y = total_bytes - dest_y - row_bytes;
         // Swizzle OpenGL -> Skia byte order.
         for (size_t x = 0; x < row_bytes; x += 4) {
-          dest_pixels[dest_y + x + SK_R32_SHIFT/8] = src_pixels[src_y + x + 0];
-          dest_pixels[dest_y + x + SK_G32_SHIFT/8] = src_pixels[src_y + x + 1];
-          dest_pixels[dest_y + x + SK_B32_SHIFT/8] = src_pixels[src_y + x + 2];
-          dest_pixels[dest_y + x + SK_A32_SHIFT/8] = src_pixels[src_y + x + 3];
+          dest_pixels[dest_y + x + SK_R32_SHIFT / 8] =
+              src_pixels[src_y + x + 0];
+          dest_pixels[dest_y + x + SK_G32_SHIFT / 8] =
+              src_pixels[src_y + x + 1];
+          dest_pixels[dest_y + x + SK_B32_SHIFT / 8] =
+              src_pixels[src_y + x + 2];
+          dest_pixels[dest_y + x + SK_A32_SHIFT / 8] =
+              src_pixels[src_y + x + 3];
         }
       }
 
-      GLC(context_, context_->unmapBufferCHROMIUM(
-          GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM));
+      GLC(gl_,
+          gl_->UnmapBufferCHROMIUM(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM));
     }
-    GLC(context_, context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                                       0));
-    GLC(context_, context_->deleteBuffer(source_buffer));
+    GLC(gl_, gl_->BindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0));
+    GLC(gl_, gl_->DeleteBuffers(1, &source_buffer));
   }
 
   // TODO(danakj): This can go away when synchronous readback is no more and its
@@ -2448,11 +2459,10 @@ void GLRenderer::FinishedReadback(
   pending_async_read_pixels_.pop_back();
 }
 
-void GLRenderer::PassOnSkBitmap(
-    scoped_ptr<SkBitmap> bitmap,
-    scoped_ptr<SkAutoLockPixels> lock,
-    scoped_ptr<CopyOutputRequest> request,
-    bool success) {
+void GLRenderer::PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
+                                scoped_ptr<SkAutoLockPixels> lock,
+                                scoped_ptr<CopyOutputRequest> request,
+                                bool success) {
   DCHECK(request->force_bitmap_result());
 
   lock.reset();
@@ -2460,26 +2470,26 @@ void GLRenderer::PassOnSkBitmap(
     request->SendBitmapResult(bitmap.Pass());
 }
 
-void GLRenderer::GetFramebufferTexture(
-    unsigned texture_id, ResourceFormat texture_format, gfx::Rect window_rect) {
+void GLRenderer::GetFramebufferTexture(unsigned texture_id,
+                                       ResourceFormat texture_format,
+                                       gfx::Rect window_rect) {
   DCHECK(texture_id);
   DCHECK_GE(window_rect.x(), 0);
   DCHECK_GE(window_rect.y(), 0);
   DCHECK_LE(window_rect.right(), current_surface_size_.width());
   DCHECK_LE(window_rect.bottom(), current_surface_size_.height());
 
-  GLC(context_, context_->bindTexture(GL_TEXTURE_2D, texture_id));
-  GLC(context_,
-      context_->copyTexImage2D(
-          GL_TEXTURE_2D,
-          0,
-          ResourceProvider::GetGLDataFormat(texture_format),
-          window_rect.x(),
-          window_rect.y(),
-          window_rect.width(),
-          window_rect.height(),
-          0));
-  GLC(context_, context_->bindTexture(GL_TEXTURE_2D, 0));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
+  GLC(gl_,
+      gl_->CopyTexImage2D(GL_TEXTURE_2D,
+                          0,
+                          GLDataFormat(texture_format),
+                          window_rect.x(),
+                          window_rect.y(),
+                          window_rect.width(),
+                          window_rect.height(),
+                          0));
+  GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, 0));
 }
 
 bool GLRenderer::UseScopedTexture(DrawingFrame* frame,
@@ -2498,7 +2508,7 @@ void GLRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 
   if (output_surface_->HasExternalStencilTest()) {
     SetStencilEnabled(true);
-    GLC(context_, context_->stencilFunc(GL_EQUAL, 1, 1));
+    GLC(gl_, gl_->StencilFunc(GL_EQUAL, 1, 1));
   } else {
     SetStencilEnabled(false);
   }
@@ -2512,23 +2522,21 @@ bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
   current_framebuffer_lock_.reset();
 
   SetStencilEnabled(false);
-  GLC(context_,
-      context_->bindFramebuffer(GL_FRAMEBUFFER, offscreen_framebuffer_id_));
+  GLC(gl_, gl_->BindFramebuffer(GL_FRAMEBUFFER, offscreen_framebuffer_id_));
   current_framebuffer_lock_ =
       make_scoped_ptr(new ResourceProvider::ScopedWriteLockGL(
           resource_provider_, texture->id()));
   unsigned texture_id = current_framebuffer_lock_->texture_id();
-  GLC(context_,
-      context_->framebufferTexture2D(
+  GLC(gl_,
+      gl_->FramebufferTexture2D(
           GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id, 0));
 
-  DCHECK(context_->checkFramebufferStatus(GL_FRAMEBUFFER) ==
-         GL_FRAMEBUFFER_COMPLETE || IsContextLost());
+  DCHECK(gl_->CheckFramebufferStatus(GL_FRAMEBUFFER) ==
+             GL_FRAMEBUFFER_COMPLETE ||
+         IsContextLost());
 
-  InitializeViewport(frame,
-                     target_rect,
-                     gfx::Rect(target_rect.size()),
-                     target_rect.size());
+  InitializeViewport(
+      frame, target_rect, gfx::Rect(target_rect.size()), target_rect.size());
   return true;
 }
 
@@ -2537,550 +2545,441 @@ void GLRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
 
   // Don't unnecessarily ask the context to change the scissor, because it
   // may cause undesired GPU pipeline flushes.
-  if (scissor_rect == scissor_rect_)
+  if (scissor_rect == scissor_rect_ && !scissor_rect_needs_reset_)
     return;
 
   scissor_rect_ = scissor_rect;
   FlushTextureQuadCache();
-  GLC(context_,
-      context_->scissor(scissor_rect.x(),
-                        scissor_rect.y(),
-                        scissor_rect.width(),
-                        scissor_rect.height()));
+  GLC(gl_,
+      gl_->Scissor(scissor_rect.x(),
+                   scissor_rect.y(),
+                   scissor_rect.width(),
+                   scissor_rect.height()));
+
+  scissor_rect_needs_reset_ = false;
 }
 
 void GLRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {
   viewport_ = window_space_viewport;
-  GLC(context_, context_->viewport(window_space_viewport.x(),
-                                   window_space_viewport.y(),
-                                   window_space_viewport.width(),
-                                   window_space_viewport.height()));
+  GLC(gl_,
+      gl_->Viewport(window_space_viewport.x(),
+                    window_space_viewport.y(),
+                    window_space_viewport.width(),
+                    window_space_viewport.height()));
 }
 
-bool GLRenderer::MakeContextCurrent() { return context_->makeContextCurrent(); }
-
-bool GLRenderer::InitializeSharedObjects() {
+void GLRenderer::InitializeSharedObjects() {
   TRACE_EVENT0("cc", "GLRenderer::InitializeSharedObjects");
-  MakeContextCurrent();
 
   // Create an FBO for doing offscreen rendering.
-  GLC(context_, offscreen_framebuffer_id_ = context_->createFramebuffer());
+  GLC(gl_, gl_->GenFramebuffers(1, &offscreen_framebuffer_id_));
 
-  // We will always need these programs to render, so create the programs
-  // eagerly so that the shader compilation can start while we do other work.
-  // Other programs are created lazily on first access.
   shared_geometry_ = make_scoped_ptr(
-      new GeometryBinding(context_, QuadVertexRect()));
-  render_pass_program_ = make_scoped_ptr(
-      new RenderPassProgram(context_, TexCoordPrecisionMedium));
-  render_pass_program_highp_ = make_scoped_ptr(
-      new RenderPassProgram(context_, TexCoordPrecisionHigh));
-  tile_program_ = make_scoped_ptr(
-      new TileProgram(context_, TexCoordPrecisionMedium));
-  tile_program_opaque_ = make_scoped_ptr(
-      new TileProgramOpaque(context_, TexCoordPrecisionMedium));
-  tile_program_highp_ = make_scoped_ptr(
-      new TileProgram(context_, TexCoordPrecisionHigh));
-  tile_program_opaque_highp_ = make_scoped_ptr(
-      new TileProgramOpaque(context_, TexCoordPrecisionHigh));
-
-  GLC(context_, context_->flush());
-
-  return true;
+      new GeometryBinding(gl_, QuadVertexRect()));
 }
 
 const GLRenderer::TileCheckerboardProgram*
 GLRenderer::GetTileCheckerboardProgram() {
-  if (!tile_checkerboard_program_)
-    tile_checkerboard_program_ = make_scoped_ptr(
-        new TileCheckerboardProgram(context_, TexCoordPrecisionNA));
-  if (!tile_checkerboard_program_->initialized()) {
+  if (!tile_checkerboard_program_.initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::checkerboardProgram::initalize");
-    tile_checkerboard_program_->Initialize(context_, is_using_bind_uniform_);
+    tile_checkerboard_program_.Initialize(output_surface_->context_provider(),
+                                          TexCoordPrecisionNA,
+                                          SamplerTypeNA);
   }
-  return tile_checkerboard_program_.get();
+  return &tile_checkerboard_program_;
 }
 
 const GLRenderer::DebugBorderProgram* GLRenderer::GetDebugBorderProgram() {
-  if (!debug_border_program_)
-    debug_border_program_ = make_scoped_ptr(
-        new DebugBorderProgram(context_, TexCoordPrecisionNA));
-  if (!debug_border_program_->initialized()) {
+  if (!debug_border_program_.initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::debugBorderProgram::initialize");
-    debug_border_program_->Initialize(context_, is_using_bind_uniform_);
+    debug_border_program_.Initialize(output_surface_->context_provider(),
+                                     TexCoordPrecisionNA,
+                                     SamplerTypeNA);
   }
-  return debug_border_program_.get();
+  return &debug_border_program_;
 }
 
 const GLRenderer::SolidColorProgram* GLRenderer::GetSolidColorProgram() {
-  if (!solid_color_program_)
-    solid_color_program_ = make_scoped_ptr(
-        new SolidColorProgram(context_, TexCoordPrecisionNA));
-  if (!solid_color_program_->initialized()) {
+  if (!solid_color_program_.initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::solidColorProgram::initialize");
-    solid_color_program_->Initialize(context_, is_using_bind_uniform_);
+    solid_color_program_.Initialize(output_surface_->context_provider(),
+                                    TexCoordPrecisionNA,
+                                    SamplerTypeNA);
   }
-  return solid_color_program_.get();
+  return &solid_color_program_;
 }
 
 const GLRenderer::SolidColorProgramAA* GLRenderer::GetSolidColorProgramAA() {
-  if (!solid_color_program_aa_) {
-    solid_color_program_aa_ =
-        make_scoped_ptr(new SolidColorProgramAA(context_, TexCoordPrecisionNA));
-  }
-  if (!solid_color_program_aa_->initialized()) {
+  if (!solid_color_program_aa_.initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::solidColorProgramAA::initialize");
-    solid_color_program_aa_->Initialize(context_, is_using_bind_uniform_);
+    solid_color_program_aa_.Initialize(output_surface_->context_provider(),
+                                       TexCoordPrecisionNA,
+                                       SamplerTypeNA);
   }
-  return solid_color_program_aa_.get();
+  return &solid_color_program_aa_;
 }
 
 const GLRenderer::RenderPassProgram* GLRenderer::GetRenderPassProgram(
-      TexCoordPrecision precision) {
-  scoped_ptr<RenderPassProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? render_pass_program_highp_
-                                           : render_pass_program_;
-  DCHECK(program);
+    TexCoordPrecision precision) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassProgram* program = &render_pass_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::renderPassProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassProgramAA* GLRenderer::GetRenderPassProgramAA(
-      TexCoordPrecision precision) {
-  scoped_ptr<RenderPassProgramAA>& program =
-      (precision == TexCoordPrecisionHigh) ? render_pass_program_aa_highp_
-                                           : render_pass_program_aa_;
-  if (!program)
-    program =
-        make_scoped_ptr(new RenderPassProgramAA(context_, precision));
+    TexCoordPrecision precision) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassProgramAA* program = &render_pass_program_aa_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::renderPassProgramAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
-const GLRenderer::RenderPassMaskProgram*
-GLRenderer::GetRenderPassMaskProgram(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassMaskProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? render_pass_mask_program_highp_
-                                           : render_pass_mask_program_;
-  if (!program)
-    program = make_scoped_ptr(new RenderPassMaskProgram(context_, precision));
+const GLRenderer::RenderPassMaskProgram* GLRenderer::GetRenderPassMaskProgram(
+    TexCoordPrecision precision) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassMaskProgram* program = &render_pass_mask_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::renderPassMaskProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassMaskProgramAA*
 GLRenderer::GetRenderPassMaskProgramAA(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassMaskProgramAA>& program =
-      (precision == TexCoordPrecisionHigh) ? render_pass_mask_program_aa_highp_
-                                           : render_pass_mask_program_aa_;
-  if (!program)
-    program =
-        make_scoped_ptr(new RenderPassMaskProgramAA(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassMaskProgramAA* program = &render_pass_mask_program_aa_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::renderPassMaskProgramAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassColorMatrixProgram*
 GLRenderer::GetRenderPassColorMatrixProgram(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassColorMatrixProgram>& program =
-      (precision == TexCoordPrecisionHigh) ?
-          render_pass_color_matrix_program_highp_ :
-          render_pass_color_matrix_program_;
-  if (!program)
-    program = make_scoped_ptr(
-        new RenderPassColorMatrixProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassColorMatrixProgram* program =
+      &render_pass_color_matrix_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::renderPassColorMatrixProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassColorMatrixProgramAA*
 GLRenderer::GetRenderPassColorMatrixProgramAA(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassColorMatrixProgramAA>& program =
-      (precision == TexCoordPrecisionHigh) ?
-          render_pass_color_matrix_program_aa_highp_ :
-          render_pass_color_matrix_program_aa_;
-  if (!program)
-    program = make_scoped_ptr(
-        new RenderPassColorMatrixProgramAA(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassColorMatrixProgramAA* program =
+      &render_pass_color_matrix_program_aa_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc",
                  "GLRenderer::renderPassColorMatrixProgramAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassMaskColorMatrixProgram*
 GLRenderer::GetRenderPassMaskColorMatrixProgram(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassMaskColorMatrixProgram>& program =
-      (precision == TexCoordPrecisionHigh) ?
-          render_pass_mask_color_matrix_program_highp_ :
-          render_pass_mask_color_matrix_program_;
-  if (!program)
-    program = make_scoped_ptr(
-        new RenderPassMaskColorMatrixProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassMaskColorMatrixProgram* program =
+      &render_pass_mask_color_matrix_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc",
                  "GLRenderer::renderPassMaskColorMatrixProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::RenderPassMaskColorMatrixProgramAA*
 GLRenderer::GetRenderPassMaskColorMatrixProgramAA(TexCoordPrecision precision) {
-  scoped_ptr<RenderPassMaskColorMatrixProgramAA>& program =
-      (precision == TexCoordPrecisionHigh) ?
-          render_pass_mask_color_matrix_program_aa_highp_ :
-          render_pass_mask_color_matrix_program_aa_;
-  if (!program)
-    program = make_scoped_ptr(
-        new RenderPassMaskColorMatrixProgramAA(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  RenderPassMaskColorMatrixProgramAA* program =
+      &render_pass_mask_color_matrix_program_aa_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc",
                  "GLRenderer::renderPassMaskColorMatrixProgramAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgram* GLRenderer::GetTileProgram(
-    TexCoordPrecision precision) {
-  scoped_ptr<TileProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_highp_
-                                           : tile_program_;
-  DCHECK(program);
+    TexCoordPrecision precision,
+    SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgram* program = &tile_program_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgramOpaque* GLRenderer::GetTileProgramOpaque(
-    TexCoordPrecision precision) {
-  scoped_ptr<TileProgramOpaque>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_opaque_highp_
-                                           : tile_program_opaque_;
-  DCHECK(program);
+    TexCoordPrecision precision,
+    SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgramOpaque* program = &tile_program_opaque_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgramOpaque::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgramAA* GLRenderer::GetTileProgramAA(
-    TexCoordPrecision precision) {
-  scoped_ptr<TileProgramAA>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_aa_highp_
-                                           : tile_program_aa_;
-  if (!program)
-    program = make_scoped_ptr(new TileProgramAA(context_, precision));
+    TexCoordPrecision precision,
+    SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgramAA* program = &tile_program_aa_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgramAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgramSwizzle* GLRenderer::GetTileProgramSwizzle(
-    TexCoordPrecision precision) {
-  scoped_ptr<TileProgramSwizzle>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_swizzle_highp_
-                                           : tile_program_swizzle_;
-  if (!program)
-    program = make_scoped_ptr(new TileProgramSwizzle(context_, precision));
+    TexCoordPrecision precision,
+    SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgramSwizzle* program = &tile_program_swizzle_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgramSwizzle::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgramSwizzleOpaque*
-GLRenderer::GetTileProgramSwizzleOpaque(TexCoordPrecision precision) {
-  scoped_ptr<TileProgramSwizzleOpaque>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_swizzle_opaque_highp_
-                                           : tile_program_swizzle_opaque_;
-  if (!program)
-    program = make_scoped_ptr(
-        new TileProgramSwizzleOpaque(context_, precision));
+GLRenderer::GetTileProgramSwizzleOpaque(TexCoordPrecision precision,
+                                        SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgramSwizzleOpaque* program =
+      &tile_program_swizzle_opaque_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgramSwizzleOpaque::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TileProgramSwizzleAA* GLRenderer::GetTileProgramSwizzleAA(
-    TexCoordPrecision precision) {
-  scoped_ptr<TileProgramSwizzleAA>& program =
-      (precision == TexCoordPrecisionHigh) ? tile_program_swizzle_aa_highp_
-                                           : tile_program_swizzle_aa_;
-  if (!program)
-    program = make_scoped_ptr(new TileProgramSwizzleAA(context_, precision));
+    TexCoordPrecision precision,
+    SamplerType sampler) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  DCHECK_GE(sampler, 0);
+  DCHECK_LT(sampler, NumSamplerTypes);
+  TileProgramSwizzleAA* program = &tile_program_swizzle_aa_[precision][sampler];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::tileProgramSwizzleAA::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, sampler);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TextureProgram* GLRenderer::GetTextureProgram(
     TexCoordPrecision precision) {
-  scoped_ptr<TextureProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? texture_program_highp_
-                                           : texture_program_;
-  if (!program)
-    program = make_scoped_ptr(new TextureProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  TextureProgram* program = &texture_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::textureProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::NonPremultipliedTextureProgram*
-    GLRenderer::GetNonPremultipliedTextureProgram(TexCoordPrecision precision) {
-  scoped_ptr<NonPremultipliedTextureProgram>& program =
-      (precision == TexCoordPrecisionHigh) ?
-         nonpremultiplied_texture_program_highp_ :
-         nonpremultiplied_texture_program_;
-  if (!program) {
-    program = make_scoped_ptr(
-        new NonPremultipliedTextureProgram(context_, precision));
-  }
+GLRenderer::GetNonPremultipliedTextureProgram(TexCoordPrecision precision) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  NonPremultipliedTextureProgram* program =
+      &nonpremultiplied_texture_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc",
                  "GLRenderer::NonPremultipliedTextureProgram::Initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::TextureBackgroundProgram*
 GLRenderer::GetTextureBackgroundProgram(TexCoordPrecision precision) {
-  scoped_ptr<TextureBackgroundProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? texture_background_program_highp_
-                                           : texture_background_program_;
-  if (!program) {
-    program = make_scoped_ptr(
-        new TextureBackgroundProgram(context_, precision));
-  }
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  TextureBackgroundProgram* program = &texture_background_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::textureProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::NonPremultipliedTextureBackgroundProgram*
 GLRenderer::GetNonPremultipliedTextureBackgroundProgram(
     TexCoordPrecision precision) {
-  scoped_ptr<NonPremultipliedTextureBackgroundProgram>& program =
-      (precision == TexCoordPrecisionHigh) ?
-         nonpremultiplied_texture_background_program_highp_ :
-         nonpremultiplied_texture_background_program_;
-  if (!program) {
-    program = make_scoped_ptr(
-        new NonPremultipliedTextureBackgroundProgram(context_, precision));
-  }
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  NonPremultipliedTextureBackgroundProgram* program =
+      &nonpremultiplied_texture_background_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc",
                  "GLRenderer::NonPremultipliedTextureProgram::Initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
-const GLRenderer::TextureIOSurfaceProgram*
-GLRenderer::GetTextureIOSurfaceProgram(TexCoordPrecision precision) {
-  scoped_ptr<TextureIOSurfaceProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? texture_io_surface_program_highp_
-                                           : texture_io_surface_program_;
-  if (!program)
-    program =
-        make_scoped_ptr(new TextureIOSurfaceProgram(context_, precision));
+const GLRenderer::TextureProgram* GLRenderer::GetTextureIOSurfaceProgram(
+    TexCoordPrecision precision) {
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  TextureProgram* program = &texture_io_surface_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::textureIOSurfaceProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2DRect);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::VideoYUVProgram* GLRenderer::GetVideoYUVProgram(
     TexCoordPrecision precision) {
-  scoped_ptr<VideoYUVProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? video_yuv_program_highp_
-                                           : video_yuv_program_;
-  if (!program)
-    program = make_scoped_ptr(new VideoYUVProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  VideoYUVProgram* program = &video_yuv_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::videoYUVProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::VideoYUVAProgram* GLRenderer::GetVideoYUVAProgram(
     TexCoordPrecision precision) {
-  scoped_ptr<VideoYUVAProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? video_yuva_program_highp_
-                                           : video_yuva_program_;
-  if (!program)
-    program = make_scoped_ptr(new VideoYUVAProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  VideoYUVAProgram* program = &video_yuva_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::videoYUVAProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerType2D);
   }
-  return program.get();
+  return program;
 }
 
 const GLRenderer::VideoStreamTextureProgram*
 GLRenderer::GetVideoStreamTextureProgram(TexCoordPrecision precision) {
   if (!Capabilities().using_egl_image)
     return NULL;
-  scoped_ptr<VideoStreamTextureProgram>& program =
-      (precision == TexCoordPrecisionHigh) ? video_stream_texture_program_highp_
-                                           : video_stream_texture_program_;
-  if (!program)
-    program =
-        make_scoped_ptr(new VideoStreamTextureProgram(context_, precision));
+  DCHECK_GE(precision, 0);
+  DCHECK_LT(precision, NumTexCoordPrecisions);
+  VideoStreamTextureProgram* program =
+      &video_stream_texture_program_[precision];
   if (!program->initialized()) {
     TRACE_EVENT0("cc", "GLRenderer::streamTextureProgram::initialize");
-    program->Initialize(context_, is_using_bind_uniform_);
+    program->Initialize(
+        output_surface_->context_provider(), precision, SamplerTypeExternalOES);
   }
-  return program.get();
+  return program;
 }
 
 void GLRenderer::CleanupSharedObjects() {
-  MakeContextCurrent();
-
   shared_geometry_.reset();
 
-  if (tile_program_)
-    tile_program_->Cleanup(context_);
-  if (tile_program_opaque_)
-    tile_program_opaque_->Cleanup(context_);
-  if (tile_program_swizzle_)
-    tile_program_swizzle_->Cleanup(context_);
-  if (tile_program_swizzle_opaque_)
-    tile_program_swizzle_opaque_->Cleanup(context_);
-  if (tile_program_aa_)
-    tile_program_aa_->Cleanup(context_);
-  if (tile_program_swizzle_aa_)
-    tile_program_swizzle_aa_->Cleanup(context_);
-  if (tile_checkerboard_program_)
-    tile_checkerboard_program_->Cleanup(context_);
+  for (int i = 0; i < NumTexCoordPrecisions; ++i) {
+    for (int j = 0; j < NumSamplerTypes; ++j) {
+      tile_program_[i][j].Cleanup(gl_);
+      tile_program_opaque_[i][j].Cleanup(gl_);
+      tile_program_swizzle_[i][j].Cleanup(gl_);
+      tile_program_swizzle_opaque_[i][j].Cleanup(gl_);
+      tile_program_aa_[i][j].Cleanup(gl_);
+      tile_program_swizzle_aa_[i][j].Cleanup(gl_);
+    }
 
-  if (tile_program_highp_)
-    tile_program_highp_->Cleanup(context_);
-  if (tile_program_opaque_highp_)
-    tile_program_opaque_highp_->Cleanup(context_);
-  if (tile_program_swizzle_highp_)
-    tile_program_swizzle_highp_->Cleanup(context_);
-  if (tile_program_swizzle_opaque_highp_)
-    tile_program_swizzle_opaque_highp_->Cleanup(context_);
-  if (tile_program_aa_highp_)
-    tile_program_aa_highp_->Cleanup(context_);
-  if (tile_program_swizzle_aa_highp_)
-    tile_program_swizzle_aa_highp_->Cleanup(context_);
+    render_pass_mask_program_[i].Cleanup(gl_);
+    render_pass_program_[i].Cleanup(gl_);
+    render_pass_mask_program_aa_[i].Cleanup(gl_);
+    render_pass_program_aa_[i].Cleanup(gl_);
+    render_pass_color_matrix_program_[i].Cleanup(gl_);
+    render_pass_mask_color_matrix_program_aa_[i].Cleanup(gl_);
+    render_pass_color_matrix_program_aa_[i].Cleanup(gl_);
+    render_pass_mask_color_matrix_program_[i].Cleanup(gl_);
 
-  if (render_pass_mask_program_)
-    render_pass_mask_program_->Cleanup(context_);
-  if (render_pass_program_)
-    render_pass_program_->Cleanup(context_);
-  if (render_pass_mask_program_aa_)
-    render_pass_mask_program_aa_->Cleanup(context_);
-  if (render_pass_program_aa_)
-    render_pass_program_aa_->Cleanup(context_);
-  if (render_pass_color_matrix_program_)
-    render_pass_color_matrix_program_->Cleanup(context_);
-  if (render_pass_mask_color_matrix_program_aa_)
-    render_pass_mask_color_matrix_program_aa_->Cleanup(context_);
-  if (render_pass_color_matrix_program_aa_)
-    render_pass_color_matrix_program_aa_->Cleanup(context_);
-  if (render_pass_mask_color_matrix_program_)
-    render_pass_mask_color_matrix_program_->Cleanup(context_);
+    texture_program_[i].Cleanup(gl_);
+    nonpremultiplied_texture_program_[i].Cleanup(gl_);
+    texture_background_program_[i].Cleanup(gl_);
+    nonpremultiplied_texture_background_program_[i].Cleanup(gl_);
+    texture_io_surface_program_[i].Cleanup(gl_);
 
-  if (render_pass_mask_program_highp_)
-    render_pass_mask_program_highp_->Cleanup(context_);
-  if (render_pass_program_highp_)
-    render_pass_program_highp_->Cleanup(context_);
-  if (render_pass_mask_program_aa_highp_)
-    render_pass_mask_program_aa_highp_->Cleanup(context_);
-  if (render_pass_program_aa_highp_)
-    render_pass_program_aa_highp_->Cleanup(context_);
-  if (render_pass_color_matrix_program_highp_)
-    render_pass_color_matrix_program_highp_->Cleanup(context_);
-  if (render_pass_mask_color_matrix_program_aa_highp_)
-    render_pass_mask_color_matrix_program_aa_highp_->Cleanup(context_);
-  if (render_pass_color_matrix_program_aa_highp_)
-    render_pass_color_matrix_program_aa_highp_->Cleanup(context_);
-  if (render_pass_mask_color_matrix_program_highp_)
-    render_pass_mask_color_matrix_program_highp_->Cleanup(context_);
+    video_yuv_program_[i].Cleanup(gl_);
+    video_yuva_program_[i].Cleanup(gl_);
+    video_stream_texture_program_[i].Cleanup(gl_);
+  }
 
-  if (texture_program_)
-    texture_program_->Cleanup(context_);
-  if (nonpremultiplied_texture_program_)
-    nonpremultiplied_texture_program_->Cleanup(context_);
-  if (texture_background_program_)
-    texture_background_program_->Cleanup(context_);
-  if (nonpremultiplied_texture_background_program_)
-    nonpremultiplied_texture_background_program_->Cleanup(context_);
-  if (texture_io_surface_program_)
-    texture_io_surface_program_->Cleanup(context_);
+  tile_checkerboard_program_.Cleanup(gl_);
 
-  if (texture_program_highp_)
-    texture_program_highp_->Cleanup(context_);
-  if (nonpremultiplied_texture_program_highp_)
-    nonpremultiplied_texture_program_highp_->Cleanup(context_);
-  if (texture_background_program_highp_)
-    texture_background_program_highp_->Cleanup(context_);
-  if (nonpremultiplied_texture_background_program_highp_)
-    nonpremultiplied_texture_background_program_highp_->Cleanup(context_);
-  if (texture_io_surface_program_highp_)
-    texture_io_surface_program_highp_->Cleanup(context_);
-
-  if (video_yuv_program_)
-    video_yuv_program_->Cleanup(context_);
-  if (video_yuva_program_)
-    video_yuva_program_->Cleanup(context_);
-  if (video_stream_texture_program_)
-    video_stream_texture_program_->Cleanup(context_);
-
-  if (video_yuv_program_highp_)
-    video_yuv_program_highp_->Cleanup(context_);
-  if (video_yuva_program_highp_)
-    video_yuva_program_highp_->Cleanup(context_);
-  if (video_stream_texture_program_highp_)
-    video_stream_texture_program_highp_->Cleanup(context_);
-
-  if (debug_border_program_)
-    debug_border_program_->Cleanup(context_);
-  if (solid_color_program_)
-    solid_color_program_->Cleanup(context_);
-  if (solid_color_program_aa_)
-    solid_color_program_aa_->Cleanup(context_);
+  debug_border_program_.Cleanup(gl_);
+  solid_color_program_.Cleanup(gl_);
+  solid_color_program_aa_.Cleanup(gl_);
 
   if (offscreen_framebuffer_id_)
-    GLC(context_, context_->deleteFramebuffer(offscreen_framebuffer_id_));
+    GLC(gl_, gl_->DeleteFramebuffers(1, &offscreen_framebuffer_id_));
 
   if (on_demand_tile_raster_resource_id_)
     resource_provider_->DeleteResource(on_demand_tile_raster_resource_id_);
@@ -3088,54 +2987,29 @@ void GLRenderer::CleanupSharedObjects() {
   ReleaseRenderPassTextures();
 }
 
-void GLRenderer::ReinitializeGrCanvas() {
-  if (!CanUseSkiaGPUBackend())
-    return;
-
-  GrBackendRenderTargetDesc desc;
-  desc.fWidth = client_->DeviceViewport().width();
-  desc.fHeight = client_->DeviceViewport().height();
-  desc.fConfig = kRGBA_8888_GrPixelConfig;
-  desc.fOrigin = kTopLeft_GrSurfaceOrigin;
-  desc.fSampleCnt = 1;
-  desc.fStencilBits = 8;
-  desc.fRenderTargetHandle = 0;
-
-  skia::RefPtr<GrSurface> surface(
-      skia::AdoptRef(gr_context_->wrapBackendRenderTarget(desc)));
-  skia::RefPtr<SkBaseDevice> device(
-      skia::AdoptRef(SkGpuDevice::Create(surface.get())));
-  sk_canvas_ = skia::AdoptRef(new SkCanvas(device.get()));
-}
-
 void GLRenderer::ReinitializeGLState() {
   // Bind the common vertex attributes used for drawing all the layers.
   shared_geometry_->PrepareForDraw();
 
-  GLC(context_, context_->disable(GL_DEPTH_TEST));
-  GLC(context_, context_->disable(GL_CULL_FACE));
-  GLC(context_, context_->colorMask(true, true, true, true));
-  GLC(context_, context_->disable(GL_STENCIL_TEST));
+  GLC(gl_, gl_->Disable(GL_DEPTH_TEST));
+  GLC(gl_, gl_->Disable(GL_CULL_FACE));
+  GLC(gl_, gl_->ColorMask(true, true, true, true));
+  GLC(gl_, gl_->Disable(GL_STENCIL_TEST));
   stencil_shadow_ = false;
-  GLC(context_, context_->enable(GL_BLEND));
+  GLC(gl_, gl_->Enable(GL_BLEND));
   blend_shadow_ = true;
-  GLC(context_, context_->blendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
-  GLC(context_, context_->activeTexture(GL_TEXTURE0));
+  GLC(gl_, gl_->BlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+  GLC(gl_, gl_->ActiveTexture(GL_TEXTURE0));
   program_shadow_ = 0;
 
   // Make sure scissoring starts as disabled.
   is_scissor_enabled_ = false;
-  GLC(context_, context_->disable(GL_SCISSOR_TEST));
-}
-
-bool GLRenderer::CanUseSkiaGPUBackend() const {
-  // The Skia GPU backend requires a stencil buffer.  See ReinitializeGrCanvas
-  // implementation.
-  return gr_context_ && context_->getContextAttributes().stencil;
+  GLC(gl_, gl_->Disable(GL_SCISSOR_TEST));
+  scissor_rect_needs_reset_ = true;
 }
 
 bool GLRenderer::IsContextLost() {
-  return (context_->getGraphicsResetStatusARB() != GL_NO_ERROR);
+  return output_surface_->context_provider()->IsContextLost();
 }
 
 }  // namespace cc

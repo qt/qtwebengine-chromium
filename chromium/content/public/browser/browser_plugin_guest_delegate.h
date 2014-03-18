@@ -26,13 +26,16 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
 
   // Add a message to the console.
   virtual void AddMessageToConsole(int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id) {}
+                                   const base::string16& source_id) {}
 
   // Request the delegate to close this guest, and do whatever cleanup it needs
   // to do.
   virtual void Close() {}
+
+  // Notification that the embedder has completed attachment.
+  virtual void DidAttach() {}
 
   // Informs the delegate that the guest render process is gone. |status|
   // indicates whether the guest was killed, crashed, or was terminated
@@ -45,6 +48,9 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   virtual bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   virtual bool IsDragAndDropEnabled();
+
+  // Returns whether the user agent for the guest is being overridden.
+  virtual bool IsOverridingUserAgent() const;
 
   // Notification that a load in the guest resulted in abort. Note that |url|
   // may be invalid.
@@ -73,7 +79,11 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   virtual bool RequestPermission(
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
-      const PermissionResponseCallback& callback);
+      const PermissionResponseCallback& callback,
+      bool allowed_by_default);
+
+  // Requests resolution of a potentially relative URL.
+  virtual GURL ResolveURL(const std::string& src);
 
   // Notifies that the content size of the guest has changed in autosize mode.
   virtual void SizeChanged(const gfx::Size& old_size,

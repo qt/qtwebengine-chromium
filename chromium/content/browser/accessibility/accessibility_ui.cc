@@ -72,10 +72,12 @@ base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
   GURL url;
   GURL favicon_url;
   if (web_contents) {
+    // TODO(nasko): Fix the following code to use a consistent set of data
+    // across the URL, title, and favicon.
     url = web_contents->GetURL();
     title = UTF16ToUTF8(web_contents->GetTitle());
     NavigationController& controller = web_contents->GetController();
-    NavigationEntry* entry = controller.GetActiveEntry();
+    NavigationEntry* entry = controller.GetVisibleEntry();
     if (entry != NULL && entry->GetURL().is_valid())
       favicon_url = entry->GetFavicon().url;
   }
@@ -231,7 +233,7 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
   scoped_ptr<AccessibilityTreeFormatter> formatter(
       AccessibilityTreeFormatter::Create(rvh));
-  string16 accessibility_contents_utf16;
+  base::string16 accessibility_contents_utf16;
   BrowserAccessibilityManager* manager =
       host_view->GetBrowserAccessibilityManager();
   if (!manager) {

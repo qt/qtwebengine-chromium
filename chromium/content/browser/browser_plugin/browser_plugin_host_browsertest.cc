@@ -18,11 +18,12 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/url_constants.h"
@@ -38,31 +39,16 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 using content::BrowserPluginEmbedder;
 using content::BrowserPluginGuest;
 using content::BrowserPluginHostFactory;
 using content::WebContentsImpl;
 
-namespace {
-
 const char kHTMLForGuest[] =
     "data:text/html,<html><body>hello world</body></html>";
-const char kHTMLForGuestBusyLoop[] =
-    "data:text/html,<html><head><script type=\"text/javascript\">"
-    "function PauseMs(timems) {"
-    "  document.title = \"start\";"
-    "  var date = new Date();"
-    "  var currDate = null;"
-    "  do {"
-    "    currDate = new Date();"
-    "  } while (currDate - date < timems)"
-    "}"
-    "function StartPauseMs(timems) {"
-    "  setTimeout(function() { PauseMs(timems); }, 0);"
-    "}"
-    "</script></head><body></body></html>";
+
 const char kHTMLForGuestTouchHandler[] =
     "data:text/html,<html><body><div id=\"touch\">With touch</div></body>"
     "<script type=\"text/javascript\">"
@@ -76,11 +62,7 @@ const char kHTMLForGuestTouchHandler[] =
     "     handler);"
     "}"
     "</script></html>";
-const char kHTMLForGuestWithTitle[] =
-    "data:text/html,"
-    "<html><head><title>%s</title></head>"
-    "<body>hello world</body>"
-    "</html>";
+
 const char kHTMLForGuestAcceptDrag[] =
     "data:text/html,<html><body>"
     "<script>"
@@ -92,6 +74,7 @@ const char kHTMLForGuestAcceptDrag[] =
     "    ondrop=\"dropped();\">"
     "</textarea>"
     "</body></html>";
+
 const char kHTMLForGuestWithSize[] =
     "data:text/html,"
     "<html>"
@@ -99,12 +82,6 @@ const char kHTMLForGuestWithSize[] =
     "<img style=\"width: 100%; height: 400px;\"/>"
     "</body>"
     "</html>";
-
-std::string GetHTMLForGuestWithTitle(const std::string& title) {
-  return base::StringPrintf(kHTMLForGuestWithTitle, title.c_str());
-}
-
-}  // namespace
 
 namespace content {
 
@@ -169,9 +146,9 @@ class TestShortHangTimeoutGuestFactory : public TestBrowserPluginHostFactory {
  public:
   virtual BrowserPluginGuest* CreateBrowserPluginGuest(
       int instance_id, WebContentsImpl* web_contents) OVERRIDE {
-    BrowserPluginGuest* guest =
+    TestBrowserPluginGuest* guest =
         new TestBrowserPluginGuest(instance_id, web_contents);
-    guest->set_guest_hang_timeout_for_testing(TestTimeouts::tiny_timeout());
+    guest->set_guest_hang_timeout(TestTimeouts::tiny_timeout());
     return guest;
   }
 
@@ -193,16 +170,15 @@ class TestShortHangTimeoutGuestFactory : public TestBrowserPluginHostFactory {
 
 // A transparent observer that can be used to verify that a RenderViewHost
 // received a specific message.
-class RenderViewHostMessageObserver : public RenderViewHostObserver {
+class MessageObserver : public WebContentsObserver {
  public:
-  RenderViewHostMessageObserver(RenderViewHost* host,
-                                uint32 message_id)
-      : RenderViewHostObserver(host),
+  MessageObserver(WebContents* web_contents, uint32 message_id)
+      : WebContentsObserver(web_contents),
         message_id_(message_id),
         message_received_(false) {
   }
 
-  virtual ~RenderViewHostMessageObserver() {}
+  virtual ~MessageObserver() {}
 
   void WaitUntilMessageReceived() {
     if (message_received_)
@@ -230,7 +206,7 @@ class RenderViewHostMessageObserver : public RenderViewHostObserver {
   uint32 message_id_;
   bool message_received_;
 
-  DISALLOW_COPY_AND_ASSIGN(RenderViewHostMessageObserver);
+  DISALLOW_COPY_AND_ASSIGN(MessageObserver);
 };
 
 class BrowserPluginHostTest : public ContentBrowserTest {
@@ -411,7 +387,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, AdvanceFocus) {
   StartBrowserPluginTest(kEmbedderURL, kGuestURL, false, std::string());
 
   SimulateMouseClick(test_embedder()->web_contents(), 0,
-      WebKit::WebMouseEvent::ButtonLeft);
+      blink::WebMouseEvent::ButtonLeft);
   BrowserPluginHostTest::SimulateTabKeyPress(test_embedder()->web_contents());
   // Wait until we focus into the guest.
   test_guest()->WaitForFocus();
@@ -445,7 +421,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderChangedAfterSwap) {
   GURL test_https_url(https_server.GetURL(
       "files/browser_plugin_title_change.html"));
   content::WindowedNotificationObserver swap_observer(
-      content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+      content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
       content::Source<WebContents>(test_embedder()->web_contents()));
   NavigateToURL(shell(), test_https_url);
   swap_observer.Wait();
@@ -463,7 +439,13 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderChangedAfterSwap) {
 // This test opens two pages in http and there is no RenderViewHost swap,
 // therefore the embedder created on first page navigation stays the same in
 // web_contents.
-IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderSameAfterNav) {
+// Failing flakily on Windows: crbug.com/308405
+#if defined(OS_WIN)
+#define MAYBE_EmbedderSameAfterNav DISABLED_EmbedderSameAfterNav
+#else
+#define MAYBE_EmbedderSameAfterNav EmbedderSameAfterNav
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_EmbedderSameAfterNav) {
   const char kEmbedderURL[] = "/browser_plugin_embedder.html";
   StartBrowserPluginTest(kEmbedderURL, kHTMLForGuest, true, std::string());
   WebContentsImpl* embedder_web_contents = test_embedder()->web_contents();
@@ -472,13 +454,13 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderSameAfterNav) {
   // does not happen and existing embedder doesn't change in web_contents.
   GURL test_url_new(embedded_test_server()->GetURL(
       "/browser_plugin_title_change.html"));
-  const string16 expected_title = ASCIIToUTF16("done");
+  const base::string16 expected_title = ASCIIToUTF16("done");
   content::TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   NavigateToURL(shell(), test_url_new);
-  LOG(INFO) << "Start waiting for title";
-  string16 actual_title = title_watcher.WaitAndGetTitle();
+  VLOG(0) << "Start waiting for title";
+  base::string16 actual_title = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, actual_title);
-  LOG(INFO) << "Done navigating to second page";
+  VLOG(0) << "Done navigating to second page";
 
   TestBrowserPluginEmbedder* test_embedder_after_nav =
       static_cast<TestBrowserPluginEmbedder*>(
@@ -527,8 +509,8 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, AcceptTouchEvents) {
 
   // Install the touch handler in the guest. This should cause the embedder to
   // start listening for touch events too.
-  RenderViewHostMessageObserver observer(rvh,
-      ViewHostMsg_HasTouchEventHandlers::ID);
+  MessageObserver observer(test_embedder()->web_contents(),
+                           ViewHostMsg_HasTouchEventHandlers::ID);
   ExecuteSyncJSFunction(test_guest()->web_contents()->GetRenderViewHost(),
                         "InstallTouchHandler();");
   observer.WaitUntilMessageReceived();
@@ -555,26 +537,26 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, ReloadEmbedder) {
   // the page has successfully reloaded when it goes back to 'embedder'
   // in the next step.
   {
-    const string16 expected_title = ASCIIToUTF16("modified");
+    const base::string16 expected_title = ASCIIToUTF16("modified");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
     ExecuteSyncJSFunction(rvh,
                           base::StringPrintf("SetTitle('%s');", "modified"));
 
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
 
   // Reload the embedder page, and verify that the reload was successful.
   // Then navigate the guest to verify that the browser process does not crash.
   {
-    const string16 expected_title = ASCIIToUTF16("embedder");
+    const base::string16 expected_title = ASCIIToUTF16("embedder");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
     test_embedder()->web_contents()->GetController().Reload(false);
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
 
     ExecuteSyncJSFunction(
@@ -596,8 +578,9 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, ReloadEmbedder) {
   }
 }
 
-// Always failing in the win7_aura try bot.  See http://crbug.com/181107.
-#if defined(OS_WIN) && defined(USE_AURA)
+// Always failing in the win7_aura try bot. See http://crbug.com/181107.
+// Times out on the Mac. See http://crbug.com/297576.
+#if (defined(OS_WIN) && defined(USE_AURA)) || defined(OS_MACOSX)
 #define MAYBE_AcceptDragEvents DISABLED_AcceptDragEvents
 #else
 #define MAYBE_AcceptDragEvents AcceptDragEvents
@@ -636,17 +619,17 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_AcceptDragEvents) {
   // This should trigger appropriate messages from the embedder to the guest,
   // and end with a drop on the guest. The guest changes title when a drop
   // happens.
-  const string16 expected_title = ASCIIToUTF16("DROPPED");
+  const base::string16 expected_title = ASCIIToUTF16("DROPPED");
   content::TitleWatcher title_watcher(test_guest()->web_contents(),
       expected_title);
 
   rvh->DragTargetDragEnter(drop_data, gfx::Point(start_x, start_y),
-      gfx::Point(start_x, start_y), WebKit::WebDragOperationEvery, 0);
+      gfx::Point(start_x, start_y), blink::WebDragOperationEvery, 0);
   rvh->DragTargetDragOver(gfx::Point(end_x, end_y), gfx::Point(end_x, end_y),
-      WebKit::WebDragOperationEvery, 0);
+      blink::WebDragOperationEvery, 0);
   rvh->DragTargetDrop(gfx::Point(end_x, end_y), gfx::Point(end_x, end_y), 0);
 
-  string16 actual_title = title_watcher.WaitAndGetTitle();
+  base::string16 actual_title = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, actual_title);
 }
 
@@ -668,7 +651,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, PostMessage) {
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       test_embedder()->web_contents()->GetRenderViewHost());
   {
-    const string16 expected_title = ASCIIToUTF16("main guest");
+    const base::string16 expected_title = ASCIIToUTF16("main guest");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
@@ -679,7 +662,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, PostMessage) {
 
     // The title will be updated to "main guest" at the last stage of the
     // process described above.
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
 }
@@ -696,7 +679,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       test_embedder()->web_contents()->GetRenderViewHost());
   {
-    const string16 expected_title = ASCIIToUTF16("main guest");
+    const base::string16 expected_title = ASCIIToUTF16("main guest");
     content::TitleWatcher title_watcher(test_embedder()->web_contents(),
                                         expected_title);
 
@@ -705,7 +688,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
 
     // The title will be updated to "main guest" at the last stage of the
     // process described above.
-    string16 actual_title = title_watcher.WaitAndGetTitle();
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
   {
@@ -721,7 +704,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DISABLED_PostMessageToIFrame) {
         base::StringPrintf(
             "CreateChildFrame('%s');", test_url.spec().c_str()));
 
-    string16 actual_title = ready_watcher.WaitAndGetTitle();
+    base::string16 actual_title = ready_watcher.WaitAndGetTitle();
     EXPECT_EQ(ASCIIToUTF16("ready"), actual_title);
 
     content::TitleWatcher iframe_watcher(test_embedder()->web_contents(),
@@ -823,10 +806,234 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DoNotCrashOnInvalidNavigation) {
   // should be blocked because the scheme isn't web-safe or a pseudo-scheme.
   ExecuteSyncJSFunction(
       test_embedder()->web_contents()->GetRenderViewHost(),
-      base::StringPrintf("SetSrc('%s://abc123');",
-                         chrome::kGuestScheme));
+      base::StringPrintf("SetSrc('%s://abc123');", kGuestScheme));
   EXPECT_TRUE(delegate->load_aborted());
   EXPECT_TRUE(delegate->load_aborted_url().is_valid());
+}
+
+// Tests involving the threaded compositor.
+class BrowserPluginThreadedCompositorTest : public BrowserPluginHostTest {
+ public:
+  BrowserPluginThreadedCompositorTest() {}
+  virtual ~BrowserPluginThreadedCompositorTest() {}
+
+ protected:
+  virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {
+    BrowserPluginHostTest::SetUpCommandLine(cmd);
+    cmd->AppendSwitch(switches::kEnableThreadedCompositing);
+
+    // http://crbug.com/327035
+    cmd->AppendSwitch(switches::kDisableDelegatedRenderer);
+  }
+};
+
+static void CompareSkBitmaps(const SkBitmap& expected_bitmap,
+                             const SkBitmap& bitmap) {
+  EXPECT_EQ(expected_bitmap.width(), bitmap.width());
+  if (expected_bitmap.width() != bitmap.width())
+    return;
+  EXPECT_EQ(expected_bitmap.height(), bitmap.height());
+  if (expected_bitmap.height() != bitmap.height())
+    return;
+  EXPECT_EQ(expected_bitmap.config(), bitmap.config());
+  if (expected_bitmap.config() != bitmap.config())
+    return;
+
+  SkAutoLockPixels expected_bitmap_lock(expected_bitmap);
+  SkAutoLockPixels bitmap_lock(bitmap);
+  int fails = 0;
+  const int kAllowableError = 2;
+  for (int i = 0; i < bitmap.width() && fails < 10; ++i) {
+    for (int j = 0; j < bitmap.height() && fails < 10; ++j) {
+      SkColor expected_color = expected_bitmap.getColor(i, j);
+      SkColor color = bitmap.getColor(i, j);
+      int expected_alpha = SkColorGetA(expected_color);
+      int alpha = SkColorGetA(color);
+      int expected_red = SkColorGetR(expected_color);
+      int red = SkColorGetR(color);
+      int expected_green = SkColorGetG(expected_color);
+      int green = SkColorGetG(color);
+      int expected_blue = SkColorGetB(expected_color);
+      int blue = SkColorGetB(color);
+      EXPECT_NEAR(expected_alpha, alpha, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_red, red, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_green, green, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+      EXPECT_NEAR(expected_blue, blue, kAllowableError)
+          << "expected_color: " << std::hex << expected_color
+          << " color: " <<  color
+          << " Failed at " << std::dec << i << ", " << j
+          << " Failure " << ++fails;
+    }
+  }
+  EXPECT_LT(fails, 10);
+}
+
+static void CompareSkBitmapAndRun(const base::Closure& callback,
+                                  const SkBitmap& expected_bitmap,
+                                  bool *result,
+                                  bool succeed,
+                                  const SkBitmap& bitmap) {
+  *result = succeed;
+  if (succeed)
+    CompareSkBitmaps(expected_bitmap, bitmap);
+  callback.Run();
+}
+
+// http://crbug.com/171744
+#if defined(OS_MACOSX)
+#define MAYBE_GetBackingStore DISABLED_GetBackingStore
+#else
+#define MAYBE_GetBackingStore GetBackingStore
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserPluginThreadedCompositorTest,
+                       MAYBE_GetBackingStore) {
+  const char kEmbedderURL[] = "/browser_plugin_embedder.html";
+  const char kHTMLForGuest[] =
+      "data:text/html,<html><style>body { background-color: red; }</style>"
+      "<body></body></html>";
+  StartBrowserPluginTest(kEmbedderURL, kHTMLForGuest, true,
+                         std::string("SetSize(50, 60);"));
+
+  WebContentsImpl* guest_contents = test_guest()->web_contents();
+  RenderWidgetHostImpl* guest_widget_host =
+      RenderWidgetHostImpl::From(guest_contents->GetRenderViewHost());
+
+  SkBitmap expected_bitmap;
+  expected_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 50, 60);
+  expected_bitmap.allocPixels();
+  expected_bitmap.eraseARGB(255, 255, 0, 0);  // #f00
+  bool result = false;
+  while (!result) {
+    base::RunLoop loop;
+    guest_widget_host->CopyFromBackingStore(gfx::Rect(),
+        guest_widget_host->GetView()->GetViewBounds().size(),
+        base::Bind(&CompareSkBitmapAndRun, loop.QuitClosure(), expected_bitmap,
+                   &result));
+    loop.Run();
+  }
+}
+
+// Tests input method.
+IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, InputMethod) {
+  const char kEmbedderURL[] = "/browser_plugin_embedder.html";
+  const char kGuestHTML[] = "data:text/html,"
+      "<html><body><input id=\"input1\">"
+      "<input id=\"input2\"></body>"
+      "<script>"
+      "var i = document.getElementById(\"input1\");"
+      "i.oninput = function() {"
+      "  document.title = i.value;"
+      "}"
+      "</script>"
+      "</html>";
+  StartBrowserPluginTest(kEmbedderURL, kGuestHTML, true,
+                         "document.getElementById(\"plugin\").focus();");
+
+  RenderViewHostImpl* embedder_rvh = static_cast<RenderViewHostImpl*>(
+      test_embedder()->web_contents()->GetRenderViewHost());
+  RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
+      test_guest()->web_contents()->GetRenderViewHost());
+
+  std::vector<blink::WebCompositionUnderline> underlines;
+
+  // An input field in browser plugin guest gets focus and given some user
+  // input via IME.
+  {
+    ExecuteSyncJSFunction(guest_rvh,
+                          "document.getElementById('input1').focus();");
+    string16 expected_title = UTF8ToUTF16("InputTest123");
+    content::TitleWatcher title_watcher(test_guest()->web_contents(),
+                                        expected_title);
+    embedder_rvh->Send(
+        new ViewMsg_ImeSetComposition(
+            test_embedder()->web_contents()->GetRoutingID(),
+            expected_title,
+            underlines,
+            12, 12));
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
+    EXPECT_EQ(expected_title, actual_title);
+  }
+  // A composition is committed via IME.
+  {
+    string16 expected_title = UTF8ToUTF16("InputTest456");
+    content::TitleWatcher title_watcher(test_guest()->web_contents(),
+                                        expected_title);
+    embedder_rvh->Send(
+        new ViewMsg_ImeConfirmComposition(
+            test_embedder()->web_contents()->GetRoutingID(),
+            expected_title,
+            gfx::Range(),
+            true));
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
+    EXPECT_EQ(expected_title, actual_title);
+  }
+  // IME composition starts, but focus moves out, then the composition will
+  // be committed and get cancel msg.
+  {
+    ExecuteSyncJSFunction(guest_rvh,
+                          "document.getElementById('input1').value = '';");
+    string16 composition = UTF8ToUTF16("InputTest789");
+    content::TitleWatcher title_watcher(test_guest()->web_contents(),
+                                        composition);
+    embedder_rvh->Send(
+        new ViewMsg_ImeSetComposition(
+            test_embedder()->web_contents()->GetRoutingID(),
+            composition,
+            underlines,
+            12, 12));
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
+    EXPECT_EQ(composition, actual_title);
+    // Moving focus causes IME cancel, and the composition will be committed
+    // in input1, not in input2.
+    ExecuteSyncJSFunction(guest_rvh,
+                          "document.getElementById('input2').focus();");
+    test_guest()->WaitForImeCancel();
+    scoped_ptr<base::Value> value =
+        content::ExecuteScriptAndGetValue(
+            guest_rvh, "document.getElementById('input1').value");
+    std::string result;
+    ASSERT_TRUE(value->GetAsString(&result));
+    EXPECT_EQ(UTF16ToUTF8(composition), result);
+  }
+  // Tests ExtendSelectionAndDelete message works in browser_plugin.
+  {
+    // Set 'InputTestABC' in input1 and put caret at 6 (after 'T').
+    ExecuteSyncJSFunction(guest_rvh,
+                          "var i = document.getElementById('input1');"
+                          "i.focus();"
+                          "i.value = 'InputTestABC';"
+                          "i.selectionStart=6;"
+                          "i.selectionEnd=6;");
+    string16 expected_value = UTF8ToUTF16("InputABC");
+    content::TitleWatcher title_watcher(test_guest()->web_contents(),
+                                        expected_value);
+    // Delete 'Test' in 'InputTestABC', as the caret is after 'T':
+    // delete before 1 character ('T') and after 3 characters ('est').
+    embedder_rvh->Send(
+        new ViewMsg_ExtendSelectionAndDelete(
+            test_embedder()->web_contents()->GetRoutingID(),
+            1, 3));
+    base::string16 actual_title = title_watcher.WaitAndGetTitle();
+    EXPECT_EQ(expected_value, actual_title);
+    scoped_ptr<base::Value> value =
+        content::ExecuteScriptAndGetValue(
+            guest_rvh, "document.getElementById('input1').value");
+    std::string actual_value;
+    ASSERT_TRUE(value->GetAsString(&actual_value));
+    EXPECT_EQ(UTF16ToUTF8(expected_value), actual_value);
+  }
 }
 
 }  // namespace content

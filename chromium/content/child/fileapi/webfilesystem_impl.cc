@@ -25,12 +25,12 @@
 #include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebFileInfo;
-using WebKit::WebFileSystemCallbacks;
-using WebKit::WebFileSystemEntry;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebVector;
+using blink::WebFileInfo;
+using blink::WebFileSystemCallbacks;
+using blink::WebFileSystemEntry;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebVector;
 using webkit_glue::WorkerTaskRunner;
 
 namespace content {
@@ -165,7 +165,7 @@ void ResolveURLCallbackAdapter(
       thread_id, callbacks_id, waitable_results,
       &WebFileSystemCallbacks::didResolveURL,
       MakeTuple(UTF8ToUTF16(info.name), info.root_url,
-                static_cast<WebKit::WebFileSystemType>(info.mount_type),
+                static_cast<blink::WebFileSystemType>(info.mount_type),
                 normalized_path.AsUTF16Unsafe(), is_directory));
 }
 
@@ -214,7 +214,7 @@ void ReadDirectoryCallbackAdapater(
 void DidCreateFileWriter(
     int callbacks_id,
     const GURL& path,
-    WebKit::WebFileWriterClient* client,
+    blink::WebFileWriterClient* client,
     base::MessageLoopProxy* main_thread_loop,
     const base::PlatformFileInfo& file_info) {
   WebFileSystemImpl* filesystem =
@@ -226,7 +226,7 @@ void DidCreateFileWriter(
       filesystem->GetAndUnregisterCallbacks(callbacks_id);
 
   if (file_info.is_directory || file_info.size < 0) {
-    callbacks.didFail(WebKit::WebFileErrorInvalidState);
+    callbacks.didFail(blink::WebFileErrorInvalidState);
     return;
   }
   WebFileWriterImpl::Type type =
@@ -242,7 +242,7 @@ void CreateFileWriterCallbackAdapter(
     WaitableCallbackResults* waitable_results,
     base::MessageLoopProxy* main_thread_loop,
     const GURL& path,
-    WebKit::WebFileWriterClient* client,
+    blink::WebFileWriterClient* client,
     const base::PlatformFileInfo& file_info) {
   DispatchResultsClosure(
       thread_id, callbacks_id, waitable_results,
@@ -325,9 +325,8 @@ void WebFileSystemImpl::OnWorkerRunLoopStopped() {
 }
 
 void WebFileSystemImpl::openFileSystem(
-    const WebKit::WebURL& storage_partition,
-    WebKit::WebFileSystemType type,
-    bool create,
+    const blink::WebURL& storage_partition,
+    blink::WebFileSystemType type,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -337,7 +336,6 @@ void WebFileSystemImpl::openFileSystem(
       &FileSystemDispatcher::OpenFileSystem,
       MakeTuple(GURL(storage_partition),
                 static_cast<fileapi::FileSystemType>(type),
-                0 /* size (not used) */, create,
                 base::Bind(&OpenFileSystemCallbackAdapter,
                            CurrentWorkerId(), callbacks_id,
                            base::Unretained(waitable_results)),
@@ -348,7 +346,7 @@ void WebFileSystemImpl::openFileSystem(
 }
 
 void WebFileSystemImpl::resolveURL(
-    const WebKit::WebURL& filesystem_url,
+    const blink::WebURL& filesystem_url,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -367,8 +365,8 @@ void WebFileSystemImpl::resolveURL(
 }
 
 void WebFileSystemImpl::deleteFileSystem(
-    const WebKit::WebURL& storage_partition,
-    WebKit::WebFileSystemType type,
+    const blink::WebURL& storage_partition,
+    blink::WebFileSystemType type,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -385,8 +383,8 @@ void WebFileSystemImpl::deleteFileSystem(
 }
 
 void WebFileSystemImpl::move(
-    const WebKit::WebURL& src_path,
-    const WebKit::WebURL& dest_path,
+    const blink::WebURL& src_path,
+    const blink::WebURL& dest_path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -402,8 +400,8 @@ void WebFileSystemImpl::move(
 }
 
 void WebFileSystemImpl::copy(
-    const WebKit::WebURL& src_path,
-    const WebKit::WebURL& dest_path,
+    const blink::WebURL& src_path,
+    const blink::WebURL& dest_path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -419,7 +417,7 @@ void WebFileSystemImpl::copy(
 }
 
 void WebFileSystemImpl::remove(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -435,7 +433,7 @@ void WebFileSystemImpl::remove(
 }
 
 void WebFileSystemImpl::removeRecursively(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -451,7 +449,7 @@ void WebFileSystemImpl::removeRecursively(
 }
 
 void WebFileSystemImpl::readMetadata(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -470,7 +468,7 @@ void WebFileSystemImpl::readMetadata(
 }
 
 void WebFileSystemImpl::createFile(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     bool exclusive,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
@@ -487,7 +485,7 @@ void WebFileSystemImpl::createFile(
 }
 
 void WebFileSystemImpl::createDirectory(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     bool exclusive,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
@@ -504,7 +502,7 @@ void WebFileSystemImpl::createDirectory(
 }
 
 void WebFileSystemImpl::fileExists(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -520,7 +518,7 @@ void WebFileSystemImpl::fileExists(
 }
 
 void WebFileSystemImpl::directoryExists(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -536,7 +534,7 @@ void WebFileSystemImpl::directoryExists(
 }
 
 void WebFileSystemImpl::readDirectory(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -556,7 +554,7 @@ base::Unretained(waitable_results))),
 
 void WebFileSystemImpl::createFileWriter(
     const WebURL& path,
-    WebKit::WebFileWriterClient* client,
+    blink::WebFileWriterClient* client,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -576,7 +574,7 @@ void WebFileSystemImpl::createFileWriter(
 }
 
 void WebFileSystemImpl::createSnapshotFileAndReadMetadata(
-    const WebKit::WebURL& path,
+    const blink::WebURL& path,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =

@@ -50,20 +50,6 @@ class WebFileWriterImpl::WriterBridge
         base::Bind(&WriterBridge::DidFinish, this));
   }
 
-  void WriteDeprecated(
-      const GURL& path, const GURL& blob_url, int64 offset,
-      const WriteCallback& write_callback,
-      const StatusCallback& error_callback) {
-    write_callback_ = write_callback;
-    status_callback_ = error_callback;
-    if (!GetFileSystemDispatcher())
-      return;
-    ChildThread::current()->file_system_dispatcher()->WriteDeprecated(
-        path, blob_url, offset, &request_id_,
-        base::Bind(&WriterBridge::DidWrite, this),
-        base::Bind(&WriterBridge::DidFinish, this));
-  }
-
   void Write(const GURL& path, const std::string& id, int64 offset,
              const WriteCallback& write_callback,
              const StatusCallback& error_callback) {
@@ -136,7 +122,7 @@ class WebFileWriterImpl::WriterBridge
 };
 
 WebFileWriterImpl::WebFileWriterImpl(
-     const GURL& path, WebKit::WebFileWriterClient* client,
+     const GURL& path, blink::WebFileWriterClient* client,
      Type type,
      base::MessageLoopProxy* main_thread_loop)
   : WebFileWriterBase(path, client),
@@ -150,14 +136,6 @@ WebFileWriterImpl::~WebFileWriterImpl() {
 void WebFileWriterImpl::DoTruncate(const GURL& path, int64 offset) {
   RunOnMainThread(base::Bind(&WriterBridge::Truncate, bridge_,
       path, offset,
-      base::Bind(&WebFileWriterImpl::DidFinish, AsWeakPtr())));
-}
-
-void WebFileWriterImpl::DoWriteDeprecated(
-    const GURL& path, const GURL& blob_url, int64 offset) {
-  RunOnMainThread(base::Bind(&WriterBridge::WriteDeprecated, bridge_,
-      path, blob_url, offset,
-      base::Bind(&WebFileWriterImpl::DidWrite, AsWeakPtr()),
       base::Bind(&WebFileWriterImpl::DidFinish, AsWeakPtr())));
 }
 

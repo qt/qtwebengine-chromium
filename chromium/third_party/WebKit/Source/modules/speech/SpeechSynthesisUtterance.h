@@ -28,17 +28,18 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/PlatformSpeechSynthesisUtterance.h"
+#include "core/events/EventTarget.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
+#include "platform/speech/PlatformSpeechSynthesisUtterance.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class SpeechSynthesisUtterance : public PlatformSpeechSynthesisUtteranceClient, public ScriptWrappable, public RefCounted<SpeechSynthesisUtterance>, public ContextLifecycleObserver, public EventTarget {
+class SpeechSynthesisUtterance : public PlatformSpeechSynthesisUtteranceClient, public ScriptWrappable, public RefCounted<SpeechSynthesisUtterance>, public ContextLifecycleObserver, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(SpeechSynthesisUtterance);
 public:
-    static PassRefPtr<SpeechSynthesisUtterance> create(ScriptExecutionContext*, const String&);
+    static PassRefPtr<SpeechSynthesisUtterance> create(ExecutionContext*, const String&);
 
     ~SpeechSynthesisUtterance();
 
@@ -71,26 +72,17 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mark);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(boundary);
 
-    using RefCounted<SpeechSynthesisUtterance>::ref;
-    using RefCounted<SpeechSynthesisUtterance>::deref;
-
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual ExecutionContext* executionContext() const;
 
     PlatformSpeechSynthesisUtterance* platformUtterance() const { return m_platformUtterance.get(); }
 
 private:
-    SpeechSynthesisUtterance(ScriptExecutionContext*, const String&);
+    SpeechSynthesisUtterance(ExecutionContext*, const String&);
     RefPtr<PlatformSpeechSynthesisUtterance> m_platformUtterance;
     RefPtr<SpeechSynthesisVoice> m_voice;
 
     // EventTarget
-    EventTargetData m_eventTargetData;
-
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-    virtual EventTargetData* eventTargetData() OVERRIDE { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE { return &m_eventTargetData; }
 };
 
 } // namespace WebCore

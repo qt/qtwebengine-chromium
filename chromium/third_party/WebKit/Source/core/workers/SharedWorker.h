@@ -40,15 +40,20 @@ class ExceptionState;
 
 class SharedWorker : public AbstractWorker, public ScriptWrappable {
 public:
-    static PassRefPtr<SharedWorker> create(ScriptExecutionContext*, const String& url, const String& name, ExceptionState&);
+    static PassRefPtr<SharedWorker> create(ExecutionContext*, const String& url, const String& name, ExceptionState&);
     virtual ~SharedWorker();
 
     MessagePort* port() const { return m_port.get(); }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    // Prevents this SharedWorker + JS wrapper from being garbage collected.
+    void setPreventGC();
+    // Allows this SharedWorker + JS wrapper to be garbage collected.
+    void unsetPreventGC();
+
 private:
-    explicit SharedWorker(ScriptExecutionContext*);
+    explicit SharedWorker(ExecutionContext*);
 
     RefPtr<MessagePort> m_port;
 };

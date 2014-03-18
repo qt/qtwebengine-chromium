@@ -11,6 +11,7 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "ui/gfx/box_f.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/rect.h"
@@ -24,11 +25,19 @@ namespace gfx {
 namespace {
 
 // Taken from SkMatrix44.
-const SkMScalar kEpsilon = 1e-8;
+const SkMScalar kEpsilon = 1e-8f;
 
 SkMScalar TanDegrees(double degrees) {
-  SkMScalar radians = degrees * M_PI / 180;
-  return std::tan(radians);
+  double radians = degrees * M_PI / 180;
+  return SkDoubleToMScalar(std::tan(radians));
+}
+
+inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
+  return std::abs(x) <= tolerance;
+}
+
+inline bool ApproximatelyOne(SkMScalar x, SkMScalar tolerance) {
+  return std::abs(x - SkDoubleToMScalar(1.0)) <= tolerance;
 }
 
 }  // namespace
@@ -169,7 +178,7 @@ void Transform::Translate3d(SkMScalar x, SkMScalar y, SkMScalar z) {
   matrix_.preTranslate(x, y, z);
 }
 
-void Transform::SkewX(SkMScalar angle_x) {
+void Transform::SkewX(double angle_x) {
   if (matrix_.isIdentity())
     matrix_.set(0, 1, TanDegrees(angle_x));
   else {
@@ -179,7 +188,7 @@ void Transform::SkewX(SkMScalar angle_x) {
   }
 }
 
-void Transform::SkewY(SkMScalar angle_y) {
+void Transform::SkewY(double angle_y) {
   if (matrix_.isIdentity())
     matrix_.set(1, 0, TanDegrees(angle_y));
   else {
@@ -207,6 +216,25 @@ void Transform::PreconcatTransform(const Transform& transform) {
 
 void Transform::ConcatTransform(const Transform& transform) {
   matrix_.postConcat(transform.matrix_);
+}
+
+bool Transform::IsApproximatelyIdentityOrTranslation(
+    SkMScalar tolerance) const {
+  DCHECK_GE(tolerance, 0);
+  return
+      ApproximatelyOne(matrix_.get(0, 0), tolerance) &&
+      ApproximatelyZero(matrix_.get(1, 0), tolerance) &&
+      ApproximatelyZero(matrix_.get(2, 0), tolerance) &&
+      matrix_.get(3, 0) == 0 &&
+      ApproximatelyZero(matrix_.get(0, 1), tolerance) &&
+      ApproximatelyOne(matrix_.get(1, 1), tolerance) &&
+      ApproximatelyZero(matrix_.get(2, 1), tolerance) &&
+      matrix_.get(3, 1) == 0 &&
+      ApproximatelyZero(matrix_.get(0, 2), tolerance) &&
+      ApproximatelyZero(matrix_.get(1, 2), tolerance) &&
+      ApproximatelyOne(matrix_.get(2, 2), tolerance) &&
+      matrix_.get(3, 2) == 0 &&
+      matrix_.get(3, 3) == 1;
 }
 
 bool Transform::IsIdentityOrIntegerTranslation() const {
@@ -424,7 +452,34 @@ bool Transform::TransformRectReverse(RectF* rect) const {
   return true;
 }
 
-bool Transform::Blend(const Transform& from, SkMScalar progress) {
+void Transform::TransformBox(BoxF* box) const {
+  BoxF bounds;
+  bool first_point = true;
+  for (int corner = 0; corner < 8; ++corner) {
+    gfx::Point3F point = box->origin();
+    point += gfx::Vector3dF(corner & 1 ? box->width() : 0.f,
+                            corner & 2 ? box->height() : 0.f,
+                            corner & 4 ? box->depth() : 0.f);
+    TransformPoint(&point);
+    if (first_point) {
+      bounds.set_origin(point);
+      first_point = false;
+    } else {
+      bounds.ExpandTo(point);
+    }
+  }
+  *box = bounds;
+}
+
+bool Transform::TransformBoxReverse(BoxF* box) const {
+  gfx::Transform inverse = *this;
+  if (!GetInverse(&inverse))
+    return false;
+  inverse.TransformBox(box);
+  return true;
+}
+
+bool Transform::Blend(const Transform& from, double progress) {
   DecomposedTransform to_decomp;
   DecomposedTransform from_decomp;
   if (!DecomposeTransform(&to_decomp, *this) ||
@@ -448,8 +503,9 @@ void Transform::TransformPointInternal(const SkMatrix44& xform,
 
   xform.mapMScalars(p);
 
-  if (p[3] != 1 && abs(p[3]) > 0) {
-    point->SetPoint(p[0] / p[3], p[1] / p[3], p[2]/ p[3]);
+  if (p[3] != SK_MScalar1 && p[3] != 0.f) {
+    float w_inverse = SK_MScalar1 / p[3];
+    point->SetPoint(p[0] * w_inverse, p[1] * w_inverse, p[2] * w_inverse);
   } else {
     point->SetPoint(p[0], p[1], p[2]);
   }

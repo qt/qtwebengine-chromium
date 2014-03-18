@@ -47,7 +47,6 @@ class HTMLInputElement;
 class HTMLFormElement FINAL : public HTMLElement {
 public:
     static PassRefPtr<HTMLFormElement> create(Document&);
-    static PassRefPtr<HTMLFormElement> create(const QualifiedName&, Document&);
     virtual ~HTMLFormElement();
 
     PassRefPtr<HTMLCollection> elements();
@@ -57,15 +56,15 @@ public:
     Node* item(unsigned index);
 
     String enctype() const { return m_attributes.encodingType(); }
-    void setEnctype(const String&);
+    void setEnctype(const AtomicString&);
 
     String encoding() const { return m_attributes.encodingType(); }
-    void setEncoding(const String& value) { setEnctype(value); }
+    void setEncoding(const AtomicString& value) { setEnctype(value); }
 
     bool shouldAutocomplete() const;
 
     // FIXME: Should rename these two functions to say "form control" or "form-associated element" instead of "form element".
-    void registerFormElement(FormAssociatedElement*);
+    void registerFormElement(FormAssociatedElement&);
     void removeFormElement(FormAssociatedElement*);
 
     void registerImgElement(HTMLImageElement*);
@@ -85,14 +84,11 @@ public:
 
     bool noValidate() const;
 
-    String acceptCharset() const { return m_attributes.acceptCharset(); }
-    void setAcceptCharset(const String&);
-
-    String action() const;
-    void setAction(const String&);
+    const AtomicString& action() const;
+    void setAction(const AtomicString&);
 
     String method() const;
-    void setMethod(const String&);
+    void setMethod(const AtomicString&);
 
     virtual String target() const;
 
@@ -125,7 +121,7 @@ public:
     void anonymousNamedGetter(const AtomicString& name, bool&, RefPtr<NodeList>&, bool&, RefPtr<Node>&);
 
 private:
-    HTMLFormElement(const QualifiedName&, Document&);
+    explicit HTMLFormElement(Document&);
 
     virtual bool rendererIsNeeded(const RenderStyle&);
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
@@ -141,12 +137,13 @@ private:
 
     virtual void copyNonAttributePropertiesFromElement(const Element&) OVERRIDE;
 
+    void submitDialog(PassRefPtr<FormSubmission>);
     void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
 
     void scheduleFormSubmission(PassRefPtr<FormSubmission>);
 
     unsigned formElementIndexWithFormAttribute(Element*, unsigned rangeStart, unsigned rangeEnd);
-    unsigned formElementIndex(FormAssociatedElement*);
+    unsigned formElementIndex(FormAssociatedElement&);
 
     // Returns true if the submission should proceed.
     bool validateInteractively(Event*);
@@ -160,7 +157,7 @@ private:
     void addToPastNamesMap(Node*, const AtomicString& pastName);
     void removeFromPastNamesMap(HTMLElement&);
 
-    typedef HashMap<AtomicString, RefPtr<Node> > PastNamesMap;
+    typedef HashMap<AtomicString, Node*> PastNamesMap;
 
     FormSubmission::Attributes m_attributes;
     OwnPtr<PastNamesMap> m_pastNamesMap;
@@ -186,11 +183,7 @@ private:
     Timer<HTMLFormElement> m_requestAutocompleteTimer;
 };
 
-inline HTMLFormElement* toHTMLFormElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::formTag));
-    return static_cast<HTMLFormElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLFormElement, hasTagName(HTMLNames::formTag));
 
 } // namespace WebCore
 

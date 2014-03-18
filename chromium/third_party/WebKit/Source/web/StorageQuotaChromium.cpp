@@ -33,40 +33,37 @@
 
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
-#include "WebStorageQuotaType.h"
-#include "WebWorkerBase.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerThread.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/quota/StorageErrorCallback.h"
 #include "modules/quota/StorageQuotaCallback.h"
 #include "modules/quota/StorageUsageCallback.h"
 #include "modules/quota/WebStorageQuotaCallbacksImpl.h"
+#include "public/platform/WebStorageQuotaType.h"
 #include "wtf/Threading.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebCore {
 
 // FIXME: Implement this as StorageQuotaClient.
-void StorageQuota::requestQuota(ScriptExecutionContext* scriptExecutionContext, unsigned long long newQuotaInBytes, PassRefPtr<StorageQuotaCallback> successCallback, PassRefPtr<StorageErrorCallback> errorCallback)
+void StorageQuota::requestQuota(ExecutionContext* executionContext, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
 {
-    ASSERT(scriptExecutionContext);
+    ASSERT(executionContext);
     WebStorageQuotaType storageType = static_cast<WebStorageQuotaType>(m_type);
     if (storageType != WebStorageQuotaTypeTemporary && storageType != WebStorageQuotaTypePersistent) {
         // Unknown storage type is requested.
-        scriptExecutionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
+        executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
         return;
     }
-    if (scriptExecutionContext->isDocument()) {
-        Document* document = toDocument(scriptExecutionContext);
+    if (executionContext->isDocument()) {
+        Document* document = toDocument(executionContext);
         WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
         webFrame->client()->requestStorageQuota(webFrame, storageType, newQuotaInBytes, WebStorageQuotaCallbacksImpl::createLeakedPtr(successCallback, errorCallback));
     } else {
         // Requesting quota in Worker is not supported.
-        scriptExecutionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
+        executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
     }
 }
 

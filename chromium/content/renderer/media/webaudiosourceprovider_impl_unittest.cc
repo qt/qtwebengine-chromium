@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "content/renderer/media/webaudiosourceprovider_impl.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/fake_audio_render_callback.h"
 #include "media/base/mock_audio_renderer_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/web/WebAudioSourceProviderClient.h"
+#include "third_party/WebKit/public/platform/WebAudioSourceProviderClient.h"
 
 namespace content {
 
@@ -18,7 +20,7 @@ const float kTestVolume = 0.25;
 
 class WebAudioSourceProviderImplTest
     : public testing::Test,
-      public WebKit::WebAudioSourceProviderClient {
+      public blink::WebAudioSourceProviderClient {
  public:
   WebAudioSourceProviderImplTest()
       : params_(media::AudioParameters::AUDIO_PCM_LINEAR,
@@ -51,7 +53,7 @@ class WebAudioSourceProviderImplTest
     testing::Mock::VerifyAndClear(mock_sink_.get());
   }
 
-  void SetClient(WebKit::WebAudioSourceProviderClient* client) {
+  void SetClient(blink::WebAudioSourceProviderClient* client) {
     testing::InSequence s;
 
     if (client) {
@@ -59,6 +61,7 @@ class WebAudioSourceProviderImplTest
       EXPECT_CALL(*this, setFormat(params_.channels(), params_.sample_rate()));
     }
     wasp_impl_->setClient(client);
+    base::RunLoop().RunUntilIdle();
 
     testing::Mock::VerifyAndClear(mock_sink_.get());
     testing::Mock::VerifyAndClear(this);
@@ -76,7 +79,7 @@ class WebAudioSourceProviderImplTest
     return true;
   }
 
-  // WebKit::WebAudioSourceProviderClient implementation.
+  // blink::WebAudioSourceProviderClient implementation.
   MOCK_METHOD2(setFormat, void(size_t numberOfChannels, float sampleRate));
 
  protected:
@@ -84,6 +87,7 @@ class WebAudioSourceProviderImplTest
   media::FakeAudioRenderCallback fake_callback_;
   scoped_refptr<media::MockAudioRendererSink> mock_sink_;
   scoped_refptr<WebAudioSourceProviderImpl> wasp_impl_;
+  base::MessageLoop message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(WebAudioSourceProviderImplTest);
 };
@@ -94,14 +98,17 @@ TEST_F(WebAudioSourceProviderImplTest, SetClientBeforeInitialize) {
 
   EXPECT_CALL(*mock_sink_.get(), Stop());
   wasp_impl_->setClient(this);
+  base::RunLoop().RunUntilIdle();
 
   // When Initialize() is called after setClient(), the params should propagate
   // to the client via setFormat() during the call.
   EXPECT_CALL(*this, setFormat(params_.channels(), params_.sample_rate()));
   wasp_impl_->Initialize(params_, &fake_callback_);
+  base::RunLoop().RunUntilIdle();
 
   // setClient() with the same client should do nothing.
   wasp_impl_->setClient(this);
+  base::RunLoop().RunUntilIdle();
 }
 
 // Verify AudioRendererSink functionality w/ and w/o a client.
@@ -153,7 +160,7 @@ TEST_F(WebAudioSourceProviderImplTest, ProvideInput) {
   scoped_ptr<media::AudioBus> bus2 = media::AudioBus::Create(params_);
 
   // Point the WebVector into memory owned by |bus1|.
-  WebKit::WebVector<float*> audio_data(static_cast<size_t>(bus1->channels()));
+  blink::WebVector<float*> audio_data(static_cast<size_t>(bus1->channels()));
   for (size_t i = 0; i < audio_data.size(); ++i)
     audio_data[i] = bus1->channel(i);
 

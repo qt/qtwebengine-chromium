@@ -45,20 +45,20 @@ namespace WebCore {
 v8::Handle<v8::Object> wrap(CSSValue* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl);
-    if (impl->isCSSTransformValue())
-        return wrap(static_cast<CSSTransformValue*>(impl), creationContext, isolate);
-    if (impl->isCSSMixFunctionValue())
-        return wrap(static_cast<CSSMixFunctionValue*>(impl), creationContext, isolate);
-    if (impl->isCSSFilterValue())
-        return wrap(static_cast<CSSFilterValue*>(impl), creationContext, isolate);
+    if (impl->isTransformValue())
+        return wrap(toCSSTransformValue(impl), creationContext, isolate);
+    if (impl->isMixFunctionValue())
+        return wrap(toCSSMixFunctionValue(impl), creationContext, isolate);
+    if (impl->isFilterValue())
+        return wrap(toCSSFilterValue(impl), creationContext, isolate);
     if (impl->isValueList())
         return wrap(toCSSValueList(impl), creationContext, isolate);
     if (impl->isPrimitiveValue())
         return wrap(toCSSPrimitiveValue(impl), creationContext, isolate);
     if (impl->isSVGPaint())
-        return wrap(static_cast<SVGPaint*>(impl), creationContext, isolate);
+        return wrap(toSVGPaint(impl), creationContext, isolate);
     if (impl->isSVGColor())
-        return wrap(static_cast<SVGColor*>(impl), creationContext, isolate);
+        return wrap(toSVGColor(impl), creationContext, isolate);
     return V8CSSValue::createWrapper(impl, creationContext, isolate);
 }
 

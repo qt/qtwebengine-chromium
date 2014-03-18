@@ -24,10 +24,6 @@
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 
 #include "SVGNames.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GlyphBuffer.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/WidthIterator.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResourceSolidColor.h"
@@ -35,6 +31,9 @@
 #include "core/svg/SVGFontElement.h"
 #include "core/svg/SVGFontFaceElement.h"
 #include "core/svg/SVGGlyphElement.h"
+#include "platform/fonts/GlyphBuffer.h"
+#include "platform/fonts/WidthIterator.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -44,7 +43,8 @@ static inline const SVGFontData* svgFontAndFontFaceElementForFontData(const Simp
     ASSERT(fontData->isCustomFont());
     ASSERT(fontData->isSVGFont());
 
-    const SVGFontData* svgFontData = static_cast<const SVGFontData*>(fontData->fontData());
+    RefPtr<CustomFontData> customFontData = fontData->customFontData();
+    const SVGFontData* svgFontData = static_cast<const SVGFontData*>(customFontData.get());
 
     fontFace = svgFontData->svgFontFaceElement();
     ASSERT(fontFace);
@@ -192,7 +192,7 @@ GlyphData SVGTextRunRenderingContext::glyphDataForCharacter(const Font& font, co
 
     // Characters enclosed by an <altGlyph> element, may not be registered in the GlyphPage.
     const SimpleFontData* originalFontData = glyphData.fontData;
-    if (glyphData.fontData && !glyphData.fontData->isSVGFont()) {
+    if (originalFontData && !originalFontData->isSVGFont()) {
         if (TextRun::RenderingContext* renderingContext = run.renderingContext()) {
             RenderObject* renderObject = static_cast<SVGTextRunRenderingContext*>(renderingContext)->renderer();
             RenderObject* parentRenderObject = renderObject->isText() ? renderObject->parent() : renderObject;

@@ -1,3 +1,9 @@
 include_rules = [
   "+media/base",
+  "+skia/ext",
+  "+third_party/skia",
+  "+ui/base",
+  "+ui/events/latency_info.h",
+  "+ui/gfx",
+  "+ui/gl",
 ]

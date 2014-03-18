@@ -140,6 +140,7 @@ class SSLClientSocketPoolTest
         NULL /* cert_verifier */,
         NULL /* server_bound_cert_service */,
         NULL /* transport_security_state */,
+        NULL /* cert_transparency_verifier */,
         std::string() /* ssl_session_cache_shard */,
         &socket_factory_,
         transport_pool ? &transport_socket_pool_ : NULL,
@@ -225,7 +226,8 @@ class SSLClientSocketPoolTest
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     SSLClientSocketPoolTest,
-    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
+    testing::Values(kProtoDeprecatedSPDY2,
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
                     kProtoHTTP2Draft04));
 
 TEST_P(SSLClientSocketPoolTest, TCPFail) {
@@ -297,7 +299,7 @@ TEST_P(SSLClientSocketPoolTest, SetSocketRequestPriorityOnInitDirect) {
   scoped_refptr<SSLSocketParams> params =
       SSLParams(ProxyServer::SCHEME_DIRECT, false);
 
-  for (int i = MINIMUM_PRIORITY; i < NUM_PRIORITIES; ++i) {
+  for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
     RequestPriority priority = static_cast<RequestPriority>(i);
     StaticSocketDataProvider data;
     data.set_connect_data(MockConnect(SYNCHRONOUS, OK));

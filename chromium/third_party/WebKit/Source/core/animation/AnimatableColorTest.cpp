@@ -37,7 +37,17 @@ using namespace WebCore;
 
 namespace {
 
-TEST(AnimatableColorImpl, Interpolate)
+TEST(AnimationAnimatableColorTest, ToColor)
+{
+    Color transparent = AnimatableColorImpl(Color::transparent).toColor();
+    EXPECT_TRUE(transparent.isValid());
+    EXPECT_EQ(transparent.rgb(), Color::transparent);
+    Color red = AnimatableColorImpl(Color(0xFFFF0000)).toColor();
+    EXPECT_TRUE(red.isValid());
+    EXPECT_EQ(red.rgb(), 0xFFFF0000);
+}
+
+TEST(AnimationAnimatableColorTest, Interpolate)
 {
     EXPECT_EQ(AnimatableColorImpl(Color(0xFF00FF00)).interpolateTo(Color(0xFF00FF00), -10).toColor().rgb(), 0xFF00FF00);
     EXPECT_EQ(AnimatableColorImpl(Color(0xFF00FF00)).interpolateTo(Color(0xFFFF00FF), -10).toColor().rgb(), 0xFF00FF00);
@@ -57,7 +67,7 @@ TEST(AnimatableColorImpl, Interpolate)
     EXPECT_EQ(AnimatableColorImpl(Color(0x10204080)).interpolateTo(Color(0x104080C0), 0.5).toColor().rgb(), 0x103060A0u);
 }
 
-TEST(AnimatableColorImpl, Add)
+TEST(AnimationAnimatableColorTest, Add)
 {
     EXPECT_EQ(AnimatableColorImpl(Color(0xFF012345)).addWith(Color(0xFF543210)).toColor().rgb(), 0xFF555555);
     EXPECT_EQ(AnimatableColorImpl(Color(0xFF808080)).addWith(Color(0xFF808080)).toColor().rgb(), 0xFFFFFFFF);

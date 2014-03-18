@@ -23,4 +23,3 @@ interface HTMLParamElement : HTMLElement {
     [Reflect] attribute DOMString value;
     [Reflect] attribute DOMString valueType;
 };
-

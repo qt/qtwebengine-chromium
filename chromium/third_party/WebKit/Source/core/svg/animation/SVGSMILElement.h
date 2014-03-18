@@ -26,6 +26,7 @@
 #ifndef SVGSMILElement_h
 #define SVGSMILElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/animation/SMILTime.h"
 #include "wtf/HashMap.h"
@@ -44,8 +45,6 @@ class SVGSMILElement : public SVGElement {
 public:
     SVGSMILElement(const QualifiedName&, Document&);
     virtual ~SVGSMILElement();
-
-    static bool isSMILElement(Node*);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -145,7 +144,7 @@ private:
 
     SMILTime findInstanceTime(BeginOrEnd, SMILTime minimumTime, bool equalsMinimumOK) const;
     void resolveFirstInterval();
-    bool resolveNextInterval(bool notifyDependents);
+    bool resolveNextInterval();
     void resolveInterval(bool first, SMILTime& beginResult, SMILTime& endResult) const;
     SMILTime resolveActiveEnd(SMILTime resolvedBegin, SMILTime resolvedEnd) const;
     SMILTime repeatingDuration() const;
@@ -181,14 +180,8 @@ private:
     // Event base timing
     void handleConditionEvent(Event*, Condition*);
 
-    // Syncbase timing
-    enum NewOrExistingInterval {
-        NewInterval,
-        ExistingInterval
-    };
-
-    void notifyDependentsIntervalChanged(NewOrExistingInterval);
-    void createInstanceTimesFromSyncbase(SVGSMILElement* syncbase, NewOrExistingInterval);
+    void notifyDependentsIntervalChanged();
+    void createInstanceTimesFromSyncbase(SVGSMILElement* syncbase);
     void addTimeDependent(SVGSMILElement*);
     void removeTimeDependent(SVGSMILElement*);
 
@@ -245,11 +238,13 @@ private:
     friend class ConditionEventListener;
 };
 
-inline SVGSMILElement* toSVGSMILElement(Element* element)
+inline bool isSVGSMILElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || SVGSMILElement::isSMILElement(element));
-    return static_cast<SVGSMILElement*>(element);
+    return node.hasTagName(SVGNames::setTag) || node.hasTagName(SVGNames::animateTag) || node.hasTagName(SVGNames::animateMotionTag)
+        || node.hasTagName(SVGNames::animateTransformTag) || node.hasTagName(SVGNames::animateColorTag);
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
 
 }
 

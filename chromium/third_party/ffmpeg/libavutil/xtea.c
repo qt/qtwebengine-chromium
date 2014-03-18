@@ -21,10 +21,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/intreadwrite.h"
+/**
+ * @file
+ * @brief XTEA 32-bit implementation
+ * @author Samuel Pitoiset
+ * @ingroup lavu_xtea
+ */
 
 #include "avutil.h"
 #include "common.h"
+#include "intreadwrite.h"
 #include "xtea.h"
 
 void av_xtea_init(AVXTEA *ctx, const uint8_t key[16])

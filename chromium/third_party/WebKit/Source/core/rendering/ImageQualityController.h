@@ -31,12 +31,12 @@
 #ifndef ImageQualityController_h
 #define ImageQualityController_h
 
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/ImageOrientation.h"
-#include "core/platform/graphics/ImageSource.h"
-#include "core/platform/graphics/IntSize.h"
-#include "core/platform/graphics/LayoutSize.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/geometry/LayoutSize.h"
+#include "platform/graphics/Image.h"
+#include "platform/graphics/ImageOrientation.h"
+#include "platform/graphics/ImageSource.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -44,10 +44,10 @@ namespace WebCore {
 typedef HashMap<const void*, LayoutSize> LayerSizeMap;
 typedef HashMap<RenderObject*, LayerSizeMap> ObjectLayerSizeMap;
 
-class ImageQualityController {
+class ImageQualityController FINAL {
     WTF_MAKE_NONCOPYABLE(ImageQualityController); WTF_MAKE_FAST_ALLOCATED;
 public:
-    virtual ~ImageQualityController();
+    ~ImageQualityController();
 
     static ImageQualityController* imageQualityController();
 

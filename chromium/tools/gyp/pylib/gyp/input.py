@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from gyp.common import GypError
 
 
@@ -57,7 +58,7 @@ def IsPathSection(section):
     section = section[:-1]
   return section in path_sections or is_path_section_match_re.search(section)
 
-# base_non_configuraiton_keys is a list of key names that belong in the target
+# base_non_configuration_keys is a list of key names that belong in the target
 # itself and should not be propagated into its configurations.  It is merged
 # with a list that can come from the generator to
 # create non_configuration_keys.
@@ -84,7 +85,6 @@ base_non_configuration_keys = [
   'toolset',
   'toolsets',
   'type',
-  'variants',
 
   # Sections that can be found inside targets or configurations, but that
   # should not be propagated from targets into their configurations.
@@ -107,12 +107,14 @@ invalid_configuration_keys = [
   'type',
 ]
 
-# Controls how the generator want the build file paths.
-absolute_build_file_paths = False
-
 # Controls whether or not the generator supports multiple toolsets.
 multiple_toolsets = False
 
+# Paths for converting filelist paths to output paths: {
+#   toplevel,
+#   qualified_output_dir,
+# }
+generator_filelist_paths = None
 
 def GetIncludedBuildFiles(build_file_path, aux_data, included=None):
   """Return a list of all build files included into build_file_path.
@@ -229,17 +231,19 @@ def LoadOneBuildFile(build_file_path, data, aux_data, variables, includes,
   aux_data[build_file_path] = {}
 
   # Scan for includes and merge them in.
-  try:
-    if is_target:
-      LoadBuildFileIncludesIntoDict(build_file_data, build_file_path, data,
-                                    aux_data, variables, includes, check)
-    else:
-      LoadBuildFileIncludesIntoDict(build_file_data, build_file_path, data,
-                                    aux_data, variables, None, check)
-  except Exception, e:
-    gyp.common.ExceptionAppend(e,
-                               'while reading includes of ' + build_file_path)
-    raise
+  if ('skip_includes' not in build_file_data or
+      not build_file_data['skip_includes']):
+    try:
+      if is_target:
+        LoadBuildFileIncludesIntoDict(build_file_data, build_file_path, data,
+                                      aux_data, variables, includes, check)
+      else:
+        LoadBuildFileIncludesIntoDict(build_file_data, build_file_path, data,
+                                      aux_data, variables, None, check)
+    except Exception, e:
+      gyp.common.ExceptionAppend(e,
+                                 'while reading includes of ' + build_file_path)
+      raise
 
   return build_file_data
 
@@ -346,10 +350,6 @@ def LoadTargetBuildFile(build_file_path, data, aux_data, variables, includes,
     else:
       variables['DEPTH'] = d.replace('\\', '/')
 
-  # If the generator needs absolue paths, then do so.
-  if absolute_build_file_paths:
-    build_file_path = os.path.abspath(build_file_path)
-
   if build_file_path in data['target_build_files']:
     # Already loaded.
     return False
@@ -447,7 +447,8 @@ def LoadTargetBuildFile(build_file_path, data, aux_data, variables, includes,
 def CallLoadTargetBuildFile(global_flags,
                             build_file_path, data,
                             aux_data, variables,
-                            includes, depth, check):
+                            includes, depth, check,
+                            generator_input_info):
   """Wrapper around LoadTargetBuildFile for parallel processing.
 
      This wrapper is used when LoadTargetBuildFile is executed in
@@ -465,6 +466,7 @@ def CallLoadTargetBuildFile(global_flags,
     data_keys = set(data)
     aux_data_keys = set(aux_data)
 
+    SetGeneratorGlobals(generator_input_info)
     result = LoadTargetBuildFile(build_file_path, data,
                                  aux_data, variables,
                                  includes, depth, check, False)
@@ -490,8 +492,12 @@ def CallLoadTargetBuildFile(global_flags,
             data_out,
             aux_data_out,
             dependencies)
+  except GypError, e:
+    sys.stderr.write("gyp: %s\n" % e)
+    return None
   except Exception, e:
-    print >>sys.stderr, 'Exception: ', e
+    print >>sys.stderr, 'Exception:', e
+    print >>sys.stderr, traceback.format_exc()
     return None
 
 
@@ -552,12 +558,14 @@ class ParallelState(object):
     self.condition.release()
 
 
-def LoadTargetBuildFileParallel(build_file_path, data, aux_data,
-                                variables, includes, depth, check):
+def LoadTargetBuildFilesParallel(build_files, data, aux_data,
+                                 variables, includes, depth, check,
+                                 generator_input_info):
   parallel_state = ParallelState()
   parallel_state.condition = threading.Condition()
-  parallel_state.dependencies = [build_file_path]
-  parallel_state.scheduled = set([build_file_path])
+  # Make copies of the build_files argument that we can modify while working.
+  parallel_state.dependencies = list(build_files)
+  parallel_state.scheduled = set(build_files)
   parallel_state.pending = 0
   parallel_state.data = data
   parallel_state.aux_data = aux_data
@@ -566,12 +574,6 @@ def LoadTargetBuildFileParallel(build_file_path, data, aux_data,
     parallel_state.condition.acquire()
     while parallel_state.dependencies or parallel_state.pending:
       if parallel_state.error:
-        print >>sys.stderr, (
-            '\n'
-            'Note: an error occurred while running gyp using multiprocessing.\n'
-            'For more verbose output, set GYP_PARALLEL=0 in your environment.\n'
-            'If the error only occurs when GYP_PARALLEL=1, '
-            'please report a bug!')
         break
       if not parallel_state.dependencies:
         parallel_state.condition.wait()
@@ -586,7 +588,6 @@ def LoadTargetBuildFileParallel(build_file_path, data, aux_data,
       global_flags = {
         'path_sections': globals()['path_sections'],
         'non_configuration_keys': globals()['non_configuration_keys'],
-        'absolute_build_file_paths': globals()['absolute_build_file_paths'],
         'multiple_toolsets': globals()['multiple_toolsets']}
 
       if not parallel_state.pool:
@@ -595,16 +596,20 @@ def LoadTargetBuildFileParallel(build_file_path, data, aux_data,
           CallLoadTargetBuildFile,
           args = (global_flags, dependency,
                   data_in, aux_data_in,
-                  variables, includes, depth, check),
+                  variables, includes, depth, check, generator_input_info),
           callback = parallel_state.LoadTargetBuildFileCallback)
   except KeyboardInterrupt, e:
     parallel_state.pool.terminate()
     raise e
 
   parallel_state.condition.release()
-  if parallel_state.error:
-    sys.exit()
 
+  parallel_state.pool.close()
+  parallel_state.pool.join()
+  parallel_state.pool = None
+
+  if parallel_state.error:
+    sys.exit(1)
 
 # Look for the bracket that matches the first bracket seen in a
 # string, and return the start and end as a tuple.  For example, if
@@ -787,7 +792,7 @@ def ExpandVariables(input, phase, variables, build_file):
       # Find the build file's directory, so commands can be run or file lists
       # generated relative to it.
       build_file_dir = os.path.dirname(build_file)
-      if build_file_dir == '':
+      if build_file_dir == '' and not file_list:
         # If build_file is just a leaf filename indicating a file in the
         # current directory, build_file_dir might be an empty string.  Set
         # it to None to signal to subprocess.Popen that it should run the
@@ -804,9 +809,23 @@ def ExpandVariables(input, phase, variables, build_file):
       else:
         contents_list = contents.split(' ')
       replacement = contents_list[0]
-      path = replacement
-      if build_file_dir and not os.path.isabs(path):
-        path = os.path.join(build_file_dir, path)
+      if os.path.isabs(replacement):
+        raise GypError('| cannot handle absolute paths, got "%s"' % replacement)
+
+      if not generator_filelist_paths:
+        path = os.path.join(build_file_dir, replacement)
+      else:
+        if os.path.isabs(build_file_dir):
+          toplevel = generator_filelist_paths['toplevel']
+          rel_build_file_dir = gyp.common.RelativePath(build_file_dir, toplevel)
+        else:
+          rel_build_file_dir = build_file_dir
+        qualified_out_dir = generator_filelist_paths['qualified_out_dir']
+        path = os.path.join(qualified_out_dir, rel_build_file_dir, replacement)
+        if not os.path.isdir(os.path.dirname(path)):
+          os.makedirs(os.path.dirname(path))
+
+      replacement = gyp.common.RelativePath(path, build_file_dir)
       f = gyp.common.WriteOnDiff(path)
       for i in contents_list[1:]:
         f.write('%s\n' % i)
@@ -2259,6 +2278,7 @@ def ProcessListFiltersInDict(name, the_dict):
       continue
 
     if not isinstance(the_dict[list_key], list):
+      value = the_dict[list_key]
       raise ValueError, name + ' key ' + list_key + \
                         ' must be list, not ' + \
                         value.__class__.__name__ + ' when applying ' + \
@@ -2562,6 +2582,41 @@ def TurnIntIntoStrInList(the_list):
       TurnIntIntoStrInList(item)
 
 
+def PruneUnwantedTargets(targets, flat_list, dependency_nodes, root_targets,
+                         data):
+  """Return only the targets that are deep dependencies of |root_targets|."""
+  qualified_root_targets = []
+  for target in root_targets:
+    target = target.strip()
+    qualified_targets = gyp.common.FindQualifiedTargets(target, flat_list)
+    if not qualified_targets:
+      raise GypError("Could not find target %s" % target)
+    qualified_root_targets.extend(qualified_targets)
+
+  wanted_targets = {}
+  for target in qualified_root_targets:
+    wanted_targets[target] = targets[target]
+    for dependency in dependency_nodes[target].DeepDependencies():
+      wanted_targets[dependency] = targets[dependency]
+
+  wanted_flat_list = [t for t in flat_list if t in wanted_targets]
+
+  # Prune unwanted targets from each build_file's data dict.
+  for build_file in data['target_build_files']:
+    if not 'targets' in data[build_file]:
+      continue
+    new_targets = []
+    for target in data[build_file]['targets']:
+      qualified_name = gyp.common.QualifiedTarget(build_file,
+                                                  target['target_name'],
+                                                  target['toolset'])
+      if qualified_name in wanted_targets:
+        new_targets.append(target)
+    data[build_file]['targets'] = new_targets
+
+  return wanted_targets, wanted_flat_list
+
+
 def VerifyNoCollidingTargets(targets):
   """Verify that no two targets in the same directory share the same name.
 
@@ -2589,10 +2644,9 @@ def VerifyNoCollidingTargets(targets):
     used[key] = gyp
 
 
-def Load(build_files, variables, includes, depth, generator_input_info, check,
-         circular_check, parallel):
+def SetGeneratorGlobals(generator_input_info):
   # Set up path_sections and non_configuration_keys with the default data plus
-  # the generator-specifc data.
+  # the generator-specific data.
   global path_sections
   path_sections = base_path_sections[:]
   path_sections.extend(generator_input_info['path_sections'])
@@ -2601,18 +2655,17 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
   non_configuration_keys = base_non_configuration_keys[:]
   non_configuration_keys.extend(generator_input_info['non_configuration_keys'])
 
-  # TODO(mark) handle variants if the generator doesn't want them directly.
-  generator_handles_variants = \
-      generator_input_info['generator_handles_variants']
-
-  global absolute_build_file_paths
-  absolute_build_file_paths = \
-      generator_input_info['generator_wants_absolute_build_file_paths']
-
   global multiple_toolsets
   multiple_toolsets = generator_input_info[
       'generator_supports_multiple_toolsets']
 
+  global generator_filelist_paths
+  generator_filelist_paths = generator_input_info['generator_filelist_paths']
+
+
+def Load(build_files, variables, includes, depth, generator_input_info, check,
+         circular_check, parallel, root_targets):
+  SetGeneratorGlobals(generator_input_info)
   # A generator can have other lists (in addition to sources) be processed
   # for rules.
   extra_sources_for_rules = generator_input_info['extra_sources_for_rules']
@@ -2626,20 +2679,21 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
   # track of the keys corresponding to "target" files.
   data = {'target_build_files': set()}
   aux_data = {}
-  for build_file in build_files:
-    # Normalize paths everywhere.  This is important because paths will be
-    # used as keys to the data dict and for references between input files.
-    build_file = os.path.normpath(build_file)
-    try:
-      if parallel:
-        LoadTargetBuildFileParallel(build_file, data, aux_data,
-                                    variables, includes, depth, check)
-      else:
+  # Normalize paths everywhere.  This is important because paths will be
+  # used as keys to the data dict and for references between input files.
+  build_files = set(map(os.path.normpath, build_files))
+  if parallel:
+    LoadTargetBuildFilesParallel(build_files, data, aux_data,
+                                 variables, includes, depth, check,
+                                 generator_input_info)
+  else:
+    for build_file in build_files:
+      try:
         LoadTargetBuildFile(build_file, data, aux_data,
                             variables, includes, depth, check, True)
-    except Exception, e:
-      gyp.common.ExceptionAppend(e, 'while trying to load %s' % build_file)
-      raise
+      except Exception, e:
+        gyp.common.ExceptionAppend(e, 'while trying to load %s' % build_file)
+        raise
 
   # Build a dict to access each target's subdict by qualified name.
   targets = BuildTargetsDict(data)
@@ -2677,6 +2731,12 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
     VerifyNoGYPFileCircularDependencies(targets)
 
   [dependency_nodes, flat_list] = BuildDependencyList(targets)
+
+  if root_targets:
+    # Remove, from |targets| and |flat_list|, the targets that are not deep
+    # dependencies of the targets specified in |root_targets|.
+    targets, flat_list = PruneUnwantedTargets(
+        targets, flat_list, dependency_nodes, root_targets, data)
 
   # Check that no two targets in the same directory have the same name.
   VerifyNoCollidingTargets(flat_list)

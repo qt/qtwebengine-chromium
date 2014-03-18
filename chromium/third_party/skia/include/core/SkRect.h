@@ -371,6 +371,12 @@ struct SK_API SkRect {
         return r;
     }
 
+    static SkRect SK_WARN_UNUSED_RESULT MakeLargest() {
+        SkRect r;
+        r.setLargest();
+        return r;
+    }
+
     static SkRect SK_WARN_UNUSED_RESULT MakeWH(SkScalar w, SkScalar h) {
         SkRect r;
         r.set(0, 0, w, h);
@@ -395,7 +401,7 @@ struct SK_API SkRect {
         return r;
     }
 
-    // DEPRECATED: call Make(r)
+    SK_ATTR_DEPRECATED("use Make()")
     static SkRect SK_WARN_UNUSED_RESULT MakeFromIRect(const SkIRect& irect) {
         SkRect r;
         r.set(SkIntToScalar(irect.fLeft),
@@ -418,6 +424,11 @@ struct SK_API SkRect {
      *  Return true if the rectangle's width or height are <= 0
      */
     bool isEmpty() const { return fLeft >= fRight || fTop >= fBottom; }
+
+    bool isLargest() const { return SK_ScalarMin == fLeft &&
+                                    SK_ScalarMin == fTop &&
+                                    SK_ScalarMax == fRight &&
+                                    SK_ScalarMax == fBottom; }
 
     /**
      *  Returns true iff all values in the rect are finite. If any are
@@ -707,38 +718,11 @@ struct SK_API SkRect {
     }
 
     /**
-     *  Returns true if (p.fX,p.fY) is inside the rectangle, and the rectangle
-     *  is not empty.
-     *
-     *  Contains treats the left and top differently from the right and bottom.
-     *  The left and top coordinates of the rectangle are themselves considered
-     *  to be inside, while the right and bottom are not. Thus for the rectangle
-     *  {0, 0, 5, 10}, (0,0) is contained, but (0,10), (5,0) and (5,10) are not.
-     */
-    bool contains(const SkPoint& p) const {
-        return !this->isEmpty() &&
-               fLeft <= p.fX && p.fX < fRight && fTop <= p.fY && p.fY < fBottom;
-    }
-
-    /**
-     *  Returns true if (x,y) is inside the rectangle, and the rectangle
-     *  is not empty.
-     *
-     *  Contains treats the left and top differently from the right and bottom.
-     *  The left and top coordinates of the rectangle are themselves considered
-     *  to be inside, while the right and bottom are not. Thus for the rectangle
-     *  {0, 0, 5, 10}, (0,0) is contained, but (0,10), (5,0) and (5,10) are not.
-     */
-    bool contains(SkScalar x, SkScalar y) const {
-        return  !this->isEmpty() &&
-                fLeft <= x && x < fRight && fTop <= y && y < fBottom;
-    }
-
-    /**
      *  Return true if this rectangle contains r, and if both rectangles are
      *  not empty.
      */
     bool contains(const SkRect& r) const {
+        // todo: can we eliminate the this->isEmpty check?
         return  !r.isEmpty() && !this->isEmpty() &&
                 fLeft <= r.fLeft && fTop <= r.fTop &&
                 fRight >= r.fRight && fBottom >= r.fBottom;
@@ -746,7 +730,7 @@ struct SK_API SkRect {
 
     /**
      *  Set the dst rectangle by rounding this rectangle's coordinates to their
-     *  nearest integer values using SkScalarRound.
+     *  nearest integer values using SkScalarRoundToInt.
      */
     void round(SkIRect* dst) const {
         SkASSERT(dst);
@@ -788,6 +772,15 @@ struct SK_API SkRect {
                  SkScalarFloorToInt(fRight), SkScalarFloorToInt(fBottom));
     }
 
+    /**
+     *  Return a new SkIRect which is contains the rounded coordinates of this
+     *  rect using SkScalarRoundToInt.
+     */
+    SkIRect round() const {
+        SkIRect ir;
+        this->round(&ir);
+        return ir;
+    }
 
     /**
      *  Swap top/bottom or left/right if there are flipped (i.e. if width()

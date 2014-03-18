@@ -6,17 +6,31 @@
 
 #include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
 #include "gpu/command_buffer/service/gpu_memory_buffer_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/query_manager.h"
 
 namespace gpu {
 
 GpuControlService::GpuControlService(
     GpuMemoryBufferManagerInterface* gpu_memory_buffer_manager,
-    GpuMemoryBufferFactory* gpu_memory_buffer_factory)
+    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+    gles2::MailboxManager* mailbox_manager,
+    gles2::QueryManager* query_manager,
+    const gpu::Capabilities& decoder_capabilities)
     : gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
-      gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {
+      gpu_memory_buffer_factory_(gpu_memory_buffer_factory),
+      mailbox_manager_(mailbox_manager),
+      query_manager_(query_manager),
+      capabilities_(decoder_capabilities) {
+  capabilities_.map_image =
+      gpu_memory_buffer_manager_ && gpu_memory_buffer_factory_;
 }
 
 GpuControlService::~GpuControlService() {
+}
+
+gpu::Capabilities GpuControlService::GetCapabilities() {
+  return capabilities_;
 }
 
 gfx::GpuMemoryBuffer* GpuControlService::CreateGpuMemoryBuffer(
@@ -58,6 +72,39 @@ void GpuControlService::DestroyGpuMemoryBuffer(int32 id) {
   gpu_memory_buffer_manager_->DestroyGpuMemoryBuffer(id);
 }
 
+uint32 GpuControlService::InsertSyncPoint() {
+  NOTREACHED();
+  return 0u;
+}
+
+void GpuControlService::SignalSyncPoint(uint32 sync_point,
+                                        const base::Closure& callback) {
+  NOTREACHED();
+}
+
+void GpuControlService::SignalQuery(uint32 query_id,
+                                    const base::Closure& callback) {
+  DCHECK(query_manager_);
+  gles2::QueryManager::Query* query = query_manager_->GetQuery(query_id);
+  if (!query)
+    callback.Run();
+  else
+    query->AddCallback(callback);
+}
+
+void GpuControlService::SetSurfaceVisible(bool visible) {
+  NOTREACHED();
+}
+
+void GpuControlService::SendManagedMemoryStats(
+    const ManagedMemoryStats& stats) {
+  NOTREACHED();
+}
+
+void GpuControlService::Echo(const base::Closure& callback) {
+  NOTREACHED();
+}
+
 bool GpuControlService::RegisterGpuMemoryBuffer(
     int32 id,
     gfx::GpuMemoryBufferHandle buffer,
@@ -69,6 +116,18 @@ bool GpuControlService::RegisterGpuMemoryBuffer(
                                                              width,
                                                              height,
                                                              internalformat);
+}
+
+bool GpuControlService::GenerateMailboxNames(
+    unsigned num, std::vector<gpu::Mailbox>* names) {
+  DCHECK(names->empty());
+  names->resize(num);
+  for (unsigned i = 0; i < num; ++i) {
+    gles2::MailboxName name;
+    mailbox_manager_->GenerateMailboxName(&name);
+    (*names)[i].SetName(name.key);
+  }
+  return true;
 }
 
 }  // namespace gpu

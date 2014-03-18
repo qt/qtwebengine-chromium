@@ -8,6 +8,55 @@
 
 namespace content {
 
+class BrowserDemuxerAndroid::Internal : public media::DemuxerAndroid {
+ public:
+  Internal(const scoped_refptr<BrowserDemuxerAndroid>& demuxer,
+           int demuxer_client_id)
+      : demuxer_(demuxer),
+        demuxer_client_id_(demuxer_client_id) {}
+
+  virtual ~Internal() {
+    DCHECK(ClientIDExists()) << demuxer_client_id_;
+    demuxer_->RemoveDemuxerClient(demuxer_client_id_);
+  }
+
+  // media::DemuxerAndroid implementation.
+  virtual void Initialize(media::DemuxerAndroidClient* client) OVERRIDE {
+    DCHECK(!ClientIDExists()) << demuxer_client_id_;
+    demuxer_->AddDemuxerClient(demuxer_client_id_, client);
+  }
+
+  virtual void RequestDemuxerConfigs() OVERRIDE {
+    DCHECK(ClientIDExists()) << demuxer_client_id_;
+    demuxer_->Send(new MediaPlayerMsg_MediaConfigRequest(demuxer_client_id_));
+  }
+
+  virtual void RequestDemuxerData(media::DemuxerStream::Type type) OVERRIDE {
+    DCHECK(ClientIDExists()) << demuxer_client_id_;
+    demuxer_->Send(new MediaPlayerMsg_ReadFromDemuxer(
+        demuxer_client_id_, type));
+  }
+
+  virtual void RequestDemuxerSeek(
+      const base::TimeDelta& time_to_seek,
+      bool is_browser_seek) OVERRIDE {
+    DCHECK(ClientIDExists()) << demuxer_client_id_;
+    demuxer_->Send(new MediaPlayerMsg_DemuxerSeekRequest(
+        demuxer_client_id_, time_to_seek, is_browser_seek));
+  }
+
+ private:
+  // Helper for DCHECKing that the ID is still registered.
+  bool ClientIDExists() {
+    return demuxer_->demuxer_clients_.Lookup(demuxer_client_id_);
+  }
+
+  scoped_refptr<BrowserDemuxerAndroid> demuxer_;
+  int demuxer_client_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(Internal);
+};
+
 BrowserDemuxerAndroid::BrowserDemuxerAndroid() {}
 
 BrowserDemuxerAndroid::~BrowserDemuxerAndroid() {}
@@ -19,7 +68,7 @@ void BrowserDemuxerAndroid::OverrideThreadForMessage(
     case MediaPlayerHostMsg_DemuxerReady::ID:
     case MediaPlayerHostMsg_ReadFromDemuxerAck::ID:
     case MediaPlayerHostMsg_DurationChanged::ID:
-    case MediaPlayerHostMsg_MediaSeekRequestAck::ID:
+    case MediaPlayerHostMsg_DemuxerSeekDone::ID:
       *thread = BrowserThread::UI;
       return;
   }
@@ -34,11 +83,17 @@ bool BrowserDemuxerAndroid::OnMessageReceived(const IPC::Message& message,
                         OnReadFromDemuxerAck)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DurationChanged,
                         OnDurationChanged)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_MediaSeekRequestAck,
-                        OnMediaSeekRequestAck)
+    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DemuxerSeekDone,
+                        OnDemuxerSeekDone)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+scoped_ptr<media::DemuxerAndroid> BrowserDemuxerAndroid::CreateDemuxer(
+    int demuxer_client_id) {
+  return scoped_ptr<media::DemuxerAndroid>(
+      new Internal(this, demuxer_client_id));
 }
 
 void BrowserDemuxerAndroid::AddDemuxerClient(
@@ -53,25 +108,6 @@ void BrowserDemuxerAndroid::RemoveDemuxerClient(int demuxer_client_id) {
   DVLOG(1) << __FUNCTION__ << " peer_pid=" << peer_pid()
            << " demuxer_client_id=" << demuxer_client_id;
   demuxer_clients_.Remove(demuxer_client_id);
-}
-
-void BrowserDemuxerAndroid::RequestDemuxerData(
-    int demuxer_client_id, media::DemuxerStream::Type type) {
-  DCHECK(demuxer_clients_.Lookup(demuxer_client_id)) << demuxer_client_id;
-  Send(new MediaPlayerMsg_ReadFromDemuxer(demuxer_client_id, type));
-}
-
-void BrowserDemuxerAndroid::RequestDemuxerSeek(int demuxer_client_id,
-                                               base::TimeDelta time_to_seek,
-                                               unsigned seek_request_id) {
-  DCHECK(demuxer_clients_.Lookup(demuxer_client_id)) << demuxer_client_id;
-  Send(new MediaPlayerMsg_MediaSeekRequest(
-      demuxer_client_id, time_to_seek, seek_request_id));
-}
-
-void BrowserDemuxerAndroid::RequestDemuxerConfigs(int demuxer_client_id) {
-  DCHECK(demuxer_clients_.Lookup(demuxer_client_id)) << demuxer_client_id;
-  Send(new MediaPlayerMsg_MediaConfigRequest(demuxer_client_id));
 }
 
 void BrowserDemuxerAndroid::OnDemuxerReady(
@@ -92,12 +128,13 @@ void BrowserDemuxerAndroid::OnReadFromDemuxerAck(
     client->OnDemuxerDataAvailable(data);
 }
 
-void BrowserDemuxerAndroid::OnMediaSeekRequestAck(int demuxer_client_id,
-                                                  unsigned seek_request_id) {
+void BrowserDemuxerAndroid::OnDemuxerSeekDone(
+    int demuxer_client_id,
+    const base::TimeDelta& actual_browser_seek_time) {
   media::DemuxerAndroidClient* client =
       demuxer_clients_.Lookup(demuxer_client_id);
   if (client)
-    client->OnDemuxerSeeked(seek_request_id);
+    client->OnDemuxerSeekDone(actual_browser_seek_time);
 }
 
 void BrowserDemuxerAndroid::OnDurationChanged(int demuxer_client_id,

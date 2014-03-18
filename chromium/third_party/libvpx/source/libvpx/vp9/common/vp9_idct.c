@@ -18,20 +18,20 @@
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_idct.h"
 
-void vp9_short_iwalsh4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_iwht4x4_16_add_c(const int16_t *input, uint8_t *dest, int stride) {
 /* 4-point reversible, orthonormal inverse Walsh-Hadamard in 3.5 adds,
    0.5 shifts per pixel. */
   int i;
   int16_t output[16];
   int a1, b1, c1, d1, e1;
-  int16_t *ip = input;
+  const int16_t *ip = input;
   int16_t *op = output;
 
   for (i = 0; i < 4; i++) {
-    a1 = ip[0] >> WHT_UPSCALE_FACTOR;
-    c1 = ip[1] >> WHT_UPSCALE_FACTOR;
-    d1 = ip[2] >> WHT_UPSCALE_FACTOR;
-    b1 = ip[3] >> WHT_UPSCALE_FACTOR;
+    a1 = ip[0] >> UNIT_QUANT_SHIFT;
+    c1 = ip[1] >> UNIT_QUANT_SHIFT;
+    d1 = ip[2] >> UNIT_QUANT_SHIFT;
+    b1 = ip[3] >> UNIT_QUANT_SHIFT;
     a1 += c1;
     d1 -= b1;
     e1 = (a1 - d1) >> 1;
@@ -60,24 +60,24 @@ void vp9_short_iwalsh4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
     c1 = e1 - c1;
     a1 -= b1;
     d1 += c1;
-    dest[dest_stride * 0] = clip_pixel(dest[dest_stride * 0] + a1);
-    dest[dest_stride * 1] = clip_pixel(dest[dest_stride * 1] + b1);
-    dest[dest_stride * 2] = clip_pixel(dest[dest_stride * 2] + c1);
-    dest[dest_stride * 3] = clip_pixel(dest[dest_stride * 3] + d1);
+    dest[stride * 0] = clip_pixel(dest[stride * 0] + a1);
+    dest[stride * 1] = clip_pixel(dest[stride * 1] + b1);
+    dest[stride * 2] = clip_pixel(dest[stride * 2] + c1);
+    dest[stride * 3] = clip_pixel(dest[stride * 3] + d1);
 
     ip++;
     dest++;
   }
 }
 
-void vp9_short_iwalsh4x4_1_add_c(int16_t *in, uint8_t *dest, int dest_stride) {
+void vp9_iwht4x4_1_add_c(const int16_t *in, uint8_t *dest, int dest_stride) {
   int i;
   int a1, e1;
   int16_t tmp[4];
-  int16_t *ip = in;
+  const int16_t *ip = in;
   int16_t *op = tmp;
 
-  a1 = ip[0] >> WHT_UPSCALE_FACTOR;
+  a1 = ip[0] >> UNIT_QUANT_SHIFT;
   e1 = a1 >> 1;
   a1 -= e1;
   op[0] = a1;
@@ -96,7 +96,7 @@ void vp9_short_iwalsh4x4_1_add_c(int16_t *in, uint8_t *dest, int dest_stride) {
   }
 }
 
-void vp9_idct4_1d_c(int16_t *input, int16_t *output) {
+static void idct4_1d(const int16_t *input, int16_t *output) {
   int16_t step[4];
   int temp1, temp2;
   // stage 1
@@ -116,7 +116,7 @@ void vp9_idct4_1d_c(int16_t *input, int16_t *output) {
   output[3] = step[0] - step[3];
 }
 
-void vp9_short_idct4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct4x4_16_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[4 * 4];
   int16_t *outptr = out;
   int i, j;
@@ -124,7 +124,7 @@ void vp9_short_idct4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
 
   // Rows
   for (i = 0; i < 4; ++i) {
-    vp9_idct4_1d(input, outptr);
+    idct4_1d(input, outptr);
     input += 4;
     outptr += 4;
   }
@@ -133,14 +133,14 @@ void vp9_short_idct4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
   for (i = 0; i < 4; ++i) {
     for (j = 0; j < 4; ++j)
       temp_in[j] = out[j * 4 + i];
-    vp9_idct4_1d(temp_in, temp_out);
+    idct4_1d(temp_in, temp_out);
     for (j = 0; j < 4; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 4)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 4)
+                                  + dest[j * stride + i]);
   }
 }
 
-void vp9_short_idct4x4_1_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride) {
   int i;
   int a1;
   int16_t out = dct_const_round_shift(input[0] * cospi_16_64);
@@ -156,7 +156,7 @@ void vp9_short_idct4x4_1_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
   }
 }
 
-static void idct8_1d(int16_t *input, int16_t *output) {
+static void idct8_1d(const int16_t *input, int16_t *output) {
   int16_t step1[8], step2[8];
   int temp1, temp2;
   // stage 1
@@ -174,7 +174,7 @@ static void idct8_1d(int16_t *input, int16_t *output) {
   step1[6] = dct_const_round_shift(temp2);
 
   // stage 2 & stage 3 - even half
-  vp9_idct4_1d(step1, step1);
+  idct4_1d(step1, step1);
 
   // stage 2 - odd half
   step2[4] = step1[4] + step1[5];
@@ -201,7 +201,7 @@ static void idct8_1d(int16_t *input, int16_t *output) {
   output[7] = step1[0] - step1[7];
 }
 
-void vp9_short_idct8x8_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct8x8_64_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[8 * 8];
   int16_t *outptr = out;
   int i, j;
@@ -220,12 +220,12 @@ void vp9_short_idct8x8_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
       temp_in[j] = out[j * 8 + i];
     idct8_1d(temp_in, temp_out);
     for (j = 0; j < 8; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
+                                  + dest[j * stride + i]);
   }
 }
 
-void vp9_short_idct8x8_1_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct8x8_1_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int i, j;
   int a1;
   int16_t out = dct_const_round_shift(input[0] * cospi_16_64);
@@ -234,11 +234,11 @@ void vp9_short_idct8x8_1_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
   for (j = 0; j < 8; ++j) {
     for (i = 0; i < 8; ++i)
       dest[i] = clip_pixel(dest[i] + a1);
-    dest += dest_stride;
+    dest += stride;
   }
 }
 
-static void iadst4_1d(int16_t *input, int16_t *output) {
+static void iadst4_1d(const int16_t *input, int16_t *output) {
   int s0, s1, s2, s3, s4, s5, s6, s7;
 
   int x0 = input[0];
@@ -280,13 +280,13 @@ static void iadst4_1d(int16_t *input, int16_t *output) {
   output[3] = dct_const_round_shift(s3);
 }
 
-void vp9_short_iht4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride,
-                            int tx_type) {
+void vp9_iht4x4_16_add_c(const int16_t *input, uint8_t *dest, int stride,
+                         int tx_type) {
   const transform_2d IHT_4[] = {
-    { vp9_idct4_1d,  vp9_idct4_1d  },  // DCT_DCT  = 0
-    { iadst4_1d, vp9_idct4_1d  },      // ADST_DCT = 1
-    { vp9_idct4_1d,  iadst4_1d },      // DCT_ADST = 2
-    { iadst4_1d, iadst4_1d }           // ADST_ADST = 3
+    { idct4_1d, idct4_1d  },  // DCT_DCT  = 0
+    { iadst4_1d, idct4_1d  },   // ADST_DCT = 1
+    { idct4_1d, iadst4_1d },    // DCT_ADST = 2
+    { iadst4_1d, iadst4_1d }      // ADST_ADST = 3
   };
 
   int i, j;
@@ -307,11 +307,11 @@ void vp9_short_iht4x4_add_c(int16_t *input, uint8_t *dest, int dest_stride,
       temp_in[j] = out[j * 4 + i];
     IHT_4[tx_type].cols(temp_in, temp_out);
     for (j = 0; j < 4; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 4)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 4)
+                                  + dest[j * stride + i]);
   }
 }
-static void iadst8_1d(int16_t *input, int16_t *output) {
+static void iadst8_1d(const int16_t *input, int16_t *output) {
   int s0, s1, s2, s3, s4, s5, s6, s7;
 
   int x0 = input[7];
@@ -395,8 +395,8 @@ static const transform_2d IHT_8[] = {
   { iadst8_1d, iadst8_1d }   // ADST_ADST = 3
 };
 
-void vp9_short_iht8x8_add_c(int16_t *input, uint8_t *dest, int dest_stride,
-                            int tx_type) {
+void vp9_iht8x8_64_add_c(const int16_t *input, uint8_t *dest, int stride,
+                         int tx_type) {
   int i, j;
   int16_t out[8 * 8];
   int16_t *outptr = out;
@@ -416,12 +416,12 @@ void vp9_short_iht8x8_add_c(int16_t *input, uint8_t *dest, int dest_stride,
       temp_in[j] = out[j * 8 + i];
     ht.cols(temp_in, temp_out);
     for (j = 0; j < 8; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
-                                  + dest[j * dest_stride + i]);  }
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
+                                  + dest[j * stride + i]);
+  }
 }
 
-void vp9_short_idct10_8x8_add_c(int16_t *input, uint8_t *dest,
-                                int dest_stride) {
+void vp9_idct8x8_10_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[8 * 8] = { 0 };
   int16_t *outptr = out;
   int i, j;
@@ -441,12 +441,12 @@ void vp9_short_idct10_8x8_add_c(int16_t *input, uint8_t *dest,
       temp_in[j] = out[j * 8 + i];
     idct8_1d(temp_in, temp_out);
     for (j = 0; j < 8; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 5)
+                                  + dest[j * stride + i]);
   }
 }
 
-static void idct16_1d(int16_t *input, int16_t *output) {
+static void idct16_1d(const int16_t *input, int16_t *output) {
   int16_t step1[16], step2[16];
   int temp1, temp2;
 
@@ -611,7 +611,7 @@ static void idct16_1d(int16_t *input, int16_t *output) {
   output[15] = step2[0] - step2[15];
 }
 
-void vp9_short_idct16x16_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct16x16_256_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[16 * 16];
   int16_t *outptr = out;
   int i, j;
@@ -630,12 +630,12 @@ void vp9_short_idct16x16_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
       temp_in[j] = out[j * 16 + i];
     idct16_1d(temp_in, temp_out);
     for (j = 0; j < 16; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
+                                  + dest[j * stride + i]);
   }
 }
 
-void iadst16_1d(int16_t *input, int16_t *output) {
+static void iadst16_1d(const int16_t *input, int16_t *output) {
   int s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15;
 
   int x0 = input[15];
@@ -813,8 +813,8 @@ static const transform_2d IHT_16[] = {
   { iadst16_1d, iadst16_1d }   // ADST_ADST = 3
 };
 
-void vp9_short_iht16x16_add_c(int16_t *input, uint8_t *dest, int dest_stride,
-                              int tx_type) {
+void vp9_iht16x16_256_add_c(const int16_t *input, uint8_t *dest, int stride,
+                            int tx_type) {
   int i, j;
   int16_t out[16 * 16];
   int16_t *outptr = out;
@@ -834,12 +834,11 @@ void vp9_short_iht16x16_add_c(int16_t *input, uint8_t *dest, int dest_stride,
       temp_in[j] = out[j * 16 + i];
     ht.cols(temp_in, temp_out);
     for (j = 0; j < 16; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
-                                  + dest[j * dest_stride + i]);  }
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
+                                  + dest[j * stride + i]);  }
 }
 
-void vp9_short_idct10_16x16_add_c(int16_t *input, uint8_t *dest,
-                                  int dest_stride) {
+void vp9_idct16x16_10_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[16 * 16] = { 0 };
   int16_t *outptr = out;
   int i, j;
@@ -859,13 +858,12 @@ void vp9_short_idct10_16x16_add_c(int16_t *input, uint8_t *dest,
       temp_in[j] = out[j*16 + i];
     idct16_1d(temp_in, temp_out);
     for (j = 0; j < 16; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
+                                  + dest[j * stride + i]);
   }
 }
 
-void vp9_short_idct16x16_1_add_c(int16_t *input, uint8_t *dest,
-                                 int dest_stride) {
+void vp9_idct16x16_1_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int i, j;
   int a1;
   int16_t out = dct_const_round_shift(input[0] * cospi_16_64);
@@ -874,11 +872,11 @@ void vp9_short_idct16x16_1_add_c(int16_t *input, uint8_t *dest,
   for (j = 0; j < 16; ++j) {
     for (i = 0; i < 16; ++i)
       dest[i] = clip_pixel(dest[i] + a1);
-    dest += dest_stride;
+    dest += stride;
   }
 }
 
-static void idct32_1d(int16_t *input, int16_t *output) {
+static void idct32_1d(const int16_t *input, int16_t *output) {
   int16_t step1[32], step2[32];
   int temp1, temp2;
 
@@ -1245,7 +1243,7 @@ static void idct32_1d(int16_t *input, int16_t *output) {
   output[31] = step1[0] - step1[31];
 }
 
-void vp9_short_idct32x32_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
+void vp9_idct32x32_1024_add_c(const int16_t *input, uint8_t *dest, int stride) {
   int16_t out[32 * 32];
   int16_t *outptr = out;
   int i, j;
@@ -1253,6 +1251,44 @@ void vp9_short_idct32x32_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
 
   // Rows
   for (i = 0; i < 32; ++i) {
+    int16_t zero_coeff[16];
+    for (j = 0; j < 16; ++j)
+      zero_coeff[j] = input[2 * j] | input[2 * j + 1];
+    for (j = 0; j < 8; ++j)
+      zero_coeff[j] = zero_coeff[2 * j] | zero_coeff[2 * j + 1];
+    for (j = 0; j < 4; ++j)
+      zero_coeff[j] = zero_coeff[2 * j] | zero_coeff[2 * j + 1];
+    for (j = 0; j < 2; ++j)
+      zero_coeff[j] = zero_coeff[2 * j] | zero_coeff[2 * j + 1];
+
+    if (zero_coeff[0] | zero_coeff[1])
+      idct32_1d(input, outptr);
+    else
+      vpx_memset(outptr, 0, sizeof(int16_t) * 32);
+    input += 32;
+    outptr += 32;
+  }
+
+  // Columns
+  for (i = 0; i < 32; ++i) {
+    for (j = 0; j < 32; ++j)
+      temp_in[j] = out[j * 32 + i];
+    idct32_1d(temp_in, temp_out);
+    for (j = 0; j < 32; ++j)
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
+                                  + dest[j * stride + i]);
+  }
+}
+
+void vp9_idct32x32_34_add_c(const int16_t *input, uint8_t *dest, int stride) {
+  int16_t out[32 * 32] = {0};
+  int16_t *outptr = out;
+  int i, j;
+  int16_t temp_in[32], temp_out[32];
+
+  // Rows
+  // only upper-left 8x8 has non-zero coeff
+  for (i = 0; i < 8; ++i) {
     idct32_1d(input, outptr);
     input += 32;
     outptr += 32;
@@ -1264,13 +1300,116 @@ void vp9_short_idct32x32_add_c(int16_t *input, uint8_t *dest, int dest_stride) {
       temp_in[j] = out[j * 32 + i];
     idct32_1d(temp_in, temp_out);
     for (j = 0; j < 32; ++j)
-      dest[j * dest_stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
-                                  + dest[j * dest_stride + i]);
+      dest[j * stride + i] = clip_pixel(ROUND_POWER_OF_TWO(temp_out[j], 6)
+                                  + dest[j * stride + i]);
   }
 }
 
-void vp9_short_idct1_32x32_c(int16_t *input, int16_t *output) {
+void vp9_idct32x32_1_add_c(const int16_t *input, uint8_t *dest, int stride) {
+  int i, j;
+  int a1;
+
   int16_t out = dct_const_round_shift(input[0] * cospi_16_64);
   out = dct_const_round_shift(out * cospi_16_64);
-  output[0] = ROUND_POWER_OF_TWO(out, 6);
+  a1 = ROUND_POWER_OF_TWO(out, 6);
+
+  for (j = 0; j < 32; ++j) {
+    for (i = 0; i < 32; ++i)
+      dest[i] = clip_pixel(dest[i] + a1);
+    dest += stride;
+  }
+}
+
+// idct
+void vp9_idct4x4_add(const int16_t *input, uint8_t *dest, int stride, int eob) {
+  if (eob > 1)
+    vp9_idct4x4_16_add(input, dest, stride);
+  else
+    vp9_idct4x4_1_add(input, dest, stride);
+}
+
+
+void vp9_iwht4x4_add(const int16_t *input, uint8_t *dest, int stride, int eob) {
+  if (eob > 1)
+    vp9_iwht4x4_16_add(input, dest, stride);
+  else
+    vp9_iwht4x4_1_add(input, dest, stride);
+}
+
+void vp9_idct8x8_add(const int16_t *input, uint8_t *dest, int stride, int eob) {
+  // If dc is 1, then input[0] is the reconstructed value, do not need
+  // dequantization. Also, when dc is 1, dc is counted in eobs, namely eobs >=1.
+
+  // The calculation can be simplified if there are not many non-zero dct
+  // coefficients. Use eobs to decide what to do.
+  // TODO(yunqingwang): "eobs = 1" case is also handled in vp9_short_idct8x8_c.
+  // Combine that with code here.
+  if (eob) {
+    if (eob == 1)
+      // DC only DCT coefficient
+      vp9_idct8x8_1_add(input, dest, stride);
+    else if (eob <= 10)
+      vp9_idct8x8_10_add(input, dest, stride);
+    else
+      vp9_idct8x8_64_add(input, dest, stride);
+  }
+}
+
+void vp9_idct16x16_add(const int16_t *input, uint8_t *dest, int stride,
+                       int eob) {
+  /* The calculation can be simplified if there are not many non-zero dct
+   * coefficients. Use eobs to separate different cases. */
+  if (eob) {
+    if (eob == 1)
+      /* DC only DCT coefficient. */
+      vp9_idct16x16_1_add(input, dest, stride);
+    else if (eob <= 10)
+      vp9_idct16x16_10_add(input, dest, stride);
+    else
+      vp9_idct16x16_256_add(input, dest, stride);
+  }
+}
+
+void vp9_idct32x32_add(const int16_t *input, uint8_t *dest, int stride,
+                       int eob) {
+  if (eob) {
+    if (eob == 1)
+      vp9_idct32x32_1_add(input, dest, stride);
+    else if (eob <= 34)
+      // non-zero coeff only in upper-left 8x8
+      vp9_idct32x32_34_add(input, dest, stride);
+    else
+      vp9_idct32x32_1024_add(input, dest, stride);
+  }
+}
+
+// iht
+void vp9_iht4x4_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                    int stride, int eob) {
+  if (tx_type == DCT_DCT)
+    vp9_idct4x4_add(input, dest, stride, eob);
+  else
+    vp9_iht4x4_16_add(input, dest, stride, tx_type);
+}
+
+void vp9_iht8x8_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                    int stride, int eob) {
+  if (tx_type == DCT_DCT) {
+    vp9_idct8x8_add(input, dest, stride, eob);
+  } else {
+    if (eob > 0) {
+      vp9_iht8x8_64_add(input, dest, stride, tx_type);
+    }
+  }
+}
+
+void vp9_iht16x16_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                      int stride, int eob) {
+  if (tx_type == DCT_DCT) {
+    vp9_idct16x16_add(input, dest, stride, eob);
+  } else {
+    if (eob > 0) {
+      vp9_iht16x16_256_add(input, dest, stride, tx_type);
+    }
+  }
 }

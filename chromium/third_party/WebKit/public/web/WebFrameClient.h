@@ -31,22 +31,22 @@
 #ifndef WebFrameClient_h
 #define WebFrameClient_h
 
-#include "../platform/WebCommon.h"
-#include "../platform/WebFileSystem.h"
-#include "../platform/WebFileSystemType.h"
-#include "../platform/WebURLError.h"
-#include "../platform/WebURLRequest.h"
 #include "WebDOMMessageEvent.h"
 #include "WebDataSource.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
 #include "WebSecurityOrigin.h"
-#include "WebStorageQuotaType.h"
 #include "WebTextDirection.h"
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebFileSystem.h"
+#include "public/platform/WebFileSystemType.h"
+#include "public/platform/WebStorageQuotaType.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLRequest.h"
 #include <v8.h>
 
-namespace WebKit {
+namespace blink {
 
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
@@ -58,7 +58,8 @@ class WebFormElement;
 class WebFrame;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
-class WebServiceWorkerRegistry;
+class WebServiceWorkerProvider;
+class WebServiceWorkerProviderClient;
 class WebNode;
 class WebPlugin;
 class WebRTCPeerConnectionHandler;
@@ -70,7 +71,7 @@ class WebString;
 class WebURL;
 class WebURLLoader;
 class WebURLResponse;
-class WebWorker;
+class WebWorkerPermissionClientProxy;
 struct WebPluginParams;
 struct WebRect;
 struct WebSize;
@@ -84,15 +85,16 @@ public:
     virtual WebPlugin* createPlugin(WebFrame*, const WebPluginParams&) { return 0; }
 
     // May return null.
-    virtual WebSharedWorker* createSharedWorker(WebFrame*, const WebURL&, const WebString&, unsigned long long) { return 0; }
-
-    // May return null.
     virtual WebMediaPlayer* createMediaPlayer(WebFrame*, const WebURL&, WebMediaPlayerClient*) { return 0; }
 
     // May return null.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebFrame*, WebApplicationCacheHostClient*) { return 0; }
 
-    virtual WebServiceWorkerRegistry* serviceWorkerRegistry(WebFrame*) { return 0; }
+    // May return null. Takes ownership of the client.
+    virtual WebServiceWorkerProvider* createServiceWorkerProvider(WebFrame*, WebServiceWorkerProviderClient*) { return 0; }
+
+    // May return null.
+    virtual WebWorkerPermissionClientProxy* createWorkerPermissionClientProxy(WebFrame*) { return 0; }
 
 
     // Services ------------------------------------------------------------
@@ -110,7 +112,11 @@ public:
     virtual void didAccessInitialDocument(WebFrame*) { }
 
     // A child frame was created in this frame. This is called when the frame
-    // is created and initialized.
+    // is created and initialized. Takes the name of the new frame, the parent
+    // frame and returns a new WebFrame. The WebFrame is considered in-use
+    // until frameDetached() is called on it.
+    virtual WebFrame* createChildFrame(WebFrame* parent, const WebString& frameName) { return 0; }
+    // FIXME: Remove when all embedders use createChildFrame().
     virtual void didCreateFrame(WebFrame* parent, WebFrame* child) { }
 
     // This frame set its opener to null, disowning it.
@@ -126,6 +132,9 @@ public:
 
     // This frame's name has changed.
     virtual void didChangeName(WebFrame*, const WebString&) { }
+
+    // Called when a watched CSS selector matches or stops matching.
+    virtual void didMatchCSS(WebFrame*, const WebVector<WebString>& newlyMatchingSelectors, const WebVector<WebString>& stoppedMatchingSelectors) { }
 
     // Load commands -------------------------------------------------------
 
@@ -231,7 +240,7 @@ public:
         WebFrame*, unsigned identifier, const WebURLResponse&) { }
 
     virtual void didChangeResourcePriority(
-        WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&) { }
+        WebFrame*, unsigned identifier, const blink::WebURLRequest::Priority&) { }
 
     // The resource request given by identifier succeeded.
     virtual void didFinishResourceLoad(
@@ -256,6 +265,9 @@ public:
     // A PingLoader was created, and a request dispatched to a URL.
     virtual void didDispatchPingLoader(WebFrame*, const WebURL&) { }
 
+    // The loaders in this frame have been stopped.
+    virtual void didAbortLoading(WebFrame*) { }
+
     // Script notifications ------------------------------------------------
 
     // Script in the page tried to allocate too much memory.
@@ -270,9 +282,6 @@ public:
     virtual void willReleaseScriptContext(WebFrame*, v8::Handle<v8::Context>, int worldId) { }
 
     // Geometry notifications ----------------------------------------------
-
-    // The frame's document finished the initial layout of a page.
-    virtual void didFirstLayout(WebFrame*) { }
 
     // The frame's document finished the initial non-empty layout of a page.
     virtual void didFirstVisuallyNonEmptyLayout(WebFrame*) { }
@@ -368,6 +377,6 @@ protected:
     ~WebFrameClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

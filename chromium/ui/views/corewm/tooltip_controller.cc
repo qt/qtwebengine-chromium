@@ -6,216 +6,117 @@
 
 #include <vector>
 
-#include "base/command_line.h"
-#include "base/location.h"
-#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
+#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/drag_drop_client.h"
+#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/text_elider.h"
-#include "ui/views/background.h"
-#include "ui/views/border.h"
-#include "ui/views/controls/label.h"
-#include "ui/views/corewm/corewm_switches.h"
-#include "ui/views/widget/widget.h"
-#include "ui/views/widget/widget_observer.h"
+#include "ui/views/corewm/tooltip.h"
+#include "ui/views/widget/tooltip_manager.h"
 
+namespace views {
+namespace corewm {
 namespace {
 
-const SkColor kTooltipBackground = 0xFFFFFFCC;
-const SkColor kTooltipBorder = 0xFF646450;
-const int kTooltipBorderWidth = 1;
-const int kTooltipHorizontalPadding = 3;
-
-// Max visual tooltip width. If a tooltip is greater than this width, it will
-// be wrapped.
-const int kTooltipMaxWidthPixels = 400;
-
-// Maximum number of lines we allow in the tooltip.
-const size_t kMaxLines = 10;
-
-// TODO(derat): This padding is needed on Chrome OS devices but seems excessive
-// when running the same binary on a Linux workstation; presumably there's a
-// difference in font metrics.  Rationalize this.
-const int kTooltipVerticalPadding = 2;
 const int kTooltipTimeoutMs = 500;
 const int kDefaultTooltipShownTimeoutMs = 10000;
 
-// FIXME: get cursor offset from actual cursor size.
-const int kCursorOffsetX = 10;
-const int kCursorOffsetY = 15;
+// Returns true if |target| is a valid window to get the tooltip from.
+// |event_target| is the original target from the event and |target| the window
+// at the same location.
+bool IsValidTarget(aura::Window* event_target, aura::Window* target) {
+  if (!target || (event_target == target))
+    return true;
 
-// Maximum number of characters we allow in a tooltip.
-const size_t kMaxTooltipLength = 1024;
-
-gfx::Font GetDefaultFont() {
-  // TODO(varunjain): implementation duplicated in tooltip_manager_aura. Figure
-  // out a way to merge.
-  return ui::ResourceBundle::GetSharedInstance().GetFont(
-      ui::ResourceBundle::BaseFont);
+  void* event_target_grouping_id = event_target->GetNativeWindowProperty(
+      TooltipManager::kGroupingPropertyKey);
+  void* target_grouping_id = target->GetNativeWindowProperty(
+      TooltipManager::kGroupingPropertyKey);
+  return event_target_grouping_id &&
+      event_target_grouping_id == target_grouping_id;
 }
 
-// Creates a widget of type TYPE_TOOLTIP
-views::Widget* CreateTooltip(aura::Window* tooltip_window) {
-  views::Widget* widget = new views::Widget;
-  views::Widget::InitParams params;
-  // For aura, since we set the type to TOOLTIP_TYPE, the widget will get
-  // auto-parented to the MenuAndTooltipsContainer.
-  params.type = views::Widget::InitParams::TYPE_TOOLTIP;
-  params.context = tooltip_window;
-  DCHECK(params.context);
-  params.keep_on_top = true;
-  params.accept_events = false;
-  widget->Init(params);
-  return widget;
+// Returns the target (the Window tooltip text comes from) based on the event.
+// If a Window other than event.target() is returned, |location| is adjusted
+// to be in the coordinates of the returned Window.
+aura::Window* GetTooltipTarget(const ui::MouseEvent& event,
+                               gfx::Point* location) {
+  switch (event.type()) {
+    case ui::ET_MOUSE_CAPTURE_CHANGED:
+      // On windows we can get a capture changed without an exit. We need to
+      // reset state when this happens else the tooltip may incorrectly show.
+      return NULL;
+    case ui::ET_MOUSE_EXITED:
+      return NULL;
+    case ui::ET_MOUSE_MOVED:
+    case ui::ET_MOUSE_DRAGGED: {
+      aura::Window* event_target = static_cast<aura::Window*>(event.target());
+      if (!event_target)
+        return NULL;
+
+      // If a window other than |event_target| has capture, ignore the event.
+      // This can happen when RootWindow creates events when showing/hiding, or
+      // the system generates an extra event. We have to check
+      // GetGlobalCaptureWindow() as Windows does not use a singleton
+      // CaptureClient.
+      if (!event_target->HasCapture()) {
+        aura::Window* root = event_target->GetRootWindow();
+        if (root) {
+          aura::client::CaptureClient* capture_client =
+              aura::client::GetCaptureClient(root);
+          if (capture_client) {
+            aura::Window* capture_window =
+                capture_client->GetGlobalCaptureWindow();
+            if (capture_window && event_target != capture_window)
+              return NULL;
+          }
+        }
+        return event_target;
+      }
+
+      // If |target| has capture all events go to it, even if the mouse is
+      // really over another window. Find the real window the mouse is over.
+      gfx::Point screen_loc(event.location());
+      aura::client::GetScreenPositionClient(event_target->GetRootWindow())->
+          ConvertPointToScreen(event_target, &screen_loc);
+      gfx::Screen* screen = gfx::Screen::GetScreenFor(event_target);
+      aura::Window* target = screen->GetWindowAtScreenPoint(screen_loc);
+      if (!target)
+        return NULL;
+      gfx::Point target_loc(screen_loc);
+      aura::client::GetScreenPositionClient(target->GetRootWindow())->
+          ConvertPointFromScreen(target, &target_loc);
+      aura::Window* screen_target = target->GetEventHandlerForPoint(target_loc);
+      if (!IsValidTarget(event_target, screen_target))
+        return NULL;
+
+      aura::Window::ConvertPointToTarget(screen_target, target, &target_loc);
+      *location = target_loc;
+      return screen_target;
+    }
+    default:
+      NOTREACHED();
+      break;
+  }
+  return NULL;
 }
 
 }  // namespace
 
-namespace views {
-namespace corewm {
-
-// Displays a widget with tooltip using a views::Label.
-class TooltipController::Tooltip : public views::WidgetObserver {
- public:
-  Tooltip(TooltipController* controller)
-      : controller_(controller),
-        widget_(NULL) {
-    label_.set_background(
-        views::Background::CreateSolidBackground(kTooltipBackground));
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-      label_.set_border(
-          views::Border::CreateSolidBorder(kTooltipBorderWidth,
-                                           kTooltipBorder));
-    }
-    label_.set_owned_by_client();
-    label_.SetMultiLine(true);
-  }
-
-  virtual ~Tooltip() {
-    DestroyWidget();
-  }
-
-  // Updates the text on the tooltip and resizes to fit.
-  void SetText(aura::Window* window,
-               const string16& tooltip_text,
-               const gfx::Point& location) {
-    int max_width, line_count;
-    string16 trimmed_text(tooltip_text);
-    controller_->TrimTooltipToFit(
-        controller_->GetMaxWidth(location), &trimmed_text, &max_width,
-        &line_count);
-    label_.SetText(trimmed_text);
-
-    int width = max_width + 2 * kTooltipHorizontalPadding;
-    int height = label_.GetHeightForWidth(max_width) +
-        2 * kTooltipVerticalPadding;
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-      width += 2 * kTooltipBorderWidth;
-      height += 2 * kTooltipBorderWidth;
-    }
-    GetWidgetForWindow(window);
-    SetTooltipBounds(location, width, height);
-  }
-
-  // Shows the tooltip.
-  void Show() {
-    if (widget_)
-      widget_->Show();
-  }
-
-  // Hides the tooltip.
-  void Hide() {
-    if (widget_)
-      widget_->Hide();
-  }
-
-  bool IsVisible() {
-    return widget_ && widget_->IsVisible();
-  }
-
-  // Overriden from views::WidgetObserver.
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
-    DCHECK_EQ(widget_, widget);
-    widget_ = NULL;
-  }
-
- private:
-  // Adjusts the bounds given by the arguments to fit inside the desktop
-  // and applies the adjusted bounds to the label_.
-  void SetTooltipBounds(const gfx::Point& mouse_pos,
-                        int tooltip_width,
-                        int tooltip_height) {
-    gfx::Rect tooltip_rect(mouse_pos.x(), mouse_pos.y(), tooltip_width,
-                           tooltip_height);
-
-    tooltip_rect.Offset(kCursorOffsetX, kCursorOffsetY);
-    gfx::Rect display_bounds = controller_->GetBoundsForTooltip(mouse_pos);
-
-    // If tooltip is out of bounds on the x axis, we simply shift it
-    // horizontally by the offset.
-    if (tooltip_rect.right() > display_bounds.right()) {
-      int h_offset = tooltip_rect.right() - display_bounds.right();
-      tooltip_rect.Offset(-h_offset, 0);
-    }
-
-    // If tooltip is out of bounds on the y axis, we flip it to appear above the
-    // mouse cursor instead of below.
-    if (tooltip_rect.bottom() > display_bounds.bottom())
-      tooltip_rect.set_y(mouse_pos.y() - tooltip_height);
-
-    tooltip_rect.AdjustToFit(display_bounds);
-    widget_->SetBounds(tooltip_rect);
-  }
-
-  void GetWidgetForWindow(aura::Window* tooltip_window) {
-    if (widget_) {
-      // If the window for which the tooltip is being displayed changes and if
-      // the tooltip window and the tooltip widget belong to different
-      // rootwindows then we need to recreate the tooltip widget under the
-      // active root window hierarchy to get it to display.
-      if (widget_->GetNativeWindow()->GetRootWindow() ==
-          tooltip_window->GetRootWindow())
-        return;
-      DestroyWidget();
-    }
-    widget_ = CreateTooltip(tooltip_window);
-    widget_->SetContentsView(&label_);
-    widget_->AddObserver(this);
-  }
-
-  void DestroyWidget() {
-    if (widget_) {
-      widget_->RemoveObserver(this);
-      widget_->Close();
-      widget_ = NULL;
-    }
-  }
-
-  views::Label label_;
-  TooltipController* controller_;
-  views::Widget* widget_;
-
-  DISALLOW_COPY_AND_ASSIGN(Tooltip);
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 // TooltipController public:
 
-TooltipController::TooltipController(gfx::ScreenType screen_type)
-    : screen_type_(screen_type),
-      tooltip_window_(NULL),
+TooltipController::TooltipController(scoped_ptr<Tooltip> tooltip)
+    : tooltip_window_(NULL),
       tooltip_window_at_mouse_press_(NULL),
-      mouse_pressed_(false),
+      tooltip_(tooltip.Pass()),
       tooltips_enabled_(true) {
   tooltip_timer_.Start(FROM_HERE,
       base::TimeDelta::FromMilliseconds(kTooltipTimeoutMs),
@@ -229,7 +130,7 @@ TooltipController::~TooltipController() {
 
 void TooltipController::UpdateTooltip(aura::Window* target) {
   // If tooltip is visible, we may want to hide it. If it is not, we are ok.
-  if (tooltip_window_ == target && GetTooltip()->IsVisible())
+  if (tooltip_window_ == target && tooltip_->IsVisible())
     UpdateIfRequired();
 
   // If we had stopped the tooltip timer for some reason, we must restart it if
@@ -267,13 +168,13 @@ void TooltipController::OnKeyEvent(ui::KeyEvent* event) {
 }
 
 void TooltipController::OnMouseEvent(ui::MouseEvent* event) {
-  aura::Window* target = static_cast<aura::Window*>(event->target());
   switch (event->type()) {
+    case ui::ET_MOUSE_CAPTURE_CHANGED:
     case ui::ET_MOUSE_EXITED:
-      target = NULL;
-      // Fall through.
     case ui::ET_MOUSE_MOVED:
-    case ui::ET_MOUSE_DRAGGED:
+    case ui::ET_MOUSE_DRAGGED: {
+      curr_mouse_loc_ = event->location();
+      aura::Window* target = GetTooltipTarget(*event, &curr_mouse_loc_);
       if (tooltip_window_ != target) {
         if (tooltip_window_)
           tooltip_window_->RemoveObserver(this);
@@ -281,33 +182,27 @@ void TooltipController::OnMouseEvent(ui::MouseEvent* event) {
         if (tooltip_window_)
           tooltip_window_->AddObserver(this);
       }
-      curr_mouse_loc_ = event->location();
       if (tooltip_timer_.IsRunning())
         tooltip_timer_.Reset();
 
-      if (GetTooltip()->IsVisible())
+      if (tooltip_->IsVisible())
         UpdateIfRequired();
       break;
+    }
     case ui::ET_MOUSE_PRESSED:
       if ((event->flags() & ui::EF_IS_NON_CLIENT) == 0) {
+        aura::Window* target = static_cast<aura::Window*>(event->target());
         // We don't get a release for non-client areas.
-        mouse_pressed_ = true;
         tooltip_window_at_mouse_press_ = target;
         if (target)
           tooltip_text_at_mouse_press_ = aura::client::GetTooltipText(target);
       }
-      GetTooltip()->Hide();
+      tooltip_->Hide();
       break;
-    case ui::ET_MOUSE_RELEASED:
-      mouse_pressed_ = false;
-      break;
-    case ui::ET_MOUSE_CAPTURE_CHANGED:
-      // We will not received a mouse release, so reset mouse pressed state.
-      mouse_pressed_ = false;
     case ui::ET_MOUSEWHEEL:
       // Hide the tooltip for click, release, drag, wheel events.
-      if (GetTooltip()->IsVisible())
-        GetTooltip()->Hide();
+      if (tooltip_->IsVisible())
+        tooltip_->Hide();
       break;
     default:
       break;
@@ -318,22 +213,20 @@ void TooltipController::OnTouchEvent(ui::TouchEvent* event) {
   // TODO(varunjain): need to properly implement tooltips for
   // touch events.
   // Hide the tooltip for touch events.
-  if (GetTooltip()->IsVisible())
-    GetTooltip()->Hide();
+  tooltip_->Hide();
   if (tooltip_window_)
     tooltip_window_->RemoveObserver(this);
   tooltip_window_ = NULL;
 }
 
 void TooltipController::OnCancelMode(ui::CancelModeEvent* event) {
-  if (tooltip_.get() && tooltip_->IsVisible())
-    tooltip_->Hide();
+  tooltip_->Hide();
 }
 
 void TooltipController::OnWindowDestroyed(aura::Window* window) {
   if (tooltip_window_ == window) {
+    tooltip_->Hide();
     tooltip_shown_timeout_map_.erase(tooltip_window_);
-    tooltip_window_->RemoveObserver(this);
     tooltip_window_ = NULL;
   }
 }
@@ -341,118 +234,12 @@ void TooltipController::OnWindowDestroyed(aura::Window* window) {
 ////////////////////////////////////////////////////////////////////////////////
 // TooltipController private:
 
-int TooltipController::GetMaxWidth(const gfx::Point& location) const {
-  // TODO(varunjain): implementation duplicated in tooltip_manager_aura. Figure
-  // out a way to merge.
-  gfx::Rect display_bounds = GetBoundsForTooltip(location);
-  return (display_bounds.width() + 1) / 2;
-}
-
-gfx::Rect TooltipController::GetBoundsForTooltip(
-    const gfx::Point& origin) const {
-  DCHECK(tooltip_window_);
-  gfx::Rect widget_bounds;
-  // For Desktop aura we constrain the tooltip to the bounds of the Widget
-  // (which comes from the RootWindow).
-  if (screen_type_ == gfx::SCREEN_TYPE_NATIVE &&
-      gfx::SCREEN_TYPE_NATIVE != gfx::SCREEN_TYPE_ALTERNATE) {
-    aura::RootWindow* root = tooltip_window_->GetRootWindow();
-    widget_bounds = gfx::Rect(root->GetHostOrigin(), root->GetHostSize());
-  }
-  gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
-  gfx::Rect bounds(screen->GetDisplayNearestPoint(origin).bounds());
-  if (!widget_bounds.IsEmpty())
-    bounds.Intersect(widget_bounds);
-  return bounds;
-}
-
-// static
-void TooltipController::TrimTooltipToFit(int max_width,
-                                         string16* text,
-                                         int* width,
-                                         int* line_count) {
-  *width = 0;
-  *line_count = 0;
-
-  // Clamp the tooltip length to kMaxTooltipLength so that we don't
-  // accidentally DOS the user with a mega tooltip.
-  if (text->length() > kMaxTooltipLength)
-    *text = text->substr(0, kMaxTooltipLength);
-
-  // Determine the available width for the tooltip.
-  int available_width = std::min(kTooltipMaxWidthPixels, max_width);
-
-  std::vector<string16> lines;
-  base::SplitString(*text, '\n', &lines);
-  std::vector<string16> result_lines;
-
-  // Format each line to fit.
-  gfx::Font font = GetDefaultFont();
-  for (std::vector<string16>::iterator l = lines.begin(); l != lines.end();
-      ++l) {
-    // We break the line at word boundaries, then stuff as many words as we can
-    // in the available width to the current line, and move the remaining words
-    // to a new line.
-    std::vector<string16> words;
-    base::SplitStringDontTrim(*l, ' ', &words);
-    int current_width = 0;
-    string16 line;
-    for (std::vector<string16>::iterator w = words.begin(); w != words.end();
-        ++w) {
-      string16 word = *w;
-      if (w + 1 != words.end())
-        word.push_back(' ');
-      int word_width = font.GetStringWidth(word);
-      if (current_width + word_width > available_width) {
-        // Current width will exceed the available width. Must start a new line.
-        if (!line.empty())
-          result_lines.push_back(line);
-        current_width = 0;
-        line.clear();
-      }
-      current_width += word_width;
-      line.append(word);
-    }
-    result_lines.push_back(line);
-  }
-
-  // Clamp number of lines to |kMaxLines|.
-  if (result_lines.size() > kMaxLines) {
-    result_lines.resize(kMaxLines);
-    // Add ellipses character to last line.
-    result_lines[kMaxLines - 1] = gfx::TruncateString(
-        result_lines.back(), result_lines.back().length() - 1);
-  }
-  *line_count = result_lines.size();
-
-  // Flatten the result.
-  string16 result;
-  for (std::vector<string16>::iterator l = result_lines.begin();
-      l != result_lines.end(); ++l) {
-    if (!result.empty())
-      result.push_back('\n');
-    int line_width = font.GetStringWidth(*l);
-    // Since we only break at word boundaries, it could happen that due to some
-    // very long word, line_width is greater than the available_width. In such
-    // case, we simply truncate at available_width and add ellipses at the end.
-    if (line_width > available_width) {
-      *width = available_width;
-      result.append(gfx::ElideText(*l, font, available_width,
-                                   gfx::ELIDE_AT_END));
-    } else {
-      *width = std::max(*width, line_width);
-      result.append(*l);
-    }
-  }
-  *text = result;
-}
-
 void TooltipController::TooltipTimerFired() {
   UpdateIfRequired();
 }
 
 void TooltipController::TooltipShownTimerFired() {
-  GetTooltip()->Hide();
+  tooltip_->Hide();
 
   // Since the user presumably no longer needs the tooltip, we also stop the
   // tooltip timer so that tooltip does not pop back up. We will restart this
@@ -461,9 +248,10 @@ void TooltipController::TooltipShownTimerFired() {
 }
 
 void TooltipController::UpdateIfRequired() {
-  if (!tooltips_enabled_ || mouse_pressed_ || IsDragDropInProgress() ||
-      !IsCursorVisible()) {
-    GetTooltip()->Hide();
+  if (!tooltips_enabled_ ||
+      aura::Env::GetInstance()->IsMouseButtonDown() ||
+      IsDragDropInProgress() || !IsCursorVisible()) {
+    tooltip_->Hide();
     return;
   }
 
@@ -476,45 +264,45 @@ void TooltipController::UpdateIfRequired() {
   if (tooltip_window_at_mouse_press_) {
     if (tooltip_window_ == tooltip_window_at_mouse_press_ &&
         tooltip_text == tooltip_text_at_mouse_press_) {
-      GetTooltip()->Hide();
+      tooltip_->Hide();
       return;
     }
     tooltip_window_at_mouse_press_ = NULL;
   }
 
-  // We add the !GetTooltip()->IsVisible() below because when we come here from
+  // We add the !tooltip_->IsVisible() below because when we come here from
   // TooltipTimerFired(), the tooltip_text may not have changed but we still
   // want to update the tooltip because the timer has fired.
   // If we come here from UpdateTooltip(), we have already checked for tooltip
   // visibility and this check below will have no effect.
-  if (tooltip_text_ != tooltip_text || !GetTooltip()->IsVisible()) {
+  if (tooltip_text_ != tooltip_text || !tooltip_->IsVisible()) {
     tooltip_shown_timer_.Stop();
     tooltip_text_ = tooltip_text;
-    if (tooltip_text_.empty()) {
-      GetTooltip()->Hide();
+    base::string16 trimmed_text(tooltip_text_);
+    views::TooltipManager::TrimTooltipText(&trimmed_text);
+    // If the string consists entirely of whitespace, then don't both showing it
+    // (an empty tooltip is useless).
+    base::string16 whitespace_removed_text;
+    TrimWhitespace(trimmed_text, TRIM_ALL, &whitespace_removed_text);
+    if (whitespace_removed_text.empty()) {
+      tooltip_->Hide();
     } else {
       gfx::Point widget_loc = curr_mouse_loc_ +
           tooltip_window_->GetBoundsInScreen().OffsetFromOrigin();
-      gfx::Rect bounds(GetBoundsForTooltip(widget_loc));
-      if (bounds.IsEmpty()) {
-        tooltip_text_.clear();
-        GetTooltip()->Hide();
-      } else {
-        GetTooltip()->SetText(tooltip_window_, tooltip_text_, widget_loc);
-        GetTooltip()->Show();
-        int timeout = GetTooltipShownTimeout();
-        if (timeout > 0) {
-          tooltip_shown_timer_.Start(FROM_HERE,
-                base::TimeDelta::FromMilliseconds(timeout),
-                this, &TooltipController::TooltipShownTimerFired);
-        }
+      tooltip_->SetText(tooltip_window_, trimmed_text, widget_loc);
+      tooltip_->Show();
+      int timeout = GetTooltipShownTimeout();
+      if (timeout > 0) {
+        tooltip_shown_timer_.Start(FROM_HERE,
+            base::TimeDelta::FromMilliseconds(timeout),
+            this, &TooltipController::TooltipShownTimerFired);
       }
     }
   }
 }
 
 bool TooltipController::IsTooltipVisible() {
-  return GetTooltip()->IsVisible();
+  return tooltip_->IsVisible();
 }
 
 bool TooltipController::IsDragDropInProgress() {
@@ -525,16 +313,10 @@ bool TooltipController::IsDragDropInProgress() {
   return client && client->IsDragDropInProgress();
 }
 
-TooltipController::Tooltip* TooltipController::GetTooltip() {
-  if (!tooltip_.get())
-    tooltip_.reset(new Tooltip(this));
-  return tooltip_.get();
-}
-
 bool TooltipController::IsCursorVisible() {
   if (!tooltip_window_)
     return false;
-  aura::RootWindow* root = tooltip_window_->GetRootWindow();
+  aura::Window* root = tooltip_window_->GetRootWindow();
   if (!root)
     return false;
   aura::client::CursorClient* cursor_client =

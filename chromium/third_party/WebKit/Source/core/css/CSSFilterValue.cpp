@@ -26,8 +26,6 @@
 #include "config.h"
 #include "core/css/CSSFilterValue.h"
 
-#include "core/css/CSSValueList.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -43,7 +41,7 @@ bool CSSFilterValue::typeUsesSpaceSeparator(FilterOperationType operationType)
     return operationType != CustomFilterOperation;
 }
 
-String CSSFilterValue::customCssText() const
+String CSSFilterValue::customCSSText() const
 {
     String result;
     switch (m_type) {
@@ -87,7 +85,7 @@ String CSSFilterValue::customCssText() const
         break;
     }
 
-    return result + CSSValueList::customCssText() + ")";
+    return result + CSSValueList::customCSSText() + ")";
 }
 
 CSSFilterValue::CSSFilterValue(const CSSFilterValue& cloneFrom)

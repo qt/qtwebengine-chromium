@@ -1212,6 +1212,10 @@ _PEPPER_INTERFACES = [
 # valid_args:   A dictionary of argument indices to args to use in unit tests
 #               when they can not be automatically determined.
 # pepper_interface: The pepper interface that is used for this extension
+# pepper_args:  A string representing the argument list (what would appear in
+#               C/C++ between the parentheses for the function declaration)
+#               that the Pepper API expects for this function. Use this only if
+#               the stable Pepper API differs from the GLES2 argument list.
 # invalid_test: False if no invalid test needed.
 # shadowed:     True = the value is shadowed so no glGetXXX call will be made.
 # first_element_only: For PUT types, True if only the first element of an
@@ -1226,7 +1230,12 @@ _FUNCTION_INFO = {
     'client_test': False,
   },
   'AttachShader': {'decoder_func': 'DoAttachShader'},
-  'BindAttribLocation': {'type': 'GLchar', 'bucket': True, 'needs_size': True},
+  'BindAttribLocation': {
+    'type': 'GLchar',
+    'bucket': True,
+    'needs_size': True,
+    'immediate': False,
+  },
   'BindBuffer': {
     'type': 'Bind',
     'decoder_func': 'DoBindBuffer',
@@ -1251,8 +1260,8 @@ _FUNCTION_INFO = {
     # TODO(gman): remove this once client side caching works.
     'client_test': False,
   },
-  'BlitFramebufferEXT': {
-    'decoder_func': 'DoBlitFramebufferEXT',
+  'BlitFramebufferCHROMIUM': {
+    'decoder_func': 'DoBlitFramebufferCHROMIUM',
     'unit_test': False,
     'extension': True,
     'pepper_interface': 'FramebufferBlit',
@@ -1261,13 +1270,14 @@ _FUNCTION_INFO = {
   },
   'BufferData': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'client_test': False,
   },
   'BufferSubData': {
     'type': 'Data',
     'client_test': False,
     'decoder_func': 'DoBufferSubData',
+    'immediate': False,
   },
   'CheckFramebufferStatus': {
     'type': 'Is',
@@ -1326,13 +1336,14 @@ _FUNCTION_INFO = {
   'CompileShader': {'decoder_func': 'DoCompileShader', 'unit_test': False},
   'CompressedTexImage2D': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'bucket': True,
   },
   'CompressedTexSubImage2D': {
     'type': 'Data',
     'bucket': True,
     'decoder_func': 'DoCompressedTexSubImage2D',
+    'immediate': False,
   },
   'CopyTexImage2D': {
     'decoder_func': 'DoCopyTexImage2D',
@@ -1355,7 +1366,7 @@ _FUNCTION_INFO = {
   },
   'DestroyImageCHROMIUM': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'client_test': False,
     'gen_cmd': False,
     'extension': True,
@@ -1555,11 +1566,9 @@ _FUNCTION_INFO = {
     'resource_types': 'Buffers',
   },
   'GenMailboxCHROMIUM': {
-    'type': 'Manual',
-    'cmd_args': 'GLuint bucket_id',
-    'result': ['SizedResult<GLint>'],
-    'client_test': False,
-    'unit_test': False,
+    'type': 'HandWritten',
+    'immediate': False,
+    'impl_func': False,
     'extension': True,
     'chromium': True,
   },
@@ -1621,12 +1630,13 @@ _FUNCTION_INFO = {
   },
   'GetAttribLocation': {
     'type': 'HandWritten',
-    'immediate': True,
+    'immediate': False,
     'bucket': True,
     'needs_size': True,
     'cmd_args':
         'GLidProgram program, const char* name, NonImmediate GLint* location',
     'result': ['GLint'],
+    'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetAttribLocation.xml
   },
   'GetBooleanv': {
     'type': 'GETn',
@@ -1772,12 +1782,13 @@ _FUNCTION_INFO = {
   },
   'GetUniformLocation': {
     'type': 'HandWritten',
-    'immediate': True,
+    'immediate': False,
     'bucket': True,
     'needs_size': True,
     'cmd_args':
         'GLidProgram program, const char* name, NonImmediate GLint* location',
     'result': ['GLint'],
+    'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetUniformLocation.xml
   },
   'GetVertexAttribfv': {
     'type': 'GETn',
@@ -1890,13 +1901,24 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glRenderbufferStorageEXT',
     'expectation': False,
   },
-  'RenderbufferStorageMultisampleEXT': {
-    'decoder_func': 'DoRenderbufferStorageMultisample',
-    'gl_test_func': 'glRenderbufferStorageMultisampleEXT',
+  'RenderbufferStorageMultisampleCHROMIUM': {
+    'cmd_comment':
+        '// GL_CHROMIUM_framebuffer_multisample\n',
+    'decoder_func': 'DoRenderbufferStorageMultisampleCHROMIUM',
+    'gl_test_func': 'glRenderbufferStorageMultisampleCHROMIUM',
     'expectation': False,
     'unit_test': False,
     'extension': True,
     'pepper_interface': 'FramebufferMultisample',
+  },
+  'RenderbufferStorageMultisampleEXT': {
+    'cmd_comment':
+        '// GL_EXT_multisampled_render_to_texture\n',
+    'decoder_func': 'DoRenderbufferStorageMultisampleEXT',
+    'gl_test_func': 'glRenderbufferStorageMultisampleEXT',
+    'expectation': False,
+    'unit_test': False,
+    'extension': True,
   },
   'ReadPixels': {
     'cmd_comment':
@@ -1935,12 +1957,14 @@ _FUNCTION_INFO = {
   },
   'ShaderSource': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'bucket': True,
     'needs_size': True,
     'client_test': False,
     'cmd_args':
         'GLuint shader, const char* data',
+    'pepper_args':
+        'GLuint shader, GLsizei count, const char** str, const GLint* length',
   },
   'StencilMask': {
     'type': 'StateSetFrontBack',
@@ -1963,7 +1987,7 @@ _FUNCTION_INFO = {
   },
   'TexImage2D': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'client_test': False,
   },
   'TexParameterf': {
@@ -1999,7 +2023,7 @@ _FUNCTION_INFO = {
   },
   'TexSubImage2D': {
     'type': 'Manual',
-    'immediate': True,
+    'immediate': False,
     'client_test': False,
     'cmd_args': 'GLenumTextureTarget target, GLint level, '
                 'GLint xoffset, GLint yoffset, '
@@ -2305,28 +2329,34 @@ _FUNCTION_INFO = {
   },
   'BindUniformLocationCHROMIUM': {
     'type': 'GLchar',
+    'extension': True,
     'bucket': True,
     'needs_size': True,
     'gl_test_func': 'DoBindUniformLocationCHROMIUM',
+    'immediate': False,
   },
   'InsertEventMarkerEXT': {
     'type': 'GLcharN',
     'decoder_func': 'DoInsertEventMarkerEXT',
     'expectation': False,
+    'extension': True,
   },
   'PushGroupMarkerEXT': {
     'type': 'GLcharN',
     'decoder_func': 'DoPushGroupMarkerEXT',
     'expectation': False,
+    'extension': True,
   },
   'PopGroupMarkerEXT': {
     'decoder_func': 'DoPopGroupMarkerEXT',
     'expectation': False,
+    'extension': True,
     'impl_func': False,
   },
 
   'GenVertexArraysOES': {
     'type': 'GENn',
+    'extension': True,
     'gl_test_func': 'glGenVertexArraysOES',
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
@@ -2334,6 +2364,7 @@ _FUNCTION_INFO = {
   },
   'BindVertexArrayOES': {
     'type': 'Bind',
+    'extension': True,
     'gl_test_func': 'glBindVertexArrayOES',
     'decoder_func': 'DoBindVertexArrayOES',
     'gen_func': 'GenVertexArraysOES',
@@ -2342,6 +2373,7 @@ _FUNCTION_INFO = {
   },
   'DeleteVertexArraysOES': {
     'type': 'DELn',
+    'extension': True,
     'gl_test_func': 'glDeleteVertexArraysOES',
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
@@ -2349,6 +2381,7 @@ _FUNCTION_INFO = {
   },
   'IsVertexArrayOES': {
     'type': 'Is',
+    'extension': True,
     'gl_test_func': 'glIsVertexArrayOES',
     'decoder_func': 'DoIsVertexArrayOES',
     'expectation': False,
@@ -2443,6 +2476,12 @@ _FUNCTION_INFO = {
     'chromium': True,
   },
   'WaitSyncPointCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': True,
+    'extension': True,
+    'chromium': True,
+  },
+  'DiscardBackbufferCHROMIUM': {
     'type': 'Custom',
     'impl_func': True,
     'extension': True,
@@ -2837,17 +2876,18 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
 
   def WriteHandlerDeferReadWrite(self, func, file):
     """Writes the code to handle deferring reads or writes."""
-    defer_reads = func.GetInfo('defer_reads')
     defer_draws = func.GetInfo('defer_draws')
-    conditions = []
+    defer_reads = func.GetInfo('defer_reads')
+    if defer_draws or defer_reads:
+      file.Write("  error::Error error;\n")
     if defer_draws:
-      conditions.append('ShouldDeferDraws()');
+      file.Write("  error = WillAccessBoundFramebufferForDraw();\n")
+      file.Write("  if (error != error::kNoError)\n")
+      file.Write("    return error;\n")
     if defer_reads:
-      conditions.append('ShouldDeferReads()');
-    if not conditions:
-      return
-    file.Write("  if (%s)\n" % ' || '.join(conditions))
-    file.Write("    return error::kDeferCommandUntilLater;\n")
+      file.Write("  error = WillAccessBoundFramebufferForRead();\n")
+      file.Write("  if (error != error::kNoError)\n")
+      file.Write("    return error;\n")
 
   def WriteValidUnitTest(self, func, file, test, extra = {}):
     """Writes a valid unit test."""
@@ -3583,10 +3623,7 @@ class ManualHandler(CustomHandler):
   def WriteImmediateCmdGetTotalSize(self, func, file):
     """Overrriden from TypeHandler."""
     # TODO(gman): Move this data to _FUNCTION_INFO?
-    if func.name == 'ShaderSourceImmediate':
-      file.Write("    uint32 total_size = ComputeSize(_data_size);\n")
-    else:
-      CustomHandler.WriteImmediateCmdGetTotalSize(self, func, file)
+    CustomHandler.WriteImmediateCmdGetTotalSize(self, func, file)
 
 
 class DataHandler(TypeHandler):
@@ -3629,39 +3666,10 @@ class DataHandler(TypeHandler):
 
   def WriteImmediateCmdGetTotalSize(self, func, file):
     """Overrriden from TypeHandler."""
-    # TODO(gman): Move this data to _FUNCTION_INFO?
-    if func.name == 'BufferDataImmediate':
-      file.Write("    uint32 total_size = ComputeSize(_size);\n")
-    elif func.name == 'BufferSubDataImmediate':
-        file.Write("    uint32 total_size = ComputeSize(_size);\n")
-    elif func.name == 'CompressedTexImage2DImmediate':
-        file.Write("    uint32 total_size = ComputeSize(_imageSize);\n")
-    elif func.name == 'CompressedTexSubImage2DImmediate':
-        file.Write("    uint32 total_size = ComputeSize(_imageSize);\n")
-    elif func.name == 'TexImage2DImmediate':
-      file.Write(
-          "    uint32 total_size = 0;  // TODO(gman): get correct size\n")
-    elif func.name == 'TexSubImage2DImmediate':
-      file.Write(
-          "    uint32 total_size = 0;  // TODO(gman): get correct size\n")
+    pass
 
   def WriteImmediateCmdSizeTest(self, func, file):
     """Overrriden from TypeHandler."""
-    # TODO(gman): Move this data to _FUNCTION_INFO?
-    if func.name == 'BufferDataImmediate':
-      file.Write("    uint32 total_size = cmd.ComputeSize(cmd.size);\n")
-    elif func.name == 'BufferSubDataImmediate':
-        file.Write("    uint32 total_size = cmd.ComputeSize(cmd.size);\n")
-    elif func.name == 'CompressedTexImage2DImmediate':
-        file.Write("    uint32 total_size = cmd.ComputeSize(cmd.imageSize);\n")
-    elif func.name == 'CompressedTexSubImage2DImmediate':
-        file.Write("    uint32 total_size = cmd.ComputeSize(cmd.imageSize);\n")
-    elif func.name == 'TexImage2DImmediate':
-      file.Write(
-          "    uint32 total_size = 0;  // TODO(gman): get correct size\n")
-    elif func.name == 'TexSubImage2DImmediate':
-      file.Write(
-          "    uint32 total_size = 0;  // TODO(gman): get correct size\n")
     file.Write("  EXPECT_EQ(sizeof(cmd), total_size);\n")
 
   def WriteImmediateCmdInit(self, func, file):
@@ -4361,7 +4369,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs) {
 """ % func.GetOriginalArgs()[1].name)
       file.Write("""  GPU_CLIENT_DCHECK_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
-      GPU_DCHECK(%s[i] != 0);
+      DCHECK(%s[i] != 0);
     }
   });
 """ % func.GetOriginalArgs()[1].name)
@@ -6394,7 +6402,7 @@ class Function(object):
     """Gets the last original argument to this function."""
     return self.original_args[len(self.original_args) - 1]
 
-  def __GetArgList(self, arg_string, add_comma):
+  def __MaybePrependComma(self, arg_string, add_comma):
     """Adds a comma if arg_string is not empty and add_comma is true."""
     comma = ""
     if add_comma and len(arg_string):
@@ -6402,46 +6410,53 @@ class Function(object):
     return "%s%s" % (comma, arg_string)
 
   def MakeTypedOriginalArgString(self, prefix, add_comma = False):
-    """Gets a list of arguments as they arg in GL."""
+    """Gets a list of arguments as they are in GL."""
     args = self.GetOriginalArgs()
     arg_string = ", ".join(
         ["%s %s%s" % (arg.type, prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
 
   def MakeOriginalArgString(self, prefix, add_comma = False, separator = ", "):
     """Gets the list of arguments as they are in GL."""
     args = self.GetOriginalArgs()
     arg_string = separator.join(
         ["%s%s" % (prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
+
+  def MakeTypedPepperArgString(self, prefix):
+    """Gets a list of arguments as they need to be for Pepper."""
+    if self.GetInfo("pepper_args"):
+      return self.GetInfo("pepper_args")
+    else:
+      return self.MakeTypedOriginalArgString(prefix, False)
 
   def MakeTypedCmdArgString(self, prefix, add_comma = False):
     """Gets a typed list of arguments as they need to be for command buffers."""
     args = self.GetCmdArgs()
     arg_string = ", ".join(
         ["%s %s%s" % (arg.type, prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
 
   def MakeCmdArgString(self, prefix, add_comma = False):
     """Gets the list of arguments as they need to be for command buffers."""
     args = self.GetCmdArgs()
     arg_string = ", ".join(
         ["%s%s" % (prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
 
   def MakeTypedInitString(self, prefix, add_comma = False):
     """Gets a typed list of arguments as they need to be for cmd Init/Set."""
     args = self.GetInitArgs()
     arg_string = ", ".join(
         ["%s %s%s" % (arg.type, prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
 
   def MakeInitString(self, prefix, add_comma = False):
     """Gets the list of arguments as they need to be for cmd Init/Set."""
     args = self.GetInitArgs()
     arg_string = ", ".join(
         ["%s%s" % (prefix, arg.name) for arg in args])
-    return self.__GetArgList(arg_string, add_comma)
+    return self.__MaybePrependComma(arg_string, add_comma)
 
   def MakeLogArgString(self):
     """Makes a string of the arguments for the LOG macros"""
@@ -7167,7 +7182,7 @@ void ContextState::InitState() const {
       file.Write("    case GL_%s:\n" % capability['name'].upper())
       file.Write("      return enable_flags.%s;\n" % capability['name'])
     file.Write("""    default:
-      GPU_NOTREACHED();
+      NOTREACHED();
       return false;
   }
 }
@@ -7593,7 +7608,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
         if not func.InPepperInterface(interface):
           continue
 
-        original_arg = func.MakeTypedOriginalArgString("")
+        original_arg = func.MakeTypedPepperArgString("")
         context_arg = "PP_Resource context"
         if len(original_arg):
           arg = context_arg + ", " + original_arg
@@ -7621,31 +7636,49 @@ const size_t GLES2Util::enum_to_string_table_len_ =
     file.Write("namespace ppapi {\n\n")
     file.Write("namespace {\n\n")
 
-    file.Write("gpu::gles2::GLES2Implementation*"
-               " GetGLES(PP_Resource context) {\n")
-    file.Write("  thunk::EnterResource<thunk::PPB_Graphics3D_API>"
-               " enter_g3d(context, false);\n")
-    file.Write("  DCHECK(enter_g3d.succeeded());\n")
-    file.Write("  return static_cast<PPB_Graphics3D_Shared*>"
-               "(enter_g3d.object())->gles2_impl();\n")
-    file.Write("}\n\n")
+    file.Write("typedef thunk::EnterResource<thunk::PPB_Graphics3D_API>"
+               " Enter3D;\n\n")
+
+    file.Write("gpu::gles2::GLES2Implementation* ToGles2Impl(Enter3D*"
+               " enter) {\n")
+    file.Write("  DCHECK(enter);\n")
+    file.Write("  DCHECK(enter->succeeded());\n")
+    file.Write("  return static_cast<PPB_Graphics3D_Shared*>(enter->object())->"
+               "gles2_impl();\n");
+    file.Write("}\n\n");
 
     for func in self.original_functions:
       if not func.InAnyPepperExtension():
         continue
 
-      original_arg = func.MakeTypedOriginalArgString("")
+      original_arg = func.MakeTypedPepperArgString("")
       context_arg = "PP_Resource context_id"
       if len(original_arg):
         arg = context_arg + ", " + original_arg
       else:
         arg = context_arg
       file.Write("%s %s(%s) {\n" % (func.return_type, func.name, arg))
+      file.Write("  Enter3D enter(context_id, true);\n")
+      file.Write("  if (enter.succeeded()) {\n")
 
       return_str = "" if func.return_type == "void" else "return "
-      file.Write("  %sGetGLES(context_id)->%s(%s);\n" %
+      file.Write("    %sToGles2Impl(&enter)->%s(%s);\n" %
                  (return_str, func.original_name,
                   func.MakeOriginalArgString("")))
+      file.Write("  }")
+      if func.return_type == "void":
+        file.Write("\n")
+      else:
+        file.Write(" else {\n")
+        error_return = "0"
+        if func.GetInfo("error_return"):
+          error_return = func.GetInfo("error_return")
+        elif func.return_type == "GLboolean":
+          error_return = "GL_FALSE"
+        elif "*" in func.return_type:
+          error_return = "NULL"
+        file.Write("    return %s;\n" % error_return)
+        file.Write("  }\n")
       file.Write("}\n\n")
 
     file.Write("}  // namespace\n")

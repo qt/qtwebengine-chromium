@@ -34,8 +34,8 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventSender.h"
+#include "core/events/Event.h"
+#include "core/events/EventSender.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchRequest.h"
@@ -43,9 +43,9 @@
 #include "core/html/LinkImport.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -54,25 +54,24 @@ using namespace HTMLNames;
 
 static LinkEventSender& linkLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (eventNames().loadEvent));
+    DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (EventTypeNames::load));
     return sharedLoadEventSender;
 }
 
-inline HTMLLinkElement::HTMLLinkElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : HTMLElement(tagName, document)
+inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser)
+    : HTMLElement(linkTag, document)
     , m_linkLoader(this)
     , m_sizes(DOMSettableTokenList::create())
     , m_createdByParser(createdByParser)
     , m_isInShadowTree(false)
     , m_beforeLoadRecurseCount(0)
 {
-    ASSERT(hasTagName(linkTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLinkElement> HTMLLinkElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<HTMLLinkElement> HTMLLinkElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLLinkElement(tagName, document, createdByParser));
+    return adoptRef(new HTMLLinkElement(document, createdByParser));
 }
 
 HTMLLinkElement::~HTMLLinkElement()
@@ -96,7 +95,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         m_type = value;
         process();
     } else if (name == sizesAttr) {
-        setSizes(value);
+        m_sizes->setValue(value);
         process();
     } else if (name == mediaAttr) {
         m_media = value.string().lower();
@@ -105,7 +104,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         if (LinkStyle* link = linkStyle())
             link->setDisabledState(!value.isNull());
     } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else {
         if (name == titleAttr) {
             if (LinkStyle* link = linkStyle())
@@ -119,13 +118,13 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
 bool HTMLLinkElement::shouldLoadLink()
 {
     bool continueLoad = true;
-    RefPtr<Document> originalDocument = &document();
+    RefPtr<Document> originalDocument(document());
     int recursionRank = ++m_beforeLoadRecurseCount;
     if (!dispatchBeforeLoadEvent(getNonEmptyURLAttribute(hrefAttr)))
         continueLoad = false;
 
     // A beforeload handler might have removed us from the document or changed the document.
-    if (continueLoad && (!inDocument() || &document() != originalDocument))
+    if (continueLoad && (!inDocument() || document() != originalDocument))
         continueLoad = false;
 
     // If the beforeload handler recurses into the link element by mutating it, we should only
@@ -151,7 +150,7 @@ LinkResource* HTMLLinkElement::linkResourceToProcess()
         if (m_relAttribute.isImport() && RuntimeEnabledFeatures::htmlImportsEnabled())
             m_link = LinkImport::create(this);
         else {
-            RefPtr<LinkStyle> link = LinkStyle::create(this);
+            OwnPtr<LinkStyle> link = LinkStyle::create(this);
             if (fastHasAttribute(disabledAttr))
                 link->setDisabledState(true);
             m_link = link.release();
@@ -178,7 +177,7 @@ LinkImport* HTMLLinkElement::linkImport() const
 Document* HTMLLinkElement::import() const
 {
     if (LinkImport* link = linkImport())
-        return linkImport()->importedDocument();
+        return link->importedDocument();
     return 0;
 }
 
@@ -223,8 +222,7 @@ void HTMLLinkElement::removedFrom(ContainerNode* insertionPoint)
     if (m_link)
         m_link->ownerRemoved();
 
-    if (document().renderer())
-        document().removedStyleSheet(removedSheet.get());
+    document().removedStyleSheet(removedSheet.get());
 }
 
 void HTMLLinkElement::finishParsingChildren()
@@ -240,32 +238,32 @@ bool HTMLLinkElement::styleSheetIsLoading() const
 
 void HTMLLinkElement::linkLoaded()
 {
-    dispatchEvent(Event::create(eventNames().loadEvent));
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
 void HTMLLinkElement::linkLoadingErrored()
 {
-    dispatchEvent(Event::create(eventNames().errorEvent));
+    dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void HTMLLinkElement::didStartLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstartEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderstart));
 }
 
 void HTMLLinkElement::didStopLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstopEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderstop));
 }
 
 void HTMLLinkElement::didSendLoadForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderloadEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderload));
 }
 
 void HTMLLinkElement::didSendDOMContentLoadedForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderdomcontentloadedEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderdomcontentloaded));
 }
 
 bool HTMLLinkElement::sheetLoaded()
@@ -316,7 +314,7 @@ KURL HTMLLinkElement::href() const
     return document().completeURL(getAttribute(hrefAttr));
 }
 
-String HTMLLinkElement::rel() const
+const AtomicString& HTMLLinkElement::rel() const
 {
     return getAttribute(relAttr);
 }
@@ -326,7 +324,7 @@ String HTMLLinkElement::target() const
     return getAttribute(targetAttr);
 }
 
-String HTMLLinkElement::type() const
+const AtomicString& HTMLLinkElement::type() const
 {
     return getAttribute(typeAttr);
 }
@@ -365,15 +363,9 @@ DOMSettableTokenList* HTMLLinkElement::sizes() const
     return m_sizes.get();
 }
 
-void HTMLLinkElement::setSizes(const String& value)
+PassOwnPtr<LinkStyle> LinkStyle::create(HTMLLinkElement* owner)
 {
-    m_sizes->setValue(value);
-}
-
-
-PassRefPtr<LinkStyle> LinkStyle::create(HTMLLinkElement* owner)
-{
-    return adoptRef(new LinkStyle(owner));
+    return adoptPtr(new LinkStyle(owner));
 }
 
 LinkStyle::LinkStyle(HTMLLinkElement* owner)
@@ -390,9 +382,6 @@ LinkStyle::~LinkStyle()
 {
     if (m_sheet)
         m_sheet->clearOwnerNode();
-
-    if (m_resource)
-        m_resource->removeClient(this);
 }
 
 Document& LinkStyle::document()
@@ -578,31 +567,31 @@ void LinkStyle::process()
         if (!document().contentSecurityPolicy()->allowImageFromSource(builder.url()))
             return;
         if (document().frame())
-            document().frame()->loader()->client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
+            document().frame()->loader().client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
     }
 
     if (!m_owner->loadLink(type, builder.url()))
         return;
 
     if ((m_disabledState != Disabled) && m_owner->relAttribute().isStyleSheet()
-        && document().frame() && builder.url().isValid()) {
+        && shouldLoadResource() && builder.url().isValid()) {
 
-        if (m_resource) {
+        if (resource()) {
             removePendingSheet();
-            m_resource->removeClient(this);
-            m_resource = 0;
+            clearResource();
         }
 
         if (!m_owner->shouldLoadLink())
             return;
 
+        Frame* frame = loadingFrame();
         m_loading = true;
 
         bool mediaQueryMatches = true;
         if (!m_owner->media().isEmpty()) {
             RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(document());
             RefPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
-            MediaQueryEvaluator evaluator(document().frame()->view()->mediaType(), document().frame(), documentStyle.get());
+            MediaQueryEvaluator evaluator(frame->view()->mediaType(), frame, documentStyle.get());
             mediaQueryMatches = evaluator.eval(media.get());
         }
 
@@ -613,11 +602,9 @@ void LinkStyle::process()
 
         // Load stylesheets that are not needed for the rendering immediately with low priority.
         FetchRequest request = builder.build(blocking);
-        m_resource = document().fetcher()->fetchCSSStyleSheet(request);
+        setResource(document().fetcher()->fetchCSSStyleSheet(request));
 
-        if (m_resource)
-            m_resource->addClient(this);
-        else {
+        if (!resource()) {
             // The request may have been denied if (for example) the stylesheet is local and the document is remote.
             m_loading = false;
             removePendingSheet();

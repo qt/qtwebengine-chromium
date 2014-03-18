@@ -26,7 +26,7 @@
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 
 namespace WebCore {
@@ -75,16 +75,16 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver)
     , m_textAlignLast(RenderStyle::initialTextAlignLast())
+    , m_textJustify(RenderStyle::initialTextJustify())
     , m_textOrientation(TextOrientationVerticalRight)
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
     , m_imageRendering(RenderStyle::initialImageRendering())
     , m_lineSnap(RenderStyle::initialLineSnap())
     , m_lineAlign(RenderStyle::initialLineAlign())
-#if ENABLE(CSS3_TEXT)
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
-#endif // CSS3_TEXT
     , m_rubyPosition(RenderStyle::initialRubyPosition())
+    , m_touchActionDelay(RenderStyle::initialTouchActionDelay())
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
@@ -105,7 +105,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , visitedLinkTextStrokeColor(o.visitedLinkTextStrokeColor)
     , visitedLinkTextFillColor(o.visitedLinkTextFillColor)
     , visitedLinkTextEmphasisColor(o.visitedLinkTextEmphasisColor)
-    , textShadow(cloneShadow(o.textShadow))
+    , textShadow(o.textShadow)
     , highlight(o.highlight)
     , cursorData(o.cursorData)
     , indent(o.indent)
@@ -127,16 +127,16 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisMark(o.textEmphasisMark)
     , textEmphasisPosition(o.textEmphasisPosition)
     , m_textAlignLast(o.m_textAlignLast)
+    , m_textJustify(o.m_textJustify)
     , m_textOrientation(o.m_textOrientation)
     , m_textIndentLine(o.m_textIndentLine)
     , m_lineBoxContain(o.m_lineBoxContain)
     , m_imageRendering(o.m_imageRendering)
     , m_lineSnap(o.m_lineSnap)
     , m_lineAlign(o.m_lineAlign)
-#if ENABLE(CSS3_TEXT)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
-#endif // CSS3_TEXT
     , m_rubyPosition(o.m_rubyPosition)
+    , m_touchActionDelay(o.m_touchActionDelay)
     , hyphenationString(o.hyphenationString)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
@@ -197,7 +197,9 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textEmphasisFill == o.textEmphasisFill
         && textEmphasisMark == o.textEmphasisMark
         && textEmphasisPosition == o.textEmphasisPosition
+        && m_touchActionDelay == o.m_touchActionDelay
         && m_textAlignLast == o.m_textAlignLast
+        && m_textJustify == o.m_textJustify
         && m_textOrientation == o.m_textOrientation
         && m_textIndentLine == o.m_textIndentLine
         && m_lineBoxContain == o.m_lineBoxContain
@@ -208,9 +210,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_tabSize == o.m_tabSize
         && m_lineGrid == o.m_lineGrid
         && m_imageRendering == o.m_imageRendering
-#if ENABLE(CSS3_TEXT)
         && m_textUnderlinePosition == o.m_textUnderlinePosition
-#endif // CSS3_TEXT
         && m_rubyPosition == o.m_rubyPosition
         && m_lineSnap == o.m_lineSnap
         && m_variables == o.m_variables

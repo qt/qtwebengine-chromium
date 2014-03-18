@@ -16,15 +16,17 @@ class BoxF;
 
 namespace cc {
 
+class ColorAnimationCurve;
 class FilterAnimationCurve;
 class FloatAnimationCurve;
+class ScrollOffsetAnimationCurve;
 class TransformAnimationCurve;
 class TransformOperations;
 
 // An animation curve is a function that returns a value given a time.
 class CC_EXPORT AnimationCurve {
  public:
-  enum CurveType { Float, Transform, Filter };
+  enum CurveType { Color, Float, Transform, Filter, ScrollOffset };
 
   virtual ~AnimationCurve() {}
 
@@ -32,9 +34,23 @@ class CC_EXPORT AnimationCurve {
   virtual CurveType Type() const = 0;
   virtual scoped_ptr<AnimationCurve> Clone() const = 0;
 
+  const ColorAnimationCurve* ToColorAnimationCurve() const;
   const FloatAnimationCurve* ToFloatAnimationCurve() const;
   const TransformAnimationCurve* ToTransformAnimationCurve() const;
   const FilterAnimationCurve* ToFilterAnimationCurve() const;
+  const ScrollOffsetAnimationCurve* ToScrollOffsetAnimationCurve() const;
+
+  ScrollOffsetAnimationCurve* ToScrollOffsetAnimationCurve();
+};
+
+class CC_EXPORT ColorAnimationCurve : public AnimationCurve {
+ public:
+  virtual ~ColorAnimationCurve() {}
+
+  virtual SkColor GetValue(double t) const = 0;
+
+  // Partial Animation implementation.
+  virtual CurveType Type() const OVERRIDE;
 };
 
 class CC_EXPORT FloatAnimationCurve : public AnimationCurve {

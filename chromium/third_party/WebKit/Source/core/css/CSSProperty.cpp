@@ -39,7 +39,8 @@ CSSPropertyID StylePropertyMetadata::shorthandID() const
     if (!m_isSetFromShorthand)
         return CSSPropertyInvalid;
 
-    const Vector<StylePropertyShorthand> shorthands = matchingShorthandsForLonghand(static_cast<CSSPropertyID>(m_propertyID));
+    Vector<StylePropertyShorthand, 4> shorthands;
+    getMatchingShorthandsForLonghand(static_cast<CSSPropertyID>(m_propertyID), &shorthands);
     ASSERT(shorthands.size() && m_indexInShorthandsVector >= 0 && m_indexInShorthandsVector < shorthands.size());
     return shorthands.at(m_indexInShorthandsVector).id();
 }
@@ -309,11 +310,13 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyTabSize:
     case CSSPropertyTextAlign:
     case CSSPropertyTextAlignLast:
+    case CSSPropertyTextJustify:
     case CSSPropertyTextAnchor:
     case CSSPropertyTextIndent:
     case CSSPropertyTextRendering:
     case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
+    case CSSPropertyTouchActionDelay:
     case CSSPropertyVariable:
     case CSSPropertyVisibility:
     case CSSPropertyWebkitAspectRatio:
@@ -321,7 +324,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBorderVerticalSpacing:
     case CSSPropertyWebkitBoxDirection:
     case CSSPropertyWebkitFontFeatureSettings:
-    case CSSPropertyWebkitFontKerning:
+    case CSSPropertyFontKerning:
     case CSSPropertyWebkitFontSmoothing:
     case CSSPropertyWebkitFontVariantLigatures:
     case CSSPropertyWebkitLocale:
@@ -337,9 +340,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitRubyPosition:
     case CSSPropertyWebkitTapHighlightColor:
     case CSSPropertyWebkitTextCombine:
-#if ENABLE(CSS3_TEXT)
-    case CSSPropertyWebkitTextUnderlinePosition:
-#endif // CSS3_TEXT
+    case CSSPropertyTextUnderlinePosition:
     case CSSPropertyWebkitTextDecorationsInEffect:
     case CSSPropertyWebkitTextEmphasis:
     case CSSPropertyWebkitTextEmphasisColor:
@@ -557,12 +558,14 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBoxPack:
     case CSSPropertyWebkitBoxReflect:
     case CSSPropertyWebkitBoxShadow:
+    case CSSPropertyInternalCallback:
     case CSSPropertyWebkitClipPath:
     case CSSPropertyWebkitColumnAxis:
     case CSSPropertyWebkitColumnBreakAfter:
     case CSSPropertyWebkitColumnBreakBefore:
     case CSSPropertyWebkitColumnBreakInside:
     case CSSPropertyWebkitColumnCount:
+    case CSSPropertyColumnFill:
     case CSSPropertyWebkitColumnGap:
     case CSSPropertyWebkitColumnProgression:
     case CSSPropertyWebkitColumnRule:
@@ -662,10 +665,11 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitRegionBreakInside:
     case CSSPropertyWebkitRegionFragment:
     case CSSPropertyWebkitWrapFlow:
-    case CSSPropertyWebkitShapeMargin:
-    case CSSPropertyWebkitShapePadding:
-    case CSSPropertyWebkitShapeInside:
-    case CSSPropertyWebkitShapeOutside:
+    case CSSPropertyShapeMargin:
+    case CSSPropertyShapeImageThreshold:
+    case CSSPropertyShapePadding:
+    case CSSPropertyShapeInside:
+    case CSSPropertyShapeOutside:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitAppRegion:
     case CSSPropertyWidth:

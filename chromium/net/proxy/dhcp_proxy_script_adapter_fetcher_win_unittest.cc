@@ -5,9 +5,9 @@
 #include "net/proxy/dhcp_proxy_script_adapter_fetcher_win.h"
 
 #include "base/synchronization/waitable_event.h"
-#include "base/test/perftimer.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/timer/timer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -72,7 +72,7 @@ class MockDhcpProxyScriptAdapterFetcher
 
     std::string ImplGetPacURLFromDhcp(
         const std::string& adapter_name) OVERRIDE {
-      PerfTimer timer;
+      base::ElapsedTimer timer;
       test_finished_event_.TimedWait(dhcp_delay_);
       return configured_url_;
     }
@@ -198,7 +198,7 @@ TEST(DhcpProxyScriptAdapterFetcher, TimeoutDuringDhcp) {
   client.fetcher_->dhcp_delay_ = TestTimeouts::action_max_timeout();
   client.fetcher_->timeout_ = base::TimeDelta::FromMilliseconds(25);
 
-  PerfTimer timer;
+  base::ElapsedTimer timer;
   client.RunTest();
   // An error different from this would be received if the timeout didn't
   // kick in.
@@ -309,6 +309,29 @@ TEST(DhcpProxyScriptAdapterFetcher, MockDhcpRealFetch) {
   EXPECT_EQ(configured_url,
             client.fetcher_->GetPacURL());
 }
+
+#define BASE_URL "http://corpserver/proxy.pac"
+
+TEST(DhcpProxyScriptAdapterFetcher, SanitizeDhcpApiString) {
+  const size_t kBaseUrlLen = strlen(BASE_URL);
+
+  // Default case.
+  EXPECT_EQ(BASE_URL,
+            DhcpProxyScriptAdapterFetcher::SanitizeDhcpApiString(
+                BASE_URL, kBaseUrlLen));
+
+  // Trailing \n and no null-termination.
+  EXPECT_EQ(BASE_URL,
+            DhcpProxyScriptAdapterFetcher::SanitizeDhcpApiString(
+                BASE_URL "\nblablabla", kBaseUrlLen + 1));
+
+  // Embedded NULLs.
+  EXPECT_EQ(BASE_URL,
+            DhcpProxyScriptAdapterFetcher::SanitizeDhcpApiString(
+                BASE_URL "\0foo\0blat", kBaseUrlLen + 9));
+}
+
+#undef BASE_URL
 
 }  // namespace
 

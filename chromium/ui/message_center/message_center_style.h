@@ -15,42 +15,61 @@ namespace message_center {
 // Exported values /////////////////////////////////////////////////////////////
 
 // Square image sizes in DIPs.
-MESSAGE_CENTER_EXPORT extern const int kNotificationButtonIconSize;
-MESSAGE_CENTER_EXPORT extern const int kNotificationIconSize;
-MESSAGE_CENTER_EXPORT extern const int kNotificationPreferredImageSize;
-MESSAGE_CENTER_EXPORT extern const float kNotificationPreferredImageRatio;
-MESSAGE_CENTER_EXPORT extern const int kSettingsIconSize;
+const int kNotificationButtonIconSize = 16;
+const int kNotificationIconSize = 80;
+// A border is applied to images that have a non-preferred aspect ratio.
+const int kNotificationImageBorderSize = 10;
+const int kNotificationPreferredImageWidth = 360;
+const int kNotificationPreferredImageHeight = 240;
+const int kSettingsIconSize = 16;
 
 // Limits.
-MESSAGE_CENTER_EXPORT extern const size_t kMaxVisiblePopupNotifications;
-MESSAGE_CENTER_EXPORT extern const size_t kMaxVisibleMessageCenterNotifications;
+const size_t kMaxVisibleMessageCenterNotifications = 100;
+const size_t kMaxVisiblePopupNotifications = 3;
 
-// DIP dimension
-MESSAGE_CENTER_EXPORT extern const int kNotificationWidth;  // H size of the
-                                                            // whole card.
+// DIP dimension; H size of the whole card.
+const int kNotificationWidth = 360;
 
 // Colors.
 MESSAGE_CENTER_EXPORT extern const SkColor kMessageCenterBorderColor;
 MESSAGE_CENTER_EXPORT extern const SkColor kMessageCenterShadowColor;
 
+// Settings dialog constants.
+namespace settings {
+
+const SkColor kEntrySeparatorColor = SkColorSetARGB(0.1 * 255, 0, 0, 0);
+const int kEntryHeight = 45;
+const int kEntrySeparatorHeight = 1;
+const int kHorizontalMargin = 10;
+const int kTopMargin = 20;
+const int kTitleToDescriptionSpace = 20;
+const int kEntryIconSize = 16;
+const int kDescriptionToSwitcherSpace = 15;
+const int kInternalHorizontalSpacing = 10;
+const int kCheckboxSizeWithPadding = 24;
+
+}  // namespace settings
+
 // Within a notification ///////////////////////////////////////////////////////
 
 // DIP dimensions (H = horizontal, V = vertical).
-extern const int kControlButtonSize;  // Square size of close & expand buttons.
-extern const int kIconToTextPadding;  // H space between icon & title/message.
-extern const int kTextTopPadding;     // V space between text elements.
-extern const int kIconBottomPadding;  // Minimum non-zero V space between icon
-                                      // and frame.
+
+const int kControlButtonSize = 29;  // Square size of close & expand buttons.
+const int kIconToTextPadding = 16;  // H space between icon & title/message.
+const int kTextTopPadding = 12;     // V space between text elements.
+const int kIconBottomPadding = 16;  // Minimum non-zero V space between icon
+                                    // and frame.
 
 // Text sizes.
-extern const int kTitleFontSize;             // For title only.
-extern const int kTitleLineHeight;           // In DIPs.
-extern const int kMessageFontSize;           // For everything but title.
-extern const int kMessageLineHeight;         // In DIPs.
+const int kTitleFontSize = 14;             // For title only.
+const int kTitleLineHeight = 20;           // In DIPs.
+const int kMessageFontSize = 12;           // For everything but title.
+const int kMessageLineHeight = 18;         // In DIPs.
 
 // Colors.
 extern const SkColor kNotificationBackgroundColor; // Background of the card.
-extern const SkColor kLegacyIconBackgroundColor;   // Used behind icons smaller.
+extern const SkColor kImageBackgroundColor;        // Background of the image.
+extern const SkColor kIconBackgroundColor;         // Used behind icons smaller
                                                    // than the icon view.
 extern const SkColor kRegularTextColor;            // Title, message, ...
 extern const SkColor kDimTextColor;
@@ -89,16 +108,16 @@ const SkColor kProgressBarSliceColor = SkColorSetRGB(120, 120, 120);
 
 // Line limits.
 const int kTitleLineLimit = 3;
-const int kMessageCollapsedLineLimit = 3;
+const int kExperimentalTitleLineLimit = 1;
+const int kMessageCollapsedLineLimit = 2;
 const int kMessageExpandedLineLimit = 7;
 const int kContextMessageLineLimit = 1;
 
 // Around notifications ////////////////////////////////////////////////////////
 
 // DIP dimensions (H = horizontal, V = vertical).
-MESSAGE_CENTER_EXPORT extern const int kMarginBetweenItems; // H & V space
-                                                            // around & between
-                                                            // notifications.
+const int kMarginBetweenItems = 10;  // H & V space around & between
+                                     // notifications.
 
 // Colors.
 extern const SkColor kBackgroundLightColor;  // Behind notifications, gradient

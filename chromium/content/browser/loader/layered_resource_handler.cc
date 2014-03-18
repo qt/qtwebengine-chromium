@@ -9,8 +9,10 @@
 namespace content {
 
 LayeredResourceHandler::LayeredResourceHandler(
+    net::URLRequest* request,
     scoped_ptr<ResourceHandler> next_handler)
-    : next_handler_(next_handler.Pass()) {
+    : ResourceHandler(request),
+      next_handler_(next_handler.Pass()) {
 }
 
 LayeredResourceHandler::~LayeredResourceHandler() {
@@ -54,8 +56,10 @@ bool LayeredResourceHandler::OnWillStart(int request_id, const GURL& url,
   return next_handler_->OnWillStart(request_id, url, defer);
 }
 
-bool LayeredResourceHandler::OnWillRead(int request_id, net::IOBuffer** buf,
-                                        int* buf_size, int min_size) {
+bool LayeredResourceHandler::OnWillRead(int request_id,
+                                        scoped_refptr<net::IOBuffer>* buf,
+                                        int* buf_size,
+                                        int min_size) {
   DCHECK(next_handler_.get());
   return next_handler_->OnWillRead(request_id, buf, buf_size, min_size);
 }
@@ -66,12 +70,13 @@ bool LayeredResourceHandler::OnReadCompleted(int request_id, int bytes_read,
   return next_handler_->OnReadCompleted(request_id, bytes_read, defer);
 }
 
-bool LayeredResourceHandler::OnResponseCompleted(
+void LayeredResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& status,
-    const std::string& security_info) {
+    const std::string& security_info,
+    bool* defer) {
   DCHECK(next_handler_.get());
-  return next_handler_->OnResponseCompleted(request_id, status, security_info);
+  next_handler_->OnResponseCompleted(request_id, status, security_info, defer);
 }
 
 void LayeredResourceHandler::OnDataDownloaded(int request_id,

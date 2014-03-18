@@ -38,7 +38,8 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
       const CryptoHandshakeMessage& message) OVERRIDE;
 
   // ReliableQuicStream implementation
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
+  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
+  virtual QuicPriority EffectivePriority() const OVERRIDE;
 
   // Sends |message| to the peer.
   // TODO(wtc): return a success/failure status.
@@ -50,10 +51,6 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
   const QuicCryptoNegotiatedParameters& crypto_negotiated_params() const;
 
  protected:
-  // Closes the connection
-  void CloseConnection(QuicErrorCode error);
-  void CloseConnectionWithDetails(QuicErrorCode error, const string& details);
-
   bool encryption_established_;
   bool handshake_confirmed_;
 

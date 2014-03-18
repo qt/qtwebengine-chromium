@@ -22,7 +22,6 @@
 #define SVGGradientElement_h
 
 #include "SVGNames.h"
-#include "core/platform/graphics/Gradient.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedTransformList.h"
@@ -30,6 +29,7 @@
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/graphics/Gradient.h"
 
 namespace WebCore {
 
@@ -107,11 +107,12 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGGradientElement* toSVGGradientElement(Node* node)
+inline bool isSVGGradientElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->hasTagName(SVGNames::radialGradientTag) || node->hasTagName(SVGNames::linearGradientTag)));
-    return static_cast<SVGGradientElement*>(node);
+    return node.hasTagName(SVGNames::radialGradientTag) || node.hasTagName(SVGNames::linearGradientTag);
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
 
 } // namespace WebCore
 

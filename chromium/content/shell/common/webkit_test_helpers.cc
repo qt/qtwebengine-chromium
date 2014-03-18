@@ -41,15 +41,12 @@ void ExportLayoutTestSpecificPreferences(
   to->caret_browsing_enabled = from.caretBrowsingEnabled;
   to->allow_displaying_insecure_content = from.allowDisplayOfInsecureContent;
   to->allow_running_insecure_content = from.allowRunningOfInsecureContent;
-  to->css_shaders_enabled = from.cssCustomFilterEnabled;
   to->should_respect_image_orientation = from.shouldRespectImageOrientation;
   to->asynchronous_spell_checking_enabled =
       from.asynchronousSpellCheckingEnabled;
   to->allow_file_access_from_file_urls = from.allowFileAccessFromFileURLs;
-  to->author_and_user_styles_enabled = from.authorAndUserStylesEnabled;
   to->javascript_can_open_windows_automatically =
       from.javaScriptCanOpenWindowsAutomatically;
-  to->user_style_sheet_location = from.userStyleSheetLocation;
 }
 
 // Applies settings that differ between layout tests and regular mode. Some
@@ -60,6 +57,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
   prefs->allow_universal_access_from_file_urls = true;
   prefs->dom_paste_enabled = true;
   prefs->javascript_can_access_clipboard = true;
+  prefs->xslt_enabled = true;
   prefs->xss_auditor_enabled = false;
 #if defined(OS_MACOSX)
   prefs->editing_behavior = webkit_glue::EDITING_BEHAVIOR_MAC;
@@ -73,7 +71,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
   prefs->allow_displaying_insecure_content = true;
   prefs->allow_running_insecure_content = true;
   prefs->webgl_errors_to_console_enabled = false;
-  string16 serif;
+  base::string16 serif;
 #if defined(OS_MACOSX)
   prefs->cursive_font_family_map[webkit_glue::kCommonScript] =
       ASCIIToUTF16("Apple Chancery");
@@ -97,7 +95,6 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
       webkit_glue::kCommonScript] = ASCIIToUTF16("Helvetica");
   prefs->minimum_logical_font_size = 9;
   prefs->asynchronous_spell_checking_enabled = false;
-  prefs->user_style_sheet_enabled = true;
   prefs->threaded_html_parser = true;
   prefs->accelerated_2d_canvas_enabled =
       command_line.HasSwitch(switches::kEnableAccelerated2DCanvas);
@@ -111,6 +108,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
 #if defined(OS_ANDROID)
   prefs->text_autosizing_enabled = false;
 #endif
+  prefs->viewport_enabled = false;
 }
 
 base::FilePath GetWebKitRootDirFilePath() {

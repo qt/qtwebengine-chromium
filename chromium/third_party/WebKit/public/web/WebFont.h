@@ -35,7 +35,7 @@
 #include "../platform/WebColor.h"
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 struct WebFontDescription;
 struct WebFloatPoint;
@@ -48,7 +48,7 @@ class WebFont {
 public:
     virtual ~WebFont() { }
 
-    WEBKIT_EXPORT static WebFont* create(const WebFontDescription&);
+    BLINK_EXPORT static WebFont* create(const WebFontDescription&);
 
     virtual WebFontDescription fontDescription() const = 0;
 
@@ -95,6 +95,6 @@ public:
                                               int height, int from = 0, int to = -1) const = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

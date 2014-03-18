@@ -31,7 +31,6 @@
 #include "config.h"
 #include "WTF.h"
 
-#include "wtf/PartitionAlloc.h"
 #include "wtf/QuantizedAllocation.h"
 
 #ifndef NDEBUG
@@ -42,11 +41,18 @@ namespace WTF {
 
 extern void initializeThreading();
 
+bool s_initialized;
+bool s_shutdown;
+bool Partitions::s_initialized;
 PartitionAllocator<4096> Partitions::m_bufferAllocator;
 
 void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction)
 {
-    QuantizedAllocation::init();
+    // WTF, and Blink in general, cannot handle being re-initialized, even if shutdown first.
+    // Make that explicit here.
+    ASSERT(!s_initialized);
+    ASSERT(!s_shutdown);
+    s_initialized = true;
     Partitions::initialize();
     setCurrentTimeFunction(currentTimeFunction);
     setMonotonicallyIncreasingTimeFunction(monotonicallyIncreasingTimeFunction);
@@ -55,11 +61,27 @@ void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncr
 
 void shutdown()
 {
+    ASSERT(s_initialized);
+    ASSERT(!s_shutdown);
+    s_shutdown = true;
     Partitions::shutdown();
+}
+
+bool isShutdown()
+{
+    return s_shutdown;
 }
 
 void Partitions::initialize()
 {
+    static int lock = 0;
+    // Guard against two threads hitting here in parallel.
+    spinLockLock(&lock);
+    if (s_initialized)
+        return;
+    s_initialized = true;
+    spinLockUnlock(&lock);
+    QuantizedAllocation::init();
     m_bufferAllocator.init();
 }
 

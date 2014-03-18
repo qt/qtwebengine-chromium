@@ -7,8 +7,10 @@
     'conditions': [
       ['OS=="linux"', {
         'compile_suid_client': 1,
+        'compile_credentials': 1,
       }, {
         'compile_suid_client': 0,
+        'compile_credentials': 0,
       }],
       ['((OS=="linux" or OS=="android") and '
              '(target_arch=="ia32" or target_arch=="x64" or '
@@ -16,6 +18,11 @@
         'compile_seccomp_bpf': 1,
       }, {
         'compile_seccomp_bpf': 0,
+      }],
+      ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64")', {
+        'compile_seccomp_bpf_demo': 1,
+      }, {
+        'compile_seccomp_bpf_demo': 0,
       }],
     ],
   },
@@ -51,6 +58,7 @@
         [ 'compile_seccomp_bpf==1', {
           'dependencies': [
             'seccomp_bpf',
+            'seccomp_bpf_helpers',
           ],
         }],
       ],
@@ -98,10 +106,9 @@
         'seccomp-bpf/errorcode.h',
         'seccomp-bpf/instruction.h',
         'seccomp-bpf/linux_seccomp.h',
-        'seccomp-bpf/port.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
-        'seccomp-bpf/sandbox_bpf_policy_forward.h',
+        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
@@ -117,6 +124,45 @@
       ],
       'include_dirs': [
         '../..',
+      ],
+    },
+    {
+      'target_name': 'seccomp_bpf_helpers',
+      'type': 'static_library',
+      'sources': [
+        'seccomp-bpf-helpers/baseline_policy.cc',
+        'seccomp-bpf-helpers/baseline_policy.h',
+        'seccomp-bpf-helpers/sigsys_handlers.cc',
+        'seccomp-bpf-helpers/sigsys_handlers.h',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.cc',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.h',
+        'seccomp-bpf-helpers/syscall_sets.cc',
+        'seccomp-bpf-helpers/syscall_sets.h',
+      ],
+      'dependencies': [
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+    },
+    {
+      # A demonstration program for the seccomp-bpf sandbox.
+      'target_name': 'seccomp_bpf_demo',
+      'conditions': [
+        ['compile_seccomp_bpf_demo==1', {
+          'type': 'executable',
+          'sources': [
+            'seccomp-bpf/demo.cc',
+          ],
+          'dependencies': [
+            'seccomp_bpf',
+          ],
+        }, {
+          'type': 'none',
+        }],
+      ],
+      'include_dirs': [
+        '../../',
       ],
     },
     {
@@ -145,9 +191,25 @@
       'sources': [
         'services/broker_process.cc',
         'services/broker_process.h',
+        'services/init_process_reaper.cc',
+        'services/init_process_reaper.h',
+        'services/thread_helpers.cc',
+        'services/thread_helpers.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
+      ],
+      'conditions': [
+        ['compile_credentials==1', {
+          'sources': [
+            'services/credentials.cc',
+            'services/credentials.h',
+          ],
+          'dependencies': [
+            # for capabilities.cc.
+            '../build/linux/system.gyp:libcap',
+          ],
+        }],
       ],
       'include_dirs': [
         '..',
@@ -195,6 +257,7 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services',
       ],
       'include_dirs': [
         '..',

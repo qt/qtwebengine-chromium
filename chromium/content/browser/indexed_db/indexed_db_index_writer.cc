@@ -34,7 +34,7 @@ bool IndexWriter::VerifyIndexKeys(
     int64 index_id,
     bool* can_add_keys,
     const IndexedDBKey& primary_key,
-    string16* error_message) const {
+    base::string16* error_message) const {
   *can_add_keys = false;
   for (size_t i = 0; i < index_keys_.size(); ++i) {
     bool ok = AddingKeyAllowed(backing_store,
@@ -48,11 +48,12 @@ bool IndexWriter::VerifyIndexKeys(
     if (!ok)
       return false;
     if (!*can_add_keys) {
-      if (error_message)
+      if (error_message) {
         *error_message = ASCIIToUTF16("Unable to add key to index '") +
                          index_metadata_.name +
                          ASCIIToUTF16("': at least one key does not satisfy "
                                       "the uniqueness requirements.");
+      }
       return true;
     }
   }
@@ -122,7 +123,7 @@ bool MakeIndexWriters(
     const std::vector<int64>& index_ids,
     const std::vector<IndexedDBDatabase::IndexKeys>& index_keys,
     ScopedVector<IndexWriter>* index_writers,
-    string16* error_message,
+    base::string16* error_message,
     bool* completed) {
   DCHECK_EQ(index_ids.size(), index_keys.size());
   *completed = false;

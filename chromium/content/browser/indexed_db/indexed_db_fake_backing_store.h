@@ -14,29 +14,26 @@ namespace content {
 class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
  public:
   IndexedDBFakeBackingStore()
-      : IndexedDBBackingStore(std::string(),
+      : IndexedDBBackingStore(GURL("http://localhost:81"),
                               scoped_ptr<LevelDBDatabase>(),
                               scoped_ptr<LevelDBComparator>()) {}
-  virtual std::vector<string16> GetDatabaseNames() OVERRIDE;
-  virtual bool GetIDBDatabaseMetaData(const string16& name,
+  virtual std::vector<base::string16> GetDatabaseNames() OVERRIDE;
+  virtual bool GetIDBDatabaseMetaData(const base::string16& name,
                                       IndexedDBDatabaseMetadata*,
                                       bool* found) OVERRIDE;
-  virtual bool CreateIDBDatabaseMetaData(const string16& name,
-                                         const string16& version,
+  virtual bool CreateIDBDatabaseMetaData(const base::string16& name,
+                                         const base::string16& version,
                                          int64 int_version,
                                          int64* row_id) OVERRIDE;
-  virtual bool UpdateIDBDatabaseMetaData(Transaction*,
-                                         int64 row_id,
-                                         const string16& version) OVERRIDE;
   virtual bool UpdateIDBDatabaseIntVersion(Transaction*,
                                            int64 row_id,
                                            int64 version) OVERRIDE;
-  virtual bool DeleteDatabase(const string16& name) OVERRIDE;
+  virtual bool DeleteDatabase(const base::string16& name) OVERRIDE;
 
   virtual bool CreateObjectStore(Transaction*,
                                  int64 database_id,
                                  int64 object_store_id,
-                                 const string16& name,
+                                 const base::string16& name,
                                  const IndexedDBKeyPath&,
                                  bool auto_increment) OVERRIDE;
 
@@ -68,7 +65,7 @@ class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
                            int64 database_id,
                            int64 object_store_id,
                            int64 index_id,
-                           const string16& name,
+                           const base::string16& name,
                            const IndexedDBKeyPath&,
                            bool is_unique,
                            bool is_multi_entry) OVERRIDE;
@@ -109,6 +106,17 @@ class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
                                              const IndexedDBKeyRange& key_range,
                                              indexed_db::CursorDirection)
       OVERRIDE;
+
+  class FakeTransaction : public IndexedDBBackingStore::Transaction {
+   public:
+    FakeTransaction(bool result);
+    virtual void Begin() OVERRIDE;
+    virtual bool Commit() OVERRIDE;
+    virtual void Rollback() OVERRIDE;
+
+   private:
+    bool result_;
+  };
 
  protected:
   friend class base::RefCounted<IndexedDBFakeBackingStore>;

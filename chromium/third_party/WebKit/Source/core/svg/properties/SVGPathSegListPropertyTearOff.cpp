@@ -21,7 +21,6 @@
 #include "core/svg/properties/SVGPathSegListPropertyTearOff.h"
 
 #include "SVGNames.h"
-#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGPathSegWithContext.h"
@@ -39,19 +38,19 @@ void SVGPathSegListPropertyTearOff::clearContextAndRoles()
     }
 }
 
-void SVGPathSegListPropertyTearOff::clear(ExceptionState& es)
+void SVGPathSegListPropertyTearOff::clear(ExceptionState& exceptionState)
 {
     ASSERT(m_values);
     if (m_values->isEmpty())
         return;
 
     clearContextAndRoles();
-    SVGPathSegListPropertyTearOff::Base::clearValues(es);
+    SVGPathSegListPropertyTearOff::Base::clearValues(exceptionState);
 }
 
-SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::getItem(unsigned index, ExceptionState& es)
+SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::getItem(unsigned index, ExceptionState& exceptionState)
 {
-    ListItemType returnedItem = Base::getItemValues(index, es);
+    ListItemType returnedItem = Base::getItemValues(index, exceptionState);
     if (returnedItem) {
         ASSERT(static_cast<SVGPathSegWithContext*>(returnedItem.get())->contextElement() == contextElement());
         ASSERT(static_cast<SVGPathSegWithContext*>(returnedItem.get())->role() == m_pathSegRole);
@@ -59,11 +58,11 @@ SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::g
     return returnedItem.release();
 }
 
-SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::replaceItem(PassListItemType passNewItem, unsigned index, ExceptionState& es)
+SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::replaceItem(PassListItemType passNewItem, unsigned index, ExceptionState& exceptionState)
 {
     // Not specified, but FF/Opera do it this way, and it's just sane.
     if (!passNewItem) {
-        es.throwTypeError();
+        exceptionState.throwUninformativeAndGenericTypeError();
         return 0;
     }
 
@@ -74,12 +73,12 @@ SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::r
     }
 
     ListItemType newItem = passNewItem;
-    return Base::replaceItemValues(newItem, index, es);
+    return Base::replaceItemValues(newItem, index, exceptionState);
 }
 
-SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::removeItem(unsigned index, ExceptionState& es)
+SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::removeItem(unsigned index, ExceptionState& exceptionState)
 {
-    SVGPathSegListPropertyTearOff::ListItemType removedItem = SVGPathSegListPropertyTearOff::Base::removeItemValues(index, es);
+    SVGPathSegListPropertyTearOff::ListItemType removedItem = SVGPathSegListPropertyTearOff::Base::removeItemValues(index, exceptionState);
     if (removedItem)
         static_cast<SVGPathSegWithContext*>(removedItem.get())->setContextAndRole(0, PathSegUndefinedRole);
     return removedItem.release();

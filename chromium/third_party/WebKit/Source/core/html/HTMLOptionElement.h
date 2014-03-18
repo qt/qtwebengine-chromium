@@ -36,8 +36,7 @@ class HTMLSelectElement;
 class HTMLOptionElement FINAL : public HTMLElement {
 public:
     static PassRefPtr<HTMLOptionElement> create(Document&);
-    static PassRefPtr<HTMLOptionElement> create(const QualifiedName&, Document&);
-    static PassRefPtr<HTMLOptionElement> createForJSConstructor(Document&, const String& data, const String& value,
+    static PassRefPtr<HTMLOptionElement> createForJSConstructor(Document&, const String& data, const AtomicString& value,
         bool defaultSelected, bool selected, ExceptionState&);
 
     virtual String text() const;
@@ -46,7 +45,7 @@ public:
     int index() const;
 
     String value() const;
-    void setValue(const String&);
+    void setValue(const AtomicString&);
 
     bool selected();
     void setSelected(bool);
@@ -55,7 +54,7 @@ public:
     HTMLSelectElement* ownerSelectElement() const;
 
     String label() const;
-    void setLabel(const String&);
+    void setLabel(const AtomicString&);
 
     bool ownElementDisabled() const { return m_disabled; }
 
@@ -65,8 +64,10 @@ public:
 
     void setSelectedState(bool);
 
+    HTMLFormElement* form() const;
+
 private:
-    HTMLOptionElement(const QualifiedName&, Document&);
+    explicit HTMLOptionElement(Document&);
 
     virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
@@ -94,19 +95,7 @@ private:
     RefPtr<RenderStyle> m_style;
 };
 
-void toHTMLOptionElement(const HTMLOptionElement*); // This overload will catch anyone doing an unnecessary cast.
-
-inline HTMLOptionElement* toHTMLOptionElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::optionTag));
-    return static_cast<HTMLOptionElement*>(node);
-}
-
-inline const HTMLOptionElement* toHTMLOptionElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::optionTag));
-    return static_cast<const HTMLOptionElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLOptionElement, hasTagName(HTMLNames::optionTag));
 
 } // namespace WebCore
 

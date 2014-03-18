@@ -11,8 +11,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
-#include "ui/base/x/x11_atom_cache.h"
 #include "ui/events/event_handler.h"
+#include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/views/views_export.h"
 
@@ -26,12 +26,14 @@ class Point;
 }
 
 namespace views {
+class DesktopRootWindowHost;
 class NativeWidgetAura;
 
 // An EventFilter that sets properties on X11 windows.
 class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
  public:
-  explicit X11WindowEventFilter(aura::RootWindow* root_window);
+  X11WindowEventFilter(aura::RootWindow* root_window,
+                       DesktopRootWindowHost* root_window_host);
   virtual ~X11WindowEventFilter();
 
   // Changes whether borders are shown on this |root_window|.
@@ -54,6 +56,8 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
   ::Window x_root_window_;
 
   ui::X11AtomCache atom_cache_;
+
+  DesktopRootWindowHost* root_window_host_;
 
   // True if |xwindow_| is the current _NET_ACTIVE_WINDOW.
   bool is_active_;

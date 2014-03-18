@@ -1,0 +1,26 @@
+{
+  // chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDowC9B4+K6zbl4PnALNyOUgra/MPdD8gZ39Fk/IAJWt03qrN7vz1gd/mmrBg0EEIsyLRmUmfyVEfvcIUOZxFqn4A9D2aaRSvNHy9qkasZMBDEql8Nt2iNZm/kGS7sizidDV6Bc/vyLNiH1gKOXBQ42JIxKjgtrmnhGV2giw2vJGwIDAQAB",
+  "name": "Image loader",
+  "version": "0.1",
+  "description": "Image loader",
+  "incognito" : "split",
+  "manifest_version": 2,
+  "permissions": [
+    "fileBrowserHandler",
+    "fileBrowserPrivate",
+    "https://www.googledrive.com"
+  ],
+  "content_security_policy": "default-src 'none'; script-src 'self'; style-src 'self'; frame-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self' https://www.googledrive.com",
+  "background": {
+    "scripts": [
+      "image_loader.js",
+      "cache.js",
+      "worker.js",
+      "request.js",
+      "background.js"
+    ],
+    "persistent": false
+  },
+  "web_accessible_resources": ["image_loader_client.js"]
+}

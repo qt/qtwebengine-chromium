@@ -21,26 +21,24 @@ Tile::Tile(TileManager* tile_manager,
            float contents_scale,
            int layer_id,
            int source_frame_number,
-           bool can_use_lcd_text)
-  : tile_manager_(tile_manager),
+           int flags)
+  : RefCountedManaged<Tile>(tile_manager),
+    tile_manager_(tile_manager),
     tile_size_(tile_size),
     content_rect_(content_rect),
     contents_scale_(contents_scale),
     opaque_rect_(opaque_rect),
     layer_id_(layer_id),
     source_frame_number_(source_frame_number),
-    can_use_lcd_text_(can_use_lcd_text),
+    flags_(flags),
     id_(s_next_id_++) {
   set_picture_pile(picture_pile);
-  tile_manager_->RegisterTile(this);
 }
 
 Tile::~Tile() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug") ","
-          TRACE_DISABLED_BY_DEFAULT("cc.debug.quads"),
+      TRACE_DISABLED_BY_DEFAULT("cc.debug"),
       "cc::Tile", this);
-  tile_manager_->UnregisterTile(this);
 }
 
 void Tile::SetPriority(WhichTree tree, const TilePriority& priority) {
@@ -61,7 +59,8 @@ void Tile::MarkRequiredForActivation() {
 
 scoped_ptr<base::Value> Tile::AsValue() const {
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
-  TracedValue::MakeDictIntoImplicitSnapshot(res.get(), "cc::Tile", this);
+  TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
+      TRACE_DISABLED_BY_DEFAULT("cc.debug"), res.get(), "cc::Tile", this);
   res->Set("picture_pile",
            TracedValue::CreateIDRef(picture_pile_.get()).release());
   res->SetDouble("contents_scale", contents_scale_);
@@ -70,6 +69,8 @@ scoped_ptr<base::Value> Tile::AsValue() const {
   res->Set("active_priority", priority_[ACTIVE_TREE].AsValue().release());
   res->Set("pending_priority", priority_[PENDING_TREE].AsValue().release());
   res->Set("managed_state", managed_state_.AsValue().release());
+  res->SetBoolean("can_use_lcd_text", can_use_lcd_text());
+  res->SetBoolean("use_gpu_rasterization", use_gpu_rasterization());
   return res.PassAs<base::Value>();
 }
 

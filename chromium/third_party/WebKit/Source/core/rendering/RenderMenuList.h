@@ -24,10 +24,10 @@
 #ifndef RenderMenuList_h
 #define RenderMenuList_h
 
-#include "core/platform/PopupMenu.h"
-#include "core/platform/PopupMenuClient.h"
-#include "core/platform/graphics/LayoutRect.h"
 #include "core/rendering/RenderFlexibleBox.h"
+#include "platform/PopupMenu.h"
+#include "platform/PopupMenuClient.h"
+#include "platform/geometry/LayoutRect.h"
 
 namespace WebCore {
 
@@ -65,7 +65,6 @@ private:
     virtual LayoutRect controlClipRect(const LayoutPoint&) const;
     virtual bool hasControlClip() const { return true; }
     virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
 
     virtual const char* renderName() const { return "RenderMenuList"; }
 
@@ -73,8 +72,6 @@ private:
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     // PopupMenuClient methods
     virtual void valueChanged(unsigned listIndex, bool fireOnChange = true) OVERRIDE;
@@ -141,14 +138,7 @@ private:
     bool m_popupIsVisible;
 };
 
-inline RenderMenuList* toRenderMenuList(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isMenuList());
-    return static_cast<RenderMenuList*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderMenuList(const RenderMenuList*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderMenuList, isMenuList());
 
 }
 

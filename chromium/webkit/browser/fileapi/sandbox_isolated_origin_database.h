@@ -5,20 +5,28 @@
 #ifndef WEBKIT_BROWSER_FILEAPI_SANDBOX_ISOLATED_ORIGIN_DATABASE_H_
 #define WEBKIT_BROWSER_FILEAPI_SANDBOX_ISOLATED_ORIGIN_DATABASE_H_
 
+#include <string>
+#include <vector>
+
 #include "webkit/browser/fileapi/sandbox_origin_database_interface.h"
 
 namespace fileapi {
 
 class SandboxOriginDatabase;
 
+// This origin database implementation supports only one origin
+// (therefore is expected to run very fast).
 class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
     : public SandboxOriginDatabaseInterface {
  public:
-  static const base::FilePath::CharType kOriginDirectory[];
+  static const base::FilePath::CharType kObsoleteOriginDirectory[];
 
-  explicit SandboxIsolatedOriginDatabase(
+  // Initialize this database for |origin| which makes GetPathForOrigin return
+  // |origin_directory| (in |file_system_directory|).
+  SandboxIsolatedOriginDatabase(
       const std::string& origin,
-      const base::FilePath& file_system_directory);
+      const base::FilePath& file_system_directory,
+      const base::FilePath& origin_directory);
   virtual ~SandboxIsolatedOriginDatabase();
 
   // SandboxOriginDatabaseInterface overrides.
@@ -29,10 +37,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
   virtual bool ListAllOrigins(std::vector<OriginRecord>* origins) OVERRIDE;
   virtual void DropDatabase() OVERRIDE;
 
-  static void MigrateBackDatabase(
+  // TODO(kinuko): Deprecate this after a few release cycles, e.g. around M33.
+  static void MigrateBackFromObsoleteOriginDatabase(
       const std::string& origin,
       const base::FilePath& file_system_directory,
       SandboxOriginDatabase* origin_database);
+
+  const std::string& origin() const { return origin_; }
 
  private:
   void MigrateDatabaseIfNeeded();
@@ -40,6 +51,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
   bool migration_checked_;
   const std::string origin_;
   const base::FilePath file_system_directory_;
+  const base::FilePath origin_directory_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxIsolatedOriginDatabase);
 };

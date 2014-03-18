@@ -235,8 +235,13 @@ void TestHelper::SetupContextGroupInitExpectations(
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_RENDERBUFFER_SIZE, _))
       .WillOnce(SetArgumentPointee<1>(kMaxRenderbufferSize))
       .RetiresOnSaturation();
-  if (strstr(extensions, "GL_EXT_framebuffer_multisample")) {
+  if (strstr(extensions, "GL_EXT_framebuffer_multisample") ||
+      strstr(extensions, "GL_EXT_multisampled_render_to_texture")) {
     EXPECT_CALL(*gl, GetIntegerv(GL_MAX_SAMPLES, _))
+        .WillOnce(SetArgumentPointee<1>(kMaxSamples))
+        .RetiresOnSaturation();
+  } else if (strstr(extensions, "GL_IMG_multisampled_render_to_texture")) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_SAMPLES_IMG, _))
         .WillOnce(SetArgumentPointee<1>(kMaxSamples))
         .RetiresOnSaturation();
   }
@@ -273,20 +278,24 @@ void TestHelper::SetupContextGroupInitExpectations(
 
 void TestHelper::SetupFeatureInfoInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions) {
-  SetupFeatureInfoInitExpectationsWithGLVersion(gl, extensions, "");
+  SetupFeatureInfoInitExpectationsWithGLVersion(gl, extensions, "", "");
 }
 
 void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
      ::gfx::MockGLInterface* gl,
      const char* extensions,
-     const char* version) {
+     const char* gl_renderer,
+     const char* gl_version) {
   InSequence sequence;
 
   EXPECT_CALL(*gl, GetString(GL_EXTENSIONS))
       .WillOnce(Return(reinterpret_cast<const uint8*>(extensions)))
       .RetiresOnSaturation();
+  EXPECT_CALL(*gl, GetString(GL_RENDERER))
+      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_renderer)))
+      .RetiresOnSaturation();
   EXPECT_CALL(*gl, GetString(GL_VERSION))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(version)))
+      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_version)))
       .RetiresOnSaturation();
 }
 

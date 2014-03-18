@@ -40,6 +40,7 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
     CertVerifier* cert_verifier,
     ServerBoundCertService* server_bound_cert_service,
     TransportSecurityState* transport_security_state,
+    CTVerifier* cert_transparency_verifier,
     const std::string& ssl_session_cache_shard,
     ProxyService* proxy_service,
     SSLConfigService* ssl_config_service,
@@ -50,6 +51,7 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
       cert_verifier_(cert_verifier),
       server_bound_cert_service_(server_bound_cert_service),
       transport_security_state_(transport_security_state),
+      cert_transparency_verifier_(cert_transparency_verifier),
       ssl_session_cache_shard_(ssl_session_cache_shard),
       proxy_service_(proxy_service),
       ssl_config_service_(ssl_config_service),
@@ -69,6 +71,7 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
           cert_verifier,
           server_bound_cert_service,
           transport_security_state,
+          cert_transparency_verifier,
           ssl_session_cache_shard,
           socket_factory,
           transport_socket_pool_.get(),
@@ -286,6 +289,7 @@ ClientSocketPoolManagerImpl::GetSocketPoolForHTTPProxy(
                                   cert_verifier_,
                                   server_bound_cert_service_,
                                   transport_security_state_,
+                                  cert_transparency_verifier_,
                                   ssl_session_cache_shard_,
                                   socket_factory_,
                                   tcp_https_ret.first->second /* https proxy */,
@@ -326,6 +330,7 @@ SSLClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPoolForSSLWithProxy(
       cert_verifier_,
       server_bound_cert_service_,
       transport_security_state_,
+      cert_transparency_verifier_,
       ssl_session_cache_shard_,
       socket_factory_,
       NULL, /* no tcp pool, we always go through a proxy */
@@ -374,7 +379,7 @@ void ClientSocketPoolManagerImpl::OnCertAdded(const X509Certificate* cert) {
   FlushSocketPoolsWithError(ERR_NETWORK_CHANGED);
 }
 
-void ClientSocketPoolManagerImpl::OnCertTrustChanged(
+void ClientSocketPoolManagerImpl::OnCACertChanged(
     const X509Certificate* cert) {
   // We should flush the socket pools if we removed trust from a
   // cert, because a previously trusted server may have become
@@ -383,8 +388,8 @@ void ClientSocketPoolManagerImpl::OnCertTrustChanged(
   // We should not flush the socket pools if we added trust to a
   // cert.
   //
-  // Since the OnCertTrustChanged method doesn't tell us what
-  // kind of trust change it is, we have to flush the socket
+  // Since the OnCACertChanged method doesn't tell us what
+  // kind of change it is, we have to flush the socket
   // pools to be safe.
   FlushSocketPoolsWithError(ERR_NETWORK_CHANGED);
 }

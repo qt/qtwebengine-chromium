@@ -41,16 +41,16 @@
 
 namespace WebCore {
 
-class WebStorageQuotaCallbacksImpl : public WebKit::WebStorageQuotaCallbacks {
+class WebStorageQuotaCallbacksImpl : public blink::WebStorageQuotaCallbacks {
 public:
     // The class is self-destructed and thus we have leakedPtr constructors.
-    static WebStorageQuotaCallbacksImpl* createLeakedPtr(PassRefPtr<StorageUsageCallback> success, PassRefPtr<StorageErrorCallback> error)
+    static WebStorageQuotaCallbacksImpl* createLeakedPtr(PassOwnPtr<StorageUsageCallback> success, PassOwnPtr<StorageErrorCallback> error)
     {
         OwnPtr<WebStorageQuotaCallbacksImpl> callbacks = adoptPtr(new WebStorageQuotaCallbacksImpl(success, error));
         return callbacks.leakPtr();
     }
 
-    static WebStorageQuotaCallbacksImpl* createLeakedPtr(PassRefPtr<StorageQuotaCallback> success, PassRefPtr<StorageErrorCallback> error)
+    static WebStorageQuotaCallbacksImpl* createLeakedPtr(PassOwnPtr<StorageQuotaCallback> success, PassOwnPtr<StorageErrorCallback> error)
     {
         OwnPtr<WebStorageQuotaCallbacksImpl> callbacks = adoptPtr(new WebStorageQuotaCallbacksImpl(success, error));
         return callbacks.leakPtr();
@@ -60,15 +60,15 @@ public:
 
     virtual void didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes);
     virtual void didGrantStorageQuota(unsigned long long grantedQuotaInBytes);
-    virtual void didFail(WebKit::WebStorageQuotaError);
+    virtual void didFail(blink::WebStorageQuotaError);
 
 private:
-    WebStorageQuotaCallbacksImpl(PassRefPtr<StorageUsageCallback>, PassRefPtr<StorageErrorCallback>);
-    WebStorageQuotaCallbacksImpl(PassRefPtr<StorageQuotaCallback>, PassRefPtr<StorageErrorCallback>);
+    WebStorageQuotaCallbacksImpl(PassOwnPtr<StorageUsageCallback>, PassOwnPtr<StorageErrorCallback>);
+    WebStorageQuotaCallbacksImpl(PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
 
-    RefPtr<StorageUsageCallback> m_usageCallback;
-    RefPtr<StorageQuotaCallback> m_quotaCallback;
-    RefPtr<StorageErrorCallback> m_errorCallback;
+    OwnPtr<StorageUsageCallback> m_usageCallback;
+    OwnPtr<StorageQuotaCallback> m_quotaCallback;
+    OwnPtr<StorageErrorCallback> m_errorCallback;
 };
 
 } // namespace

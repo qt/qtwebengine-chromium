@@ -8,6 +8,7 @@
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
@@ -37,7 +38,7 @@ ButtonExample::ButtonExample()
       icon_(NULL),
       count_(0) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  icon_ = rb.GetImageNamed(IDR_CLOSE_SA_H).ToImageSkia();
+  icon_ = rb.GetImageNamed(IDR_CLOSE_H).ToImageSkia();
 }
 
 ButtonExample::~ButtonExample() {
@@ -48,11 +49,11 @@ void ButtonExample::CreateExampleView(View* container) {
   container->SetLayoutManager(new BoxLayout(BoxLayout::kVertical, 10, 10, 10));
 
   text_button_ = new TextButton(this, ASCIIToUTF16(kTextButton));
-  text_button_->set_focusable(true);
+  text_button_->SetFocusable(true);
   container->AddChildView(text_button_);
 
   label_button_ = new LabelButton(this, ASCIIToUTF16(kLabelButton));
-  label_button_->set_focusable(true);
+  label_button_->SetFocusable(true);
   container->AddChildView(label_button_);
 
   LabelButton* disabled_button =
@@ -65,7 +66,7 @@ void ButtonExample::CreateExampleView(View* container) {
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   image_button_ = new ImageButton(this);
-  image_button_->set_focusable(true);
+  image_button_->SetFocusable(true);
   image_button_->SetImage(ImageButton::STATE_NORMAL,
                           rb.GetImageNamed(IDR_CLOSE).ToImageSkia());
   image_button_->SetImage(ImageButton::STATE_HOVERED,
@@ -160,7 +161,7 @@ void ButtonExample::LabelButtonPressed(const ui::Event& event) {
     }
   } else if (event.IsShiftDown()) {
     if (event.IsAltDown()) {
-      label_button_->set_focusable(!label_button_->focusable());
+      label_button_->SetFocusable(!label_button_->focusable());
     } else {
       label_button_->SetStyle(static_cast<Button::ButtonStyle>(
           (label_button_->style() + 1) % Button::STYLE_COUNT));

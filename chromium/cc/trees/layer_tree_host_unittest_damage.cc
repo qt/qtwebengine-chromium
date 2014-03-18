@@ -23,103 +23,6 @@ namespace {
 // These tests deal with damage tracking.
 class LayerTreeHostDamageTest : public LayerTreeTest {};
 
-// Changing visibility alone does not cause drawing.
-class LayerTreeHostDamageTestSetVisibleDoesNotDraw
-    : public LayerTreeHostDamageTest {
-  virtual void BeginTest() OVERRIDE {
-    step_ = 0;
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void SetupTree() OVERRIDE {
-    // Viewport is 10x10.
-    scoped_refptr<FakeContentLayer> root = FakeContentLayer::Create(&client_);
-    root->SetBounds(gfx::Size(10, 10));
-
-    layer_tree_host()->SetRootLayer(root);
-    LayerTreeHostDamageTest::SetupTree();
-  }
-
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* impl,
-                                     LayerTreeHostImpl::FrameData* frame_data,
-                                     bool result) OVERRIDE {
-    EXPECT_TRUE(result);
-
-    RenderSurfaceImpl* root_surface =
-        impl->active_tree()->root_layer()->render_surface();
-    gfx::RectF root_damage =
-        root_surface->damage_tracker()->current_damage_rect();
-
-    switch (step_) {
-      case 0:
-        // The first frame has full damage.
-        EXPECT_EQ(gfx::RectF(10.f, 10.f).ToString(), root_damage.ToString());
-
-        // No evictions when we become not-visible.
-        impl->SetMemoryPolicy(ManagedMemoryPolicy(
-            1000 * 1000 * 1000,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
-            1000 * 1000 * 1000,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
-            ManagedMemoryPolicy::kDefaultNumResourcesLimit));
-
-        PostSetVisibleToMainThread(false);
-        break;
-      case 1:
-        // The compositor has been set not-visible.
-        EXPECT_FALSE(impl->visible());
-        // This frame not visible, so not drawn.
-        NOTREACHED();
-        break;
-      case 2:
-        // The compositor has been set visible again.
-        EXPECT_TRUE(impl->visible());
-        // But it still does not draw.
-        NOTREACHED();
-        break;
-      case 3:
-        // Finally we force a draw, but it will have no damage.
-        EXPECT_EQ(gfx::RectF().ToString(), root_damage.ToString());
-        EndTest();
-        break;
-      case 4:
-        NOTREACHED();
-    }
-    return result;
-  }
-
-  virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* impl,
-                                       bool visible) OVERRIDE {
-    if (!visible) {
-      EXPECT_EQ(0, step_);
-      PostSetVisibleToMainThread(true);
-    } else {
-      EXPECT_EQ(1, step_);
-
-      base::MessageLoopProxy::current()->PostDelayedTask(
-          FROM_HERE,
-          base::Bind(&LayerTreeHostDamageTestSetVisibleDoesNotDraw::Redraw,
-                     base::Unretained(this),
-                     impl),
-          base::TimeDelta::FromMilliseconds(10));
-    }
-    ++step_;
-  }
-
-  void Redraw(LayerTreeHostImpl* impl) {
-    EXPECT_EQ(2, step_);
-    impl->SetNeedsRedraw();
-    ++step_;
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
-  int step_;
-  FakeContentLayerClient client_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestSetVisibleDoesNotDraw);
-
 // LayerTreeHost::SetNeedsRedraw should damage the whole viewport.
 class LayerTreeHostDamageTestSetNeedsRedraw
     : public LayerTreeHostDamageTest {
@@ -331,7 +234,8 @@ class LayerTreeHostDamageTestNoDamageDoesNotSwap
   int did_swap_and_succeed_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestNoDamageDoesNotSwap);
+SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
+    LayerTreeHostDamageTestNoDamageDoesNotSwap);
 
 class LayerTreeHostDamageTestNoDamageReadbackDoesDraw
     : public LayerTreeHostDamageTest {
@@ -459,18 +363,24 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
         child_damage_rect_ = gfx::RectF(10, 11, 12, 13);
         break;
       case 3:
-        if (!delegating_renderer() &&
-            !host_impl->settings().impl_side_painting) {
-          // The update rect in the child should be damaged.
-          // TODO(danakj): Remove this when impl side painting is always on.
-          EXPECT_EQ(gfx::RectF(100+10, 100+11, 12, 13).ToString(),
-                    root_damage.ToString());
-        } else {
+        // The update rect in the child should be damaged and the damaged area
+        // should match the invalidation.
+        EXPECT_EQ(gfx::RectF(100+10, 100+11, 12, 13).ToString(),
+                  root_damage.ToString());
+
+        // TODO(danakj): Remove this when impl side painting is always on.
+        if (delegating_renderer() ||
+            host_impl->settings().impl_side_painting) {
           // When using a delegating renderer, or using impl side painting, the
           // entire child is considered damaged as we need to replace its
-          // resources with newly created ones.
-          EXPECT_EQ(gfx::RectF(child_->position(), child_->bounds()).ToString(),
-                    root_damage.ToString());
+          // resources with newly created ones. The damaged area is kept as it
+          // is, but entire child is painted.
+
+          // The paint rect should match the layer bounds.
+          gfx::RectF paint_rect = child_->LastPaintRect();
+          paint_rect.set_origin(child_->position());
+          EXPECT_EQ(gfx::RectF(100, 100, 30, 30).ToString(),
+                    paint_rect.ToString());
         }
         EXPECT_FALSE(frame_data->has_no_damage);
 
@@ -509,12 +419,13 @@ class LayerTreeHostDamageTestForcedFullDamage : public LayerTreeHostDamageTest {
   gfx::RectF child_damage_rect_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostDamageTestForcedFullDamage);
+SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostDamageTestForcedFullDamage);
 
 class LayerTreeHostScrollbarDamageTest : public LayerTreeHostDamageTest {
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root_layer = Layer::Create();
     root_layer->SetBounds(gfx::Size(400, 400));
+    root_layer->SetMasksToBounds(true);
     layer_tree_host()->SetRootLayer(root_layer);
 
     scoped_refptr<Layer> content_layer = FakeContentLayer::Create(&client_);
@@ -614,7 +525,7 @@ class LayerTreeHostDamageTestScrollbarDoesDamage
 
 MULTI_THREAD_TEST_F(LayerTreeHostDamageTestScrollbarDoesDamage);
 
-class DISABLED_LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
+class LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
     : public LayerTreeHostScrollbarDamageTest {
   virtual void BeginTest() OVERRIDE {
     did_swaps_ = 0;
@@ -687,8 +598,7 @@ class DISABLED_LayerTreeHostDamageTestScrollbarCommitDoesNoDamage
   int did_swaps_;
 };
 
-MULTI_THREAD_TEST_F(
-    DISABLED_LayerTreeHostDamageTestScrollbarCommitDoesNoDamage);
+MULTI_THREAD_TEST_F(LayerTreeHostDamageTestScrollbarCommitDoesNoDamage);
 
 class LayerTreeHostDamageTestVisibleTilesStillTriggerDraws
     : public LayerTreeHostDamageTest {

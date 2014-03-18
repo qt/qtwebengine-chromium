@@ -1,3 +1,15 @@
 include_rules = [
+  "+grit/ui_resources.h",
+  "+grit/ui_strings.h",
+  "+skia/ext",
   "+third_party/GTM",  # For Mac utility classes.
+  "+third_party/skia",
+  "+ui/aura",
+  "+ui/base",
+  "+ui/compositor",
+  "+ui/events",
+  "+ui/gfx",
+  "+ui/native_theme",
+  "+ui/test",
+  "+ui/views",
 ]

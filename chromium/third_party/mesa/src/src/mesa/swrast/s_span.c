@@ -1330,8 +1330,8 @@ _swrast_write_rgba_span( struct gl_context *ctx, SWspan *span)
                    colorType == GL_FLOAT);
 
             /* set span->array->rgba to colors for renderbuffer's datatype */
-            if (span->array->ChanType != colorType) {
-               convert_color_type(span, colorType, 0);
+            if (span->array->ChanType != colorType || multiFragOutputs) {
+               convert_color_type(span, colorType, buf);
             }
             else {
                if (span->array->ChanType == GL_UNSIGNED_BYTE) {

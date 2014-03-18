@@ -26,7 +26,7 @@
 #define U_WINDOWS
 #endif
 
-#if _MSC_VER >= 1700
+#if _MSC_VER >= 1600
 #include <stdint.h>
 #endif
 

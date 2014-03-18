@@ -34,18 +34,20 @@
 
 #include "WebNavigationPolicy.h"
 #include "core/page/ChromeClient.h"
-#include "core/platform/PopupMenu.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
+#include "platform/PopupMenu.h"
 #include "public/platform/WebColor.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
-class AccessibilityObject;
+class AXObject;
 class ColorChooser;
 class ColorChooserClient;
 class Element;
 class FileChooser;
 class GraphicsLayerFactory;
+class HTMLInputElement;
+class KeyboardEvent;
 class PopupContainer;
 class PopupMenuClient;
 class RenderBox;
@@ -55,7 +57,7 @@ class DateTimeChooserClient;
 struct WindowFeatures;
 }
 
-namespace WebKit {
+namespace blink {
 class WebColorChooser;
 class WebColorChooserClient;
 class WebViewImpl;
@@ -81,7 +83,7 @@ public:
     virtual void takeFocus(WebCore::FocusDirection);
     virtual void focusedNodeChanged(WebCore::Node*);
     virtual WebCore::Page* createWindow(
-        WebCore::Frame*, const WebCore::FrameLoadRequest&, const WebCore::WindowFeatures&, WebCore::NavigationPolicy);
+        WebCore::Frame*, const WebCore::FrameLoadRequest&, const WebCore::WindowFeatures&, WebCore::NavigationPolicy, WebCore::ShouldSendReferrer);
     virtual void show(WebCore::NavigationPolicy);
     virtual bool canRunModal();
     virtual void runModal();
@@ -114,6 +116,7 @@ public:
     virtual void invalidateContentsAndRootView(const WebCore::IntRect&);
     virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&);
     virtual void scheduleAnimation();
+    virtual bool isCompositorFramePending() const OVERRIDE;
     virtual void scroll(
         const WebCore::IntSize& scrollDelta, const WebCore::IntRect& rectToScroll,
         const WebCore::IntRect& clipRect);
@@ -122,23 +125,23 @@ public:
     virtual WebScreenInfo screenInfo() const;
     virtual void contentsSizeChanged(WebCore::Frame*, const WebCore::IntSize&) const;
     virtual void deviceOrPageScaleFactorChanged() const;
-    virtual void didProgrammaticallyScroll(WebCore::Frame*, const WebCore::IntPoint&) const;
     virtual void layoutUpdated(WebCore::Frame*) const;
     virtual void mouseDidMoveOverElement(
         const WebCore::HitTestResult& result, unsigned modifierFlags);
     virtual void setToolTip(const WTF::String& tooltipText, WebCore::TextDirection);
-    virtual void dispatchViewportPropertiesDidChange(const WebCore::ViewportArguments&) const;
+    virtual void dispatchViewportPropertiesDidChange(const WebCore::ViewportDescription&) const;
     virtual void print(WebCore::Frame*);
     virtual void annotatedRegionsChanged();
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&);
     virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
-    PassOwnPtr<WebColorChooser> createWebColorChooser(WebColorChooserClient*, const WebColor&);
     virtual PassRefPtr<WebCore::DateTimeChooser> openDateTimeChooser(WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&) OVERRIDE;
+    virtual void openTextDataListChooser(WebCore::HTMLInputElement&) OVERRIDE;
     virtual void runOpenPanel(WebCore::Frame*, PassRefPtr<WebCore::FileChooser>);
     virtual void enumerateChosenDirectory(WebCore::FileChooser*);
     virtual void setCursor(const WebCore::Cursor&);
     virtual void formStateDidChange(const WebCore::Node*);
     virtual void needTouchEvents(bool needTouchEvents) OVERRIDE;
+    virtual void setTouchAction(WebCore::TouchAction) OVERRIDE;
 
     virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() const OVERRIDE;
 
@@ -159,7 +162,7 @@ public:
                              const WebCore::IntRect& bounds,
                              bool handleExternally);
     virtual void popupClosed(WebCore::PopupContainer* popupContainer);
-    virtual void postAccessibilityNotification(WebCore::AccessibilityObject*, WebCore::AXObjectCache::AXNotification);
+    virtual void postAccessibilityNotification(WebCore::AXObject*, WebCore::AXObjectCache::AXNotification);
     virtual String acceptLanguages() OVERRIDE;
 
     // ChromeClientImpl:
@@ -186,8 +189,16 @@ public:
     virtual bool isPointerLocked();
 
     virtual void didAssociateFormControls(const Vector<RefPtr<WebCore::Element> >&) OVERRIDE;
+    virtual void didChangeValueInTextField(WebCore::HTMLInputElement&) OVERRIDE;
+    virtual void didEndEditingOnTextField(WebCore::HTMLInputElement&) OVERRIDE;
+    virtual void handleKeyboardEventOnTextField(WebCore::HTMLInputElement&, WebCore::KeyboardEvent&) OVERRIDE;
+
+    virtual void didCancelCompositionOnSelectionChange() OVERRIDE;
+    virtual void willSetInputMethodState() OVERRIDE;
 
 private:
+    virtual bool isChromeClientImpl() const OVERRIDE { return true; }
+
     WebNavigationPolicy getNavigationPolicy();
     void getPopupMenuInfo(WebCore::PopupContainer*, WebPopupMenuInfo*);
     void setCursor(const WebCursorInfo&);
@@ -217,6 +228,12 @@ private:
 };
 #endif
 
-} // namespace WebKit
+inline ChromeClientImpl* toChromeClientImpl(WebCore::ChromeClient& client)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(client.isChromeClientImpl());
+    return static_cast<ChromeClientImpl*>(&client);
+}
+
+} // namespace blink
 
 #endif

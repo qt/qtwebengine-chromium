@@ -7,7 +7,6 @@
 #include <limits>
 #include <vector>
 
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/resources/image_raster_worker_pool.h"
 #include "cc/resources/picture_pile.h"
 #include "cc/resources/picture_pile_impl.h"
@@ -16,6 +15,7 @@
 #include "cc/resources/scoped_resource.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -67,8 +67,8 @@ class RasterWorkerPoolTest : public testing::Test,
     output_surface_ = FakeOutputSurface::Create3d(context_provider_).Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), 0, false).Pass();
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), NULL, 0, false, 1).Pass();
   }
   virtual ~RasterWorkerPoolTest() {
     resource_provider_.reset();
@@ -104,7 +104,7 @@ class RasterWorkerPoolTest : public testing::Test,
   void RunTest(bool use_map_image) {
     if (use_map_image) {
       raster_worker_pool_ = ImageRasterWorkerPool::Create(
-          resource_provider(), 1);
+          resource_provider(), 1, GL_TEXTURE_2D);
     } else {
       raster_worker_pool_ =
           PixelBufferRasterWorkerPool::Create(
@@ -159,7 +159,7 @@ class RasterWorkerPoolTest : public testing::Test,
     const gfx::Size size(1, 1);
 
     scoped_ptr<ScopedResource> resource(
-        ScopedResource::create(resource_provider()));
+        ScopedResource::Create(resource_provider()));
     resource->Allocate(size, ResourceProvider::TextureUsageAny, RGBA_8888);
     const Resource* const_resource = resource.get();
 

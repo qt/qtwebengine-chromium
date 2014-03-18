@@ -13,8 +13,8 @@ namespace base {
 
 TEST(ScopedTempDir, FullPath) {
   FilePath test_path;
-  file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("scoped_temp_dir"),
-                                    &test_path);
+  base::CreateNewTempDirectory(FILE_PATH_LITERAL("scoped_temp_dir"),
+                               &test_path);
 
   // Against an existing dir, it should get destroyed when leaving scope.
   EXPECT_TRUE(DirectoryExists(test_path));
@@ -55,7 +55,7 @@ TEST(ScopedTempDir, TempDir) {
     test_path = dir.path();
     EXPECT_TRUE(DirectoryExists(test_path));
     FilePath tmp_dir;
-    EXPECT_TRUE(file_util::GetTempDir(&tmp_dir));
+    EXPECT_TRUE(base::GetTempDir(&tmp_dir));
     EXPECT_TRUE(test_path.value().find(tmp_dir.value()) != std::string::npos);
   }
   EXPECT_FALSE(DirectoryExists(test_path));
@@ -64,8 +64,8 @@ TEST(ScopedTempDir, TempDir) {
 TEST(ScopedTempDir, UniqueTempDirUnderPath) {
   // Create a path which will contain a unique temp path.
   FilePath base_path;
-  ASSERT_TRUE(file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("base_dir"),
-                                                &base_path));
+  ASSERT_TRUE(base::CreateNewTempDirectory(FILE_PATH_LITERAL("base_dir"),
+                                           &base_path));
 
   FilePath test_path;
   {

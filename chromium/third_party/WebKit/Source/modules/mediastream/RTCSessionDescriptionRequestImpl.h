@@ -32,9 +32,9 @@
 #define RTCSessionDescriptionRequestImpl_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/platform/mediastream/RTCSessionDescriptionRequest.h"
+#include "platform/mediastream/RTCSessionDescriptionRequest.h"
 
-namespace WebKit {
+namespace blink {
 class WebRTCSessionDescription;
 }
 
@@ -46,22 +46,22 @@ class RTCSessionDescriptionCallback;
 
 class RTCSessionDescriptionRequestImpl : public RTCSessionDescriptionRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCSessionDescriptionRequestImpl> create(ScriptExecutionContext*, PassRefPtr<RTCSessionDescriptionCallback>, PassRefPtr<RTCErrorCallback>);
+    static PassRefPtr<RTCSessionDescriptionRequestImpl> create(ExecutionContext*, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
     virtual ~RTCSessionDescriptionRequestImpl();
 
-    virtual void requestSucceeded(const WebKit::WebRTCSessionDescription&) OVERRIDE;
+    virtual void requestSucceeded(const blink::WebRTCSessionDescription&) OVERRIDE;
     virtual void requestFailed(const String& error) OVERRIDE;
 
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
 
 private:
-    RTCSessionDescriptionRequestImpl(ScriptExecutionContext*, PassRefPtr<RTCSessionDescriptionCallback>, PassRefPtr<RTCErrorCallback>);
+    RTCSessionDescriptionRequestImpl(ExecutionContext*, PassOwnPtr<RTCSessionDescriptionCallback>, PassOwnPtr<RTCErrorCallback>);
 
     void clear();
 
-    RefPtr<RTCSessionDescriptionCallback> m_successCallback;
-    RefPtr<RTCErrorCallback> m_errorCallback;
+    OwnPtr<RTCSessionDescriptionCallback> m_successCallback;
+    OwnPtr<RTCErrorCallback> m_errorCallback;
 };
 
 } // namespace WebCore

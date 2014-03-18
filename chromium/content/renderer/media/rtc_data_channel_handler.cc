@@ -25,11 +25,11 @@ RtcDataChannelHandler::~RtcDataChannelHandler() {
 }
 
 void RtcDataChannelHandler::setClient(
-    WebKit::WebRTCDataChannelHandlerClient* client) {
+    blink::WebRTCDataChannelHandlerClient* client) {
   webkit_client_ = client;
 }
 
-WebKit::WebString RtcDataChannelHandler::label() {
+blink::WebString RtcDataChannelHandler::label() {
   return UTF8ToUTF16(channel_->label());
 }
 
@@ -49,7 +49,7 @@ unsigned short RtcDataChannelHandler::maxRetransmits() const {
   return channel_->maxRetransmits();
 }
 
-WebKit::WebString RtcDataChannelHandler::protocol() const {
+blink::WebString RtcDataChannelHandler::protocol() const {
   return UTF8ToUTF16(channel_->protocol());
 }
 
@@ -65,7 +65,7 @@ unsigned long RtcDataChannelHandler::bufferedAmount() {
   return channel_->buffered_amount();
 }
 
-bool RtcDataChannelHandler::sendStringData(const WebKit::WebString& data) {
+bool RtcDataChannelHandler::sendStringData(const blink::WebString& data) {
   std::string utf8_buffer = UTF16ToUTF8(data);
   talk_base::Buffer buffer(utf8_buffer.c_str(), utf8_buffer.length());
   webrtc::DataBuffer data_buffer(buffer, false);
@@ -91,19 +91,19 @@ void RtcDataChannelHandler::OnStateChange() {
   switch (channel_->state()) {
     case webrtc::DataChannelInterface::kConnecting:
       webkit_client_->didChangeReadyState(
-          WebKit::WebRTCDataChannelHandlerClient::ReadyStateConnecting);
+          blink::WebRTCDataChannelHandlerClient::ReadyStateConnecting);
       break;
     case webrtc::DataChannelInterface::kOpen:
       webkit_client_->didChangeReadyState(
-          WebKit::WebRTCDataChannelHandlerClient::ReadyStateOpen);
+          blink::WebRTCDataChannelHandlerClient::ReadyStateOpen);
       break;
     case webrtc::DataChannelInterface::kClosing:
       webkit_client_->didChangeReadyState(
-          WebKit::WebRTCDataChannelHandlerClient::ReadyStateClosing);
+          blink::WebRTCDataChannelHandlerClient::ReadyStateClosing);
       break;
     case webrtc::DataChannelInterface::kClosed:
       webkit_client_->didChangeReadyState(
-          WebKit::WebRTCDataChannelHandlerClient::ReadyStateClosed);
+          blink::WebRTCDataChannelHandlerClient::ReadyStateClosed);
       break;
     default:
       NOTREACHED();
@@ -120,7 +120,7 @@ void RtcDataChannelHandler::OnMessage(const webrtc::DataBuffer& buffer) {
   if (buffer.binary) {
     webkit_client_->didReceiveRawData(buffer.data.data(), buffer.data.length());
   } else {
-    string16 utf16;
+    base::string16 utf16;
     if (!UTF8ToUTF16(buffer.data.data(), buffer.data.length(), &utf16)) {
       LOG(ERROR) << "Failed convert received data to UTF16";
       return;

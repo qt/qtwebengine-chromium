@@ -21,15 +21,16 @@ class WebContentDecryptionModuleSessionImpl;
 class SessionIdAdapter;
 
 class WebContentDecryptionModuleImpl
-    : public WebKit::WebContentDecryptionModule {
+    : public blink::WebContentDecryptionModule {
  public:
-  static WebContentDecryptionModuleImpl* Create(const string16& key_system);
+  static WebContentDecryptionModuleImpl* Create(
+      const base::string16& key_system);
 
   virtual ~WebContentDecryptionModuleImpl();
 
-  // WebKit::WebContentDecryptionModule implementation.
-  virtual WebKit::WebContentDecryptionModuleSession* createSession(
-      WebKit::WebContentDecryptionModuleSession::Client* client);
+  // blink::WebContentDecryptionModule implementation.
+  virtual blink::WebContentDecryptionModuleSession* createSession(
+      blink::WebContentDecryptionModuleSession::Client* client);
 
  private:
   // Takes ownership of |media_keys| and |adapter|.
@@ -37,7 +38,7 @@ class WebContentDecryptionModuleImpl
                                  scoped_ptr<SessionIdAdapter> adapter);
 
   // Called when a WebContentDecryptionModuleSessionImpl is closed.
-  void OnSessionClosed(const std::string& session_id);
+  void OnSessionClosed(uint32 session_id);
 
   scoped_ptr<media::MediaKeys> media_keys_;
   scoped_ptr<SessionIdAdapter> adapter_;

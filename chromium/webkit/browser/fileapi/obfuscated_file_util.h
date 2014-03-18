@@ -6,8 +6,11 @@
 #define WEBKIT_BROWSER_FILEAPI_OBFUSCATED_FILE_UTIL_H_
 
 #include <map>
+#include <set>
 #include <string>
+#include <vector>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
 #include "base/gtest_prod_util.h"
@@ -16,6 +19,7 @@
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -37,6 +41,21 @@ class FileSystemOperationContext;
 class SandboxOriginDatabaseInterface;
 class TimedTaskHelper;
 
+// This file util stores directory information in LevelDB to obfuscate
+// and to neutralize virtual file paths given by arbitrary apps.
+// Files are stored with two-level isolation: per-origin and per-type.
+// The isolation is done by storing data in separate directory partitions.
+// For example, a file in Temporary file system for origin 'www.example.com'
+// is stored in a different partition for a file in Persistent file system
+// for the same origin, or for Temporary file system for another origin.
+//
+// * Per-origin directory name information is stored in a separate LevelDB,
+//   which is maintained by SandboxOriginDatabase.
+// * Per-type directory name information is given by
+//   GetTypeStringForURLCallback that is given in CTOR.
+//   We use a small static mapping (e.g. 't' for Temporary type) for
+//   regular sandbox filesystems.
+//
 // The overall implementation philosophy of this class is that partial failures
 // should leave us with an intact database; we'd prefer to leak the occasional
 // backing file than have a database entry whose backing file is missing.  When
@@ -58,13 +77,32 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
     virtual GURL Next() = 0;
 
     // Returns the current origin's information.
-    virtual bool HasFileSystemType(FileSystemType type) const = 0;
+    // |type_string| must be ascii string.
+    virtual bool HasTypeDirectory(const std::string& type_string) const = 0;
   };
 
+  typedef base::Callback<std::string(const FileSystemURL&)>
+      GetTypeStringForURLCallback;
+
+  // |get_type_string_for_url| is user-defined callback that should return
+  // a type string for the given FileSystemURL.  The type string is used
+  // to provide per-type isolation in the sandboxed filesystem directory.
+  // Note that this method is called on file_task_runner.
+  //
+  // |known_type_strings| are known type string names that this file system
+  // should care about.
+  // This info is used to determine whether we could delete the entire
+  // origin directory or not in DeleteDirectoryForOriginAndType. If no directory
+  // for any known type exists the origin directory may get deleted when
+  // one origin/type pair is deleted.
+  //
   ObfuscatedFileUtil(
       quota::SpecialStoragePolicy* special_storage_policy,
       const base::FilePath& file_system_directory,
-      base::SequencedTaskRunner* file_task_runner);
+      base::SequencedTaskRunner* file_task_runner,
+      const GetTypeStringForURLCallback& get_type_string_for_url,
+      const std::set<std::string>& known_type_strings,
+      SandboxFileSystemBackendDelegate* sandbox_delegate);
   virtual ~ObfuscatedFileUtil();
 
   // FileSystemFileUtil overrides.
@@ -110,6 +148,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
       FileSystemOperationContext* context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOption option,
       bool copy) OVERRIDE;
   virtual base::PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
@@ -142,26 +181,24 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // Gets the topmost directory specific to this origin and type.  This will
   // contain both the directory database's files and all the backing file
   // subdirectories.
-  // Returns an empty path if the directory is undefined (e.g. because |type|
-  // is invalid). If the directory is defined, it will be returned, even if
+  // Returns the topmost origin directory if |type_string| is empty.
+  // Returns an empty path if the directory is undefined.
+  // If the directory is defined, it will be returned, even if
   // there is a file system error (e.g. the directory doesn't exist on disk and
   // |create| is false). Callers should always check |error_code| to make sure
   // the returned path is usable.
   base::FilePath GetDirectoryForOriginAndType(
       const GURL& origin,
-      FileSystemType type,
+      const std::string& type_string,
       bool create,
       base::PlatformFileError* error_code);
 
   // Deletes the topmost directory specific to this origin and type.  This will
   // delete its directory database.
-  bool DeleteDirectoryForOriginAndType(const GURL& origin, FileSystemType type);
-
-  // TODO(ericu): This doesn't really feel like it belongs in this class.
-  // The previous version lives in FileSystemPathManager, but perhaps
-  // SandboxFileSystemBackend would be better?
-  static base::FilePath::StringType GetDirectoryNameForType(
-      FileSystemType type);
+  // Deletes the topmost origin directory if |type_string| is empty.
+  bool DeleteDirectoryForOriginAndType(
+      const GURL& origin,
+      const std::string& type_string);
 
   // This method and all methods of its returned class must be called only on
   // the FILE thread.  The caller is responsible for deleting the returned
@@ -170,7 +207,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
 
   // Deletes a directory database from the database list in the ObfuscatedFSFU
   // and destroys the database on the disk.
-  bool DestroyDirectoryDatabase(const GURL& origin, FileSystemType type);
+  bool DestroyDirectoryDatabase(const GURL& origin,
+                                const std::string& type_string);
 
   // Computes a cost for storing a given file in the obfuscated FSFU.
   // As the cost of a file is independent of the cost of its parent directories,
@@ -179,13 +217,20 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // on each path segment and add the results.
   static int64 ComputeFilePathCost(const base::FilePath& path);
 
-  void MaybePrepopulateDatabase();
+  // Tries to prepopulate directory database for the given type strings.
+  // This tries from the first one in the given type_strings and stops
+  // once it succeeds to do so for one database (i.e. it prepopulates
+  // at most one database).
+  void MaybePrepopulateDatabase(
+      const std::vector<std::string>& type_strings_to_prepopulate);
 
  private:
   typedef SandboxDirectoryDatabase::FileId FileId;
   typedef SandboxDirectoryDatabase::FileInfo FileInfo;
 
   friend class ObfuscatedFileEnumerator;
+  friend class ObfuscatedFileUtilTest;
+  friend class QuotaBackendImplTest;
   FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase);
   FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
                            MaybeDropDatabasesAlreadyDeletedCase);
@@ -196,11 +241,26 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
                            MigrationBackFromIsolated);
 
+  // Helper method to create an obfuscated file util for regular
+  // (temporary, persistent) file systems. Used only for testing.
+  // Note: this is implemented in sandbox_file_system_backend_delegate.cc.
+  static ObfuscatedFileUtil* CreateForTesting(
+      quota::SpecialStoragePolicy* special_storage_policy,
+      const base::FilePath& file_system_directory,
+      base::SequencedTaskRunner* file_task_runner);
+
+  base::FilePath GetDirectoryForURL(
+      const FileSystemURL& url,
+      bool create,
+      base::PlatformFileError* error_code);
+
+  // This just calls get_type_string_for_url_ callback that is given in ctor.
+  std::string CallGetTypeStringForURL(const FileSystemURL& url);
+
   base::PlatformFileError GetFileInfoInternal(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       FileId file_id,
       FileInfo* local_info,
       base::PlatformFileInfo* file_info,
@@ -220,8 +280,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   base::PlatformFileError CreateFile(
       FileSystemOperationContext* context,
       const base::FilePath& source_file_path,
-      const GURL& dest_origin,
-      FileSystemType dest_type,
+      const FileSystemURL& dest_url,
       FileInfo* dest_file_info,
       int file_flags,
       base::PlatformFile* handle);
@@ -230,23 +289,23 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // field] to an absolute platform path that can be given to the native
   // filesystem.
   base::FilePath DataPathToLocalPath(
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       const base::FilePath& data_file_path);
 
-  std::string GetDirectoryDatabaseKey(const GURL& origin, FileSystemType type);
+  std::string GetDirectoryDatabaseKey(const GURL& origin,
+                                      const std::string& type_string);
 
   // This returns NULL if |create| flag is false and a filesystem does not
-  // exist for the given |origin_url| and |type|.
+  // exist for the given |url|.
   // For read operations |create| should be false.
-  SandboxDirectoryDatabase* GetDirectoryDatabase(
-      const GURL& origin_url, FileSystemType type, bool create);
+  SandboxDirectoryDatabase* GetDirectoryDatabase(const FileSystemURL& url,
+                                                 bool create);
 
   // Gets the topmost directory specific to this origin.  This will
   // contain both the filesystem type subdirectories.
   base::FilePath GetDirectoryForOrigin(const GURL& origin,
-                                 bool create,
-                                 base::PlatformFileError* error_code);
+                                       bool create,
+                                       base::PlatformFileError* error_code);
 
   void InvalidateUsageCache(FileSystemOperationContext* context,
                             const GURL& origin,
@@ -254,13 +313,15 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
 
   void MarkUsed();
   void DropDatabases();
-  bool InitOriginDatabase(bool create);
+
+  // Initializes the origin database. |origin_hint| may be used as a hint
+  // for initializing database if it's not empty.
+  bool InitOriginDatabase(const GURL& origin_hint, bool create);
 
   base::PlatformFileError GenerateNewLocalPath(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       base::FilePath* local_path);
 
   base::PlatformFileError CreateOrOpenInternal(
@@ -284,9 +345,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   scoped_ptr<TimedTaskHelper> timer_;
 
-  // If this instance is initialized for an isolated partition, this should
-  // only see a single origin.
-  GURL isolated_origin_;
+  GetTypeStringForURLCallback get_type_string_for_url_;
+  std::set<std::string> known_type_strings_;
+
+  // Not owned.
+  SandboxFileSystemBackendDelegate* sandbox_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ObfuscatedFileUtil);
 };

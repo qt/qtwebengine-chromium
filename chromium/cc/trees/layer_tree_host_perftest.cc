@@ -4,6 +4,8 @@
 
 #include "cc/trees/layer_tree_host.h"
 
+#include <sstream>
+
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
@@ -12,6 +14,8 @@
 #include "cc/layers/content_layer.h"
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/solid_color_layer.h"
+#include "cc/layers/texture_layer.h"
+#include "cc/resources/texture_mailbox.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/lap_timer.h"
 #include "cc/test/layer_tree_json_parser.h"
@@ -40,6 +44,10 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
     fake_content_layer_client_.set_paint_all_opaque(true);
   }
 
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->throttle_frame_production = false;
+  }
+
   virtual void BeginTest() OVERRIDE {
     BuildTree();
     PostSetNeedsCommitToMainThread();
@@ -62,12 +70,11 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
   }
 
   virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    if (TestEnded()) {
+    if (TestEnded() || CleanUpStarted())
       return;
-    }
     draw_timer_.NextLap();
     if (draw_timer_.HasTimeLimitExpired()) {
-      EndTest();
+      CleanUpAndEndTest(impl);
       return;
     }
     if (!animation_driven_drawing_)
@@ -76,17 +83,17 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
       impl->SetFullRootLayerDamage();
   }
 
+  virtual void CleanUpAndEndTest(LayerTreeHostImpl* host_impl) { EndTest(); }
+
+  virtual bool CleanUpStarted() { return false; }
+
   virtual void BuildTree() {}
 
   virtual void AfterTest() OVERRIDE {
     CHECK(!test_name_.empty()) << "Must SetTestName() before AfterTest().";
-    perf_test::PrintResult("layer_tree_host_frame_count", "", test_name_,
-                           draw_timer_.NumLaps(), "frame_count", true);
     perf_test::PrintResult("layer_tree_host_frame_time", "", test_name_,
                            1000 * draw_timer_.MsPerLap(), "us", true);
     if (measure_commit_cost_) {
-      perf_test::PrintResult("layer_tree_host_commit_count", "", test_name_,
-                             commit_timer_.NumLaps(), "commit_count", true);
       perf_test::PrintResult("layer_tree_host_commit_time", "", test_name_,
                              1000 * commit_timer_.MsPerLap(), "us", true);
     }
@@ -117,7 +124,7 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
 
   void ReadTestFile(const std::string& name) {
     base::FilePath test_data_dir;
-    ASSERT_TRUE(PathService::Get(cc::DIR_TEST_DATA, &test_data_dir));
+    ASSERT_TRUE(PathService::Get(CCPaths::DIR_TEST_DATA, &test_data_dir));
     base::FilePath json_file = test_data_dir.AppendASCII(name + ".json");
     ASSERT_TRUE(base::ReadFileToString(json_file, &json_));
   }
@@ -142,6 +149,12 @@ TEST_F(LayerTreeHostPerfTestJsonReader, TenTenSingleThread) {
   RunTest(false, false, false);
 }
 
+TEST_F(LayerTreeHostPerfTestJsonReader, TenTenThreadedImplSide) {
+  SetTestName("10_10_threaded_impl_side");
+  ReadTestFile("10_10_layer_tree");
+  RunTestWithImplSidePainting();
+}
+
 // Simulates a tab switcher scene with two stacks of 10 tabs each.
 TEST_F(LayerTreeHostPerfTestJsonReader,
        TenTenSingleThread_FullDamageEachFrame) {
@@ -149,6 +162,14 @@ TEST_F(LayerTreeHostPerfTestJsonReader,
   SetTestName("10_10_single_thread_full_damage_each_frame");
   ReadTestFile("10_10_layer_tree");
   RunTest(false, false, false);
+}
+
+TEST_F(LayerTreeHostPerfTestJsonReader,
+       TenTenThreadedImplSide_FullDamageEachFrame) {
+  full_damage_each_frame_ = true;
+  SetTestName("10_10_threaded_impl_side_full_damage_each_frame");
+  ReadTestFile("10_10_layer_tree");
+  RunTestWithImplSidePainting();
 }
 
 // Invalidates a leaf layer in the tree on the main thread after every commit.
@@ -185,6 +206,12 @@ TEST_F(LayerTreeHostPerfTestLeafInvalidates, TenTenSingleThread) {
   RunTest(false, false, false);
 }
 
+TEST_F(LayerTreeHostPerfTestLeafInvalidates, TenTenThreadedImplSide) {
+  SetTestName("10_10_threaded_impl_side_leaf_invalidates");
+  ReadTestFile("10_10_layer_tree");
+  RunTestWithImplSidePainting();
+}
+
 // Simulates main-thread scrolling on each frame.
 class ScrollingLayerTreePerfTest : public LayerTreeHostPerfTestJsonReader {
  public:
@@ -207,20 +234,93 @@ class ScrollingLayerTreePerfTest : public LayerTreeHostPerfTestJsonReader {
   scoped_refptr<Layer> scrollable_;
 };
 
-TEST_F(ScrollingLayerTreePerfTest, LongScrollablePage) {
+TEST_F(ScrollingLayerTreePerfTest, LongScrollablePageSingleThread) {
   SetTestName("long_scrollable_page");
   ReadTestFile("long_scrollable_page");
   RunTest(false, false, false);
 }
 
-class ImplSidePaintingPerfTest : public LayerTreeHostPerfTestJsonReader {
- protected:
-  // Run test with impl-side painting.
-  void RunTestWithImplSidePainting() { RunTest(true, false, true); }
+TEST_F(ScrollingLayerTreePerfTest, LongScrollablePageThreadedImplSide) {
+  SetTestName("long_scrollable_page_threaded_impl_side");
+  ReadTestFile("long_scrollable_page");
+  RunTestWithImplSidePainting();
+}
+
+static void EmptyReleaseCallback(unsigned sync_point, bool lost_resource) {}
+
+// Simulates main-thread scrolling on each frame.
+class BrowserCompositorInvalidateLayerTreePerfTest
+    : public LayerTreeHostPerfTestJsonReader {
+ public:
+  BrowserCompositorInvalidateLayerTreePerfTest()
+      : next_sync_point_(1), clean_up_started_(false) {}
+
+  virtual void BuildTree() OVERRIDE {
+    LayerTreeHostPerfTestJsonReader::BuildTree();
+    tab_contents_ =
+        static_cast<TextureLayer*>(
+            layer_tree_host()->root_layer()->children()[0]->
+                                             children()[0]->
+                                             children()[0]->
+                                             children()[0].get());
+    ASSERT_TRUE(tab_contents_.get());
+  }
+
+  virtual void WillCommit() OVERRIDE {
+    gpu::Mailbox gpu_mailbox;
+    std::ostringstream name_stream;
+    name_stream << "name" << next_sync_point_;
+    gpu_mailbox.SetName(
+        reinterpret_cast<const int8*>(name_stream.str().c_str()));
+    scoped_ptr<SingleReleaseCallback> callback = SingleReleaseCallback::Create(
+        base::Bind(&EmptyReleaseCallback));
+    TextureMailbox mailbox(gpu_mailbox, next_sync_point_);
+    next_sync_point_++;
+
+    tab_contents_->SetTextureMailbox(mailbox, callback.Pass());
+  }
+
+  virtual void DidCommit() OVERRIDE {
+    if (CleanUpStarted())
+      return;
+    layer_tree_host()->SetNeedsCommit();
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    if (CleanUpStarted())
+      EndTest();
+  }
+
+  virtual void CleanUpAndEndTest(LayerTreeHostImpl* host_impl) OVERRIDE {
+    clean_up_started_ = true;
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserCompositorInvalidateLayerTreePerfTest::
+                        CleanUpAndEndTestOnMainThread,
+                   base::Unretained(this)));
+  }
+
+  void CleanUpAndEndTestOnMainThread() {
+    tab_contents_->SetTextureMailbox(TextureMailbox(),
+                                     scoped_ptr<SingleReleaseCallback>());
+  }
+
+  virtual bool CleanUpStarted() OVERRIDE { return clean_up_started_; }
+
+ private:
+  scoped_refptr<TextureLayer> tab_contents_;
+  unsigned next_sync_point_;
+  bool clean_up_started_;
 };
 
+TEST_F(BrowserCompositorInvalidateLayerTreePerfTest, DenseBrowserUI) {
+  SetTestName("dense_layer_tree");
+  ReadTestFile("dense_layer_tree");
+  RunTestWithImplSidePainting();
+}
+
 // Simulates a page with several large, transformed and animated layers.
-TEST_F(ImplSidePaintingPerfTest, HeavyPage) {
+TEST_F(LayerTreeHostPerfTestJsonReader, HeavyPageThreadedImplSide) {
   animation_driven_drawing_ = true;
   measure_commit_cost_ = true;
   SetTestName("heavy_page");
@@ -228,7 +328,8 @@ TEST_F(ImplSidePaintingPerfTest, HeavyPage) {
   RunTestWithImplSidePainting();
 }
 
-class PageScaleImplSidePaintingPerfTest : public ImplSidePaintingPerfTest {
+class PageScaleImplSidePaintingPerfTest
+    : public LayerTreeHostPerfTestJsonReader {
  public:
   PageScaleImplSidePaintingPerfTest()
       : max_scale_(16.f), min_scale_(1.f / max_scale_) {}

@@ -3414,6 +3414,22 @@ int ssl3_send_channel_id(SSL *s)
 	if (s->state != SSL3_ST_CW_CHANNEL_ID_A)
 		return ssl3_do_write(s, SSL3_RT_HANDSHAKE);
 
+	if (!s->tlsext_channel_id_private && s->ctx->channel_id_cb)
+		{
+		EVP_PKEY *key = NULL;
+		s->ctx->channel_id_cb(s, &key);
+		if (key != NULL)
+			{
+			s->tlsext_channel_id_private = key;
+			}
+		}
+	if (!s->tlsext_channel_id_private)
+		{
+		s->rwstate=SSL_CHANNEL_ID_LOOKUP;
+		return (-1);
+		}
+	s->rwstate=SSL_NOTHING;
+
 	d = (unsigned char *)s->init_buf->data;
 	*(d++)=SSL3_MT_ENCRYPTED_EXTENSIONS;
 	l2n3(2 + 2 + TLSEXT_CHANNEL_ID_SIZE, d);

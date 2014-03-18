@@ -52,19 +52,18 @@ HTMLImportsController* HTMLImport::controller()
 
 void HTMLImport::appendChild(HTMLImport* child)
 {
-    ASSERT(child->parent() == this);
-    ASSERT(!child->hasChildren());
-
-    if (isBlocked())
-        child->block();
-    m_children.append(child);
+    if (isScriptBlocked())
+        child->blockScript();
+    if (lastChild() && !lastChild()->isDone())
+        child->blockDocument();
+    TreeNode<HTMLImport>::appendChild(child);
     blockAfter(child);
 }
 
 bool HTMLImport::areChilrenLoaded() const
 {
-    for (size_t i = 0; i < m_children.size(); ++i) {
-        if (!m_children[i]->isLoaded())
+    for (HTMLImport* child = firstChild(); child; child = child->next()) {
+        if (!child->isLoaded())
             return false;
     }
 
@@ -77,8 +76,7 @@ bool HTMLImport::arePredecessorsLoaded() const
     if (!parent)
         return true;
 
-    for (size_t i = 0; i < parent->m_children.size(); ++i) {
-        HTMLImport* sibling = parent->m_children[i];
+    for (HTMLImport* sibling = parent->firstChild(); sibling; sibling = sibling->next()) {
         if (sibling == this)
             break;
         if (!sibling->isLoaded())
@@ -88,22 +86,24 @@ bool HTMLImport::arePredecessorsLoaded() const
     return true;
 }
 
-void HTMLImport::block()
+void HTMLImport::blockScript()
 {
-    m_blocked = true;
+    m_scriptBlocked = true;
 }
 
-void HTMLImport::unblock()
+void HTMLImport::unblockScript()
 {
-    bool wasBlocked = m_blocked;
-    m_blocked = false;
+    bool wasBlocked = m_scriptBlocked;
+    m_scriptBlocked = false;
     if (wasBlocked)
-        didUnblock();
+        didUnblockScript();
 }
 
-void HTMLImport::didUnblock()
+void HTMLImport::didUnblockScript()
 {
-    ASSERT(!isBlocked());
+    ASSERT(!isDocumentBlocked());
+    ASSERT(!isScriptBlocked());
+
     if (!isProcessing())
         return;
 
@@ -111,45 +111,80 @@ void HTMLImport::didUnblock()
         document->didLoadAllImports();
 }
 
+
+void HTMLImport::blockDocument()
+{
+    m_documentBlocked = true;
+}
+
+void HTMLImport::unblockDocument()
+{
+    bool wasBlocked = m_documentBlocked;
+    m_documentBlocked = false;
+    if (wasBlocked)
+        didUnblockDocument();
+}
+
+void HTMLImport::didUnblockDocument()
+{
+    ASSERT(!isDocumentBlocked());
+    ASSERT(isScriptBlocked());
+}
+
+inline bool HTMLImport::needsBlockingDocument() const
+{
+    ASSERT(isDocumentBlocked());
+    HTMLImport* elder = previous();
+    return (elder && !elder->isDone());
+}
+
 bool HTMLImport::unblock(HTMLImport* import)
 {
     ASSERT(import->arePredecessorsLoaded());
-    ASSERT(import->isBlocked() || import->areChilrenLoaded());
+    ASSERT(import->isScriptBlocked() || import->areChilrenLoaded());
 
-    if (import->isBlocked()) {
-        for (size_t i = 0; i < import->m_children.size(); ++i) {
-            if (!unblock(import->m_children[i]))
+    if (import->isDocumentBlocked() && import->needsBlockingDocument())
+        return false;
+    import->unblockDocument();
+
+    if (import->isScriptBlocked()) {
+        for (HTMLImport* child = import->firstChild(); child; child = child->next()) {
+            if (!unblock(child))
                 return false;
         }
     }
 
-    import->unblock();
+    import->unblockScript();
     return import->isLoaded();
 }
 
 void HTMLImport::block(HTMLImport* import)
 {
-    import->block();
-    for (size_t i = 0; i < import->m_children.size(); ++i)
-        block(import->m_children[i]);
+    for (HTMLImport* child = import; child; child = traverseNext(child, import))
+        child->blockScript();
 }
 
 void HTMLImport::blockAfter(HTMLImport* child)
 {
     ASSERT(child->parent() == this);
 
-    for (size_t i = 0; i < m_children.size(); ++i) {
-        HTMLImport* sibling = m_children[m_children.size() - i - 1];
+    for (HTMLImport* sibling = lastChild(); sibling; sibling = sibling->previous()) {
         if (sibling == child)
             break;
         HTMLImport::block(sibling);
     }
 
-    this->block();
+    this->blockScript();
 
     if (HTMLImport* parent = this->parent())
         parent->blockAfter(this);
 }
 
+bool HTMLImport::isMaster(Document* document)
+{
+    if (!document->import())
+        return true;
+    return (document->import()->master() == document);
+}
 
 } // namespace WebCore

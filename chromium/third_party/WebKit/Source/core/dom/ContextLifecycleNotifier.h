@@ -28,7 +28,7 @@
 #define ContextLifecycleNotifier_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/platform/LifecycleNotifier.h"
+#include "platform/LifecycleNotifier.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -36,11 +36,11 @@ namespace WebCore {
 
 class ActiveDOMObject;
 class ContextLifecycleObserver;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class ContextLifecycleNotifier : public LifecycleNotifier {
+class ContextLifecycleNotifier : public LifecycleNotifier<ExecutionContext> {
 public:
-    static PassOwnPtr<ContextLifecycleNotifier> create(ScriptExecutionContext*);
+    static PassOwnPtr<ContextLifecycleNotifier> create(ExecutionContext*);
 
     virtual ~ContextLifecycleNotifier();
 
@@ -48,25 +48,24 @@ public:
 
     const ActiveDOMObjectSet& activeDOMObjects() const { return m_activeDOMObjects; }
 
-    virtual void addObserver(LifecycleObserver*) OVERRIDE;
-    virtual void removeObserver(LifecycleObserver*) OVERRIDE;
+    virtual void addObserver(Observer*) OVERRIDE;
+    virtual void removeObserver(Observer*) OVERRIDE;
 
     void notifyResumingActiveDOMObjects();
-    void notifySuspendingActiveDOMObjects(ActiveDOMObject::ReasonForSuspension);
+    void notifySuspendingActiveDOMObjects();
     void notifyStoppingActiveDOMObjects();
 
     bool contains(ActiveDOMObject* object) const { return m_activeDOMObjects.contains(object); }
-    bool canSuspendActiveDOMObjects();
     bool hasPendingActivity() const;
 
 protected:
-    explicit ContextLifecycleNotifier(ScriptExecutionContext*);
+    explicit ContextLifecycleNotifier(ExecutionContext*);
 
 private:
     ActiveDOMObjectSet m_activeDOMObjects;
 };
 
-inline PassOwnPtr<ContextLifecycleNotifier> ContextLifecycleNotifier::create(ScriptExecutionContext* context)
+inline PassOwnPtr<ContextLifecycleNotifier> ContextLifecycleNotifier::create(ExecutionContext* context)
 {
     return adoptPtr(new ContextLifecycleNotifier(context));
 }

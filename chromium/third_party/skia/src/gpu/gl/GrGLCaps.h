@@ -160,9 +160,9 @@ public:
     FBFetchType fbFetchType() const { return fFBFetchType; }
 
     /**
-     * Prints the caps info using GrPrintf.
+     * Returs a string containeng the caps info.
      */
-    virtual void print() const SK_OVERRIDE;
+    virtual SkString dump() const SK_OVERRIDE;
 
     /**
      * Gets an array of legal stencil formats. These formats are not guaranteed
@@ -248,6 +248,8 @@ public:
     /// Is there support for discarding the frame buffer
     bool discardFBSupport() const { return fDiscardFBSupport; }
 
+    bool fullClearIsFree() const { return fFullClearIsFree; }
+
 private:
     /**
      * Maintains a bit per GrPixelConfig. It is used to avoid redundantly
@@ -286,8 +288,10 @@ private:
         }
     };
 
-    void initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli);
-    void initStencilFormats(const GrGLContextInfo& ctxInfo);
+    void initFSAASupport(const GrGLContextInfo&, const GrGLInterface*);
+    void initStencilFormats(const GrGLContextInfo&);
+    // This must be called after initFSAASupport().
+    void initConfigRenderableTable(const GrGLContextInfo&);
 
     // tracks configs that have been verified to pass the FBO completeness when
     // used as a color attachment
@@ -327,6 +331,7 @@ private:
     bool fIsCoreProfile : 1;
     bool fFixedFunctionSupport : 1;
     bool fDiscardFBSupport : 1;
+    bool fFullClearIsFree : 1;
 
     typedef GrDrawTargetCaps INHERITED;
 };

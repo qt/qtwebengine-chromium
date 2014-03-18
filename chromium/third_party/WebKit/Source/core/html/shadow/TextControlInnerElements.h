@@ -28,7 +28,7 @@
 #define TextControlInnerElements_h
 
 #include "core/html/HTMLDivElement.h"
-#include "core/page/SpeechInputListener.h"
+#include "core/speech/SpeechInputListener.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -77,7 +77,7 @@ public:
 
 private:
     SearchFieldDecorationElement(Document&);
-    virtual const AtomicString& part() const OVERRIDE;
+    virtual const AtomicString& pseudo() const OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
@@ -137,11 +137,7 @@ private:
     SpeechInputResultArray m_results;
 };
 
-inline InputFieldSpeechButtonElement* toInputFieldSpeechButtonElement(Element* element)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isInputFieldSpeechButtonElement());
-    return static_cast<InputFieldSpeechButtonElement*>(element);
-}
+DEFINE_TYPE_CASTS(InputFieldSpeechButtonElement, Element, element, element->isInputFieldSpeechButtonElement(), element.isInputFieldSpeechButtonElement());
 
 #endif // ENABLE(INPUT_SPEECH)
 

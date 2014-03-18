@@ -191,7 +191,8 @@ class SourceFileProcessor(object):
     return True
 
   def IgnoreDir(self, name):
-    return name.startswith('.') or name == 'data' or name == 'sputniktests'
+    return (name.startswith('.') or
+            name in ('data', 'kraken', 'octane', 'sunspider'))
 
   def IgnoreFile(self, name):
     return name.startswith('.')
@@ -226,7 +227,7 @@ class CppLintProcessor(SourceFileProcessor):
               or (name in CppLintProcessor.IGNORE_LINT))
 
   def GetPathsToSearch(self):
-    return ['src', 'preparser', 'include', 'samples', join('test', 'cctest')]
+    return ['src', 'include', 'samples', join('test', 'cctest')]
 
   def GetCpplintScript(self, prio_path):
     for path in [prio_path] + os.environ["PATH"].split(os.pathsep):
@@ -282,8 +283,8 @@ class SourceProcessor(SourceFileProcessor):
   Check that all files include a copyright notice and no trailing whitespaces.
   """
 
-  RELEVANT_EXTENSIONS = ['.js', '.cc', '.h', '.py', '.c', 'SConscript',
-      'SConstruct', '.status', '.gyp', '.gypi']
+  RELEVANT_EXTENSIONS = ['.js', '.cc', '.h', '.py', '.c',
+                         '.status', '.gyp', '.gypi']
 
   # Overwriting the one in the parent class.
   def FindFilesIn(self, path):
@@ -292,7 +293,7 @@ class SourceProcessor(SourceFileProcessor):
                                 stdout=PIPE, cwd=path, shell=True)
       result = []
       for file in output.stdout.read().split():
-        for dir_part in os.path.dirname(file).split(os.sep):
+        for dir_part in os.path.dirname(file).replace(os.sep, '/').split('/'):
           if self.IgnoreDir(dir_part):
             break
         else:
@@ -312,12 +313,8 @@ class SourceProcessor(SourceFileProcessor):
     return ['.']
 
   def IgnoreDir(self, name):
-    return (super(SourceProcessor, self).IgnoreDir(name)
-              or (name == 'third_party')
-              or (name == 'gyp')
-              or (name == 'out')
-              or (name == 'obj')
-              or (name == 'DerivedSources'))
+    return (super(SourceProcessor, self).IgnoreDir(name) or
+            name in ('third_party', 'gyp', 'out', 'obj', 'DerivedSources'))
 
   IGNORE_COPYRIGHTS = ['cpplint.py',
                        'daemon.py',
@@ -364,6 +361,9 @@ class SourceProcessor(SourceFileProcessor):
         print "%s has trailing whitespaces in lines %s." % (name, linenumbers)
       else:
         print "%s has trailing whitespaces in line %s." % (name, linenumbers)
+      result = False
+    if not contents.endswith('\n') or contents.endswith('\n\n'):
+      print "%s does not end with a single new line." % name
       result = False
     # Check two empty lines between declarations.
     if name.endswith(".cc"):

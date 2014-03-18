@@ -24,7 +24,6 @@
 
 #include "SVGNames.h"
 #include "core/css/CSSImageSetValue.h"
-#include "core/css/CSSImageValue.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/style/StyleFetchedImage.h"
@@ -74,7 +73,7 @@ CSSCursorImageValue::~CSSCursorImageValue()
     }
 }
 
-String CSSCursorImageValue::customCssText() const
+String CSSCursorImageValue::customCSSText() const
 {
     StringBuilder result;
     result.append(m_imageValue->cssText());
@@ -122,7 +121,7 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
 StyleImage* CSSCursorImageValue::cachedImage(ResourceFetcher* loader, float deviceScaleFactor)
 {
     if (m_imageValue->isImageSetValue())
-        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedImageSet(loader, deviceScaleFactor);
+        return toCSSImageSetValue(m_imageValue.get())->cachedImageSet(loader, deviceScaleFactor);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
@@ -146,8 +145,7 @@ StyleImage* CSSCursorImageValue::cachedImage(ResourceFetcher* loader, float devi
     }
 
     if (m_image && m_image->isImageResource())
-        return static_cast<StyleFetchedImage*>(m_image.get());
-
+        return toStyleFetchedImage(m_image);
     return 0;
 }
 
@@ -155,7 +153,7 @@ StyleImage* CSSCursorImageValue::cachedOrPendingImage(float deviceScaleFactor)
 {
     // Need to delegate completely so that changes in device scale factor can be handled appropriately.
     if (m_imageValue->isImageSetValue())
-        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedOrPendingImageSet(deviceScaleFactor);
+        return toCSSImageSetValue(m_imageValue.get())->cachedOrPendingImageSet(deviceScaleFactor);
 
     if (!m_image)
         m_image = StylePendingImage::create(this);
@@ -177,7 +175,7 @@ String CSSCursorImageValue::cachedImageURL()
 {
     if (!m_image || !m_image->isImageResource())
         return String();
-    return static_cast<StyleFetchedImage*>(m_image.get())->cachedImage()->url().string();
+    return toStyleFetchedImage(m_image)->cachedImage()->url().string();
 }
 
 void CSSCursorImageValue::clearImageResource()

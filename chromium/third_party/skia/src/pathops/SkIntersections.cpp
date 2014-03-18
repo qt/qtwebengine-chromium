@@ -7,6 +7,12 @@
 
 #include "SkIntersections.h"
 
+void SkIntersections::append(const SkIntersections& i) {
+    for (int index = 0; index < i.fUsed; ++index) {
+        insert(i[0][index], i[1][index], i.pt(index));
+    }
+}
+
 int (SkIntersections::*CurveVertical[])(const SkPoint[], SkScalar, SkScalar, SkScalar, bool) = {
     NULL,
     &SkIntersections::verticalLine,
@@ -16,7 +22,7 @@ int (SkIntersections::*CurveVertical[])(const SkPoint[], SkScalar, SkScalar, SkS
 
 int (SkIntersections::*CurveRay[])(const SkPoint[], const SkDLine&) = {
     NULL,
-    NULL,
+    &SkIntersections::lineRay,
     &SkIntersections::quadRay,
     &SkIntersections::cubicRay
 };
@@ -45,6 +51,7 @@ int SkIntersections::coincidentUsed() const {
 int SkIntersections::cubicRay(const SkPoint pts[4], const SkDLine& line) {
     SkDCubic cubic;
     cubic.set(pts);
+    fMax = 3;
     return intersectRay(cubic, line);
 }
 
@@ -87,7 +94,12 @@ int SkIntersections::insert(double one, double two, const SkDPoint& pt) {
             break;
         }
     }
-    SkASSERT(fUsed < 9);
+    if (fUsed >= fMax) {
+        SkASSERT(0);  // FIXME : this error, if it is to be handled at runtime in release, must
+                      // be propagated all the way back down to the caller, and return failure.
+        fUsed = 0;
+        return 0;
+    }
     int remaining = fUsed - index;
     if (remaining > 0) {
         memmove(&fPt[index + 1], &fPt[index], sizeof(fPt[0]) * remaining);
@@ -96,7 +108,6 @@ int SkIntersections::insert(double one, double two, const SkDPoint& pt) {
         int clearMask = ~((1 << index) - 1);
         fIsCoincident[0] += fIsCoincident[0] & clearMask;
         fIsCoincident[1] += fIsCoincident[1] & clearMask;
-        fIsNear += fIsNear & clearMask;
     }
     fPt[index] = pt;
     fT[0][index] = one;
@@ -105,19 +116,18 @@ int SkIntersections::insert(double one, double two, const SkDPoint& pt) {
     return index;
 }
 
-void SkIntersections::insertNear(double one, double two, const SkDPoint& pt) {
-    int index = insert(one, two, pt);
-    if (index < 0) {
-        return;
-    }
-    fIsNear |= 1 << index;
-}
-
 void SkIntersections::insertCoincident(double one, double two, const SkDPoint& pt) {
     int index = insertSwap(one, two, pt);
     int bit = 1 << index;
     fIsCoincident[0] |= bit;
     fIsCoincident[1] |= bit;
+}
+
+int SkIntersections::lineRay(const SkPoint pts[2], const SkDLine& line) {
+    SkDLine l;
+    l.set(pts);
+    fMax = 2;
+    return intersectRay(l, line);
 }
 
 void SkIntersections::offset(int base, double start, double end) {
@@ -132,6 +142,7 @@ void SkIntersections::offset(int base, double start, double end) {
 int SkIntersections::quadRay(const SkPoint pts[3], const SkDLine& line) {
     SkDQuad quad;
     quad.set(pts);
+    fMax = 2;
     return intersectRay(quad, line);
 }
 
@@ -168,7 +179,6 @@ void SkIntersections::removeOne(int index) {
     fIsCoincident[0] -= ((fIsCoincident[0] >> 1) & ~((1 << index) - 1)) + coBit;
     SkASSERT(!(coBit ^ (fIsCoincident[1] & (1 << index))));
     fIsCoincident[1] -= ((fIsCoincident[1] >> 1) & ~((1 << index) - 1)) + coBit;
-    fIsNear -= ((fIsNear >> 1) & ~((1 << index) - 1)) + (fIsNear & (1 << index));
 }
 
 void SkIntersections::swapPts() {

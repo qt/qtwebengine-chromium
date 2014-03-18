@@ -555,7 +555,7 @@ uint32 GLES2Util::GLErrorToErrorBit(uint32 error) {
     case GL_INVALID_FRAMEBUFFER_OPERATION:
       return gl_error_bit::kInvalidFrameBufferOperation;
     default:
-      GPU_NOTREACHED();
+      NOTREACHED();
       return gl_error_bit::kNoError;
   }
 }
@@ -573,7 +573,7 @@ uint32 GLES2Util::GLErrorBitToGLError(uint32 error_bit) {
     case gl_error_bit::kInvalidFrameBufferOperation:
       return GL_INVALID_FRAMEBUFFER_OPERATION;
     default:
-      GPU_NOTREACHED();
+      NOTREACHED();
       return GL_NO_ERROR;
   }
 }
@@ -588,6 +588,43 @@ uint32 GLES2Util::IndexToGLFaceTarget(int index) {
     GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
   };
   return faces[index];
+}
+
+uint32 GLES2Util::GetPreferredGLReadPixelsFormat(uint32 internal_format) {
+  switch (internal_format) {
+    case GL_RGB16F_EXT:
+    case GL_RGB32F_EXT:
+      return GL_RGB;
+    case GL_RGBA16F_EXT:
+    case GL_RGBA32F_EXT:
+      return GL_RGBA;
+    default:
+      return GL_RGBA;
+  }
+}
+
+uint32 GLES2Util::GetPreferredGLReadPixelsType(
+    uint32 internal_format, uint32 texture_type) {
+  switch (internal_format) {
+    case GL_RGBA32F_EXT:
+    case GL_RGB32F_EXT:
+      return GL_FLOAT;
+    case GL_RGBA16F_EXT:
+    case GL_RGB16F_EXT:
+      return GL_HALF_FLOAT_OES;
+    case GL_RGBA:
+    case GL_RGB:
+      // Unsized internal format, check the type
+      switch (texture_type) {
+        case GL_FLOAT:
+        case GL_HALF_FLOAT_OES:
+          return GL_FLOAT;
+        default:
+          return GL_UNSIGNED_BYTE;
+      }
+    default:
+      return GL_UNSIGNED_BYTE;
+  }
 }
 
 uint32 GLES2Util::GetChannelsForFormat(int format) {
@@ -734,6 +771,7 @@ const int32 kBufferDestroyed = 0x3095;  // EGL_BUFFER_DESTROYED
 // Chromium only.
 const int32 kShareResources        = 0x10000;
 const int32 kBindGeneratesResource = 0x10001;
+const int32 kFailIfMajorPerfCaveat = 0x10002;
 
 }  // namespace
 
@@ -748,7 +786,8 @@ ContextCreationAttribHelper::ContextCreationAttribHelper()
     sample_buffers_(-1),
     buffer_preserved_(true),
     share_resources_(false),
-    bind_generates_resource_(true) {
+    bind_generates_resource_(true),
+    fail_if_major_perf_caveat_(false) {
 }
 
 void ContextCreationAttribHelper::Serialize(std::vector<int32>* attribs) {
@@ -790,6 +829,8 @@ void ContextCreationAttribHelper::Serialize(std::vector<int32>* attribs) {
   attribs->push_back(share_resources_ ? 1 : 0);
   attribs->push_back(kBindGeneratesResource);
   attribs->push_back(bind_generates_resource_ ? 1 : 0);
+  attribs->push_back(kFailIfMajorPerfCaveat);
+  attribs->push_back(fail_if_major_perf_caveat_ ? 1 : 0);
   attribs->push_back(kNone);
 }
 
@@ -801,8 +842,8 @@ bool ContextCreationAttribHelper::Parse(const std::vector<int32>& attribs) {
         return true;
       }
 
-      GPU_DLOG(ERROR) << "Missing value after context creation attribute: "
-                      << attrib;
+      DLOG(ERROR) << "Missing value after context creation attribute: "
+                  << attrib;
       return false;
     }
 
@@ -841,11 +882,14 @@ bool ContextCreationAttribHelper::Parse(const std::vector<int32>& attribs) {
       case kBindGeneratesResource:
         bind_generates_resource_ = value != 0;
         break;
+      case kFailIfMajorPerfCaveat:
+        fail_if_major_perf_caveat_ = value != 0;
+        break;
       case kNone:
         // Terminate list, even if more attributes.
         return true;
       default:
-        GPU_DLOG(ERROR) << "Invalid context creation attribute: " << attrib;
+        DLOG(ERROR) << "Invalid context creation attribute: " << attrib;
         return false;
     }
   }

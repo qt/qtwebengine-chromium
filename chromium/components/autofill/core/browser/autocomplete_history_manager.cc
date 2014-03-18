@@ -13,15 +13,8 @@
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/validation.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/form_data.h"
-#include "content/public/browser/browser_context.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
-
-using content::BrowserContext;
-using content::WebContents;
 
 namespace autofill {
 namespace {
@@ -44,10 +37,8 @@ bool IsTextField(const FormFieldData& field) {
 AutocompleteHistoryManager::AutocompleteHistoryManager(
     AutofillDriver* driver,
     AutofillManagerDelegate* manager_delegate)
-    : browser_context_(driver->GetWebContents()->GetBrowserContext()),
-      driver_(driver),
-      autofill_data_(
-          AutofillWebDataService::FromBrowserContext(browser_context_)),
+    : driver_(driver),
+      database_(manager_delegate->GetDatabase()),
       pending_query_handle_(0),
       query_id_(0),
       external_delegate_(NULL),
@@ -93,7 +84,7 @@ void AutocompleteHistoryManager::OnGetAutocompleteSuggestions(
     const base::string16& prefix,
     const std::vector<base::string16>& autofill_values,
     const std::vector<base::string16>& autofill_labels,
-    const std::vector<string16>& autofill_icons,
+    const std::vector<base::string16>& autofill_icons,
     const std::vector<int>& autofill_unique_ids) {
   CancelPendingQuery();
 
@@ -107,8 +98,8 @@ void AutocompleteHistoryManager::OnGetAutocompleteSuggestions(
     return;
   }
 
-  if (autofill_data_.get()) {
-    pending_query_handle_ = autofill_data_->GetFormValuesForElementName(
+  if (database_.get()) {
+    pending_query_handle_ = database_->GetFormValuesForElementName(
         name, prefix, kMaxAutocompleteMenuItems, this);
   }
 }
@@ -117,7 +108,7 @@ void AutocompleteHistoryManager::OnFormSubmitted(const FormData& form) {
   if (!manager_delegate_->IsAutocompleteEnabled())
     return;
 
-  if (browser_context_->IsOffTheRecord())
+  if (driver_->IsOffTheRecord())
     return;
 
   // Don't save data that was submitted through JavaScript.
@@ -143,14 +134,14 @@ void AutocompleteHistoryManager::OnFormSubmitted(const FormData& form) {
     }
   }
 
-  if (!values.empty() && autofill_data_.get())
-    autofill_data_->AddFormFields(values);
+  if (!values.empty() && database_.get())
+    database_->AddFormFields(values);
 }
 
 void AutocompleteHistoryManager::OnRemoveAutocompleteEntry(
     const base::string16& name, const base::string16& value) {
-  if (autofill_data_.get())
-    autofill_data_->RemoveFormValueForElementName(name, value);
+  if (database_.get())
+    database_->RemoveFormValueForElementName(name, value);
 }
 
 void AutocompleteHistoryManager::SetExternalDelegate(
@@ -160,8 +151,8 @@ void AutocompleteHistoryManager::SetExternalDelegate(
 
 void AutocompleteHistoryManager::CancelPendingQuery() {
   if (pending_query_handle_) {
-    if (autofill_data_.get())
-      autofill_data_->CancelRequest(pending_query_handle_);
+    if (database_.get())
+      database_->CancelRequest(pending_query_handle_);
     pending_query_handle_ = 0;
   }
 }

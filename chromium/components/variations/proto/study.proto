@@ -11,7 +11,7 @@ package chrome_variations;
 // This defines the Protocol Buffer representation of a Chrome Variations study
 // as sent to clients of the Variations server.
 //
-// Next tag: 12
+// Next tag: 13
 message Study {
   // The name of the study. Should not contain spaces or special characters.
   // Ex: "my_study"
@@ -78,7 +78,7 @@ message Study {
     optional string forcing_flag = 5;
 
     // Parameter values for this experiment.
-    repeated Param param = 6; 
+    repeated Param param = 6;
   }
 
   // List of experiments in this study. This list should include the default /
@@ -112,10 +112,17 @@ message Study {
     PLATFORM_IOS      = 5;
   }
 
+  // Possible form factors Chrome is running on.
+  enum FormFactor {
+    DESKTOP = 0;
+    PHONE   = 1;
+    TABLET  = 2;
+  }
+
   // Filtering criteria specifying whether this study is applicable to a given
   // Chrome instance.
   //
-  // Next tag: 7
+  // Next tag: 8
   message Filter {
     // The start date of the study in Unix time format. (Seconds since midnight
     // January 1, 1970 UTC). See: http://en.wikipedia.org/wiki/Unix_time
@@ -150,6 +157,11 @@ message Study {
     // applies to all locales.
     // Ex: ["en-US", "en-CA"]
     repeated string locale = 6;
+
+    // List of form factors that will receive this study. If omitted, the study
+    // applies to all form factors.
+    // Ex: [PHONE, TABLET]
+    repeated FormFactor form_factor = 7;
   }
 
   // Filtering criteria for this study. A study that is filtered out for a given
@@ -159,4 +171,18 @@ message Study {
   // Randomization seed to be used when |consistency| is set to PERMANENT. If
   // not specified, randomization will be done using the trial name.
   optional uint32 randomization_seed = 11;
+
+  // Specifies whether the study starts as active initially, or whether it
+  // requires the client to query its state before it is marked as active.
+  enum ActivationType {
+    // The study will be activated when its state is queried by the client.
+    // This is recommended for most studies that include client code.
+    ACTIVATION_EXPLICIT  = 0;
+    // The study will be automatically activated when it is created. This
+    // is recommended for studies that do not have any client logic.
+    ACTIVATION_AUTO      = 1;
+  }
+
+  // Activation type for this study. Defaults to ACTIVATION_EXPLICIT if omitted.
+  optional ActivationType activation_type = 12;
 }

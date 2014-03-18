@@ -9,6 +9,7 @@
 
 #include "SkPathOps.h"
 #include "SkTypes.h"
+#include <stdio.h>
 
 #ifdef SK_RELEASE
 #define FORCE_RELEASE 1
@@ -160,7 +161,14 @@ public:
     static void ShowPath(const SkPath& one, const SkPath& two, SkPathOp op, const char* name);
 #endif
     static void DumpAngles(const SkTArray<class SkOpAngle, true>& angles);
+    static void DumpAngles(const SkTArray<class SkOpAngle* , true>& angles);
 };
+
+// shorthand for calling from debugger
+void Dump(const SkTArray<class SkOpAngle, true>& angles);
+void Dump(const SkTArray<class SkOpAngle* , true>& angles);
+void Dump(const SkTArray<class SkOpAngle, true>* angles);
+void Dump(const SkTArray<class SkOpAngle* , true>* angles);
 
 #endif  // SK_DEBUG || !FORCE_RELEASE
 

@@ -38,8 +38,9 @@
 
 #define WEBTESTRUNNER_NEW_HISTORY_CAPTURE
 
-namespace WebKit {
+namespace blink {
 class WebDeviceMotionData;
+class WebDeviceOrientationData;
 class WebFrame;
 class WebGamepads;
 class WebHistoryItem;
@@ -62,9 +63,12 @@ public:
     virtual void setEditCommand(const std::string& name, const std::string& value) = 0;
 
     // Set the gamepads to return from Platform::sampleGamepads().
-    virtual void setGamepadData(const WebKit::WebGamepads&) = 0;
+    virtual void setGamepadData(const blink::WebGamepads&) = 0;
 
-    virtual void setDeviceMotionData(const WebKit::WebDeviceMotionData&) = 0;
+    // Set data to return when registering via Platform::setDeviceMotionListener().
+    virtual void setDeviceMotionData(const blink::WebDeviceMotionData&) = 0;
+    // Set data to return when registering via Platform::setDeviceOrientationListener().
+    virtual void setDeviceOrientationData(const blink::WebDeviceOrientationData&) = 0;
 
     // Add a message to the text dump for the layout test.
     virtual void printMessage(const std::string& message) = 0;
@@ -76,31 +80,35 @@ public:
 
     // Register a new isolated filesystem with the given files, and return the
     // new filesystem id.
-    virtual WebKit::WebString registerIsolatedFileSystem(const WebKit::WebVector<WebKit::WebString>& absoluteFilenames) = 0;
+    virtual blink::WebString registerIsolatedFileSystem(const blink::WebVector<blink::WebString>& absoluteFilenames) = 0;
 
     // Gets the current time in milliseconds since the UNIX epoch.
     virtual long long getCurrentTimeInMillisecond() = 0;
 
     // Convert the provided relative path into an absolute path.
-    virtual WebKit::WebString getAbsoluteWebStringFromUTF8Path(const std::string& path) = 0;
+    virtual blink::WebString getAbsoluteWebStringFromUTF8Path(const std::string& path) = 0;
 
     // Reads in the given file and returns its contents as data URL.
-    virtual WebKit::WebURL localFileToDataURL(const WebKit::WebURL&) = 0;
+    virtual blink::WebURL localFileToDataURL(const blink::WebURL&) = 0;
 
     // Replaces file:///tmp/LayoutTests/ with the actual path to the
     // LayoutTests directory.
-    virtual WebKit::WebURL rewriteLayoutTestsURL(const std::string& utf8URL) = 0;
+    virtual blink::WebURL rewriteLayoutTestsURL(const std::string& utf8URL) = 0;
 
     // Manages the settings to used for layout tests.
     virtual WebPreferences* preferences() = 0;
     virtual void applyPreferences() = 0;
 
-    // Resizes the WebView to the given size.
-    virtual void setClientWindowRect(const WebKit::WebRect&) = 0;
+    // Enables or disables synchronous resize mode. When enabled, all window-sizing machinery is
+    // short-circuited inside the renderer. This mode is necessary for some tests that were written
+    // before browsers had multi-process architecture and rely on window resizes to happen synchronously.
+    // The function has "unfortunate" it its name because we must strive to remove all tests
+    // that rely on this... well, unfortunate behavior. See http://crbug.com/309760 for the plan.
+    virtual void useUnfortunateSynchronousResizeMode(bool) = 0;
 
     // Controls auto resize mode.
-    virtual void enableAutoResizeMode(const WebKit::WebSize& minSize, const WebKit::WebSize& maxSize) { }
-    virtual void disableAutoResizeMode(const WebKit::WebSize&) { }
+    virtual void enableAutoResizeMode(const blink::WebSize& minSize, const blink::WebSize& maxSize) = 0;
+    virtual void disableAutoResizeMode(const blink::WebSize&) = 0;
 
     // Opens and closes the inspector.
     virtual void showDevTools() = 0;
@@ -133,16 +141,6 @@ public:
     // Invoked when the test finished.
     virtual void testFinished() = 0;
 
-    // DEPRECATED: Invoked if the test timed out.
-    virtual void testTimedOut() { };
-
-    // DEPRECATED: If true, never abort a test because of a timeout.
-    virtual bool isBeingDebugged() { return false; };
-
-    // DEPRECATED: The time in milliseconds after which a test is considered to have timed
-    // out.
-    virtual int layoutTestTimeout() { return 0; };
-
     // Invoked when the embedder should close all but the main WebView.
     virtual void closeRemainingWindows() = 0;
 
@@ -154,14 +152,14 @@ public:
     // The following trigger navigations on the main WebViwe.
     virtual void goToOffset(int offset) = 0;
     virtual void reload() = 0;
-    virtual void loadURLForFrame(const WebKit::WebURL&, const std::string& frameName) = 0;
+    virtual void loadURLForFrame(const blink::WebURL&, const std::string& frameName) = 0;
 
     // Returns true if resource requests to external URLs should be permitted.
     virtual bool allowExternalPages() = 0;
 
     // Returns the back/forward history for the WebView associated with the
     // given WebTestProxyBase as well as the index of the current entry.
-    virtual void captureHistoryForWindow(WebTestProxyBase*, WebKit::WebVector<WebKit::WebHistoryItem>*, size_t* currentEntryIndex) = 0;
+    virtual void captureHistoryForWindow(WebTestProxyBase*, blink::WebVector<blink::WebHistoryItem>*, size_t* currentEntryIndex) = 0;
 };
 
 }

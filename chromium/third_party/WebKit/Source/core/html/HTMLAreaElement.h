@@ -24,7 +24,7 @@
 #define HTMLAreaElement_h
 
 #include "core/html/HTMLAnchorElement.h"
-#include "core/platform/graphics/LayoutRect.h"
+#include "platform/geometry/LayoutRect.h"
 
 namespace WebCore {
 
@@ -34,7 +34,7 @@ class Path;
 
 class HTMLAreaElement FINAL : public HTMLAnchorElement {
 public:
-    static PassRefPtr<HTMLAreaElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLAreaElement> create(Document&);
 
     bool isDefault() const { return m_shape == Default; }
 
@@ -47,7 +47,7 @@ public:
     HTMLImageElement* imageElement() const;
 
 private:
-    HTMLAreaElement(const QualifiedName&, Document&);
+    explicit HTMLAreaElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool supportsFocus() const;
@@ -78,11 +78,7 @@ inline bool isHTMLAreaElement(const Element* element)
     return element->hasTagName(HTMLNames::areaTag);
 }
 
-inline HTMLAreaElement* toHTMLAreaElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLAreaElement(node));
-    return static_cast<HTMLAreaElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLAreaElement, hasTagName(HTMLNames::areaTag));
 
 } //namespace
 

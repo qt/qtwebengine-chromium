@@ -16,6 +16,8 @@
 
 namespace content {
 
+GURL GetDevToolsPathAsURL();
+
 class RenderViewHost;
 class Shell;
 class WebContents;
@@ -24,6 +26,7 @@ class ShellDevToolsFrontend : public WebContentsObserver,
                               public DevToolsFrontendHostDelegate {
  public:
   static ShellDevToolsFrontend* Show(WebContents* inspected_contents);
+  void Activate();
   void Focus();
   void Close();
 
@@ -35,6 +38,7 @@ class ShellDevToolsFrontend : public WebContentsObserver,
 
   // WebContentsObserver overrides
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) OVERRIDE;
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
 
   // DevToolsFrontendHostDelegate implementation

@@ -228,8 +228,8 @@ void SMILTimeContainer::timerFired(Timer<SMILTimeContainer>*)
 void SMILTimeContainer::updateDocumentOrderIndexes()
 {
     unsigned timingElementCount = 0;
-    for (Element* element = m_ownerSVGElement; element; element = ElementTraversal::next(element, m_ownerSVGElement)) {
-        if (SVGSMILElement::isSMILElement(element))
+    for (Element* element = m_ownerSVGElement; element; element = ElementTraversal::next(*element, m_ownerSVGElement)) {
+        if (isSVGSMILElement(*element))
             toSVGSMILElement(element)->setDocumentOrderIndex(timingElementCount++);
     }
     m_documentOrderIndexesDirty = false;
@@ -273,15 +273,6 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
     for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
         AnimationsVector* scheduled = it->value.get();
-        unsigned size = scheduled->size();
-        for (unsigned n = 0; n < size; n++) {
-            SVGSMILElement* animation = scheduled->at(n);
-            animation->connectConditions();
-        }
-    }
-
-    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        AnimationsVector* scheduled = it->value.get();
 
         // Sort according to priority. Elements with later begin time have higher priority.
         // In case of a tie, document order decides.
@@ -298,6 +289,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
             ASSERT(animation->hasValidAttributeName());
 
             // Results are accumulated to the first animation that animates and contributes to a particular element/attribute pair.
+            // FIXME: we should ensure that resultElement is of an appropriate type.
             if (!resultElement) {
                 if (!animation->hasValidAttributeType())
                     continue;

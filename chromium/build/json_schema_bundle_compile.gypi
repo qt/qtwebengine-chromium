@@ -28,6 +28,7 @@
         '<(api_gen_dir)/model.py',
         '<(api_gen_dir)/util_cc_helper.py',
         '<@(schema_files)',
+        '<@(non_compiled_schema_files)',
       ],
       'outputs': [
         '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/generated_api.h',
@@ -43,6 +44,7 @@
         '--namespace=<(root_namespace)',
         '--generator=cpp-bundle',
         '<@(schema_files)',
+        '<@(non_compiled_schema_files)',
       ],
       'message': 'Generating C++ API bundle code',
       'process_outputs_as_sources': 1,

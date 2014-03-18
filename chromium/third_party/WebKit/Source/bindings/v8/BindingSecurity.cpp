@@ -34,10 +34,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLFrameElementBase.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/page/Settings.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Settings.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -55,13 +55,14 @@ static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, DOMWindo
     return false;
 }
 
-static bool canAccessDocument(Document* targetDocument, ExceptionState& es)
+static bool canAccessDocument(Document* targetDocument, ExceptionState& exceptionState)
 {
     DOMWindow* activeWindow = activeDOMWindow();
     if (isDocumentAccessibleFromDOMWindow(targetDocument, activeWindow))
         return true;
 
-    es.throwSecurityError(targetDocument->domWindow()->sanitizedCrossDomainAccessErrorMessage(activeWindow), targetDocument->domWindow()->crossDomainAccessErrorMessage(activeWindow));
+    if (targetDocument->domWindow())
+        exceptionState.throwSecurityError(targetDocument->domWindow()->sanitizedCrossDomainAccessErrorMessage(activeWindow), targetDocument->domWindow()->crossDomainAccessErrorMessage(activeWindow));
     return false;
 }
 
@@ -71,7 +72,7 @@ static bool canAccessDocument(Document* targetDocument, SecurityReportingOption 
     if (isDocumentAccessibleFromDOMWindow(targetDocument, activeWindow))
         return true;
 
-    if (reportingOption == ReportSecurityError) {
+    if (reportingOption == ReportSecurityError && targetDocument->domWindow()) {
         if (Frame* frame = targetDocument->frame())
             frame->domWindow()->printErrorMessage(targetDocument->domWindow()->crossDomainAccessErrorMessage(activeWindow));
     }
@@ -84,14 +85,14 @@ bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, SecurityReportingO
     return target && canAccessDocument(target->document(), reportingOption);
 }
 
-bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, ExceptionState& es)
+bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, ExceptionState& exceptionState)
 {
-    return target && canAccessDocument(target->document(), es);
+    return target && canAccessDocument(target->document(), exceptionState);
 }
 
-bool BindingSecurity::shouldAllowAccessToNode(Node* target)
+bool BindingSecurity::shouldAllowAccessToNode(Node* target, ExceptionState& exceptionState)
 {
-    return target && canAccessDocument(&target->document());
+    return target && canAccessDocument(&target->document(), exceptionState);
 }
 
 }

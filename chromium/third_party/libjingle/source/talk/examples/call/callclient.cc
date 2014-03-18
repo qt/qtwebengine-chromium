@@ -396,7 +396,7 @@ CallClient::CallClient(buzz::XmppClient* xmpp_client,
       transport_protocol_(cricket::ICEPROTO_HYBRID),
       sdes_policy_(cricket::SEC_DISABLED),
       dtls_policy_(cricket::SEC_DISABLED),
-      ssl_identity_(NULL),
+      ssl_identity_(),
       show_roster_messages_(false) {
   xmpp_client_->SignalStateChange.connect(this, &CallClient::OnStateChange);
   my_status_.set_caps_node(caps_node);
@@ -1601,7 +1601,7 @@ void CallClient::PrintStats() const {
        vmi.senders.begin(); it != vmi.senders.end(); ++it) {
     console_->PrintLine("Sender: ssrc=%u codec='%s' bytes=%d packets=%d "
                         "rtt=%d jitter=%d",
-                        it->ssrc, it->codec_name.c_str(), it->bytes_sent,
+                        it->ssrc(), it->codec_name.c_str(), it->bytes_sent,
                         it->packets_sent, it->rtt_ms, it->jitter_ms);
   }
 
@@ -1609,7 +1609,7 @@ void CallClient::PrintStats() const {
        vmi.receivers.begin(); it != vmi.receivers.end(); ++it) {
     console_->PrintLine("Receiver: ssrc=%u bytes=%d packets=%d "
                         "jitter=%d loss=%.2f",
-                        it->ssrc, it->bytes_rcvd, it->packets_rcvd,
+                        it->ssrc(), it->bytes_rcvd, it->packets_rcvd,
                         it->jitter_ms, it->fraction_lost);
   }
 }

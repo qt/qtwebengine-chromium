@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_AUTOFILL_WALLET_SIGNIN_HELPER_DELEGATE_H_
 
 #include <string>
+#include <vector>
 
 class GoogleServiceAuthError;
 
@@ -19,19 +20,10 @@ class WalletSigninHelperDelegate {
   virtual ~WalletSigninHelperDelegate() {}
 
   // Called on a successful passive sign-in.
-  // |username| is the signed-in user account name (email).
-  virtual void OnPassiveSigninSuccess(const std::string& username) = 0;
+  virtual void OnPassiveSigninSuccess() = 0;
 
   // Called on a failed passive sign-in; |error| describes the error.
   virtual void OnPassiveSigninFailure(const GoogleServiceAuthError& error) = 0;
-
-  // Called on a successful fetch of the signed-in account name.
-  // |username| is the signed-in user account name (email).
-  virtual void OnUserNameFetchSuccess(const std::string& username) = 0;
-
-  // Called on a failed fetch of the signed-in account name.
-  // |error| described the error.
-  virtual void OnUserNameFetchFailure(const GoogleServiceAuthError& error) = 0;
 
   // Called when the Google Wallet cookie value has been retrieved.
   virtual void OnDidFetchWalletCookieValue(const std::string& cookie_value) = 0;

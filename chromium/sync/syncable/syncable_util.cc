@@ -47,8 +47,8 @@ bool IsLegalNewParent(BaseTransaction* trans, const Id& entry_id,
 }
 
 void ChangeEntryIDAndUpdateChildren(
-    WriteTransaction* trans,
-    MutableEntry* entry,
+    BaseWriteTransaction* trans,
+    ModelNeutralMutableEntry* entry,
     const Id& new_id) {
   Id old_id = entry->GetId();
   if (!entry->PutId(new_id)) {
@@ -64,7 +64,7 @@ void ChangeEntryIDAndUpdateChildren(
     trans->directory()->GetChildHandlesById(trans, old_id, &children);
     Directory::Metahandles::iterator i = children.begin();
     while (i != children.end()) {
-      MutableEntry child_entry(trans, GET_BY_HANDLE, *i++);
+      ModelNeutralMutableEntry child_entry(trans, GET_BY_HANDLE, *i++);
       CHECK(child_entry.good());
       // Use the unchecked setter here to avoid touching the child's
       // UNIQUE_POSITION field.  In this case, UNIQUE_POSITION among the
@@ -101,7 +101,7 @@ std::string GenerateSyncableHash(
   hash_input.append(client_tag);
 
   std::string encode_output;
-  CHECK(base::Base64Encode(base::SHA1HashString(hash_input), &encode_output));
+  base::Base64Encode(base::SHA1HashString(hash_input), &encode_output);
   return encode_output;
 }
 

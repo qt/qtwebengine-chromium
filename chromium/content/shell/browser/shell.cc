@@ -15,9 +15,6 @@
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -31,6 +28,10 @@
 #include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
+
+#if defined(USE_AURA) && !defined(TOOLKIT_VIEWS)
+#include "content/shell/browser/shell_aura.h"
+#endif
 
 namespace content {
 
@@ -61,7 +62,8 @@ class Shell::DevToolsWebContentsObserver : public WebContentsObserver {
 };
 
 Shell::Shell(WebContents* web_contents)
-    : devtools_frontend_(NULL),
+    : WebContentsObserver(web_contents),
+      devtools_frontend_(NULL),
       is_fullscreen_(false),
       window_(NULL),
       url_edit_view_(NULL),
@@ -72,8 +74,6 @@ Shell::Shell(WebContents* web_contents)
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDumpRenderTree))
     headless_ = true;
-  registrar_.Add(this, NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
-      Source<WebContents>(web_contents));
   windows_.push_back(this);
 
   if (!shell_created_callback_.is_null()) {
@@ -123,6 +123,7 @@ void Shell::CloseAllWindows() {
   std::vector<Shell*> open_windows(windows_);
   for (size_t i = 0; i < open_windows.size(); ++i)
     open_windows[i]->Close();
+  PlatformExit();
   base::MessageLoop::current()->RunUntilIdle();
 }
 
@@ -148,6 +149,12 @@ void Shell::Initialize() {
       gfx::Size(kDefaultTestWindowWidthDip, kDefaultTestWindowHeightDip));
 }
 
+gfx::Size Shell::AdjustWindowSize(const gfx::Size& initial_size) {
+  if (!initial_size.IsEmpty())
+    return initial_size;
+  return gfx::Size(kDefaultTestWindowWidthDip, kDefaultTestWindowHeightDip);
+}
+
 Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
                               const GURL& url,
                               SiteInstance* site_instance,
@@ -155,11 +162,7 @@ Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
                               const gfx::Size& initial_size) {
   WebContents::CreateParams create_params(browser_context, site_instance);
   create_params.routing_id = routing_id;
-  if (!initial_size.IsEmpty())
-    create_params.initial_size = initial_size;
-  else
-    create_params.initial_size =
-        gfx::Size(kDefaultTestWindowWidthDip, kDefaultTestWindowHeightDip);
+  create_params.initial_size = AdjustWindowSize(initial_size);
   WebContents* web_contents = WebContents::Create(create_params);
   Shell* shell = CreateShell(web_contents, create_params.initial_size);
   if (!url.is_empty())
@@ -178,6 +181,17 @@ void Shell::LoadURLForFrame(const GURL& url, const std::string& frame_name) {
   params.frame_name = frame_name;
   web_contents_->GetController().LoadURLWithParams(params);
   web_contents_->GetView()->Focus();
+}
+
+void Shell::AddNewContents(WebContents* source,
+                           WebContents* new_contents,
+                           WindowOpenDisposition disposition,
+                           const gfx::Rect& initial_pos,
+                           bool user_gesture,
+                           bool* was_blocked) {
+  CreateShell(new_contents, AdjustWindowSize(initial_pos.size()));
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    NotifyDoneForwarder::CreateForWebContents(new_contents);
 }
 
 void Shell::GoBackOrForward(int offset) {
@@ -235,6 +249,7 @@ WebContents* Shell::OpenURLFromTab(WebContents* source,
       return NULL;
   NavigationController::LoadURLParams load_url_params(params.url);
   load_url_params.referrer = params.referrer;
+  load_url_params.frame_tree_node_id = params.frame_tree_node_id;
   load_url_params.transition_type = params.transition;
   load_url_params.extra_headers = params.extra_headers;
   load_url_params.should_replace_current_entry =
@@ -296,16 +311,6 @@ bool Shell::CanOverscrollContent() const {
 #endif
 }
 
-void Shell::WebContentsCreated(WebContents* source_contents,
-                               int64 source_frame_id,
-                               const string16& frame_name,
-                               const GURL& target_url,
-                               WebContents* new_contents) {
-  CreateShell(new_contents, source_contents->GetView()->GetContainerSize());
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    NotifyDoneForwarder::CreateForWebContents(new_contents);
-}
-
 void Shell::DidNavigateMainFramePostCommit(WebContents* web_contents) {
   PlatformSetAddressBarURL(web_contents->GetLastCommittedURL());
 }
@@ -318,9 +323,9 @@ JavaScriptDialogManager* Shell::GetJavaScriptDialogManager() {
 
 bool Shell::AddMessageToConsole(WebContents* source,
                                 int32 level,
-                                const string16& message,
+                                const base::string16& message,
                                 int32 line_no,
-                                const string16& source_id) {
+                                const base::string16& source_id) {
   return CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
 }
 
@@ -344,20 +349,9 @@ void Shell::WorkerCrashed(WebContents* source) {
   WebKitTestController::Get()->WorkerCrashed();
 }
 
-void Shell::Observe(int type,
-                    const NotificationSource& source,
-                    const NotificationDetails& details) {
-  if (type == NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED) {
-    std::pair<NavigationEntry*, bool>* title =
-        Details<std::pair<NavigationEntry*, bool> >(details).ptr();
-
-    if (title->first) {
-      string16 text = title->first->GetTitle();
-      PlatformSetTitle(text);
-    }
-  } else {
-    NOTREACHED();
-  }
+void Shell::TitleWasSet(NavigationEntry* entry, bool explicit_set) {
+  if (entry)
+    PlatformSetTitle(entry->GetTitle());
 }
 
 void Shell::OnDevToolsWebContentsDestroyed() {

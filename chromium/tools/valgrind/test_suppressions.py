@@ -50,16 +50,15 @@ def ReadReportsFromFile(filename):
 def Demangle(names):
   """ Demangle a list of C++ symbols, return a list of human-readable symbols.
   """
+  # -n is not the default on Mac.
   args = ['c++filt', '-n']
-  args.extend(names)
   pipe = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-  stdout, _ = pipe.communicate()
+  stdout, _ = pipe.communicate(input='\n'.join(names))
   demangled = stdout.split("\n")
-
   # Each line ends with a newline, so the final entry of the split output
   # will always be ''.
-  assert len(demangled) == len(names) + 1
-  return demangled[:-1]
+  assert len(demangled) == len(names)
+  return demangled
 
 def GetSymbolsFromReport(report):
   """Extract all symbols from a suppression report."""
@@ -102,7 +101,10 @@ def main(argv):
     help='Print a list of the top <n> symbols')
   parser.add_argument('--symbol-filter', action='append',
     help='Filter out all suppressions not containing the specified symbol(s). '
-         'Matches against the mangled names')
+         'Matches against the mangled names.')
+  parser.add_argument('--exclude-symbol', action='append',
+    help='Filter out all suppressions containing the specified symbol(s). '
+         'Matches against the mangled names.')
 
   parser.add_argument('reports', metavar='report file', nargs='+',
     help='List of report files')
@@ -126,7 +128,8 @@ def main(argv):
       cur_supp += supp['win_suppressions']
     elif all([re.search("Linux%20", url) for url in all_reports[r]]):
       cur_supp += supp['linux_suppressions']
-    elif all([re.search("%20Heapcheck", url)
+    # Separate from OS matches as we want to match "Linux%20Heapcheck" twice:
+    if all([re.search("%20Heapcheck", url)
               for url in all_reports[r]]):
       cur_supp += supp['heapcheck_suppressions']
     if all(["DrMemory" in url for url in all_reports[r]]):
@@ -143,6 +146,8 @@ def main(argv):
 
     # Skip reports if none of the symbols are in the report.
     if args.symbol_filter and all(not s in r for s in args.symbol_filter):
+        skip = True
+    if args.exclude_symbol and any(s in r for s in args.exclude_symbol):
         skip = True
 
     if not skip:

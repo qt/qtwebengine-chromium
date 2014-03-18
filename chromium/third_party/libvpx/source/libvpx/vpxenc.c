@@ -45,8 +45,8 @@
 #include "vpx_ports/vpx_timer.h"
 #include "tools_common.h"
 #include "y4minput.h"
-#include "libmkv/EbmlWriter.h"
-#include "libmkv/EbmlIDs.h"
+#include "third_party/libmkv/EbmlWriter.h"
+#include "third_party/libmkv/EbmlIDs.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
 
 /* Need special handling of these functions on Windows */
@@ -725,14 +725,12 @@ write_webm_file_header(EbmlGlobal                *glob,
         {
           unsigned int pixelWidth = cfg->g_w;
           unsigned int pixelHeight = cfg->g_h;
-          float        frameRate   = (float)fps->num / (float)fps->den;
 
           EbmlLoc videoStart;
           Ebml_StartSubElement(glob, &videoStart, Video);
           Ebml_SerializeUnsigned(glob, PixelWidth, pixelWidth);
           Ebml_SerializeUnsigned(glob, PixelHeight, pixelHeight);
           Ebml_SerializeUnsigned(glob, StereoMode, stereo_fmt);
-          Ebml_SerializeFloat(glob, FrameRate, frameRate);
           Ebml_EndSubElement(glob, &videoStart);
         }
         Ebml_EndSubElement(glob, &start); /* Track Entry */
@@ -883,10 +881,10 @@ static unsigned int murmur(const void *key, int len, unsigned int seed) {
   while (len >= 4) {
     unsigned int k;
 
-    k  = data[0];
-    k |= data[1] << 8;
-    k |= data[2] << 16;
-    k |= data[3] << 24;
+    k  = (unsigned int)data[0];
+    k |= (unsigned int)data[1] << 8;
+    k |= (unsigned int)data[2] << 16;
+    k |= (unsigned int)data[3] << 24;
 
     k *= m;
     k ^= k >> r;
@@ -1765,9 +1763,13 @@ static void parse_global_config(struct global_config *global, char **argv) {
 
   /* Validate global config */
   if (global->passes == 0) {
+#if CONFIG_VP9_ENCODER
     // Make default VP9 passes = 2 until there is a better quality 1-pass
     // encoder
     global->passes = (global->codec->iface == vpx_codec_vp9_cx ? 2 : 1);
+#else
+    global->passes = 1;
+#endif
   }
 
   if (global->pass) {
@@ -2671,8 +2673,8 @@ int main(int argc, const char **argv_) {
           fprintf(stderr, "%7"PRId64" %s %.2f %s ",
                   cx_time > 9999999 ? cx_time / 1000 : cx_time,
                   cx_time > 9999999 ? "ms" : "us",
-                  fps >= 1.0 ? fps : 1000.0 / fps,
-                  fps >= 1.0 ? "fps" : "ms/f");
+                  fps >= 1.0 ? fps : fps * 60,
+                  fps >= 1.0 ? "fps" : "fpm");
           print_time("ETA", estimated_time_left);
           fprintf(stderr, "\033[K");
         }
@@ -2782,16 +2784,17 @@ int main(int argc, const char **argv_) {
   /* TODO(jkoleszar): This doesn't belong in this executable. Do it for now,
    * to match some existing utilities.
    */
-  FOREACH_STREAM({
-    FILE *f = fopen("opsnr.stt", "a");
-    if (stream->mismatch_seen) {
-      fprintf(f, "First mismatch occurred in frame %d\n",
-              stream->mismatch_seen);
-    } else {
-      fprintf(f, "No mismatch detected in recon buffers\n");
-    }
-    fclose(f);
-  });
+  if (!(global.pass == 1 && global.passes == 2))
+    FOREACH_STREAM({
+      FILE *f = fopen("opsnr.stt", "a");
+      if (stream->mismatch_seen) {
+        fprintf(f, "First mismatch occurred in frame %d\n",
+                stream->mismatch_seen);
+      } else {
+        fprintf(f, "No mismatch detected in recon buffers\n");
+      }
+      fclose(f);
+    });
 #endif
 
   vpx_img_free(&raw);

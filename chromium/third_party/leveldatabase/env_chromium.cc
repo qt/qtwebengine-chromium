@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <deque>
 
@@ -37,6 +38,7 @@
 #endif
 
 #if defined(OS_POSIX)
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -47,6 +49,10 @@ using namespace leveldb;
 namespace leveldb_env {
 
 namespace {
+
+const base::FilePath::CharType backup_table_extension[] =
+    FILE_PATH_LITERAL(".bak");
+const base::FilePath::CharType table_extension[] = FILE_PATH_LITERAL(".ldb");
 
 #if (defined(OS_POSIX) && !defined(OS_LINUX)) || defined(OS_WIN)
 // The following are glibc-specific
@@ -207,6 +213,7 @@ class ChromiumRandomAccessFile: public RandomAccessFile {
 class ChromiumFileLock : public FileLock {
  public:
   ::base::PlatformFile file_;
+  std::string name_;
 };
 
 class Retrier {
@@ -255,7 +262,10 @@ class Retrier {
 
 class IDBEnv : public ChromiumEnv {
  public:
-  IDBEnv() : ChromiumEnv() { name_ = "LevelDBEnv.IDB"; }
+  IDBEnv() : ChromiumEnv() {
+    name_ = "LevelDBEnv.IDB";
+    make_backup_ = true;
+  }
 };
 
 ::base::LazyInstance<IDBEnv>::Leaky idb_env = LAZY_INSTANCE_INITIALIZER;
@@ -307,6 +317,8 @@ const char* MethodIDToString(MethodID method) {
       return "NewLogger";
     case kSyncParent:
       return "SyncParent";
+    case kGetChildren:
+      return "GetChildren";
     case kNumEntries:
       NOTREACHED();
       return "kNumEntries";
@@ -379,7 +391,74 @@ ErrorParsingResult ParseMethodAndError(const char* string,
   return NONE;
 }
 
-bool IndicatesDiskFull(leveldb::Status status) {
+// Keep in sync with LevelDBCorruptionTypes in histograms.xml. Also, don't
+// change the order because indices into this array have been recorded in uma
+// histograms.
+const char* patterns[] = {
+  "missing files",
+  "log record too small",
+  "corrupted internal key",
+  "partial record",
+  "missing start of fragmented record",
+  "error in middle of record",
+  "unknown record type",
+  "truncated record at end",
+  "bad record length",
+  "VersionEdit",
+  "FileReader invoked with unexpected value",
+  "corrupted key",
+  "CURRENT file does not end with newline",
+  "no meta-nextfile entry",
+  "no meta-lognumber entry",
+  "no last-sequence-number entry",
+  "malformed WriteBatch",
+  "bad WriteBatch Put",
+  "bad WriteBatch Delete",
+  "unknown WriteBatch tag",
+  "WriteBatch has wrong count",
+  "bad entry in block",
+  "bad block contents",
+  "bad block handle",
+  "truncated block read",
+  "block checksum mismatch",
+  "checksum mismatch",
+  "corrupted compressed block contents",
+  "bad block type",
+  "bad magic number",
+  "file is too short",
+};
+
+// Returns 1-based index into the above array or 0 if nothing matches.
+int GetCorruptionCode(const leveldb::Status& status) {
+  DCHECK(!status.IsIOError());
+  DCHECK(!status.ok());
+  const int kOtherError = 0;
+  int error = kOtherError;
+  const std::string& str_error = status.ToString();
+  const size_t kNumPatterns = arraysize(patterns);
+  for (size_t i = 0; i < kNumPatterns; ++i) {
+    if (str_error.find(patterns[i]) != std::string::npos) {
+      error = i + 1;
+      break;
+    }
+  }
+  return error;
+}
+
+int GetNumCorruptionCodes() {
+  // + 1 for the "other" error that is returned when a corruption message
+  // doesn't match any of the patterns.
+  return arraysize(patterns) + 1;
+}
+
+std::string GetCorruptionMessage(const leveldb::Status& status) {
+  int code = GetCorruptionCode(status);
+  if (code == 0)
+    return "Unknown corruption";
+  return patterns[code - 1];
+}
+
+bool IndicatesDiskFull(const leveldb::Status& status) {
   if (status.ok())
     return false;
   leveldb_env::MethodID method;
@@ -390,6 +469,20 @@ bool IndicatesDiskFull(leveldb::Status status) {
           static_cast<base::PlatformFileError>(error) ==
               base::PLATFORM_FILE_ERROR_NO_SPACE) ||
          (result == leveldb_env::METHOD_AND_ERRNO && error == ENOSPC);
+}
+
+bool IsIOError(const leveldb::Status& status) {
+  leveldb_env::MethodID method;
+  int error = -1;
+  leveldb_env::ErrorParsingResult result = leveldb_env::ParseMethodAndError(
+      status.ToString().c_str(), &method, &error);
+  return result != leveldb_env::NONE;
+}
+
+bool IsCorruption(const leveldb::Status& status) {
+  // LevelDB returns InvalidArgument when an sst file is truncated but there is
+  // no IsInvalidArgument() accessor defined.
+  return status.IsCorruption() || (!status.ok() && !IsIOError(status));
 }
 
 std::string FilePathToString(const base::FilePath& file_path) {
@@ -403,13 +496,20 @@ std::string FilePathToString(const base::FilePath& file_path) {
 ChromiumWritableFile::ChromiumWritableFile(const std::string& fname,
                                            FILE* f,
                                            const UMALogger* uma_logger,
-                                           WriteTracker* tracker)
-    : filename_(fname), file_(f), uma_logger_(uma_logger), tracker_(tracker) {
+                                           WriteTracker* tracker,
+                                           bool make_backup)
+    : filename_(fname),
+      file_(f),
+      uma_logger_(uma_logger),
+      tracker_(tracker),
+      file_type_(kOther),
+      make_backup_(make_backup) {
   base::FilePath path = base::FilePath::FromUTF8Unsafe(fname);
-  is_manifest_ =
-      FilePathToString(path.BaseName()).find("MANIFEST") !=
-      std::string::npos;
-  if (!is_manifest_)
+  if (FilePathToString(path.BaseName()).find("MANIFEST") == 0)
+    file_type_ = kManifest;
+  else if (path.MatchesExtension(table_extension))
+    file_type_ = kTable;
+  if (file_type_ != kManifest)
     tracker_->DidCreateNewFile(filename_);
   parent_dir_ = FilePathToString(CreateFilePath(fname).DirName());
 }
@@ -438,13 +538,13 @@ Status ChromiumWritableFile::SyncParent() {
     s = MakeIOError(
         parent_dir_, strerror(saved_errno), kSyncParent, saved_errno);
   };
-  HANDLE_EINTR(close(parent_fd));
+  close(parent_fd);
 #endif
   return s;
 }
 
 Status ChromiumWritableFile::Append(const Slice& data) {
-  if (is_manifest_ && tracker_->DoesDirNeedSync(filename_)) {
+  if (file_type_ == kManifest && tracker_->DoesDirNeedSync(filename_)) {
     Status s = SyncParent();
     if (!s.ok())
       return s;
@@ -482,6 +582,13 @@ Status ChromiumWritableFile::Flush() {
   return result;
 }
 
+static bool MakeBackup(const std::string& fname) {
+  base::FilePath original_table_name = CreateFilePath(fname);
+  base::FilePath backup_table_name =
+      original_table_name.ReplaceExtension(backup_table_extension);
+  return base::CopyFile(original_table_name, backup_table_name);
+}
+
 Status ChromiumWritableFile::Sync() {
   TRACE_EVENT0("leveldb", "ChromiumEnv::Sync");
   Status result;
@@ -497,12 +604,16 @@ Status ChromiumWritableFile::Sync() {
   if (error) {
     result = MakeIOError(filename_, strerror(error), kWritableFileSync, error);
     uma_logger_->RecordErrorAt(kWritableFileSync);
+  } else if (make_backup_ && file_type_ == kTable) {
+    bool success = MakeBackup(filename_);
+    uma_logger_->RecordBackupResult(success);
   }
   return result;
 }
 
 ChromiumEnv::ChromiumEnv()
     : name_("LevelDBEnv"),
+      make_backup_(false),
       bgsignal_(&mu_),
       started_bgthread_(false),
       kMaxRetryTimeMillis(1000) {
@@ -572,7 +683,7 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
     return MakeIOError(
         fname, strerror(saved_errno), kNewWritableFile, saved_errno);
   } else {
-    *result = new ChromiumWritableFile(fname, f, this, this);
+    *result = new ChromiumWritableFile(fname, f, this, this, make_backup_);
     return Status::OK();
   }
 }
@@ -581,28 +692,148 @@ bool ChromiumEnv::FileExists(const std::string& fname) {
   return ::base::PathExists(CreateFilePath(fname));
 }
 
-Status ChromiumEnv::GetChildren(const std::string& dir,
-                                std::vector<std::string>* result) {
-  result->clear();
-  base::FileEnumerator iter(
-      CreateFilePath(dir), false, base::FileEnumerator::FILES);
-  base::FilePath current = iter.Next();
-  while (!current.empty()) {
-    result->push_back(FilePathToString(current.BaseName()));
-    current = iter.Next();
+base::FilePath ChromiumEnv::RestoreFromBackup(const base::FilePath& base_name) {
+  base::FilePath table_name =
+      base_name.AddExtension(table_extension);
+  bool result = base::CopyFile(base_name.AddExtension(backup_table_extension),
+                               table_name);
+  std::string uma_name(name_);
+  uma_name.append(".TableRestore");
+  base::BooleanHistogram::FactoryGet(
+      uma_name, base::Histogram::kUmaTargetedHistogramFlag)->AddBoolean(result);
+  return table_name;
+}
+
+void ChromiumEnv::RestoreIfNecessary(const std::string& dir,
+                                     std::vector<std::string>* result) {
+  std::set<base::FilePath> tables_found;
+  std::set<base::FilePath> backups_found;
+  for (std::vector<std::string>::iterator it = result->begin();
+       it != result->end();
+       ++it) {
+    base::FilePath current = CreateFilePath(*it);
+    if (current.MatchesExtension(table_extension))
+      tables_found.insert(current.RemoveExtension());
+    if (current.MatchesExtension(backup_table_extension))
+      backups_found.insert(current.RemoveExtension());
   }
-  // TODO(jorlow): Unfortunately, the FileEnumerator swallows errors, so
-  //               we'll always return OK. Maybe manually check for error
-  //               conditions like the file not existing?
+  std::set<base::FilePath> backups_only;
+  std::set_difference(backups_found.begin(),
+                      backups_found.end(),
+                      tables_found.begin(),
+                      tables_found.end(),
+                      std::inserter(backups_only, backups_only.begin()));
+  if (backups_only.size()) {
+    std::string uma_name(name_);
+    uma_name.append(".MissingFiles");
+    int num_missing_files =
+        backups_only.size() > INT_MAX ? INT_MAX : backups_only.size();
+    base::Histogram::FactoryGet(uma_name,
+                                1 /*min*/,
+                                100 /*max*/,
+                                8 /*num_buckets*/,
+                                base::Histogram::kUmaTargetedHistogramFlag)
+        ->Add(num_missing_files);
+  }
+  base::FilePath dir_filepath = base::FilePath::FromUTF8Unsafe(dir);
+  for (std::set<base::FilePath>::iterator it = backups_only.begin();
+       it != backups_only.end();
+       ++it) {
+    base::FilePath restored_table_name =
+        RestoreFromBackup(dir_filepath.Append(*it));
+    result->push_back(FilePathToString(restored_table_name.BaseName()));
+  }
+}
+
+namespace {
+#if defined(OS_WIN)
+static base::PlatformFileError GetDirectoryEntries(
+    const base::FilePath& dir_param,
+    std::vector<base::FilePath>* result) {
+  result->clear();
+  base::FilePath dir_filepath = dir_param.Append(FILE_PATH_LITERAL("*"));
+  WIN32_FIND_DATA find_data;
+  HANDLE find_handle = FindFirstFile(dir_filepath.value().c_str(), &find_data);
+  if (find_handle == INVALID_HANDLE_VALUE) {
+    DWORD last_error = GetLastError();
+    if (last_error == ERROR_FILE_NOT_FOUND)
+      return base::PLATFORM_FILE_OK;
+    return base::LastErrorToPlatformFileError(last_error);
+  }
+  do {
+    base::FilePath filepath(find_data.cFileName);
+    base::FilePath::StringType basename = filepath.BaseName().value();
+    if (basename == FILE_PATH_LITERAL(".") ||
+        basename == FILE_PATH_LITERAL(".."))
+      continue;
+    result->push_back(filepath.BaseName());
+  } while (FindNextFile(find_handle, &find_data));
+  DWORD last_error = GetLastError();
+  base::PlatformFileError return_value = base::PLATFORM_FILE_OK;
+  if (last_error != ERROR_NO_MORE_FILES)
+    return_value = base::LastErrorToPlatformFileError(last_error);
+  FindClose(find_handle);
+  return return_value;
+}
+#else
+static base::PlatformFileError GetDirectoryEntries(
+    const base::FilePath& dir_filepath,
+    std::vector<base::FilePath>* result) {
+  const std::string dir_string = FilePathToString(dir_filepath);
+  result->clear();
+  DIR* dir = opendir(dir_string.c_str());
+  if (!dir)
+    return base::ErrnoToPlatformFileError(errno);
+  struct dirent dent_buf;
+  struct dirent* dent;
+  int readdir_result;
+  while ((readdir_result = readdir_r(dir, &dent_buf, &dent)) == 0 && dent) {
+    if (strcmp(dent->d_name, ".") == 0 || strcmp(dent->d_name, "..") == 0)
+      continue;
+    result->push_back(CreateFilePath(dent->d_name));
+  }
+  int saved_errno = errno;
+  closedir(dir);
+  if (readdir_result != 0)
+    return base::ErrnoToPlatformFileError(saved_errno);
+  return base::PLATFORM_FILE_OK;
+}
+#endif
+}
+
+Status ChromiumEnv::GetChildren(const std::string& dir_string,
+                                std::vector<std::string>* result) {
+  std::vector<base::FilePath> entries;
+  base::PlatformFileError error =
+      GetDirectoryEntries(CreateFilePath(dir_string), &entries);
+  if (error != base::PLATFORM_FILE_OK) {
+    RecordOSError(kGetChildren, error);
+    return MakeIOError(
+        dir_string, "Could not open/read directory", kGetChildren, error);
+  }
+  result->clear();
+  for (std::vector<base::FilePath>::iterator it = entries.begin();
+       it != entries.end();
+       ++it) {
+    result->push_back(FilePathToString(*it));
+  }
+
+  if (make_backup_)
+    RestoreIfNecessary(dir_string, result);
   return Status::OK();
 }
 
 Status ChromiumEnv::DeleteFile(const std::string& fname) {
   Status result;
+  base::FilePath fname_filepath = CreateFilePath(fname);
   // TODO(jorlow): Should we assert this is a file?
-  if (!::base::DeleteFile(CreateFilePath(fname), false)) {
+  if (!::base::DeleteFile(fname_filepath, false)) {
     result = MakeIOError(fname, "Could not delete file.", kDeleteFile);
     RecordErrorAt(kDeleteFile);
+  }
+  if (make_backup_ && fname_filepath.MatchesExtension(table_extension)) {
+    base::DeleteFile(fname_filepath.ReplaceExtension(backup_table_extension),
+                     false);
   }
   return result;
 }
@@ -612,7 +843,7 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   Retrier retrier(kCreateDir, this);
   do {
-    if (::file_util::CreateDirectoryAndGetError(CreateFilePath(name), &error))
+    if (base::CreateDirectoryAndGetError(CreateFilePath(name), &error))
       return result;
   } while (retrier.ShouldKeepTrying(error));
   result = MakeIOError(name, "Could not create directory.", kCreateDir, error);
@@ -633,7 +864,7 @@ Status ChromiumEnv::DeleteDir(const std::string& name) {
 Status ChromiumEnv::GetFileSize(const std::string& fname, uint64_t* size) {
   Status s;
   int64_t signed_size;
-  if (!::file_util::GetFileSize(CreateFilePath(fname), &signed_size)) {
+  if (!::base::GetFileSize(CreateFilePath(fname), &signed_size)) {
     *size = 0;
     s = MakeIOError(fname, "Could not determine file size.", kGetFileSize);
     RecordErrorAt(kGetFileSize);
@@ -672,9 +903,7 @@ Status ChromiumEnv::LockFile(const std::string& fname, FileLock** lock) {
   Status result;
   int flags = ::base::PLATFORM_FILE_OPEN_ALWAYS |
               ::base::PLATFORM_FILE_READ |
-              ::base::PLATFORM_FILE_WRITE |
-              ::base::PLATFORM_FILE_EXCLUSIVE_READ |
-              ::base::PLATFORM_FILE_EXCLUSIVE_WRITE;
+              ::base::PLATFORM_FILE_WRITE;
   bool created;
   ::base::PlatformFileError error_code;
   ::base::PlatformFile file;
@@ -703,21 +932,55 @@ Status ChromiumEnv::LockFile(const std::string& fname, FileLock** lock) {
     result = MakeIOError(
         fname, PlatformFileErrorString(error_code), kLockFile, error_code);
     RecordOSError(kLockFile, error_code);
-  } else {
-    ChromiumFileLock* my_lock = new ChromiumFileLock;
-    my_lock->file_ = file;
-    *lock = my_lock;
+    return result;
   }
+
+  if (!locks_.Insert(fname)) {
+    result = MakeIOError(fname, "Lock file already locked.", kLockFile);
+    ::base::ClosePlatformFile(file);
+    return result;
+  }
+
+  Retrier lock_retrier = Retrier(kLockFile, this);
+  do {
+    error_code = ::base::LockPlatformFile(file);
+  } while (error_code != ::base::PLATFORM_FILE_OK &&
+           retrier.ShouldKeepTrying(error_code));
+
+  if (error_code != ::base::PLATFORM_FILE_OK) {
+    ::base::ClosePlatformFile(file);
+    locks_.Remove(fname);
+    result = MakeIOError(
+        fname, PlatformFileErrorString(error_code), kLockFile, error_code);
+    RecordOSError(kLockFile, error_code);
+    return result;
+  }
+
+  ChromiumFileLock* my_lock = new ChromiumFileLock;
+  my_lock->file_ = file;
+  my_lock->name_ = fname;
+  *lock = my_lock;
   return result;
 }
 
 Status ChromiumEnv::UnlockFile(FileLock* lock) {
   ChromiumFileLock* my_lock = reinterpret_cast<ChromiumFileLock*>(lock);
   Status result;
-  if (!::base::ClosePlatformFile(my_lock->file_)) {
-    result = MakeIOError("Could not close lock file.", "", kUnlockFile);
+
+  ::base::PlatformFileError error_code =
+      ::base::UnlockPlatformFile(my_lock->file_);
+  if (error_code != ::base::PLATFORM_FILE_OK) {
+    result =
+        MakeIOError(my_lock->name_, "Could not unlock lock file.", kUnlockFile);
+    RecordOSError(kUnlockFile, error_code);
+    ::base::ClosePlatformFile(my_lock->file_);
+  } else if (!::base::ClosePlatformFile(my_lock->file_)) {
+    result =
+        MakeIOError(my_lock->name_, "Could not close lock file.", kUnlockFile);
     RecordErrorAt(kUnlockFile);
   }
+  bool removed = locks_.Remove(my_lock->name_);
+  DCHECK(removed);
   delete my_lock;
   return result;
 }
@@ -725,8 +988,8 @@ Status ChromiumEnv::UnlockFile(FileLock* lock) {
 Status ChromiumEnv::GetTestDirectory(std::string* path) {
   mu_.Acquire();
   if (test_directory_.empty()) {
-    if (!::file_util::CreateNewTempDirectory(kLevelDBTestDirectoryPrefix,
-                                             &test_directory_)) {
+    if (!base::CreateNewTempDirectory(kLevelDBTestDirectoryPrefix,
+                                      &test_directory_)) {
       mu_.Release();
       RecordErrorAt(kGetTestDirectory);
       return MakeIOError(
@@ -779,6 +1042,13 @@ void ChromiumEnv::RecordOSError(MethodID method, int error) const {
   DCHECK(error > 0);
   RecordErrorAt(method);
   GetOSErrorHistogram(method, ERANGE + 1)->Add(error);
+}
+
+void ChromiumEnv::RecordBackupResult(bool result) const {
+  std::string uma_name(name_);
+  uma_name.append(".TableBackup");
+  base::BooleanHistogram::FactoryGet(
+      uma_name, base::Histogram::kUmaTargetedHistogramFlag)->AddBoolean(result);
 }
 
 base::HistogramBase* ChromiumEnv::GetOSErrorHistogram(MethodID method,

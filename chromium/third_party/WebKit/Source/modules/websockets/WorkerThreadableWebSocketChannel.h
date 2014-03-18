@@ -31,7 +31,7 @@
 #ifndef WorkerThreadableWebSocketChannel_h
 #define WorkerThreadableWebSocketChannel_h
 
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleTypes.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
@@ -46,8 +46,9 @@
 
 namespace WebCore {
 
+class BlobDataHandle;
 class KURL;
-class ScriptExecutionContext;
+class ExecutionContext;
 class ThreadableWebSocketChannelClientWrapper;
 class WorkerGlobalScope;
 class WorkerLoaderProxy;
@@ -56,9 +57,9 @@ class WorkerRunLoop;
 class WorkerThreadableWebSocketChannel : public RefCounted<WorkerThreadableWebSocketChannel>, public WebSocketChannel {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassRefPtr<WebSocketChannel> create(WorkerGlobalScope* workerGlobalScope, WebSocketChannelClient* client, const String& taskMode)
+    static PassRefPtr<WebSocketChannel> create(WorkerGlobalScope* workerGlobalScope, WebSocketChannelClient* client, const String& taskMode, const String& sourceURL, unsigned lineNumber)
     {
-        return adoptRef(new WorkerThreadableWebSocketChannel(workerGlobalScope, client, taskMode));
+        return adoptRef(new WorkerThreadableWebSocketChannel(workerGlobalScope, client, taskMode, sourceURL, lineNumber));
     }
     virtual ~WorkerThreadableWebSocketChannel();
 
@@ -68,7 +69,7 @@ public:
     virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) OVERRIDE;
-    virtual WebSocketChannel::SendResult send(const Blob&) OVERRIDE;
+    virtual WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>) OVERRIDE;
     virtual unsigned long bufferedAmount() const OVERRIDE;
     virtual void close(int code, const String& reason) OVERRIDE;
     virtual void fail(const String& reason, MessageLevel, const String&, unsigned) OVERRIDE;
@@ -83,7 +84,7 @@ public:
     public:
         // sourceURLAtConnection and lineNumberAtConnection parameters may
         // be shown when the connection fails.
-        static Peer* create(PassRefPtr<ThreadableWebSocketChannelClientWrapper> clientWrapper, WorkerLoaderProxy& loaderProxy, ScriptExecutionContext* context, const String& taskMode, const String& sourceURLAtConnection, unsigned lineNumberAtConnection)
+        static Peer* create(PassRefPtr<ThreadableWebSocketChannelClientWrapper> clientWrapper, WorkerLoaderProxy& loaderProxy, ExecutionContext* context, const String& taskMode, const String& sourceURLAtConnection, unsigned lineNumberAtConnection)
         {
             return new Peer(clientWrapper, loaderProxy, context, taskMode, sourceURLAtConnection, lineNumberAtConnection);
         }
@@ -92,7 +93,7 @@ public:
         void connect(const KURL&, const String& protocol);
         void send(const String& message);
         void send(const ArrayBuffer&);
-        void send(const Blob&);
+        void send(PassRefPtr<BlobDataHandle>);
         void bufferedAmount();
         void close(int code, const String& reason);
         void fail(const String& reason, MessageLevel, const String& sourceURL, unsigned lineNumber);
@@ -110,7 +111,7 @@ public:
         virtual void didReceiveMessageError() OVERRIDE;
 
     private:
-        Peer(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, WorkerLoaderProxy&, ScriptExecutionContext*, const String& taskMode, const String& sourceURL, unsigned lineNumber);
+        Peer(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, WorkerLoaderProxy&, ExecutionContext*, const String& taskMode, const String& sourceURL, unsigned lineNumber);
 
         RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;
         WorkerLoaderProxy& m_loaderProxy;
@@ -141,7 +142,7 @@ private:
         void connect(const KURL&, const String& protocol);
         WebSocketChannel::SendResult send(const String& message);
         WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength);
-        WebSocketChannel::SendResult send(const Blob&);
+        WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>);
         unsigned long bufferedAmount();
         void close(int code, const String& reason);
         void fail(const String& reason, MessageLevel, const String& sourceURL, unsigned lineNumber);
@@ -155,13 +156,13 @@ private:
     private:
         Bridge(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, PassRefPtr<WorkerGlobalScope>, const String& taskMode);
 
-        static void setWebSocketChannel(ScriptExecutionContext*, Bridge* thisPtr, Peer*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>);
+        static void setWebSocketChannel(ExecutionContext*, Bridge* thisPtr, Peer*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>);
 
         // Executed on the main thread to create a Peer for this bridge.
         // sourceURL and lineNumber provides the source filename and
         // the line number information at the connection initiation
         // respectively. They may be shown when the connection fails.
-        static void mainThreadInitialize(ScriptExecutionContext*, WorkerLoaderProxy*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>, const String& taskMode, const String& sourceURL, unsigned lineNumber);
+        static void mainThreadInitialize(ExecutionContext*, WorkerLoaderProxy*, PassRefPtr<ThreadableWebSocketChannelClientWrapper>, const String& taskMode, const String& sourceURL, unsigned lineNumber);
 
         // Executed on the worker context's thread.
         void clearClientWrapper();
@@ -176,18 +177,18 @@ private:
         Peer* m_peer;
     };
 
-    WorkerThreadableWebSocketChannel(WorkerGlobalScope*, WebSocketChannelClient*, const String& taskMode);
+    WorkerThreadableWebSocketChannel(WorkerGlobalScope*, WebSocketChannelClient*, const String& taskMode, const String& sourceURL, unsigned lineNumber);
 
-    static void mainThreadConnect(ScriptExecutionContext*, Peer*, const KURL&, const String& protocol);
-    static void mainThreadSend(ScriptExecutionContext*, Peer*, const String& message);
-    static void mainThreadSendArrayBuffer(ScriptExecutionContext*, Peer*, PassOwnPtr<Vector<char> >);
-    static void mainThreadSendBlob(ScriptExecutionContext*, Peer*, const KURL&, const String& type, long long size);
-    static void mainThreadBufferedAmount(ScriptExecutionContext*, Peer*);
-    static void mainThreadClose(ScriptExecutionContext*, Peer*, int code, const String& reason);
-    static void mainThreadFail(ScriptExecutionContext*, Peer*, const String& reason, MessageLevel, const String& sourceURL, unsigned lineNumber);
-    static void mainThreadDestroy(ScriptExecutionContext*, PassOwnPtr<Peer>);
-    static void mainThreadSuspend(ScriptExecutionContext*, Peer*);
-    static void mainThreadResume(ScriptExecutionContext*, Peer*);
+    static void mainThreadConnect(ExecutionContext*, Peer*, const KURL&, const String& protocol);
+    static void mainThreadSend(ExecutionContext*, Peer*, const String& message);
+    static void mainThreadSendArrayBuffer(ExecutionContext*, Peer*, PassOwnPtr<Vector<char> >);
+    static void mainThreadSendBlob(ExecutionContext*, Peer*, PassRefPtr<BlobDataHandle>);
+    static void mainThreadBufferedAmount(ExecutionContext*, Peer*);
+    static void mainThreadClose(ExecutionContext*, Peer*, int code, const String& reason);
+    static void mainThreadFail(ExecutionContext*, Peer*, const String& reason, MessageLevel, const String& sourceURL, unsigned lineNumber);
+    static void mainThreadDestroy(ExecutionContext*, PassOwnPtr<Peer>);
+    static void mainThreadSuspend(ExecutionContext*, Peer*);
+    static void mainThreadResume(ExecutionContext*, Peer*);
 
     class WorkerGlobalScopeDidInitializeTask;
 

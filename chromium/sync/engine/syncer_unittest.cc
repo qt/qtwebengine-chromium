@@ -25,7 +25,6 @@
 #include "build/build_config.h"
 #include "sync/engine/get_commit_ids.h"
 #include "sync/engine/net/server_connection_manager.h"
-#include "sync/engine/process_updates_command.h"
 #include "sync/engine/sync_scheduler_impl.h"
 #include "sync/engine/syncer.h"
 #include "sync/engine/syncer_proto_util.h"
@@ -51,6 +50,7 @@
 #include "sync/test/engine/test_syncable_utils.h"
 #include "sync/test/fake_encryptor.h"
 #include "sync/test/fake_sync_encryption_handler.h"
+#include "sync/test/sessions/mock_debug_info_getter.h"
 #include "sync/util/cryptographer.h"
 #include "sync/util/extensions_activity.h"
 #include "sync/util/time.h"
@@ -105,6 +105,7 @@ using syncable::SPECIFICS;
 using syncable::SYNCING;
 using syncable::UNITTEST;
 
+using sessions::MockDebugInfoGetter;
 using sessions::StatusController;
 using sessions::SyncSessionContext;
 using sessions::SyncSession;
@@ -149,8 +150,6 @@ class SyncerTest : public testing::Test,
       int size) OVERRIDE {
     last_client_invalidation_hint_buffer_size_ = size;
   }
-  virtual void OnShouldStopSyncingPermanently() OVERRIDE {
-  }
   virtual void OnSyncProtocolError(
       const sessions::SyncSessionSnapshot& snapshot) OVERRIDE {
   }
@@ -182,23 +181,27 @@ class SyncerTest : public testing::Test,
     saw_syncer_event_ = true;
   }
 
-  void SyncShareNudge() {
+  void ResetSession() {
     session_.reset(SyncSession::Build(context_.get(), this));
+  }
+
+  void SyncShareNudge() {
+    ResetSession();
 
     // Pretend we've seen a local change, to make the nudge_tracker look normal.
     nudge_tracker_.RecordLocalChange(ModelTypeSet(BOOKMARKS));
 
     EXPECT_TRUE(
         syncer_->NormalSyncShare(
-            GetRoutingInfoTypes(context_->routing_info()),
+            context_->enabled_types(),
             nudge_tracker_,
             session_.get()));
   }
 
   void SyncShareConfigure() {
-    session_.reset(SyncSession::Build(context_.get(), this));
+    ResetSession();
     EXPECT_TRUE(syncer_->ConfigureSyncShare(
-            GetRoutingInfoTypes(context_->routing_info()),
+            context_->enabled_types(),
             sync_pb::GetUpdatesCallerInfo::RECONFIGURATION,
             session_.get()));
   }
@@ -207,6 +210,7 @@ class SyncerTest : public testing::Test,
     dir_maker_.SetUp();
     mock_server_.reset(new MockConnectionManager(directory(),
                                                  &cancelation_signal_));
+    debug_info_getter_.reset(new MockDebugInfoGetter);
     EnableDatatype(BOOKMARKS);
     EnableDatatype(NIGORI);
     EnableDatatype(PREFERENCES);
@@ -225,7 +229,7 @@ class SyncerTest : public testing::Test,
         new SyncSessionContext(
             mock_server_.get(), directory(), workers,
             extensions_activity_,
-            listeners, NULL, &traffic_recorder_,
+            listeners, debug_info_getter_.get(), &traffic_recorder_,
             true,  // enable keystore encryption
             false,  // force enable pre-commit GU avoidance experiment
             "fake_invalidator_client_id"));
@@ -395,35 +399,6 @@ class SyncerTest : public testing::Test,
     }
   }
 
-  void DoTruncationTest(const vector<int64>& unsynced_handle_view,
-                        const vector<int64>& expected_handle_order) {
-    for (size_t limit = expected_handle_order.size() + 2; limit > 0; --limit) {
-      WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
-
-      ModelSafeRoutingInfo routes;
-      GetModelSafeRoutingInfo(&routes);
-      ModelTypeSet types = GetRoutingInfoTypes(routes);
-      sessions::OrderedCommitSet output_set(routes);
-      GetCommitIds(&wtrans, types, limit, &output_set);
-      size_t truncated_size = std::min(limit, expected_handle_order.size());
-      ASSERT_EQ(truncated_size, output_set.Size());
-      for (size_t i = 0; i < truncated_size; ++i) {
-        ASSERT_EQ(expected_handle_order[i], output_set.GetCommitHandleAt(i))
-            << "At index " << i << " with batch size limited to " << limit;
-      }
-      sessions::OrderedCommitSet::Projection proj;
-      proj = output_set.GetCommitIdProjection(GROUP_PASSIVE);
-      ASSERT_EQ(truncated_size, proj.size());
-      for (size_t i = 0; i < truncated_size; ++i) {
-        SCOPED_TRACE(::testing::Message("Projection mismatch with i = ") << i);
-        int64 projected = output_set.GetCommitHandleAt(proj[i]);
-        ASSERT_EQ(expected_handle_order[proj[i]], projected);
-        // Since this projection is the identity, the following holds.
-        ASSERT_EQ(expected_handle_order[i], projected);
-      }
-    }
-  }
-
   const StatusController& status() {
     return session_->status_controller();
   }
@@ -490,6 +465,18 @@ class SyncerTest : public testing::Test,
     return directory()->GetCryptographer(trans);
   }
 
+  // Configures SyncSessionContext and NudgeTracker so Syncer won't call
+  // GetUpdates prior to Commit. This method can be used to ensure a Commit is
+  // not preceeded by GetUpdates.
+  void ConfigureNoGetUpdatesRequired() {
+    context_->set_server_enabled_pre_commit_update_avoidance(true);
+    nudge_tracker_.OnInvalidationsEnabled();
+    nudge_tracker_.RecordSuccessfulSyncCycle();
+
+    ASSERT_FALSE(context_->ShouldFetchUpdatesBeforeCommit());
+    ASSERT_FALSE(nudge_tracker_.IsGetUpdatesRequired());
+  }
+
   base::MessageLoop message_loop_;
 
   // Some ids to aid tests. Only the root one's value is specific. The rest
@@ -522,6 +509,7 @@ class SyncerTest : public testing::Test,
   ModelTypeSet enabled_datatypes_;
   TrafficRecorder traffic_recorder_;
   sessions::NudgeTracker nudge_tracker_;
+  scoped_ptr<MockDebugInfoGetter> debug_info_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncerTest);
 };
@@ -538,64 +526,6 @@ TEST_F(SyncerTest, TestCallGatherUnsyncedEntries) {
   // TODO(sync): When we can dynamically connect and disconnect the mock
   // ServerConnectionManager test disconnected GetUnsyncedEntries here. It's a
   // regression for a very old bug.
-}
-
-TEST_F(SyncerTest, GetCommitIdsCommandTruncates) {
-  syncable::Id root = ids_.root();
-  // Create two server entries.
-  mock_server_->AddUpdateDirectory(ids_.MakeServer("x"), root, "X", 10, 10,
-                                   foreign_cache_guid(), "-1");
-  mock_server_->AddUpdateDirectory(ids_.MakeServer("w"), root, "W", 10, 10,
-                                   foreign_cache_guid(), "-2");
-  SyncShareNudge();
-
-  // Create some new client entries.
-  CreateUnsyncedDirectory("C", ids_.MakeLocal("c"));
-  CreateUnsyncedDirectory("B", ids_.MakeLocal("b"));
-  CreateUnsyncedDirectory("D", ids_.MakeLocal("d"));
-  CreateUnsyncedDirectory("E", ids_.MakeLocal("e"));
-  CreateUnsyncedDirectory("J", ids_.MakeLocal("j"));
-
-  vector<int64> expected_order;
-  {
-    WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
-    MutableEntry entry_x(&wtrans, GET_BY_ID, ids_.MakeServer("x"));
-    MutableEntry entry_b(&wtrans, GET_BY_ID, ids_.MakeLocal("b"));
-    MutableEntry entry_c(&wtrans, GET_BY_ID, ids_.MakeLocal("c"));
-    MutableEntry entry_d(&wtrans, GET_BY_ID, ids_.MakeLocal("d"));
-    MutableEntry entry_e(&wtrans, GET_BY_ID, ids_.MakeLocal("e"));
-    MutableEntry entry_w(&wtrans, GET_BY_ID, ids_.MakeServer("w"));
-    MutableEntry entry_j(&wtrans, GET_BY_ID, ids_.MakeLocal("j"));
-    entry_x.PutIsUnsynced(true);
-    entry_b.PutParentId(entry_x.GetId());
-    entry_d.PutParentId(entry_b.GetId());
-    entry_c.PutParentId(entry_x.GetId());
-    entry_c.PutPredecessor(entry_b.GetId());
-    entry_e.PutParentId(entry_c.GetId());
-    entry_w.PutPredecessor(entry_x.GetId());
-    entry_w.PutIsUnsynced(true);
-    entry_w.PutServerVersion(20);
-    entry_w.PutIsUnappliedUpdate(true);  // Fake a conflict.
-    entry_j.PutPredecessor(entry_w.GetId());
-
-    // The expected order is "x", "b", "c", "d", "e", "j", truncated
-    // appropriately.
-    expected_order.push_back(entry_x.GetMetahandle());
-    expected_order.push_back(entry_b.GetMetahandle());
-    expected_order.push_back(entry_c.GetMetahandle());
-    expected_order.push_back(entry_d.GetMetahandle());
-    expected_order.push_back(entry_e.GetMetahandle());
-    expected_order.push_back(entry_j.GetMetahandle());
-  }
-
-  // The arrangement is now: x (b (d) c (e)) w j
-  // Entry "w" is in conflict, so it is not eligible for commit.
-  vector<int64> unsynced_handle_view;
-  {
-    syncable::ReadTransaction rtrans(FROM_HERE, directory());
-    GetUnsyncedEntries(&rtrans, &unsynced_handle_view);
-  }
-  DoTruncationTest(unsynced_handle_view, expected_order);
 }
 
 TEST_F(SyncerTest, GetCommitIdsFiltersThrottledEntries) {
@@ -617,9 +547,11 @@ TEST_F(SyncerTest, GetCommitIdsFiltersThrottledEntries) {
   }
 
   // Now sync without enabling bookmarks.
+  mock_server_->ExpectGetUpdatesRequestTypes(
+      Difference(context_->enabled_types(), ModelTypeSet(BOOKMARKS)));
+  ResetSession();
   syncer_->NormalSyncShare(
-      Difference(GetRoutingInfoTypes(context_->routing_info()),
-                 ModelTypeSet(BOOKMARKS)),
+      Difference(context_->enabled_types(), ModelTypeSet(BOOKMARKS)),
       nudge_tracker_,
       session_.get());
 
@@ -632,10 +564,7 @@ TEST_F(SyncerTest, GetCommitIdsFiltersThrottledEntries) {
   }
 
   // Sync again with bookmarks enabled.
-  syncer_->NormalSyncShare(
-      GetRoutingInfoTypes(context_->routing_info()),
-      nudge_tracker_,
-      session_.get());
+  mock_server_->ExpectGetUpdatesRequestTypes(context_->enabled_types());
   SyncShareNudge();
   {
     // It should have been committed.
@@ -2605,6 +2534,131 @@ TEST_F(SyncerTest, CommitManyItemsInOneGo_CommitConflict) {
             directory()->unsynced_entity_count());
 }
 
+// Tests that sending debug info events works.
+TEST_F(SyncerTest, SendDebugInfoEventsOnGetUpdates_HappyCase) {
+  debug_info_getter_->AddDebugEvent();
+  debug_info_getter_->AddDebugEvent();
+
+  SyncShareNudge();
+
+  // Verify we received one GetUpdates request with two debug info events.
+  EXPECT_EQ(1U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(2, mock_server_->last_request().debug_info().events_size());
+
+  SyncShareNudge();
+
+  // See that we received another GetUpdates request, but that it contains no
+  // debug info events.
+  EXPECT_EQ(2U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(0, mock_server_->last_request().debug_info().events_size());
+
+  debug_info_getter_->AddDebugEvent();
+
+  SyncShareNudge();
+
+  // See that we received another GetUpdates request and it contains one debug
+  // info event.
+  EXPECT_EQ(3U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(1, mock_server_->last_request().debug_info().events_size());
+}
+
+// Tests that debug info events are dropped on server error.
+TEST_F(SyncerTest, SendDebugInfoEventsOnGetUpdates_PostFailsDontDrop) {
+  debug_info_getter_->AddDebugEvent();
+  debug_info_getter_->AddDebugEvent();
+
+  mock_server_->FailNextPostBufferToPathCall();
+  SyncShareNudge();
+
+  // Verify we attempted to send one GetUpdates request with two debug info
+  // events.
+  EXPECT_EQ(1U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(2, mock_server_->last_request().debug_info().events_size());
+
+  SyncShareNudge();
+
+  // See that the client resent the two debug info events.
+  EXPECT_EQ(2U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(2, mock_server_->last_request().debug_info().events_size());
+
+  // The previous send was successful so this next one shouldn't generate any
+  // debug info events.
+  SyncShareNudge();
+  EXPECT_EQ(3U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_get_updates());
+  EXPECT_EQ(0, mock_server_->last_request().debug_info().events_size());
+}
+
+// Tests that sending debug info events on Commit works.
+TEST_F(SyncerTest, SendDebugInfoEventsOnCommit_HappyCase) {
+  // Make sure GetUpdate isn't call as it would "steal" debug info events before
+  // Commit has a chance to send them.
+  ConfigureNoGetUpdatesRequired();
+
+  // Generate a debug info event and trigger a commit.
+  debug_info_getter_->AddDebugEvent();
+  CreateUnsyncedDirectory("X", "id_X");
+  SyncShareNudge();
+
+  // Verify that the last request received is a Commit and that it contains a
+  // debug info event.
+  EXPECT_EQ(1U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_commit());
+  EXPECT_EQ(1, mock_server_->last_request().debug_info().events_size());
+
+  // Generate another commit, but no debug info event.
+  CreateUnsyncedDirectory("Y", "id_Y");
+  SyncShareNudge();
+
+  // See that it was received and contains no debug info events.
+  EXPECT_EQ(2U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_commit());
+  EXPECT_EQ(0, mock_server_->last_request().debug_info().events_size());
+}
+
+// Tests that debug info events are not dropped on server error.
+TEST_F(SyncerTest, SendDebugInfoEventsOnCommit_PostFailsDontDrop) {
+  // Make sure GetUpdate isn't call as it would "steal" debug info events before
+  // Commit has a chance to send them.
+  ConfigureNoGetUpdatesRequired();
+
+  mock_server_->FailNextPostBufferToPathCall();
+
+  // Generate a debug info event and trigger a commit.
+  debug_info_getter_->AddDebugEvent();
+  CreateUnsyncedDirectory("X", "id_X");
+  SyncShareNudge();
+
+  // Verify that the last request sent is a Commit and that it contains a debug
+  // info event.
+  EXPECT_EQ(1U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_commit());
+  EXPECT_EQ(1, mock_server_->last_request().debug_info().events_size());
+
+  // Try again.
+  SyncShareNudge();
+
+  // Verify that we've received another Commit and that it contains a debug info
+  // event (just like the previous one).
+  EXPECT_EQ(2U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_commit());
+  EXPECT_EQ(1, mock_server_->last_request().debug_info().events_size());
+
+  // Generate another commit and try again.
+  CreateUnsyncedDirectory("Y", "id_Y");
+  SyncShareNudge();
+
+  // See that it was received and contains no debug info events.
+  EXPECT_EQ(3U, mock_server_->requests().size());
+  ASSERT_TRUE(mock_server_->last_request().has_commit());
+  EXPECT_EQ(0, mock_server_->last_request().debug_info().events_size());
+}
+
 TEST_F(SyncerTest, HugeConflict) {
   int item_count = 300;  // We should be able to do 300 or 3000 w/o issue.
 
@@ -3248,8 +3302,6 @@ TEST_F(SyncerTest, UpdateWhereParentIsNotAFolder) {
     EXPECT_TRUE(bad_parent.GetIsUnappliedUpdate());
   }
 }
-
-const char kRootId[] = "0";
 
 TEST_F(SyncerTest, DirectoryUpdateTest) {
   Id in_root_id = ids_.NewServerId();

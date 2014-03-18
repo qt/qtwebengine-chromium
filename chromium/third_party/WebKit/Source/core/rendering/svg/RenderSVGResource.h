@@ -62,7 +62,6 @@ public:
 
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) = 0;
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short, const Path*, const RenderSVGShape*) { }
-    virtual FloatRect resourceBoundingBox(RenderObject*) = 0;
 
     virtual RenderSVGResourceType resourceType() const = 0;
 
@@ -82,6 +81,9 @@ public:
 
     static void markForLayoutAndParentResourceInvalidation(RenderObject*, bool needsLayout = true);
 };
+
+#define DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(thisType, typeName) \
+    DEFINE_TYPE_CASTS(thisType, RenderSVGResource, resource, resource->resourceType() == typeName, resource.resourceType() == typeName)
 
 }
 

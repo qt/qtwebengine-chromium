@@ -145,13 +145,13 @@ base.unittest.testSuite('tracing.importer.linux_perf.android_parser',
           'SandboxedProces-2894  [001] ...1   253.780659: tracing_mark_write: B|2867|DoWorkLoop|arg1=1|cat1', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780671: tracing_mark_write: B|2867|DeferOrRunPendingTask|source=test=test;task=xyz|cat2', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780671: tracing_mark_write: E|2867|DeferOrRunPendingTask||cat1', // @suppress longLineCheck
-          'SandboxedProces-2894  [001] ...1   253.780672: tracing_mark_write: X|2867|XEvent||cat1|2000', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780686: tracing_mark_write: B|2867|MessageLoop::RunTask|source=ipc/ipc_sync_message_filter.cc:Send|cat2', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780700: tracing_mark_write: E|2867|MessageLoop::RunTask||cat1', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780750: tracing_mark_write: C|2867|counter1|10|cat1', // @suppress longLineCheck
           'SandboxedProces-2894  [001] ...1   253.780859: tracing_mark_write: E|2867|DoWorkLoop|arg2=2|cat2', // @suppress longLineCheck
           'SandboxedProces-2894  [000] ...1   255.663276: tracing_mark_write: S|2867|async|1113053968|arg1=1;arg2=2|cat1', // @suppress longLineCheck
-          'SandboxedProces-2894  [000] ...1   255.663276: tracing_mark_write: F|2867|async|1113053968|arg3=3|cat1' // @suppress longLineCheck
+          'SandboxedProces-2894  [000] ...1   255.663276: tracing_mark_write: F|2867|async|1113053968|arg3=3|cat1', // @suppress longLineCheck
+          'SandboxedProces-2894  [000] ...1   255.663276: tracing_mark_write: trace_event_clock_sync: parent_ts=128' // @suppress longLineCheck
         ];
         var m = new tracing.TraceModel(lines.join('\n'), false);
         assertFalse(m.hasImportWarnings);
@@ -163,22 +163,19 @@ base.unittest.testSuite('tracing.importer.linux_perf.android_parser',
         assertEquals(2867, thread.parent.pid);
         assertEquals(2894, thread.tid);
         assertEquals('SandboxedProces', thread.name);
-        assertEquals(4, thread.sliceGroup.length);
+        assertEquals(3, thread.sliceGroup.length);
 
-        assertEquals('test=test', thread.sliceGroup.slices[0].args['source']);
-        assertEquals('cat2', thread.sliceGroup.slices[0].category);
+        assertEquals('1', thread.sliceGroup.slices[0].args['arg1']);
+        assertEquals('2', thread.sliceGroup.slices[0].args['arg2']);
+
+        assertEquals('test=test', thread.sliceGroup.slices[1].args['source']);
+        assertEquals('cat2', thread.sliceGroup.slices[1].category);
         assertEquals('DeferOrRunPendingTask',
-                     thread.sliceGroup.slices[0].title);
-        assertEquals('xyz', thread.sliceGroup.slices[0].args['task']);
-
-        assertEquals('XEvent', thread.sliceGroup.slices[1].title);
-        assertAlmostEquals(2000 / 1000, thread.sliceGroup.slices[1].duration);
+                     thread.sliceGroup.slices[1].title);
+        assertEquals('xyz', thread.sliceGroup.slices[1].args['task']);
 
         assertEquals('ipc/ipc_sync_message_filter.cc:Send',
                      thread.sliceGroup.slices[2].args['source']);
-
-        assertEquals('1', thread.sliceGroup.slices[3].args['arg1']);
-        assertEquals('2', thread.sliceGroup.slices[3].args['arg2']);
 
         assertEquals(1, thread.asyncSliceGroup.length);
         assertEquals('1', thread.asyncSliceGroup.slices[0].args['arg1']);
@@ -192,5 +189,8 @@ base.unittest.testSuite('tracing.importer.linux_perf.android_parser',
 
         assertEquals(1, counters[0].numSamples);
         assertEquals(10, counters[0].getSeries(0).getSample(0).value);
+
+        assertEquals(Math.round((253.780659 - (255.663276 - 128)) * 1000),
+                     Math.round(thread.sliceGroup.slices[0].start));
       });
     });

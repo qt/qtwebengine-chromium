@@ -30,9 +30,6 @@ const int kEntryFilesSuffixLength = 2;
 
 const uint64 kMaxEntiresInIndex = 100000000;
 
-const char kIndexFileName[] = "the-real-index";
-const char kTempIndexFileName[] = "temp-index";
-
 uint32 CalculatePickleCRC(const Pickle& pickle) {
   return crc32(crc32(0, Z_NULL, 0),
                reinterpret_cast<const Bytef*>(pickle.payload()),
@@ -99,7 +96,7 @@ void ProcessEntryFile(SimpleIndex::EntrySet* entries,
   }
 
   base::PlatformFileInfo file_info;
-  if (!file_util::GetFileInfo(file_path, &file_info)) {
+  if (!base::GetFileInfo(file_path, &file_info)) {
     LOG(ERROR) << "Could not get file info for " << file_path.value();
     return;
   }
@@ -206,7 +203,7 @@ void SimpleIndexFile::SyncWriteToDisk(net::CacheType cache_type,
   }
   SerializeFinalData(cache_dir_mtime, pickle.get());
   if (!WritePickleFile(pickle.get(), temp_index_filename)) {
-    if (!file_util::CreateDirectory(temp_index_filename.DirName())) {
+    if (!base::CreateDirectory(temp_index_filename.DirName())) {
       LOG(ERROR) << "Could not create a directory to hold the index file";
       return;
     }

@@ -28,10 +28,10 @@
 
 #if ENABLE(INPUT_SPEECH)
 
-#include "core/page/SpeechInputResult.h"
+#include "core/speech/SpeechInputResult.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 void WebSpeechInputResult::reset()
 {
@@ -58,6 +58,6 @@ WebSpeechInputResult::operator PassRefPtr<WebCore::SpeechInputResult>() const
     return m_private.get();
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // ENABLE(INPUT_SPEECH)

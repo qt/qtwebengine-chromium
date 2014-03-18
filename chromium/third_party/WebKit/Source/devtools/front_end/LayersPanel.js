@@ -32,6 +32,7 @@ importScript("LayerTreeModel.js");
 importScript("LayerTree.js");
 importScript("Layers3DView.js");
 importScript("LayerDetailsView.js");
+importScript("PaintProfilerView.js");
 
 /**
  * @constructor
@@ -45,8 +46,8 @@ WebInspector.LayersPanel = function()
     const initialLayerTreeSidebarWidth = 225;
     const minimumMainWidthPercent = 0.5;
     this.createSidebarViewWithTree();
-    this.sidebarElement.addStyleClass("outline-disclosure");
-    this.sidebarTreeElement.removeStyleClass("sidebar-tree");
+    this.sidebarElement.classList.add("outline-disclosure");
+    this.sidebarTreeElement.classList.remove("sidebar-tree");
 
     this._model = new WebInspector.LayerTreeModel();
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerTreeChanged, this._onLayerTreeUpdated, this);
@@ -57,31 +58,41 @@ WebInspector.LayersPanel = function()
     this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerSelected, this._onLayerSelected, this);
     this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerHovered, this._onLayerHovered, this);
 
-    this._layerDetailsSplitView = new WebInspector.SplitView(false, "layerDetailsSplitView");
-    this._layerDetailsSplitView.show(this.splitView.mainElement);
+    this._rightSplitView = new WebInspector.SplitView(false, "layerDetailsSplitView");
+    this._rightSplitView.show(this.splitView.mainElement);
 
     this._layers3DView = new WebInspector.Layers3DView(this._model);
-    this._layers3DView.show(this._layerDetailsSplitView.firstElement());
+    this._layers3DView.show(this._rightSplitView.firstElement());
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.LayerSelected, this._onLayerSelected, this);
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.LayerHovered, this._onLayerHovered, this);
+    this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.LayerSnapshotRequested, this._onSnapshotRequested, this);
 
-    this._layerDetailsView = new WebInspector.LayerDetailsView();
-    this._layerDetailsView.show(this._layerDetailsSplitView.secondElement());
+    this._tabbedPane = new WebInspector.TabbedPane();
+    this._tabbedPane.element.classList.add("fill");
+    this._tabbedPane.show(this._rightSplitView.secondElement());
 
-    this._model.requestLayers();
+    this._layerDetailsView = new WebInspector.LayerDetailsView(this._model);
+    this._tabbedPane.appendTab(WebInspector.LayersPanel.DetailsViewTabs.Details, WebInspector.UIString("Details"), this._layerDetailsView);
+    this._paintProfilerView = new WebInspector.PaintProfilerView(this._model, this._layers3DView);
+    this._tabbedPane.appendTab(WebInspector.LayersPanel.DetailsViewTabs.Profiler, WebInspector.UIString("Profiler"), this._paintProfilerView);
 }
+
+WebInspector.LayersPanel.DetailsViewTabs = {
+    Details: "details",
+    Profiler: "profiler"
+};
 
 WebInspector.LayersPanel.prototype = {
     wasShown: function()
     {
         WebInspector.Panel.prototype.wasShown.call(this);
-        this._layerTree.setVisible(true);
         this.sidebarTreeElement.focus();
+        this._model.enable();
     },
 
     willHide: function()
     {
-        this._layerTree.setVisible(false);
+        this._model.disable();
         WebInspector.Panel.prototype.willHide.call(this);
     },
 
@@ -91,21 +102,19 @@ WebInspector.LayersPanel.prototype = {
             this._selectLayer(null);
         if (this._currentlyHoveredLayer && !this._model.layerById(this._currentlyHoveredLayer.id()))
             this._hoverLayer(null);
-        if (this._currentlySelectedLayer)
-            this._layerDetailsView.showLayer(this._currentlySelectedLayer);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onLayerSelected: function(event)
     {
-        var layer = /** @type WebInspector.Layer */ (event.data);
+        var layer = /** @type {!WebInspector.Layer} */ (event.data);
         this._selectLayer(layer);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _onLayerHovered: function(event)
     {
@@ -114,7 +123,17 @@ WebInspector.LayersPanel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Layer?} layer
+     * @param {!WebInspector.Event} event
+     */
+    _onSnapshotRequested: function(event)
+    {
+        var layer = /** @type {!WebInspector.Layer} */ (event.data);
+        this._tabbedPane.selectTab(WebInspector.LayersPanel.DetailsViewTabs.Profiler);
+        this._paintProfilerView.profile(layer);
+    },
+
+    /**
+     * @param {?WebInspector.Layer} layer
      */
     _selectLayer: function(layer)
     {
@@ -128,11 +147,11 @@ WebInspector.LayersPanel.prototype = {
             WebInspector.domAgent.hideDOMNodeHighlight();
         this._layerTree.selectLayer(layer);
         this._layers3DView.selectLayer(layer);
-        this._layerDetailsView.showLayer(layer);
+        this._layerDetailsView.setLayer(layer);
     },
 
     /**
-     * @param {WebInspector.Layer?} layer
+     * @param {?WebInspector.Layer} layer
      */
     _hoverLayer: function(layer)
     {

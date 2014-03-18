@@ -106,10 +106,6 @@ SSLServerSocketNSS::SSLServerSocketNSS(
       cert_(cert),
       next_handshake_state_(STATE_NONE),
       completed_handshake_(false) {
-  ssl_config_.false_start_enabled = false;
-  ssl_config_.version_min = SSL_PROTOCOL_VERSION_SSL3;
-  ssl_config_.version_max = SSL_PROTOCOL_VERSION_TLS1_1;
-
   // TODO(hclam): Need a better way to clone a key.
   std::vector<uint8> key_bytes;
   CHECK(key->ExportPrivateKey(&key_bytes));
@@ -348,6 +344,23 @@ int SSLServerSocketNSS::InitializeSSLOptions() {
   if (rv != SECSuccess) {
     LogFailedNSSFunction(net_log_, "SSL_VersionRangeSet", "");
     return ERR_NO_SSL_VERSIONS_ENABLED;
+  }
+
+  if (ssl_config_.require_forward_secrecy) {
+    const PRUint16* const ssl_ciphers = SSL_GetImplementedCiphers();
+    const PRUint16 num_ciphers = SSL_GetNumImplementedCiphers();
+
+    // Require forward security by iterating over the cipher suites and
+    // disabling all those that don't use ECDHE.
+    for (unsigned i = 0; i < num_ciphers; i++) {
+      SSLCipherSuiteInfo info;
+      if (SSL_GetCipherSuiteInfo(ssl_ciphers[i], &info, sizeof(info)) ==
+          SECSuccess) {
+        if (strcmp(info.keaTypeName, "ECDHE") != 0) {
+          SSL_CipherPrefSet(nss_fd_, ssl_ciphers[i], PR_FALSE);
+        }
+      }
+    }
   }
 
   for (std::vector<uint16>::const_iterator it =

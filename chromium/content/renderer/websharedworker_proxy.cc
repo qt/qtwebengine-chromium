@@ -51,11 +51,11 @@ void WebSharedWorkerProxy::Disconnect() {
 void WebSharedWorkerProxy::CreateWorkerContext(
     const GURL& script_url,
     bool is_shared,
-    const string16& name,
-    const string16& user_agent,
-    const string16& source_code,
-    const string16& content_security_policy,
-    WebKit::WebContentSecurityPolicyType policy_type,
+    const base::string16& name,
+    const base::string16& user_agent,
+    const base::string16& source_code,
+    const base::string16& content_security_policy,
+    blink::WebContentSecurityPolicyType policy_type,
     int pending_route_id,
     int64 script_resource_appcache_id) {
   DCHECK(route_id_ == MSG_ROUTING_NONE);
@@ -121,12 +121,12 @@ bool WebSharedWorkerProxy::isStarted() {
 }
 
 void WebSharedWorkerProxy::startWorkerContext(
-    const WebKit::WebURL& script_url,
-    const WebKit::WebString& name,
-    const WebKit::WebString& user_agent,
-    const WebKit::WebString& source_code,
-    const WebKit::WebString& content_security_policy,
-    WebKit::WebContentSecurityPolicyType policy_type,
+    const blink::WebURL& script_url,
+    const blink::WebString& name,
+    const blink::WebString& user_agent,
+    const blink::WebString& source_code,
+    const blink::WebString& content_security_policy,
+    blink::WebContentSecurityPolicyType policy_type,
     long long script_resource_appcache_id) {
   DCHECK(!isStarted());
   CreateWorkerContext(
@@ -134,17 +134,7 @@ void WebSharedWorkerProxy::startWorkerContext(
       policy_type, pending_route_id_, script_resource_appcache_id);
 }
 
-void WebSharedWorkerProxy::terminateWorkerContext() {
-  // This API should only be invoked from worker context.
-  NOTREACHED();
-}
-
-void WebSharedWorkerProxy::clientDestroyed() {
-  // This API should only be invoked from worker context.
-  NOTREACHED();
-}
-
-void WebSharedWorkerProxy::connect(WebKit::WebMessagePortChannel* channel,
+void WebSharedWorkerProxy::connect(blink::WebMessagePortChannel* channel,
                                    ConnectListener* listener) {
   WebMessagePortChannelImpl* webchannel =
         static_cast<WebMessagePortChannelImpl*>(channel);

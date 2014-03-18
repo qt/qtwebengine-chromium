@@ -29,14 +29,12 @@
 #include "modules/geolocation/Geolocation.h"
 
 #include "core/dom/Document.h"
-#include "modules/geolocation/Geoposition.h"
 #include "wtf/CurrentTime.h"
 
 #include "modules/geolocation/Coordinates.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
-#include "modules/geolocation/PositionError.h"
 
 namespace WebCore {
 
@@ -70,7 +68,7 @@ static PassRefPtr<PositionError> createPositionError(GeolocationError* error)
     return PositionError::create(code, error->message());
 }
 
-Geolocation::GeoNotifier::GeoNotifier(Geolocation* geolocation, PassRefPtr<PositionCallback> successCallback, PassRefPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
+Geolocation::GeoNotifier::GeoNotifier(Geolocation* geolocation, PassOwnPtr<PositionCallback> successCallback, PassOwnPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
     : m_geolocation(geolocation)
     , m_successCallback(successCallback)
     , m_errorCallback(errorCallback)
@@ -229,14 +227,14 @@ void Geolocation::Watchers::getNotifiersVector(GeoNotifierVector& copy) const
     copyValuesToVector(m_idToNotifierMap, copy);
 }
 
-PassRefPtr<Geolocation> Geolocation::create(ScriptExecutionContext* context)
+PassRefPtr<Geolocation> Geolocation::create(ExecutionContext* context)
 {
     RefPtr<Geolocation> geolocation = adoptRef(new Geolocation(context));
     geolocation->suspendIfNeeded();
     return geolocation.release();
 }
 
-Geolocation::Geolocation(ScriptExecutionContext* context)
+Geolocation::Geolocation(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_allowGeolocation(Unknown)
 {
@@ -250,7 +248,7 @@ Geolocation::~Geolocation()
 
 Document* Geolocation::document() const
 {
-    return toDocument(scriptExecutionContext());
+    return toDocument(executionContext());
 }
 
 Frame* Geolocation::frame() const
@@ -286,7 +284,7 @@ Geoposition* Geolocation::lastPosition()
     return m_lastPosition.get();
 }
 
-void Geolocation::getCurrentPosition(PassRefPtr<PositionCallback> successCallback, PassRefPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
+void Geolocation::getCurrentPosition(PassOwnPtr<PositionCallback> successCallback, PassOwnPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
 {
     if (!frame())
         return;
@@ -297,7 +295,7 @@ void Geolocation::getCurrentPosition(PassRefPtr<PositionCallback> successCallbac
     m_oneShots.add(notifier);
 }
 
-int Geolocation::watchPosition(PassRefPtr<PositionCallback> successCallback, PassRefPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
+int Geolocation::watchPosition(PassOwnPtr<PositionCallback> successCallback, PassOwnPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
 {
     if (!frame())
         return 0;
@@ -308,7 +306,7 @@ int Geolocation::watchPosition(PassRefPtr<PositionCallback> successCallback, Pas
     int watchID;
     // Keep asking for the next id until we're given one that we don't already have.
     do {
-        watchID = scriptExecutionContext()->circularSequentialID();
+        watchID = executionContext()->circularSequentialID();
     } while (!m_watchers.add(watchID, notifier));
     return watchID;
 }
@@ -612,6 +610,11 @@ void Geolocation::makeSuccessCallbacks()
     // added by calls to Geolocation methods from the callbacks, and to prevent
     // further callbacks to these notifiers.
     m_oneShots.clear();
+
+    // Also clear the set of notifiers waiting for a cached position. All the
+    // oneshots and watchers will receive a position now, and if they happen to
+    // be lingering in that set, avoid this bug: http://crbug.com/311876 .
+    m_requestsAwaitingCachedPosition.clear();
 
     sendPosition(oneShotsCopy, lastPosition());
     sendPosition(watchersCopy, lastPosition());

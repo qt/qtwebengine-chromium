@@ -23,7 +23,7 @@ struct SYNC_EXPORT_PRIVATE SyncEngineEvent {
     // Sent on entry of Syncer state machine
     SYNC_CYCLE_BEGIN,
 
-    // SyncerCommand generated events.
+    // Sent any time progress is made during a sync cycle.
     STATUS_CHANGED,
 
     // We have reached the SYNCER_END state in the main sync loop.
@@ -31,9 +31,6 @@ struct SYNC_EXPORT_PRIVATE SyncEngineEvent {
 
     ////////////////////////////////////////////////////////////////
     // Generated in response to specific protocol actions or events.
-
-    // New token in updated_token.
-    UPDATED_TOKEN,
 
     // This is sent after the Syncer (and SyncerThread) have initiated self
     // halt due to no longer being permitted to communicate with the server.

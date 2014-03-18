@@ -29,6 +29,7 @@ class GrIndexBuffer;
 class GrIndexBufferAllocPool;
 class GrInOrderDrawBuffer;
 class GrOvalRenderer;
+class GrPath;
 class GrPathRenderer;
 class GrResourceEntry;
 class GrResourceCache;
@@ -48,11 +49,6 @@ public:
      * Creates a GrContext for a backend context.
      */
     static GrContext* Create(GrBackend, GrBackendContext);
-
-    /**
-     * Returns the number of GrContext instances for the current thread.
-     */
-    static int GetThreadInstanceCount();
 
     virtual ~GrContext();
 
@@ -131,11 +127,14 @@ public:
      * @param srcData   Pointer to the pixel values.
      * @param rowBytes  The number of bytes between rows of the texture. Zero
      *                  implies tightly packed rows.
+     * @param cacheKey  (optional) If non-NULL, we'll write the cache key we used to cacheKey.
      */
     GrTexture* createTexture(const GrTextureParams* params,
                              const GrTextureDesc& desc,
                              const GrCacheID& cacheID,
-                             void* srcData, size_t rowBytes);
+                             void* srcData,
+                             size_t rowBytes,
+                             GrResourceKey* cacheKey = NULL);
 
     /**
      * Search for an entry based on key and dimensions. If found, ref it and return it. The return
@@ -286,7 +285,7 @@ public:
     /**
      * Can the provided configuration act as a color render target?
      */
-    bool isConfigRenderable(GrPixelConfig config) const;
+    bool isConfigRenderable(GrPixelConfig config, bool withMSAA) const;
 
     /**
      * Return the max width or height of a render target supported by the
@@ -376,10 +375,12 @@ public:
      * Clear the entire or rect of the render target, ignoring any clips.
      * @param rect  the rect to clear or the whole thing if rect is NULL.
      * @param color the color to clear to.
+     * @param canIgnoreRect allows partial clears to be converted to whole
+     *                      clears on platforms for which that is cheap
      * @param target if non-NULL, the render target to clear otherwise clear
      *               the current render target
      */
-    void clear(const SkIRect* rect, GrColor color,
+    void clear(const SkIRect* rect, GrColor color, bool canIgnoreRect,
                GrRenderTarget* target = NULL);
 
     /**
@@ -390,17 +391,18 @@ public:
     /**
      *  Draw the rect using a paint.
      *  @param paint        describes how to color pixels.
-     *  @param strokeWidth  If strokeWidth < 0, then the rect is filled, else
-     *                      the rect is mitered stroked based on strokeWidth. If
-     *                      strokeWidth == 0, then the stroke is always a single
-     *                      pixel thick.
+     *  @param stroke       the stroke information (width, join, cap).
+     *                      If stroke == NULL, then the rect is filled.
+     *                      Otherwise, if stroke width == 0, then the stroke
+     *                      is always a single pixel thick, else the rect is
+     *                      mitered/beveled stroked based on stroke width.
      *  @param matrix       Optional matrix applied to the rect. Applied before
      *                      context's matrix or the paint's matrix.
      *  The rects coords are used to access the paint (through texture matrix)
      */
     void drawRect(const GrPaint& paint,
                   const SkRect&,
-                  SkScalar strokeWidth = -1,
+                  const SkStrokeRec* stroke = NULL,
                   const SkMatrix* matrix = NULL);
 
     /**
@@ -627,6 +629,10 @@ public:
      * reading pixels back from a GrTexture or GrRenderTarget.
      */
     void resolveRenderTarget(GrRenderTarget* target);
+
+#ifdef SK_DEVELOPER
+    void dumpFontCache() const;
+#endif
 
     ///////////////////////////////////////////////////////////////////////////
     // Helpers
@@ -915,6 +921,7 @@ private:
     // Needed so GrTexture's returnToCache helper function can call
     // addExistingTextureToCache
     friend class GrTexture;
+    friend class GrStencilAndCoverPathRenderer;
 
     // Add an existing texture to the texture cache. This is intended solely
     // for use with textures released from an GrAutoScratchTexture.
@@ -937,6 +944,15 @@ private:
      *  when the cache is still overbudget after a purge.
      */
     static bool OverbudgetCB(void* data);
+
+    /** Creates a new gpu path, based on the specified path and stroke and returns it.
+     * The caller owns a ref on the returned path which must be balanced by a call to unref.
+     *
+     * @param skPath the path geometry.
+     * @param stroke the path stroke.
+     * @return a new path or NULL if the operation is not supported by the backend.
+     */
+    GrPath* createPath(const SkPath& skPath, const SkStrokeRec& stroke);
 
     typedef SkRefCnt INHERITED;
 };

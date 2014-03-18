@@ -41,7 +41,7 @@
 #include "content/public/common/sandbox_init.h"
 #endif
 
-using WebKit::WebBindings;
+using blink::WebBindings;
 
 namespace content {
 
@@ -77,7 +77,7 @@ WebPluginProxy::WebPluginProxy(
   // then consider using SHM pixmaps for windowless plugin painting.
   XDisplay* display = gfx::GetXDisplay();
   if (ui::QuerySharedMemorySupport(display) == ui::SHARED_MEMORY_PIXMAP &&
-      ui::BitsPerPixelForPixmapDepth(
+      gfx::BitsPerPixelForPixmapDepth(
           display, DefaultDepth(display, DefaultScreen(display))) == 32) {
     Visual* vis = DefaultVisual(display, DefaultScreen(display));
 
@@ -323,7 +323,7 @@ void WebPluginProxy::HandleURLRequest(const char* url,
       GURL request_url(url);
       if (!request_url.SchemeIs(kHttpScheme) &&
           !request_url.SchemeIs(kHttpsScheme) &&
-          !request_url.SchemeIs(chrome::kFtpScheme)) {
+          !request_url.SchemeIs(kFtpScheme)) {
         return;
       }
     }

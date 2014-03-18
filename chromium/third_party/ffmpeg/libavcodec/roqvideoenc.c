@@ -806,8 +806,8 @@ static void generate_codebook(RoqContext *enc, RoqTempdata *tempdata,
     else
         closest_cb = tempdata->closest_cb2;
 
-    ff_init_elbg(points, 6*c_size, inputCount, codebook, cbsize, 1, closest_cb, &enc->randctx);
-    ff_do_elbg(points, 6*c_size, inputCount, codebook, cbsize, 1, closest_cb, &enc->randctx);
+    avpriv_init_elbg(points, 6*c_size, inputCount, codebook, cbsize, 1, closest_cb, &enc->randctx);
+    avpriv_do_elbg(points, 6*c_size, inputCount, codebook, cbsize, 1, closest_cb, &enc->randctx);
 
     if (size == 4)
         av_free(closest_cb);
@@ -1075,6 +1075,7 @@ static int roq_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 AVCodec ff_roq_encoder = {
     .name                 = "roqvideo",
+    .long_name            = NULL_IF_CONFIG_SMALL("id RoQ video"),
     .type                 = AVMEDIA_TYPE_VIDEO,
     .id                   = AV_CODEC_ID_ROQ,
     .priv_data_size       = sizeof(RoqContext),
@@ -1084,5 +1085,4 @@ AVCodec ff_roq_encoder = {
     .supported_framerates = (const AVRational[]){ {30,1}, {0,0} },
     .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV444P,
                                                         AV_PIX_FMT_NONE },
-    .long_name            = NULL_IF_CONFIG_SMALL("id RoQ video"),
 };

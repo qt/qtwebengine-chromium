@@ -27,6 +27,7 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/PluginDocument.h"
@@ -38,21 +39,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLEmbedElement::HTMLEmbedElement(const QualifiedName& tagName, Document& document, bool createdByParser)
-    : HTMLPlugInImageElement(tagName, document, createdByParser, ShouldPreferPlugInsForImages)
+inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByParser)
+    : HTMLPlugInElement(embedTag, document, createdByParser, ShouldPreferPlugInsForImages)
 {
-    ASSERT(hasTagName(embedTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
+PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new HTMLEmbedElement(tagName, document, createdByParser));
-}
-
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document)
-{
-    return create(embedTag, document, false);
+    RefPtr<HTMLEmbedElement> element = adoptRef(new HTMLEmbedElement(document, createdByParser));
+    element->ensureUserAgentShadowRoot();
+    return element.release();
 }
 
 static inline RenderWidget* findWidgetRenderer(const Node* n)
@@ -77,7 +74,7 @@ bool HTMLEmbedElement::isPresentationAttribute(const QualifiedName& name) const
 {
     if (name == hiddenAttr)
         return true;
-    return HTMLPlugInImageElement::isPresentationAttribute(name);
+    return HTMLPlugInElement::isPresentationAttribute(name);
 }
 
 void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
@@ -87,8 +84,9 @@ void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName&
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWidth, 0, CSSPrimitiveValue::CSS_PX);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyHeight, 0, CSSPrimitiveValue::CSS_PX);
         }
-    } else
-        HTMLPlugInImageElement::collectStyleForPresentationAttribute(name, value, style);
+    } else {
+        HTMLPlugInElement::collectStyleForPresentationAttribute(name, value, style);
+    }
 }
 
 void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -98,17 +96,18 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
-    } else if (name == codeAttr)
+    } else if (name == codeAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
-    else if (name == srcAttr) {
+    } else if (name == srcAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
                 m_imageLoader = adoptPtr(new HTMLImageLoader(this));
             m_imageLoader->updateFromElementIgnoringPreviousError();
         }
-    } else
-        HTMLPlugInImageElement::parseAttribute(name, value);
+    } else {
+        HTMLPlugInElement::parseAttribute(name, value);
+    }
 }
 
 void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues)
@@ -124,8 +123,8 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
 }
 
 // FIXME: This should be unified with HTMLObjectElement::updateWidget and
-// moved down into HTMLPluginImageElement.cpp
-void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
+// moved down into HTMLPluginElement.cpp
+void HTMLEmbedElement::updateWidgetInternal()
 {
     ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
@@ -138,15 +137,6 @@ void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
     // <object> which modifies url and serviceType before calling these.
     if (!allowedToLoadFrameURL(m_url))
         return;
-
-    // FIXME: It's sadness that we have this special case here.
-    //        See http://trac.webkit.org/changeset/25128 and
-    //        plugins/netscape-plugin-setwindow-size.html
-    if (pluginCreationOption == CreateOnlyNonNetscapePlugins && wouldLoadAsNetscapePlugin(m_url, m_serviceType)) {
-        // Ensure updateWidget() is called again during layout to create the Netscape plug-in.
-        setNeedsWidgetUpdate(true);
-        return;
-    }
 
     // FIXME: These should be joined into a PluginParameters class.
     Vector<String> paramNames;
@@ -174,7 +164,7 @@ void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
 bool HTMLEmbedElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (isImageType())
-        return HTMLPlugInImageElement::rendererIsNeeded(style);
+        return HTMLPlugInElement::rendererIsNeeded(style);
 
     Frame* frame = document().frame();
     if (!frame)
@@ -190,12 +180,12 @@ bool HTMLEmbedElement::rendererIsNeeded(const RenderStyle& style)
             return false;
         }
     }
-    return HTMLPlugInImageElement::rendererIsNeeded(style);
+    return HTMLPlugInElement::rendererIsNeeded(style);
 }
 
 bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == srcAttr || HTMLPlugInImageElement::isURLAttribute(attribute);
+    return attribute.name() == srcAttr || HTMLPlugInElement::isURLAttribute(attribute);
 }
 
 const AtomicString HTMLEmbedElement::imageSourceURL() const
@@ -205,13 +195,23 @@ const AtomicString HTMLEmbedElement::imageSourceURL() const
 
 void HTMLEmbedElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
 {
-    HTMLPlugInImageElement::addSubresourceAttributeURLs(urls);
+    HTMLPlugInElement::addSubresourceAttributeURLs(urls);
 
     addSubresourceURL(urls, document().completeURL(getAttribute(srcAttr)));
 }
 
 bool HTMLEmbedElement::isInteractiveContent() const
 {
+    return true;
+}
+
+bool HTMLEmbedElement::isExposed() const
+{
+    // http://www.whatwg.org/specs/web-apps/current-work/#exposed
+    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
+        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+            return false;
+    }
     return true;
 }
 

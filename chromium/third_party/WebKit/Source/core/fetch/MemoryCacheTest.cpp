@@ -34,7 +34,7 @@
 #include "core/fetch/MockImageResourceClient.h"
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/network/ResourceRequest.h"
 #include "public/platform/Platform.h"
 #include "wtf/OwnPtr.h"
 
@@ -60,6 +60,19 @@ public:
         virtual void destroyDecodedData()
         {
             setDecodedSize(0);
+        }
+    };
+
+    class FakeResource : public WebCore::Resource {
+    public:
+        FakeResource(const ResourceRequest& request, Type type)
+            : Resource(request, type)
+        {
+        }
+
+        void fakeEncodedSize(size_t size)
+        {
+            setEncodedSize(size);
         }
     };
 
@@ -89,14 +102,43 @@ protected:
 // Verifies that setters and getters for cache capacities work correcty.
 TEST_F(MemoryCacheTest, CapacityAccounting)
 {
-    const unsigned totalCapacity = 100;
-    const unsigned minDeadCapacity = 10;
-    const unsigned maxDeadCapacity = 50;
+    const size_t sizeMax = ~static_cast<size_t>(0);
+    const size_t totalCapacity = sizeMax / 4;
+    const size_t minDeadCapacity = sizeMax / 16;
+    const size_t maxDeadCapacity = sizeMax / 8;
     memoryCache()->setCapacities(minDeadCapacity, maxDeadCapacity, totalCapacity);
-
     ASSERT_EQ(totalCapacity, memoryCache()->capacity());
     ASSERT_EQ(minDeadCapacity, memoryCache()->minDeadCapacity());
     ASSERT_EQ(maxDeadCapacity, memoryCache()->maxDeadCapacity());
+}
+
+TEST_F(MemoryCacheTest, VeryLargeResourceAccounting)
+{
+    const size_t sizeMax = ~static_cast<size_t>(0);
+    const size_t totalCapacity = sizeMax / 4;
+    const size_t minDeadCapacity = sizeMax / 16;
+    const size_t maxDeadCapacity = sizeMax / 8;
+    const size_t resourceSize1 = sizeMax / 16;
+    const size_t resourceSize2 = sizeMax / 20;
+    memoryCache()->setCapacities(minDeadCapacity, maxDeadCapacity, totalCapacity);
+    ResourcePtr<FakeResource> cachedResource =
+        new FakeResource(ResourceRequest(""), Resource::Raw);
+    cachedResource->fakeEncodedSize(resourceSize1);
+
+    ASSERT_EQ(0u, memoryCache()->deadSize());
+    ASSERT_EQ(0u, memoryCache()->liveSize());
+    memoryCache()->add(cachedResource.get());
+    ASSERT_EQ(cachedResource->size(), memoryCache()->deadSize());
+    ASSERT_EQ(0u, memoryCache()->liveSize());
+
+    MockImageResourceClient client;
+    cachedResource->addClient(&client);
+    ASSERT_EQ(0u, memoryCache()->deadSize());
+    ASSERT_EQ(cachedResource->size(), memoryCache()->liveSize());
+
+    cachedResource->fakeEncodedSize(resourceSize2);
+    ASSERT_EQ(0u, memoryCache()->deadSize());
+    ASSERT_EQ(cachedResource->size(), memoryCache()->liveSize());
 }
 
 // Verifies that dead resources that exceed dead resource capacity are evicted
@@ -149,7 +191,7 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
     cachedLiveResource->addClient(&client);
     cachedLiveResource->appendData(data, 4);
 
-    class Task1 : public WebKit::WebThread::Task {
+    class Task1 : public blink::WebThread::Task {
     public:
         Task1(const ResourcePtr<Resource>& live, const ResourcePtr<Resource>& dead)
             : m_live(live)
@@ -183,7 +225,7 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
         ResourcePtr<Resource> m_live, m_dead;
     };
 
-    class Task2 : public WebKit::WebThread::Task {
+    class Task2 : public blink::WebThread::Task {
     public:
         Task2(unsigned liveSizeWithoutDecode)
             : m_liveSizeWithoutDecode(liveSizeWithoutDecode) { }
@@ -193,7 +235,7 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
             // Next task: now, the live resource was evicted.
             ASSERT_EQ(0u, memoryCache()->deadSize());
             ASSERT_EQ(m_liveSizeWithoutDecode, memoryCache()->liveSize());
-            WebKit::Platform::current()->currentThread()->exitRunLoop();
+            blink::Platform::current()->currentThread()->exitRunLoop();
         }
 
     private:
@@ -201,9 +243,9 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
     };
 
 
-    WebKit::Platform::current()->currentThread()->postTask(new Task1(cachedLiveResource, cachedDeadResource));
-    WebKit::Platform::current()->currentThread()->postTask(new Task2(cachedLiveResource->encodedSize() + cachedLiveResource->overheadSize()));
-    WebKit::Platform::current()->currentThread()->enterRunLoop();
+    blink::Platform::current()->currentThread()->postTask(new Task1(cachedLiveResource, cachedDeadResource));
+    blink::Platform::current()->currentThread()->postTask(new Task2(cachedLiveResource->encodedSize() + cachedLiveResource->overheadSize()));
+    blink::Platform::current()->currentThread()->enterRunLoop();
     cachedLiveResource->removeClient(&client);
 }
 

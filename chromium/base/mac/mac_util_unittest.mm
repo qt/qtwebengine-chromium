@@ -124,20 +124,6 @@ TEST_F(MacUtilTest, TestExcludeFileFromBackups) {
   EXPECT_FALSE(excluded_by_path);
 }
 
-TEST_F(MacUtilTest, CopyNSImageToCGImage) {
-  base::scoped_nsobject<NSImage> nsImage(
-      [[NSImage alloc] initWithSize:NSMakeSize(20, 20)]);
-  [nsImage lockFocus];
-  [[NSColor redColor] set];
-  NSRect rect = NSZeroRect;
-  rect.size = [nsImage size];
-  NSRectFill(rect);
-  [nsImage unlockFocus];
-
-  ScopedCFTypeRef<CGImageRef> cgImage(CopyNSImageToCGImage(nsImage.get()));
-  EXPECT_TRUE(cgImage.get());
-}
-
 TEST_F(MacUtilTest, NSObjectRetainRelease) {
   base::scoped_nsobject<NSArray> array(
       [[NSArray alloc] initWithObjects:@"foo", nil]);
@@ -161,26 +147,46 @@ TEST_F(MacUtilTest, IsOSEllipsis) {
       EXPECT_TRUE(IsOSLionOrEarlier());
       EXPECT_FALSE(IsOSLionOrLater());
       EXPECT_FALSE(IsOSMountainLion());
+      EXPECT_TRUE(IsOSMountainLionOrEarlier());
       EXPECT_FALSE(IsOSMountainLionOrLater());
-      EXPECT_FALSE(IsOSLaterThanMountainLion_DontCallThis());
+      EXPECT_FALSE(IsOSMavericks());
+      EXPECT_FALSE(IsOSMavericksOrLater());
+      EXPECT_FALSE(IsOSLaterThanMavericks_DontCallThis());
     } else if (minor == 7) {
       EXPECT_FALSE(IsOSSnowLeopard());
       EXPECT_TRUE(IsOSLion());
       EXPECT_TRUE(IsOSLionOrEarlier());
       EXPECT_TRUE(IsOSLionOrLater());
       EXPECT_FALSE(IsOSMountainLion());
+      EXPECT_TRUE(IsOSMountainLionOrEarlier());
       EXPECT_FALSE(IsOSMountainLionOrLater());
-      EXPECT_FALSE(IsOSLaterThanMountainLion_DontCallThis());
+      EXPECT_FALSE(IsOSMavericks());
+      EXPECT_FALSE(IsOSMavericksOrLater());
+      EXPECT_FALSE(IsOSLaterThanMavericks_DontCallThis());
     } else if (minor == 8) {
       EXPECT_FALSE(IsOSSnowLeopard());
       EXPECT_FALSE(IsOSLion());
       EXPECT_FALSE(IsOSLionOrEarlier());
       EXPECT_TRUE(IsOSLionOrLater());
       EXPECT_TRUE(IsOSMountainLion());
+      EXPECT_TRUE(IsOSMountainLionOrEarlier());
       EXPECT_TRUE(IsOSMountainLionOrLater());
-      EXPECT_FALSE(IsOSLaterThanMountainLion_DontCallThis());
+      EXPECT_FALSE(IsOSMavericks());
+      EXPECT_FALSE(IsOSMavericksOrLater());
+      EXPECT_FALSE(IsOSLaterThanMavericks_DontCallThis());
+    } else if (minor == 9) {
+      EXPECT_FALSE(IsOSSnowLeopard());
+      EXPECT_FALSE(IsOSLion());
+      EXPECT_FALSE(IsOSLionOrEarlier());
+      EXPECT_TRUE(IsOSLionOrLater());
+      EXPECT_FALSE(IsOSMountainLion());
+      EXPECT_FALSE(IsOSMountainLionOrEarlier());
+      EXPECT_TRUE(IsOSMountainLionOrLater());
+      EXPECT_TRUE(IsOSMavericks());
+      EXPECT_TRUE(IsOSMavericksOrLater());
+      EXPECT_FALSE(IsOSLaterThanMavericks_DontCallThis());
     } else {
-      // Not five, six, seven, or eight. Ah, ah, ah.
+      // Not five, six, seven, eight, or nine. Ah, ah, ah.
       EXPECT_TRUE(false);
     }
   } else {
@@ -214,7 +220,7 @@ TEST_F(MacUtilTest, TestRemoveQuarantineAttribute) {
   ScopedTempDir temp_dir_;
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   FilePath dummy_folder_path = temp_dir_.path().Append("DummyFolder");
-  ASSERT_TRUE(file_util::CreateDirectory(dummy_folder_path));
+  ASSERT_TRUE(base::CreateDirectory(dummy_folder_path));
   const char* quarantine_str = "0000;4b392bb2;Chromium;|org.chromium.Chromium";
   const char* file_path_str = dummy_folder_path.value().c_str();
   EXPECT_EQ(0, setxattr(file_path_str, "com.apple.quarantine",
@@ -232,7 +238,7 @@ TEST_F(MacUtilTest, TestRemoveQuarantineAttributeTwice) {
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   FilePath dummy_folder_path = temp_dir_.path().Append("DummyFolder");
   const char* file_path_str = dummy_folder_path.value().c_str();
-  ASSERT_TRUE(file_util::CreateDirectory(dummy_folder_path));
+  ASSERT_TRUE(base::CreateDirectory(dummy_folder_path));
   EXPECT_EQ(-1, getxattr(file_path_str, "com.apple.quarantine", NULL, 0, 0, 0));
   // No quarantine attribute to begin with, but RemoveQuarantineAttribute still
   // succeeds because in the end the folder still doesn't have the quarantine

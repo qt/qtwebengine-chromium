@@ -49,10 +49,15 @@ public:
         return adoptRef(new File(path, policy));
     }
 
-    // For deserialization.
-    static PassRefPtr<File> create(const String& path, const KURL& srcURL, const String& type)
+    static PassRefPtr<File> create(const String& name, double modificationTime, PassRefPtr<BlobDataHandle> blobDataHandle)
     {
-        return adoptRef(new File(path, srcURL, type));
+        return adoptRef(new File(name, modificationTime, blobDataHandle));
+    }
+
+    // For deserialization.
+    static PassRefPtr<File> create(const String& path, const String& name, const String& relativePath, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
+    {
+        return adoptRef(new File(path, name, relativePath, hasSnaphotData, size, lastModified, blobDataHandle));
     }
 
     static PassRefPtr<File> createWithRelativePath(const String& path, const String& relativePath);
@@ -70,7 +75,7 @@ public:
         return adoptRef(new File(url, metadata));
     }
 
-    KURL fileSystemURL() const { return m_fileSystemURL; }
+    KURL fileSystemURL() const { ASSERT(m_hasBackingFile); return m_fileSystemURL; }
 
     // Create a file with a name exposed to the author (via File.name and associated DOM properties) that differs from the one provided in the path.
     static PassRefPtr<File> createWithName(const String& path, const String& name, ContentTypeLookupPolicy policy = WellKnownContentTypes)
@@ -80,10 +85,11 @@ public:
         return adoptRef(new File(path, name, policy));
     }
 
-    virtual unsigned long long size() const;
-    virtual bool isFile() const { return true; }
+    virtual unsigned long long size() const OVERRIDE;
+    virtual bool isFile() const OVERRIDE { return true; }
+    virtual bool hasBackingFile() const OVERRIDE { return m_hasBackingFile; }
 
-    const String& path() const { return m_path; }
+    const String& path() const { ASSERT(m_hasBackingFile); return m_path; }
     const String& name() const { return m_name; }
 
     // This returns the current date and time if the file's last modifiecation date is not known (per spec: http://www.w3.org/TR/FileAPI/#dfn-lastModifiedDate).
@@ -95,18 +101,18 @@ public:
     // Note that this involves synchronous file operation. Think twice before calling this function.
     void captureSnapshot(long long& snapshotSize, double& snapshotModificationTime) const;
 
-private:
-    File(const String& path, ContentTypeLookupPolicy);
-
-    // For deserialization.
-    File(const String& path, const KURL& srcURL, const String& type);
-    File(const String& path, const String& name, ContentTypeLookupPolicy);
-    File(const String& name, const FileMetadata&);
-    File(const KURL& fileSystemURL, const FileMetadata&);
-
     // Returns true if this has a valid snapshot metadata (i.e. m_snapshotSize >= 0).
     bool hasValidSnapshotMetadata() const { return m_snapshotSize >= 0; }
 
+private:
+    File(const String& path, ContentTypeLookupPolicy);
+    File(const String& path, const String& name, ContentTypeLookupPolicy);
+    File(const String& path, const String& name, const String& relativePath, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle>);
+    File(const String& name, double modificationTime, PassRefPtr<BlobDataHandle>);
+    File(const String& name, const FileMetadata&);
+    File(const KURL& fileSystemURL, const FileMetadata&);
+
+    bool m_hasBackingFile;
     String m_path;
     String m_name;
 
@@ -120,17 +126,7 @@ private:
     String m_relativePath;
 };
 
-inline File* toFile(Blob* blob)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!blob || blob->isFile());
-    return static_cast<File*>(blob);
-}
-
-inline const File* toFile(const Blob* blob)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!blob || blob->isFile());
-    return static_cast<const File*>(blob);
-}
+DEFINE_TYPE_CASTS(File, Blob, blob, blob->isFile(), blob.isFile());
 
 } // namespace WebCore
 

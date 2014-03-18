@@ -36,12 +36,12 @@
 #include "../platform/WebVector.h"
 #include "WebFormElement.h"
 
-namespace WebKit {
+namespace blink {
 
 struct WebPasswordFormData {
     // If the provided form is suitable for password completion, isValid() will
     // return true;
-    WEBKIT_EXPORT WebPasswordFormData(const WebFormElement&);
+    BLINK_EXPORT WebPasswordFormData(const WebFormElement&);
 
     // If creation failed, return false.
     bool isValid() const { return action.isValid(); }
@@ -121,6 +121,6 @@ struct WebPasswordFormData {
     }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

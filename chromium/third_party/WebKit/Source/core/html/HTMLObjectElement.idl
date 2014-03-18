@@ -19,16 +19,16 @@
  */
 
 [
-    CustomLegacyCall
+    Custom=LegacyCallAsFunction,
 ] interface HTMLObjectElement : HTMLElement {
-    readonly attribute HTMLFormElement form;
+    [ImplementedAs=formOwner] readonly attribute HTMLFormElement form;
     [Reflect] attribute DOMString code;
     [Reflect] attribute DOMString align;
     [Reflect] attribute DOMString archive;
-    [Reflect] attribute DOMString border;
-    [Reflect] attribute DOMString codeBase;
+    [Reflect, TreatNullAs=NullString] attribute DOMString border;
+    [Reflect, URL] attribute DOMString codeBase;
     [Reflect] attribute DOMString codeType;
-    [Reflect, URL] attribute DOMString data;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString data;
     [Reflect] attribute boolean declare;
     [Reflect] attribute DOMString height;
     [Reflect] attribute long hspace;
@@ -45,12 +45,11 @@
     void setCustomValidity([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString error);
 
     // Introduced in DOM Level 2:
-    [CheckSecurityForNode] readonly attribute Document contentDocument;
+    [CheckSecurity=Node] readonly attribute Document contentDocument;
     [Custom, NotEnumerable] getter boolean (unsigned long index);
     [Custom] setter boolean (unsigned long index, Node value);
     [Custom, NotEnumerable] getter Node (DOMString name);
     [Custom] setter Node (DOMString name, Node value);
 
-    [CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
+    [CheckSecurity=Node, RaisesException] SVGDocument getSVGDocument();
 };
-

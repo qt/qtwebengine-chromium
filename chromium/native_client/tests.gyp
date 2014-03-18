@@ -57,9 +57,9 @@
     },
   ],
   'conditions': [
-    ['target_arch!="arm"', {
+    ['target_arch!="arm" and target_arch!="mipsel"', {
       'targets': [
-        # Only build the tests on arm, but don't try to run them
+        # Only build the tests on arm and mips, but don't try to run them
         {
           'target_name': 'test_hello_world_nexe',
           'type': 'none',
@@ -96,14 +96,14 @@
               'msvs_cygwin_shell': 0,
               'description': 'Testing NACL build',
               'inputs': [
-                '<!@(<(python_exe) <(script) -i <(arch) <(name) <(tools))',
+                '<!@(python <(script) -i <(arch) <(name) <(tools))',
               ],
               # Add a bogus output file, to cause this step to always fire.
               'outputs': [
                 '<(PRODUCT_DIR)/test-output/dont_create_hello_world.out'
               ],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/test_build.py',
                 '-r',
                 '<(arch)',
@@ -145,14 +145,14 @@
               'msvs_cygwin_shell': 0,
               'description': 'Testing PNaCl translated Nexe build',
               'inputs': [
-                '<!@(<(python_exe) <(script) -i <(arch) <(name) <(tools))',
+                '<!@(python <(script) -i <(arch) <(name) <(tools))',
               ],
               # Add a bogus output file, to cause this step to always fire.
               'outputs': [
                 '<(PRODUCT_DIR)/test-output/dont_create_hello_world_pnacl.out'
               ],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/test_build.py',
                 '-r',
                 '<(arch)',

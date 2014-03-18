@@ -32,10 +32,10 @@
 
 namespace WTF {
 
-static size_t expandedCapacity(size_t capacity, size_t newLength)
+static unsigned expandedCapacity(unsigned capacity, unsigned requiredLength)
 {
-    static const size_t minimumCapacity = 16;
-    return std::max(capacity, std::max(minimumCapacity, newLength * 2));
+    static const unsigned minimumCapacity = 16;
+    return std::max(requiredLength, std::max(minimumCapacity, capacity * 2));
 }
 
 void StringBuilder::reifyString()
@@ -69,7 +69,7 @@ String StringBuilder::reifySubstring(unsigned position, unsigned length) const
 {
     ASSERT(m_string.isNull());
     ASSERT(m_buffer);
-    unsigned substringLength = std::min(length, m_length);
+    unsigned substringLength = std::min(length, m_length - position);
     return m_buffer->substring(position, substringLength);
 }
 

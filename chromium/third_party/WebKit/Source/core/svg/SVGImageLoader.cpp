@@ -22,8 +22,8 @@
 
 #include "core/svg/SVGImageLoader.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/svg/SVGImageElement.h"
@@ -38,7 +38,7 @@ SVGImageLoader::SVGImageLoader(SVGImageElement* node)
 void SVGImageLoader::dispatchLoadEvent()
 {
     if (image()->errorOccurred())
-        element()->dispatchEvent(Event::create(eventNames().errorEvent));
+        element()->dispatchEvent(Event::create(EventTypeNames::error));
     else {
         SVGImageElement* imageElement = toSVGImageElement(element());
         if (imageElement->externalResourcesRequiredBaseValue())

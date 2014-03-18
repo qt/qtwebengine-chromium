@@ -21,16 +21,18 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebSelectElement.h"
+#include "third_party/WebKit/public/web/WebTextAreaElement.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using WebKit::WebDocument;
-using WebKit::WebFormControlElement;
-using WebKit::WebFormElement;
-using WebKit::WebFrame;
-using WebKit::WebInputElement;
-using WebKit::WebSelectElement;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebDocument;
+using blink::WebFormControlElement;
+using blink::WebFormElement;
+using blink::WebFrame;
+using blink::WebInputElement;
+using blink::WebSelectElement;
+using blink::WebTextAreaElement;
+using blink::WebString;
+using blink::WebVector;
 
 namespace autofill {
 
@@ -109,6 +111,8 @@ bool FormCache::ExtractFormsAndFormElements(
         initial_select_values_.insert(std::make_pair(select_element,
                                                      select_element.value()));
         ++num_editable_elements;
+      } else if (IsTextAreaElement(element)) {
+        ++num_editable_elements;
       } else {
         const WebInputElement input_element =
             element.toConst<WebInputElement>();
@@ -185,14 +189,15 @@ bool FormCache::ClearFormWithElement(const WebInputElement& element) {
                               &control_elements);
   for (size_t i = 0; i < control_elements.size(); ++i) {
     WebFormControlElement control_element = control_elements[i];
-    WebInputElement* input_element = toWebInputElement(&control_element);
-    if (IsTextInput(input_element)) {
-      // We don't modify the value of disabled fields.
-      if (!input_element->isEnabled())
-        continue;
+    // Don't modify the value of disabled fields.
+    if (!control_element.isEnabled())
+      continue;
 
+    control_element.setAutofilled(false);
+
+    WebInputElement* input_element = toWebInputElement(&control_element);
+    if (IsTextInput(input_element) || IsMonthInput(input_element)) {
       input_element->setValue(base::string16(), true);
-      input_element->setAutofilled(false);
 
       // Clearing the value in the focused node (above) can cause selection
       // to be lost. We force selection range to restore the text cursor.
@@ -200,6 +205,10 @@ bool FormCache::ClearFormWithElement(const WebInputElement& element) {
         int length = input_element->value().length();
         input_element->setSelectionRange(length, length);
       }
+    } else if (IsTextAreaElement(control_element)) {
+      WebTextAreaElement text_area = control_element.to<WebTextAreaElement>();
+      text_area.setValue(base::string16());
+      text_area.dispatchFormControlChangeEvent();
     } else if (IsSelectElement(control_element)) {
       WebSelectElement select_element = control_element.to<WebSelectElement>();
 

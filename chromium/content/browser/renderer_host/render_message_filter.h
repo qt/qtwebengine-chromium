@@ -30,6 +30,7 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
+#include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
 
@@ -40,7 +41,7 @@
 struct FontDescriptor;
 struct ViewHostMsg_CreateWindow_Params;
 
-namespace WebKit {
+namespace blink {
 struct WebScreenInfo;
 }
 
@@ -52,6 +53,7 @@ class TaskRunner;
 
 namespace gfx {
 class Rect;
+struct GpuMemoryBufferHandle;
 }
 
 namespace media {
@@ -60,6 +62,7 @@ struct MediaLogEvent;
 }
 
 namespace net {
+class KeygenHandler;
 class URLRequestContext;
 class URLRequestContextGetter;
 }
@@ -125,7 +128,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       int* surface_id,
                       int64* cloned_session_storage_namespace_id);
   void OnCreateWidget(int opener_id,
-                      WebKit::WebPopupType popup_type,
+                      blink::WebPopupType popup_type,
                       int* route_id,
                       int* surface_id);
   void OnCreateFullscreenWidget(int opener_id,
@@ -155,20 +158,20 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
 #if defined(OS_WIN)
   void OnPreCacheFontCharacters(const LOGFONT& log_font,
-                                const string16& characters);
+                                const base::string16& characters);
 #endif
 
   void OnGetPlugins(bool refresh, IPC::Message* reply_msg);
   void GetPluginsCallback(IPC::Message* reply_msg,
                           const std::vector<WebPluginInfo>& plugins);
-  void OnGetPluginInfo(int routing_id,
+  void OnGetPluginInfo(int render_frame_id,
                        const GURL& url,
                        const GURL& policy_url,
                        const std::string& mime_type,
                        bool* found,
                        WebPluginInfo* info,
                        std::string* actual_mime_type);
-  void OnOpenChannelToPlugin(int routing_id,
+  void OnOpenChannelToPlugin(int render_frame_id,
                              const GURL& url,
                              const GURL& policy_url,
                              const std::string& mime_type,
@@ -189,7 +192,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnDownloadUrl(const IPC::Message& message,
                      const GURL& url,
                      const Referrer& referrer,
-                     const string16& suggested_name);
+                     const base::string16& suggested_name);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
 
@@ -198,8 +201,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
                                 media::AudioParameters* output_params);
 
+#if defined(OS_WIN)
   // Used to look up the monitor color profile.
   void OnGetMonitorColorProfile(std::vector<char>* profile);
+#endif
 
   // Used to ask the browser to allocate a block of shared memory for the
   // renderer to send back data in, since shared memory can't be created
@@ -218,15 +223,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                     const std::vector<char>& data);
   void OnKeygen(uint32 key_size_index, const std::string& challenge_string,
                 const GURL& url, IPC::Message* reply_msg);
-  void OnKeygenOnWorkerThread(
-      int key_size_in_bits,
-      const std::string& challenge_string,
-      const GURL& url,
-      IPC::Message* reply_msg);
-  void OnAsyncOpenPepperFile(int routing_id,
-                             const base::FilePath& path,
-                             int pp_open_flags,
-                             int message_id);
+  void PostKeygenToWorkerThread(IPC::Message* reply_msg,
+                                scoped_ptr<net::KeygenHandler> keygen_handler);
+  void OnKeygenOnWorkerThread(scoped_ptr<net::KeygenHandler> keygen_handler,
+                              IPC::Message* reply_msg);
   void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   // Check the policy for getting cookies. Gets the cookies if allowed.
@@ -261,6 +261,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
                             base::FileDescriptor pcm_output,
                             uint32_t data_size);
 #endif
+
+  void OnAllocateGpuMemoryBuffer(uint32 width,
+                                 uint32 height,
+                                 uint32 internalformat,
+                                 gfx::GpuMemoryBufferHandle* handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
@@ -301,6 +306,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;
+
+#if defined(OS_MACOSX)
+  base::ScopedCFTypeRef<CFTypeRef> last_io_surface_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

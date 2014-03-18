@@ -41,6 +41,8 @@ PRINTING_EXPORT extern const char kSettingPreviewPageCount[];
 PRINTING_EXPORT extern const char kSettingPageRange[];
 PRINTING_EXPORT extern const char kSettingPageRangeFrom[];
 PRINTING_EXPORT extern const char kSettingPageRangeTo[];
+PRINTING_EXPORT extern const char kSettingPageWidth[];
+PRINTING_EXPORT extern const char kSettingPageHeight[];
 PRINTING_EXPORT extern const char kSettingPreviewModifiable[];
 PRINTING_EXPORT extern const char kSettingPrintableAreaX[];
 PRINTING_EXPORT extern const char kSettingPrintableAreaY[];
@@ -48,15 +50,14 @@ PRINTING_EXPORT extern const char kSettingPrintableAreaWidth[];
 PRINTING_EXPORT extern const char kSettingPrintableAreaHeight[];
 PRINTING_EXPORT extern const char kSettingPrinterName[];
 PRINTING_EXPORT extern const char kSettingPrintToPDF[];
+PRINTING_EXPORT extern const char kSettingPrintWithPrivet[];
+PRINTING_EXPORT extern const char kSettingTicket[];
 PRINTING_EXPORT extern const char kSettingShouldPrintBackgrounds[];
 PRINTING_EXPORT extern const char kSettingShouldPrintSelectionOnly[];
 
 PRINTING_EXPORT extern const int FIRST_PAGE_INDEX;
 PRINTING_EXPORT extern const int COMPLETE_PREVIEW_DOCUMENT_INDEX;
-
-#if defined(OS_MACOSX)
 PRINTING_EXPORT extern const char kSettingOpenPDFInPreview[];
-#endif  // defined(OS_MACOSX)
 
 #if defined (USE_CUPS)
 // Printer color models
@@ -99,7 +100,7 @@ enum VerticalHeaderFooterPosition {
 };
 
 // Print job color mode values.
-enum ColorModels {
+enum ColorModel {
   UNKNOWN_COLOR_MODEL,
   GRAY,
   COLOR,

@@ -48,7 +48,7 @@ class SaveFileResourceHandler : public ResourceHandler {
   // Creates a new buffer, which will be handed to the download thread for file
   // writing and deletion.
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
 
@@ -56,9 +56,10 @@ class SaveFileResourceHandler : public ResourceHandler {
   virtual bool OnReadCompleted(int request_id, int bytes_read,
                                bool* defer) OVERRIDE;
 
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
 
   // N/A to this flavor of SaveFileResourceHandler.
   virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;

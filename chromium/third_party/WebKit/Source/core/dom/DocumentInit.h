@@ -28,8 +28,9 @@
 #ifndef DocumentInit_h
 #define DocumentInit_h
 
+#include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/WeakPtr.h"
@@ -55,12 +56,17 @@ public:
     bool hasSecurityContext() const { return frameForSecurityContext(); }
     bool shouldTreatURLAsSrcdocDocument() const;
     bool shouldSetURL() const;
+    bool isSeamlessAllowedFor(Document* child) const;
     SandboxFlags sandboxFlags() const;
 
+    Document* parent() const { return m_parent.get(); }
+    Document* owner() const { return m_owner.get(); }
+    KURL parentBaseURL() const;
     Frame* ownerFrame() const;
     Settings* settings() const;
 
     DocumentInit& withRegistrationContext(CustomElementRegistrationContext*);
+
     PassRefPtr<CustomElementRegistrationContext> registrationContext(Document*) const;
     WeakPtr<Document> contextDocument() const;
 
@@ -71,6 +77,8 @@ private:
 
     KURL m_url;
     Frame* m_frame;
+    RefPtr<Document> m_parent;
+    RefPtr<Document> m_owner;
     WeakPtr<Document> m_contextDocument;
     HTMLImport* m_import;
     RefPtr<CustomElementRegistrationContext> m_registrationContext;

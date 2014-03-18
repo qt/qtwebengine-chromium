@@ -11,13 +11,12 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_byteorder.h"
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
@@ -26,11 +25,11 @@
 #include "media/base/decrypt_config.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
-#include "media/base/media_switches.h"
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
+#include "media/filters/webvtt_util.h"
 #include "media/webm/webm_crypto_helpers.h"
 
 namespace media {
@@ -63,6 +62,9 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
       type_ = VIDEO;
       AVStreamToVideoDecoderConfig(stream, &video_config_, true);
       is_encrypted = video_config_.is_encrypted();
+      break;
+    case AVMEDIA_TYPE_SUBTITLE:
+      type_ = TEXT;
       break;
     default:
       NOTREACHED();
@@ -114,27 +116,67 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   // keep this generic so that other side_data types in the future can be
   // handled the same way as well.
   av_packet_split_side_data(packet.get());
-  int side_data_size = 0;
-  uint8* side_data = av_packet_get_side_data(
-      packet.get(),
-      AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
-      &side_data_size);
-
-  // If a packet is returned by FFmpeg's av_parser_parse2() the packet will
-  // reference inner memory of FFmpeg.  As such we should transfer the packet
-  // into memory we control.
   scoped_refptr<DecoderBuffer> buffer;
-  if (side_data_size > 0) {
+
+  if (type() == DemuxerStream::TEXT) {
+    int id_size = 0;
+    uint8* id_data = av_packet_get_side_data(
+        packet.get(),
+        AV_PKT_DATA_WEBVTT_IDENTIFIER,
+        &id_size);
+
+    int settings_size = 0;
+    uint8* settings_data = av_packet_get_side_data(
+        packet.get(),
+        AV_PKT_DATA_WEBVTT_SETTINGS,
+        &settings_size);
+
+    std::vector<uint8> side_data;
+    MakeSideData(id_data, id_data + id_size,
+                 settings_data, settings_data + settings_size,
+                 &side_data);
+
     buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size,
-                                     side_data, side_data_size);
+                                     side_data.data(), side_data.size());
   } else {
-    buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size);
+    int side_data_size = 0;
+    uint8* side_data = av_packet_get_side_data(
+        packet.get(),
+        AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+        &side_data_size);
+
+    // If a packet is returned by FFmpeg's av_parser_parse2() the packet will
+    // reference inner memory of FFmpeg.  As such we should transfer the packet
+    // into memory we control.
+    if (side_data_size > 0) {
+      buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size,
+                                       side_data, side_data_size);
+    } else {
+      buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size);
+    }
+
+    int skip_samples_size = 0;
+    uint8* skip_samples = av_packet_get_side_data(packet.get(),
+                                                  AV_PKT_DATA_SKIP_SAMPLES,
+                                                  &skip_samples_size);
+    const int kSkipSamplesValidSize = 10;
+    const int kSkipSamplesOffset = 4;
+    if (skip_samples_size >= kSkipSamplesValidSize) {
+      int discard_padding_samples = base::ByteSwapToLE32(
+          *(reinterpret_cast<const uint32*>(skip_samples +
+                                            kSkipSamplesOffset)));
+      // TODO(vigneshv): Change decoder buffer to use number of samples so that
+      // this conversion can be avoided.
+      buffer->set_discard_padding(base::TimeDelta::FromMicroseconds(
+          discard_padding_samples * 1000000.0 /
+          audio_decoder_config().samples_per_second()));
+    }
   }
 
   if ((type() == DemuxerStream::AUDIO && audio_config_.is_encrypted()) ||
       (type() == DemuxerStream::VIDEO && video_config_.is_encrypted())) {
     scoped_ptr<DecryptConfig> config(WebMCreateDecryptConfig(
-        packet->data,  packet->size,
+        packet->data, packet->size,
         reinterpret_cast<const uint8*>(encryption_key_id_.data()),
         encryption_key_id_.size()));
     if (!config)
@@ -272,6 +314,27 @@ bool FFmpegDemuxerStream::HasAvailableCapacity() {
   return buffer_queue_.IsEmpty() || buffer_queue_.Duration() < kCapacity;
 }
 
+TextKind FFmpegDemuxerStream::GetTextKind() const {
+  DCHECK_EQ(type_, DemuxerStream::TEXT);
+
+  if (stream_->disposition & AV_DISPOSITION_CAPTIONS)
+    return kTextCaptions;
+
+  if (stream_->disposition & AV_DISPOSITION_DESCRIPTIONS)
+    return kTextDescriptions;
+
+  if (stream_->disposition & AV_DISPOSITION_METADATA)
+    return kTextMetadata;
+
+  return kTextSubtitles;
+}
+
+std::string FFmpegDemuxerStream::GetMetadata(const char* key) const {
+  const AVDictionaryEntry* entry =
+      av_dict_get(stream_->metadata, key, NULL, 0);
+  return (entry == NULL || entry->value == NULL) ? "" : entry->value;
+}
+
 // static
 base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
     const AVRational& time_base, int64 timestamp) {
@@ -300,6 +363,7 @@ FFmpegDemuxer::FFmpegDemuxer(
       bitrate_(0),
       start_time_(kNoTimestamp()),
       audio_disabled_(false),
+      text_enabled_(false),
       duration_known_(false),
       url_protocol_(data_source, BindToLoop(message_loop_, base::Bind(
           &FFmpegDemuxer::OnDataSourceError, base::Unretained(this)))),
@@ -345,11 +409,6 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
       base::Bind(&FFmpegDemuxer::OnSeekFrameDone, weak_this_, cb));
 }
 
-void FFmpegDemuxer::SetPlaybackRate(float playback_rate) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  data_source_->SetPlaybackRate(playback_rate);
-}
-
 void FFmpegDemuxer::OnAudioRendererDisabled() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   audio_disabled_ = true;
@@ -362,10 +421,12 @@ void FFmpegDemuxer::OnAudioRendererDisabled() {
 }
 
 void FFmpegDemuxer::Initialize(DemuxerHost* host,
-                               const PipelineStatusCB& status_cb) {
+                               const PipelineStatusCB& status_cb,
+                               bool enable_text_tracks) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   host_ = host;
   weak_this_ = weak_factory_.GetWeakPtr();
+  text_enabled_ = enable_text_tracks;
 
   // TODO(scherkus): DataSource should have a host by this point,
   // see http://crbug.com/122071
@@ -407,6 +468,25 @@ FFmpegDemuxerStream* FFmpegDemuxer::GetFFmpegStream(
 base::TimeDelta FFmpegDemuxer::GetStartTime() const {
   DCHECK(message_loop_->BelongsToCurrentThread());
   return start_time_;
+}
+
+void FFmpegDemuxer::AddTextStreams() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  for (StreamVector::size_type idx = 0; idx < streams_.size(); ++idx) {
+    FFmpegDemuxerStream* stream = streams_[idx];
+    if (stream == NULL || stream->type() != DemuxerStream::TEXT)
+      continue;
+
+    TextKind kind = stream->GetTextKind();
+    std::string title = stream->GetMetadata("title");
+    std::string language = stream->GetMetadata("language");
+
+    // TODO: Implement "id" metadata in FFMPEG.
+    // See: http://crbug.com/323183
+    host_->AddTextStream(stream, TextTrackConfig(kind, title, language,
+        std::string()));
+  }
 }
 
 // Helper for calculating the bitrate of the media based on information stored
@@ -527,6 +607,10 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       if (!video_config.IsValidConfig())
         continue;
       video_stream = stream;
+    } else if (codec_type == AVMEDIA_TYPE_SUBTITLE) {
+      if (codec_context->codec_id != AV_CODEC_ID_WEBVTT || !text_enabled_) {
+        continue;
+      }
     } else {
       continue;
     }
@@ -546,6 +630,9 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     status_cb.Run(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
     return;
   }
+
+  if (text_enabled_)
+    AddTextStreams();
 
   if (format_context->duration != static_cast<int64_t>(AV_NOPTS_VALUE)) {
     // If there is a duration value in the container use that to find the
@@ -756,6 +843,19 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
       new_packet->stream_index = packet->stream_index;
 
       packet.swap(new_packet);
+    }
+
+    // Special case for opus in ogg.  FFmpeg is pre-trimming the codec delay
+    // from the packet timestamp.  Chrome expects to handle this itself inside
+    // the decoder, so shift timestamps by the delay in this case.
+    // TODO(dalecurtis): Try to get fixed upstream.  See http://crbug.com/328207
+    if (strcmp(glue_->format_context()->iformat->name, "ogg") == 0) {
+      const AVCodecContext* codec_context =
+          glue_->format_context()->streams[packet->stream_index]->codec;
+      if (codec_context->codec_id == AV_CODEC_ID_OPUS &&
+          codec_context->delay > 0) {
+        packet->pts += codec_context->delay;
+      }
     }
 
     FFmpegDemuxerStream* demuxer_stream = streams_[packet->stream_index];

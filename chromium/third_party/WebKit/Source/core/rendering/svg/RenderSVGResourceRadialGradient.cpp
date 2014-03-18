@@ -23,12 +23,11 @@
 
 #include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
 
-#include "core/svg/RadialGradientAttributes.h"
 #include "core/svg/SVGRadialGradientElement.h"
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceRadialGradient::s_resourceType = RadialGradientResourceType;
+const RenderSVGResourceType RenderSVGResourceRadialGradient::s_resourceType = RadialGradientResourceType;
 
 RenderSVGResourceRadialGradient::RenderSVGResourceRadialGradient(SVGRadialGradientElement* node)
     : RenderSVGResourceGradient(node)

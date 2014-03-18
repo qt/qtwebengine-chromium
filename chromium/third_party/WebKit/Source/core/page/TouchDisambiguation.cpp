@@ -40,8 +40,8 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBlock.h"
 
@@ -59,11 +59,11 @@ static IntRect boundingBoxForEventNodes(Node* eventNode)
     while (node) {
         // Skip the whole sub-tree if the node doesn't propagate events.
         if (node != eventNode && node->willRespondToMouseClickEvents()) {
-            node = NodeTraversal::nextSkippingChildren(node, eventNode);
+            node = NodeTraversal::nextSkippingChildren(*node, eventNode);
             continue;
         }
         result.unite(node->pixelSnappedBoundingBox());
-        node = NodeTraversal::next(node, eventNode);
+        node = NodeTraversal::next(*node, eventNode);
     }
     return eventNode->document().view()->contentsToWindow(result);
 }
@@ -97,7 +97,7 @@ void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntR
     IntPoint touchPoint = touchBox.center();
     IntPoint contentsPoint = mainFrame->view()->windowToContents(touchPoint);
 
-    HitTestResult result = mainFrame->eventHandler()->hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent, IntSize(touchPointPadding, touchPointPadding));
+    HitTestResult result = mainFrame->eventHandler().hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent, IntSize(touchPointPadding, touchPointPadding));
     const ListHashSet<RefPtr<Node> >& hitResults = result.rectBasedTestResult();
 
     // Blacklist nodes that are container of disambiguated nodes.

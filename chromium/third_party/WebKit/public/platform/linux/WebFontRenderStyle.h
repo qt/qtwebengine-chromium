@@ -35,9 +35,9 @@
 
 namespace WebCore { struct FontRenderStyle; }
 
-namespace WebKit {
+namespace blink {
 
-struct WEBKIT_EXPORT WebFontRenderStyle {
+struct BLINK_EXPORT WebFontRenderStyle {
     // Each of the use* members below can take one of three values:
     //   0: off
     //   1: on
@@ -50,7 +50,7 @@ struct WEBKIT_EXPORT WebFontRenderStyle {
     char useSubpixelRendering; // use subpixel rendering (partially-filled pixels)
     char useSubpixelPositioning; // use subpixel positioning (fractional X positions for glyphs)
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION || BLINK_PLATFORM_IMPLEMENTATION
     // Translates the members of this struct to a FontRenderStyle
     void toFontRenderStyle(WebCore::FontRenderStyle*);
 #endif
@@ -58,6 +58,6 @@ struct WEBKIT_EXPORT WebFontRenderStyle {
     void setDefaults();
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebFontRenderStyle_h

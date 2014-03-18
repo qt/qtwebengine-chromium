@@ -78,7 +78,6 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
 #else
       child_flags_(ChildProcessHost::CHILD_NORMAL),
 #endif
-      use_linux_zygote_(false),
       started_(false) {
 }
 
@@ -120,10 +119,6 @@ void UtilityProcessHostImpl::DisableSandbox() {
   no_sandbox_ = true;
 }
 
-void UtilityProcessHostImpl::EnableZygote() {
-  use_linux_zygote_ = true;
-}
-
 const ChildProcessData& UtilityProcessHostImpl::GetData() {
   return process_->GetData();
 }
@@ -153,9 +148,8 @@ bool UtilityProcessHostImpl::StartProcess() {
   if (channel_id.empty())
     return false;
 
-  // Single process not supported in multiple dll mode currently.
-  if (RenderProcessHost::run_renderer_in_process() &&
-      g_utility_main_thread_factory) {
+  if (RenderProcessHost::run_renderer_in_process()) {
+    DCHECK(g_utility_main_thread_factory);
     // See comment in RenderProcessHostImpl::Init() for the background on why we
     // support single process mode this way.
     in_process_thread_.reset(g_utility_main_thread_factory(channel_id));
@@ -200,17 +194,17 @@ bool UtilityProcessHostImpl::StartProcess() {
       cmd_line->AppendSwitch(switches::kDebugPluginLoading);
 
 #if defined(OS_POSIX)
-    // TODO(port): Sandbox this on Linux.  Also, zygote this to work with
-    // Linux updating.
     if (has_cmd_prefix) {
-      // launch the utility child process with some prefix
+      // Launch the utility child process with some prefix
       // (usually "xterm -e gdb --args").
       cmd_line->PrependWrapper(browser_command_line.GetSwitchValueNative(
           switches::kUtilityCmdPrefix));
     }
 
-    cmd_line->AppendSwitchPath(switches::kUtilityProcessAllowedDir,
-                               exposed_dir_);
+    if (!exposed_dir_.empty()) {
+      cmd_line->AppendSwitchPath(switches::kUtilityProcessAllowedDir,
+                                 exposed_dir_);
+    }
 #endif
 
     if (is_mdns_enabled_)
@@ -219,7 +213,9 @@ bool UtilityProcessHostImpl::StartProcess() {
     bool use_zygote = false;
 
 #if defined(OS_LINUX)
-    use_zygote = !no_sandbox_ && use_linux_zygote_;
+    // The Linux sandbox does not support granting access to a single directory,
+    // so we need to bypass the zygote in that case.
+    use_zygote = !no_sandbox_ && exposed_dir_.empty();
 #endif
 
     process_->Launch(

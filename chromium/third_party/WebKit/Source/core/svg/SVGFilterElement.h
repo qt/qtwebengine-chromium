@@ -39,14 +39,14 @@ class SVGFilterElement FINAL : public SVGElement,
                                public SVGURIReference,
                                public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGFilterElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFilterElement> create(Document&);
 
     void setFilterRes(unsigned filterResX, unsigned filterResY);
     void addClient(Node*);
     void removeClient(Node*);
 
 private:
-    SVGFilterElement(const QualifiedName&, Document&);
+    explicit SVGFilterElement(Document&);
 
     virtual bool needsPendingResourceHandling() const { return false; }
 
@@ -79,11 +79,7 @@ private:
     HashSet<RefPtr<Node> > m_clientsToAdd;
 };
 
-inline SVGFilterElement* toSVGFilterElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::filterTag));
-    return static_cast<SVGFilterElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGFilterElement, hasTagName(SVGNames::filterTag));
 
 }
 

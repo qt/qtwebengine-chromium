@@ -12,18 +12,14 @@ const char kAudioBufferSize[] = "audio-buffer-size";
 // Enable EAC3 playback in MSE.
 const char kEnableEac3Playback[] = "enable-eac3-playback";
 
-// Enables Opus playback in media elements.
-const char kEnableOpusPlayback[] = "enable-opus-playback";
+// Disables Opus playback in media elements.
+const char kDisableOpusPlayback[] = "disable-opus-playback";
 
 // Disables VP8 Alpha playback in media elements.
 const char kDisableVp8AlphaPlayback[] = "disable-vp8-alpha-playback";
 
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
-
-// Override suppressed responses to canPlayType().
-const char kOverrideEncryptedMediaCanPlayType[] =
-    "override-encrypted-media-canplaytype";
 
 // Enables MP3 stream parser for Media Source Extensions.
 const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
@@ -32,9 +28,6 @@ const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
 // Disables the infobar popup for accessing protected media identifier.
 const char kDisableInfobarForProtectedMediaIdentifier[] =
     "disable-infobar-for-protected-media-identifier";
-
-// Enables use of MediaDrm for Encrypted Media Extensions implementation.
-const char kEnableMediaDrm[] = "enable-mediadrm";
 
 // Enables use of non-compositing MediaDrm decoding by default for Encrypted
 // Media Extensions implementation.
@@ -63,6 +56,13 @@ const char kAlsaOutputDevice[] = "alsa-output-device";
 // tested.  See http://crbug.com/158170.
 // TODO(dalecurtis): Remove this once we're sure nothing has exploded.
 const char kDisableMainThreadAudio[] = "disable-main-thread-audio";
+// AVFoundation is available in versions 10.7 and onwards, and is to be used
+// http://crbug.com/288562 for both audio and video device monitoring and for
+// video capture. Being a dynamically loaded NSBundle and library, it hits the
+// Chrome startup time (http://crbug.com/311325 and http://crbug.com/311437);
+// until development is finished and the library load time issue is solved, the
+// usage of this library is hidden behind this flag.
+const char kEnableAVFoundation[] = "enable-avfoundation";
 #endif
 
 #if defined(OS_WIN)
@@ -97,5 +97,11 @@ const char kWaveOutBuffers[] = "waveout-buffers";
 // Use CRAS, the ChromeOS audio server.
 const char kUseCras[] = "use-cras";
 #endif
+
+// Disables system sounds manager.
+const char kDisableSystemSoundsManager[] = "disable-system-sounds-manager";
+
+// Use a raw video file as fake video capture device.
+const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
 
 }  // namespace switches

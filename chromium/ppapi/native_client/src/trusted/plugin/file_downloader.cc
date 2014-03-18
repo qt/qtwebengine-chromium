@@ -33,7 +33,27 @@ struct NaClFileInfo NoFileInfo() {
   return info;
 }
 
+// Converts a PP_FileHandle to a POSIX file descriptor.
+int32_t ConvertFileDescriptor(PP_FileHandle handle) {
+  PLUGIN_PRINTF(("ConvertFileDescriptor, handle=%d\n", handle));
+#if NACL_WINDOWS
+  int32_t file_desc = NACL_NO_FILE_DESC;
+  // On Windows, valid handles are 32 bit unsigned integers so this is safe.
+  file_desc = reinterpret_cast<uintptr_t>(handle);
+  // Convert the Windows HANDLE from Pepper to a POSIX file descriptor.
+  int32_t posix_desc = _open_osfhandle(file_desc, _O_RDWR | _O_BINARY);
+  if (posix_desc == -1) {
+    // Close the Windows HANDLE if it can't be converted.
+    CloseHandle(reinterpret_cast<HANDLE>(file_desc));
+    return -1;
+  }
+  return posix_desc;
+#else
+  return handle;
+#endif
 }
+
+}  // namespace
 
 namespace plugin {
 
@@ -44,11 +64,12 @@ void FileDownloader::Initialize(Plugin* instance) {
   CHECK(instance_ == NULL);  // Can only initialize once.
   instance_ = instance;
   callback_factory_.Initialize(this);
-  file_io_trusted_interface_ = static_cast<const PPB_FileIOTrusted*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_FILEIOTRUSTED_INTERFACE));
+  file_io_private_interface_ = static_cast<const PPB_FileIO_Private*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_FILEIO_PRIVATE_INTERFACE));
   url_loader_trusted_interface_ = static_cast<const PPB_URLLoaderTrusted*>(
       pp::Module::Get()->GetBrowserInterface(PPB_URLLOADERTRUSTED_INTERFACE));
   temp_buffer_.resize(kTempBufferSize);
+  cached_file_info_ = NoFileInfo();
 }
 
 bool FileDownloader::OpenStream(
@@ -69,7 +90,7 @@ bool FileDownloader::Open(
   PLUGIN_PRINTF(("FileDownloader::Open (url=%s)\n", url.c_str()));
   if (callback.pp_completion_callback().func == NULL ||
       instance_ == NULL ||
-      file_io_trusted_interface_ == NULL)
+      file_io_private_interface_ == NULL)
     return false;
 
   CHECK(instance_ != NULL);
@@ -80,6 +101,7 @@ bool FileDownloader::Open(
   file_open_notify_callback_ = callback;
   mode_ = mode;
   buffer_.clear();
+  cached_file_info_ = NoFileInfo();
   pp::URLRequestInfo url_request(instance_);
 
   // Allow CORS.
@@ -89,6 +111,9 @@ bool FileDownloader::Open(
   // cross-origin request, resulting in behavior similar to XMLHttpRequest.
   if (!instance_->DocumentCanRequest(url))
     url_request.SetAllowCrossOriginRequests(true);
+
+  if (!extra_request_headers_.empty())
+    url_request.SetHeaders(extra_request_headers_);
 
   do {
     // Reset the url loader and file reader.
@@ -137,18 +162,12 @@ bool FileDownloader::Open(
     }
   } while (0);
 
-  void (FileDownloader::*start_notify)(int32_t);
-  if (streaming_to_file())
-    start_notify = &FileDownloader::URLLoadStartNotify;
-  else
-    start_notify = &FileDownloader::URLBufferStartNotify;
-
   // Request asynchronous download of the url providing an on-load callback.
   // As long as this step is guaranteed to be asynchronous, we can call
   // synchronously all other internal callbacks that eventually result in the
   // invocation of the user callback. The user code will not be reentered.
   pp::CompletionCallback onload_callback =
-      callback_factory_.NewCallback(start_notify);
+      callback_factory_.NewCallback(&FileDownloader::URLLoadStartNotify);
   int32_t pp_error = url_loader_.Open(url_request, onload_callback);
   PLUGIN_PRINTF(("FileDownloader::Open (pp_error=%" NACL_PRId32 ")\n",
                  pp_error));
@@ -160,6 +179,8 @@ void FileDownloader::OpenFast(const nacl::string& url,
                               PP_FileHandle file_handle,
                               uint64_t file_token_lo, uint64_t file_token_hi) {
   PLUGIN_PRINTF(("FileDownloader::OpenFast (url=%s)\n", url.c_str()));
+
+  cached_file_info_ = NoFileInfo();
   CHECK(instance_ != NULL);
   open_time_ = NaClGetTimeOfDayMicroseconds();
   status_code_ = NACL_HTTP_STATUS_OK;
@@ -172,41 +193,16 @@ void FileDownloader::OpenFast(const nacl::string& url,
 }
 
 struct NaClFileInfo FileDownloader::GetFileInfo() {
-  struct NaClFileInfo info = NoFileInfo();
-  int32_t file_desc = NACL_NO_FILE_DESC;
-  if (not_streaming() && file_handle_ != PP_kInvalidFileHandle) {
-#if NACL_WINDOWS
-    // On Windows, valid handles are 32 bit unsigned integers so this is safe.
-    file_desc = reinterpret_cast<uintptr_t>(file_handle_);
-#else
-    file_desc = file_handle_;
-#endif
-    info.file_token = file_token_;
-  } else {
-    if (!streaming_to_file()) {
-      return NoFileInfo();
-    }
-    // Use the trusted interface to get the file descriptor.
-    if (file_io_trusted_interface_ == NULL) {
-      return NoFileInfo();
-    }
-    file_desc = file_io_trusted_interface_->GetOSFileDescriptor(
-        file_reader_.pp_resource());
+  PLUGIN_PRINTF(("FileDownloader::GetFileInfo\n"));
+  if (cached_file_info_.desc != -1) {
+    return cached_file_info_;
+  } else if (not_streaming() && file_handle_ != PP_kInvalidFileHandle) {
+    cached_file_info_.desc = ConvertFileDescriptor(file_handle_);
+    if (cached_file_info_.desc != -1)
+      cached_file_info_.file_token = file_token_;
+    return cached_file_info_;
   }
-
-#if NACL_WINDOWS
-  // Convert the Windows HANDLE from Pepper to a POSIX file descriptor.
-  int32_t posix_desc = _open_osfhandle(file_desc, _O_RDWR | _O_BINARY);
-  if (posix_desc == -1) {
-    // Close the Windows HANDLE if it can't be converted.
-    CloseHandle(reinterpret_cast<HANDLE>(file_desc));
-    return NoFileInfo();
-  }
-  file_desc = posix_desc;
-#endif
-
-  info.desc = file_desc;
-  return info;
+  return NoFileInfo();
 }
 
 int64_t FileDownloader::TimeSinceOpenMilliseconds() const {
@@ -218,18 +214,12 @@ int64_t FileDownloader::TimeSinceOpenMilliseconds() const {
   return (now - open_time_) / NACL_MICROS_PER_MILLI;
 }
 
-bool FileDownloader::InitialResponseIsValid(int32_t pp_error) {
-  if (pp_error != PP_OK) {  // Url loading failed.
-    file_open_notify_callback_.RunAndClear(pp_error);
-    return false;
-  }
-
+bool FileDownloader::InitialResponseIsValid() {
   // Process the response, validating the headers to confirm successful loading.
   url_response_ = url_loader_.GetResponseInfo();
   if (url_response_.is_null()) {
     PLUGIN_PRINTF((
         "FileDownloader::InitialResponseIsValid (url_response_=NULL)\n"));
-    file_open_notify_callback_.RunAndClear(PP_ERROR_FAILED);
     return false;
   }
 
@@ -237,7 +227,6 @@ bool FileDownloader::InitialResponseIsValid(int32_t pp_error) {
   if (!full_url.is_string()) {
     PLUGIN_PRINTF((
         "FileDownloader::InitialResponseIsValid (url is not a string)\n"));
-    file_open_notify_callback_.RunAndClear(PP_ERROR_FAILED);
     return false;
   }
   url_ = full_url.AsString();
@@ -265,43 +254,28 @@ bool FileDownloader::InitialResponseIsValid(int32_t pp_error) {
       status_ok = (status_code_ == NACL_HTTP_STATUS_OK);
       break;
   }
-
-  if (!status_ok) {
-    file_open_notify_callback_.RunAndClear(PP_ERROR_FAILED);
-    return false;
-  }
-
-  return true;
+  return status_ok;
 }
 
 void FileDownloader::URLLoadStartNotify(int32_t pp_error) {
   PLUGIN_PRINTF(("FileDownloader::URLLoadStartNotify (pp_error=%"
                  NACL_PRId32")\n", pp_error));
-
-  if (!InitialResponseIsValid(pp_error)) {
-    // InitialResponseIsValid() calls file_open_notify_callback_ on errors.
+  if (pp_error != PP_OK) {
+    file_open_notify_callback_.RunAndClear(pp_error);
     return;
   }
 
-  if (open_and_stream_)
-    return FinishStreaming(file_open_notify_callback_);
-
-  file_open_notify_callback_.RunAndClear(pp_error);
-}
-
-void FileDownloader::URLBufferStartNotify(int32_t pp_error) {
-  PLUGIN_PRINTF(("FileDownloader::URLBufferStartNotify (pp_error=%"
-                 NACL_PRId32")\n", pp_error));
-
-  if (!InitialResponseIsValid(pp_error)) {
-    // InitialResponseIsValid() calls file_open_notify_callback_ on errors.
+  if (!InitialResponseIsValid()) {
+    file_open_notify_callback_.RunAndClear(PP_ERROR_FAILED);
     return;
   }
 
-  if (open_and_stream_)
-    return FinishStreaming(file_open_notify_callback_);
+  if (open_and_stream_) {
+    FinishStreaming(file_open_notify_callback_);
+    return;
+  }
 
-  file_open_notify_callback_.RunAndClear(pp_error);
+  file_open_notify_callback_.RunAndClear(PP_OK);
 }
 
 void FileDownloader::FinishStreaming(
@@ -442,7 +416,19 @@ void FileDownloader::StreamFinishNotify(int32_t pp_error) {
   PLUGIN_PRINTF((
       "FileDownloader::StreamFinishNotify (pp_error=%" NACL_PRId32 ")\n",
       pp_error));
-  stream_finish_callback_.RunAndClear(pp_error);
+
+  // Run the callback if we have an error, or if we don't have a file_reader_
+  // to get a file handle for.
+  if (pp_error != PP_OK || file_reader_.pp_resource() == 0) {
+    stream_finish_callback_.RunAndClear(pp_error);
+    return;
+  }
+
+  pp::CompletionCallbackWithOutput<PP_FileHandle> cb =
+      callback_factory_.NewCallbackWithOutput(
+          &FileDownloader::GotFileHandleNotify);
+  file_io_private_interface_->RequestOSFileHandle(
+      file_reader_.pp_resource(), cb.output(), cb.pp_completion_callback());
 }
 
 bool FileDownloader::streaming_to_file() const {
@@ -459,6 +445,17 @@ bool FileDownloader::streaming_to_user() const {
 
 bool FileDownloader::not_streaming() const {
   return mode_ == DOWNLOAD_NONE;
+}
+
+void FileDownloader::GotFileHandleNotify(int32_t pp_error,
+                                         PP_FileHandle handle) {
+  PLUGIN_PRINTF((
+      "FileDownloader::GotFileHandleNotify (pp_error=%" NACL_PRId32 ")\n",
+      pp_error));
+  if (pp_error == PP_OK)
+    cached_file_info_.desc = ConvertFileDescriptor(handle);
+
+  stream_finish_callback_.RunAndClear(pp_error);
 }
 
 }  // namespace plugin

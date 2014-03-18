@@ -27,12 +27,12 @@
 #include "modules/mediastream/MediaStream.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/platform/mediastream/MediaStreamCenter.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
 #include "modules/mediastream/MediaStreamTrackEvent.h"
+#include "platform/mediastream/MediaStreamSource.h"
 
 namespace WebCore {
 
@@ -55,7 +55,7 @@ static void processTrack(MediaStreamTrack* track, MediaStreamSourceVector& sourc
         sourceVector.append(source);
 }
 
-static PassRefPtr<MediaStream> createFromSourceVectors(ScriptExecutionContext* context, const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources)
+static PassRefPtr<MediaStream> createFromSourceVectors(ExecutionContext* context, const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources)
 {
     RefPtr<MediaStreamDescriptor> descriptor = MediaStreamDescriptor::create(audioSources, videoSources);
     MediaStreamCenter::instance().didCreateMediaStream(descriptor.get());
@@ -63,7 +63,7 @@ static PassRefPtr<MediaStream> createFromSourceVectors(ScriptExecutionContext* c
     return MediaStream::create(context, descriptor.release());
 }
 
-PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context)
+PassRefPtr<MediaStream> MediaStream::create(ExecutionContext* context)
 {
     MediaStreamSourceVector audioSources;
     MediaStreamSourceVector videoSources;
@@ -71,7 +71,7 @@ PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context)
     return createFromSourceVectors(context, audioSources, videoSources);
 }
 
-PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, PassRefPtr<MediaStream> stream)
+PassRefPtr<MediaStream> MediaStream::create(ExecutionContext* context, PassRefPtr<MediaStream> stream)
 {
     ASSERT(stream);
 
@@ -87,7 +87,7 @@ PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, Pas
     return createFromSourceVectors(context, audioSources, videoSources);
 }
 
-PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, const MediaStreamTrackVector& tracks)
+PassRefPtr<MediaStream> MediaStream::create(ExecutionContext* context, const MediaStreamTrackVector& tracks)
 {
     MediaStreamSourceVector audioSources;
     MediaStreamSourceVector videoSources;
@@ -98,12 +98,12 @@ PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, con
     return createFromSourceVectors(context, audioSources, videoSources);
 }
 
-PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, PassRefPtr<MediaStreamDescriptor> streamDescriptor)
+PassRefPtr<MediaStream> MediaStream::create(ExecutionContext* context, PassRefPtr<MediaStreamDescriptor> streamDescriptor)
 {
     return adoptRef(new MediaStream(context, streamDescriptor));
 }
 
-MediaStream::MediaStream(ScriptExecutionContext* context, PassRefPtr<MediaStreamDescriptor> streamDescriptor)
+MediaStream::MediaStream(ExecutionContext* context, PassRefPtr<MediaStreamDescriptor> streamDescriptor)
     : ContextLifecycleObserver(context)
     , m_stopped(false)
     , m_descriptor(streamDescriptor)
@@ -133,15 +133,15 @@ bool MediaStream::ended() const
     return m_stopped || m_descriptor->ended();
 }
 
-void MediaStream::addTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& es)
+void MediaStream::addTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
 {
     if (ended()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     if (!prpTrack) {
-        es.throwDOMException(TypeMismatchError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -151,7 +151,7 @@ void MediaStream::addTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState
         return;
 
     RefPtr<MediaStreamComponent> component = MediaStreamComponent::create(m_descriptor.get(), track->component()->source());
-    RefPtr<MediaStreamTrack> newTrack = MediaStreamTrack::create(scriptExecutionContext(), component.get());
+    RefPtr<MediaStreamTrack> newTrack = MediaStreamTrack::create(executionContext(), component.get());
 
     switch (component->source()->type()) {
     case MediaStreamSource::TypeAudio:
@@ -167,15 +167,15 @@ void MediaStream::addTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState
     MediaStreamCenter::instance().didAddMediaStreamTrack(m_descriptor.get(), newTrack->component());
 }
 
-void MediaStream::removeTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& es)
+void MediaStream::removeTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
 {
     if (ended()) {
-        es.throwDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     if (!prpTrack) {
-        es.throwDOMException(TypeMismatchError);
+        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -250,7 +250,7 @@ void MediaStream::streamEnded()
         return;
 
     m_descriptor->setEnded();
-    scheduleDispatchEvent(Event::create(eventNames().endedEvent));
+    scheduleDispatchEvent(Event::create(EventTypeNames::ended));
 }
 
 void MediaStream::contextDestroyed()
@@ -261,22 +261,12 @@ void MediaStream::contextDestroyed()
 
 const AtomicString& MediaStream::interfaceName() const
 {
-    return eventNames().interfaceForMediaStream;
+    return EventTargetNames::MediaStream;
 }
 
-ScriptExecutionContext* MediaStream::scriptExecutionContext() const
+ExecutionContext* MediaStream::executionContext() const
 {
-    return ContextLifecycleObserver::scriptExecutionContext();
-}
-
-EventTargetData* MediaStream::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* MediaStream::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return ContextLifecycleObserver::executionContext();
 }
 
 void MediaStream::addRemoteTrack(MediaStreamComponent* component)
@@ -287,7 +277,7 @@ void MediaStream::addRemoteTrack(MediaStreamComponent* component)
 
     component->setStream(descriptor());
 
-    RefPtr<MediaStreamTrack> track = MediaStreamTrack::create(scriptExecutionContext(), component);
+    RefPtr<MediaStreamTrack> track = MediaStreamTrack::create(executionContext(), component);
     switch (component->source()->type()) {
     case MediaStreamSource::TypeAudio:
         m_audioTracks.append(track);
@@ -298,7 +288,7 @@ void MediaStream::addRemoteTrack(MediaStreamComponent* component)
     }
     m_descriptor->addComponent(component);
 
-    scheduleDispatchEvent(MediaStreamTrackEvent::create(eventNames().addtrackEvent, false, false, track));
+    scheduleDispatchEvent(MediaStreamTrackEvent::create(EventTypeNames::addtrack, false, false, track));
 }
 
 void MediaStream::removeRemoteTrack(MediaStreamComponent* component)
@@ -330,7 +320,7 @@ void MediaStream::removeRemoteTrack(MediaStreamComponent* component)
 
     RefPtr<MediaStreamTrack> track = (*tracks)[index];
     tracks->remove(index);
-    scheduleDispatchEvent(MediaStreamTrackEvent::create(eventNames().removetrackEvent, false, false, track));
+    scheduleDispatchEvent(MediaStreamTrackEvent::create(EventTypeNames::removetrack, false, false, track));
 }
 
 void MediaStream::scheduleDispatchEvent(PassRefPtr<Event> event)

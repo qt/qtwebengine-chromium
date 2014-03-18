@@ -31,10 +31,11 @@
 interface SVGGraphicsElement : SVGElement {
     readonly attribute SVGAnimatedTransformList transform;
 
-    readonly attribute SVGElement nearestViewportElement;
-    readonly attribute SVGElement farthestViewportElement;
+    [MeasureAs=SVGLocatableNearestViewportElement] readonly attribute SVGElement nearestViewportElement;
+    [MeasureAs=SVGLocatableFarthestViewportElement] readonly attribute SVGElement farthestViewportElement;
 
     SVGRect   getBBox();
+    SVGRect   getStrokeBBox();
     SVGMatrix getCTM();
     SVGMatrix getScreenCTM();
     [RaisesException] SVGMatrix getTransformToElement([Default=Undefined] optional SVGElement element);

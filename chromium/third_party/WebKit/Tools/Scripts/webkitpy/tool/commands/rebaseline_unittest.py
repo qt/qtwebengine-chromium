@@ -224,8 +224,8 @@ class TestRebaselineTest(_BaseTestCase):
 
     def test_baseline_directory(self):
         command = self.command
-        self.assertMultiLineEqual(command._baseline_directory("WebKit Mac10.7"), "/mock-checkout/LayoutTests/platform/mac-lion")
-        self.assertMultiLineEqual(command._baseline_directory("WebKit Mac10.6"), "/mock-checkout/LayoutTests/platform/mac-snowleopard")
+        self.assertMultiLineEqual(command._baseline_directory("WebKit Mac10.7"), "/mock-checkout/third_party/WebKit/LayoutTests/platform/mac-lion")
+        self.assertMultiLineEqual(command._baseline_directory("WebKit Mac10.6"), "/mock-checkout/third_party/WebKit/LayoutTests/platform/mac-snowleopard")
 
     def test_rebaseline_updates_expectations_file_noop(self):
         self._zero_out_test_expectations()
@@ -273,7 +273,7 @@ Bug(A) [ Debug ] : fast/css/large-list-of-rules-crash.html [ Failure ]
 
         self.command._rebaseline_test("WebKit Linux", "userscripts/another-test.html", "txt", None)
 
-        self.assertDictEqual(self.command._scm_changes, {'add': ['/mock-checkout/LayoutTests/platform/linux/userscripts/another-test-expected.txt'], 'delete': []})
+        self.assertDictEqual(self.command._scm_changes, {'add': ['/mock-checkout/third_party/WebKit/LayoutTests/platform/linux/userscripts/another-test-expected.txt'], 'delete': []})
 
     def test_rebaseline_test_internal_with_port_that_lacks_buildbot(self):
         self.tool.executive = MockExecutive2()
@@ -443,7 +443,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ MountainLion Retina SnowLeopard ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Mavericks MountainLion Retina SnowLeopard ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_updates_expectations_file_all_platforms(self):
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
@@ -455,7 +455,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_handles_platform_skips(self):
         # This test is just like test_rebaseline_updates_expectations_file_all_platforms(),
@@ -471,7 +471,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_handles_skips_in_file(self):
         # This test is like test_Rebaseline_handles_platform_skips, except that the
@@ -491,7 +491,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
 
         new_expectations = self._read(self.lion_expectations_path)
         self.assertMultiLineEqual(new_expectations,
-            ("Bug(x) [ Linux MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
+            ("Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
              "Bug(y) [ Android ] userscripts/first-test.html [ Skip ]\n"))
 
     def test_rebaseline_handles_smoke_tests(self):
@@ -509,7 +509,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
 
 
@@ -784,6 +784,7 @@ TBR=foo@chromium.org
     def test_execute(self):
         def blame(path):
             return """
+6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) # Test NeedsRebaseline being in a comment doesn't bork parsing.
 6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ ImageOnlyFailure ]
 6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ SnowLeopard ] fast/dom/prototype-strawberry.html [ NeedsRebaseline ]

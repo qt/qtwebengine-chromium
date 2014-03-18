@@ -27,24 +27,26 @@
 #define TextTrackList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/Timer.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "platform/Timer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class GenericEventQueue;
 class HTMLMediaElement;
 class TextTrack;
 class TextTrackList;
 
-class TextTrackList : public RefCounted<TextTrackList>, public ScriptWrappable, public EventTarget {
+class TextTrackList : public RefCounted<TextTrackList>, public ScriptWrappable, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(TextTrackList);
 public:
-    static PassRefPtr<TextTrackList> create(HTMLMediaElement* owner, ScriptExecutionContext* context)
+    static PassRefPtr<TextTrackList> create(HTMLMediaElement* owner)
     {
-        return adoptRef(new TextTrackList(owner, context));
+        return adoptRef(new TextTrackList(owner));
     }
     ~TextTrackList();
 
@@ -54,48 +56,40 @@ public:
     bool contains(TextTrack*) const;
 
     TextTrack* item(unsigned index);
+    TextTrack* getTrackById(const AtomicString& id);
     void append(PassRefPtr<TextTrack>);
     void remove(TextTrack*);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    using RefCounted<TextTrackList>::ref;
-    using RefCounted<TextTrackList>::deref;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return m_context; }
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(addtrack);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(removetrack);
 
     void clearOwner() { m_owner = 0; }
     Node* owner() const;
 
-    bool isFiringEventListeners() { return m_dispatchingEvents; }
+    void scheduleChangeEvent();
 
 private:
-    TextTrackList(HTMLMediaElement*, ScriptExecutionContext*);
+    explicit TextTrackList(HTMLMediaElement*);
 
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData() { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() { return &m_eventTargetData; }
+    void scheduleTrackEvent(const AtomicString& eventName, PassRefPtr<TextTrack>);
 
     void scheduleAddTrackEvent(PassRefPtr<TextTrack>);
-    void asyncEventTimerFired(Timer<TextTrackList>*);
+    void scheduleRemoveTrackEvent(PassRefPtr<TextTrack>);
 
     void invalidateTrackIndexesAfterTrack(TextTrack*);
 
-    ScriptExecutionContext* m_context;
     HTMLMediaElement* m_owner;
 
-    Vector<RefPtr<Event> > m_pendingEvents;
-    Timer<TextTrackList> m_pendingEventTimer;
+    OwnPtr<GenericEventQueue> m_asyncEventQueue;
 
-    EventTargetData m_eventTargetData;
     Vector<RefPtr<TextTrack> > m_addTrackTracks;
     Vector<RefPtr<TextTrack> > m_elementTracks;
     Vector<RefPtr<TextTrack> > m_inbandTracks;
-
-    int m_dispatchingEvents;
 };
 
 } // namespace WebCore

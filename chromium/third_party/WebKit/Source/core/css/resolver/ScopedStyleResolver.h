@@ -27,20 +27,15 @@
 #ifndef ScopedStyleResolver_h
 #define ScopedStyleResolver_h
 
-#include "core/css/CSSKeyframesRule.h"
 #include "core/css/ElementRuleCollector.h"
 #include "core/css/RuleSet.h"
 #include "core/dom/ContainerNode.h"
-#include "core/dom/Element.h"
-#include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
-class ElementRuleCollector;
 class MediaQueryEvaluator;
 class PageRuleCollector;
 class ShadowRoot;
@@ -50,112 +45,40 @@ class StyleSheetContents;
 class ScopedStyleResolver {
     WTF_MAKE_NONCOPYABLE(ScopedStyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<ScopedStyleResolver> create(const ContainerNode& scopingNode) { return adoptPtr(new ScopedStyleResolver(scopingNode)); }
+    static PassOwnPtr<ScopedStyleResolver> create(ContainerNode& scopingNode) { return adoptPtr(new ScopedStyleResolver(scopingNode)); }
 
-    static const ContainerNode* scopingNodeFor(const CSSStyleSheet*);
+    static ContainerNode* scopingNodeFor(Document&, const CSSStyleSheet*);
 
     const ContainerNode& scopingNode() const { return m_scopingNode; }
     const TreeScope& treeScope() const { return m_scopingNode.treeScope(); }
-    void prepareEmptyRuleSet() { m_authorStyle = RuleSet::create(); }
     void setParent(ScopedStyleResolver* newParent) { m_parent = newParent; }
     ScopedStyleResolver* parent() { return m_parent; }
-
-    bool hasOnlyEmptyRuleSets() const { return !m_authorStyle->ruleCount() && m_atHostRules.isEmpty(); }
 
 public:
     bool checkRegionStyle(Element*);
     const StyleRuleKeyframes* keyframeStylesForAnimation(const StringImpl* animationName);
     void addKeyframeStyle(PassRefPtr<StyleRuleKeyframes>);
 
-    void matchHostRules(ElementRuleCollector&, bool includeEmptyRules);
-    void matchAuthorRules(ElementRuleCollector&, bool includeEmptyRules, bool applyAuthorStyles);
     void collectMatchingAuthorRules(ElementRuleCollector&, bool includeEmptyRules, bool applyAuthorStyles, CascadeScope, CascadeOrder = ignoreCascadeOrder);
     void matchPageRules(PageRuleCollector&);
     void addRulesFromSheet(StyleSheetContents*, const MediaQueryEvaluator&, StyleResolver*);
-    void addHostRule(StyleRuleHost*, bool hasDocumentSecurityOrigin, const ContainerNode* scopingNode);
     void collectFeaturesTo(RuleFeatureSet&);
     void resetAuthorStyle();
-    void resetAtHostRules(const ShadowRoot*);
     void collectViewportRulesTo(StyleResolver*) const;
 
 private:
-    explicit ScopedStyleResolver(const ContainerNode& scopingNode) : m_scopingNode(scopingNode), m_parent(0) { }
+    explicit ScopedStyleResolver(ContainerNode& scopingNode) : m_scopingNode(scopingNode), m_parent(0) { }
 
-    RuleSet* ensureAtHostRuleSetFor(const ShadowRoot*);
-    RuleSet* atHostRuleSetFor(const ShadowRoot*) const;
+    RuleSet* ensureAuthorStyle();
 
-    const ContainerNode& m_scopingNode;
+    ContainerNode& m_scopingNode;
     ScopedStyleResolver* m_parent;
 
-    OwnPtr<RuleSet> m_authorStyle;
-    HashMap<const ShadowRoot*, OwnPtr<RuleSet> > m_atHostRules;
+    Vector<StyleSheetContents*> m_authorStyleSheets;
 
     typedef HashMap<const StringImpl*, RefPtr<StyleRuleKeyframes> > KeyframesRuleMap;
     KeyframesRuleMap m_keyframesRuleMap;
 };
-
-class ScopedStyleTree {
-    WTF_MAKE_NONCOPYABLE(ScopedStyleTree); WTF_MAKE_FAST_ALLOCATED;
-public:
-    ScopedStyleTree() : m_scopedResolverForDocument(0), m_buildInDocumentOrder(true) { }
-
-    ScopedStyleResolver* ensureScopedStyleResolver(const ContainerNode& scopingNode);
-    ScopedStyleResolver* scopedStyleResolverFor(const ContainerNode& scopingNode);
-    ScopedStyleResolver* addScopedStyleResolver(const ContainerNode& scopingNode, bool& isNewEntry);
-    void clear();
-
-    // for fast-path.
-    bool hasOnlyScopedResolverForDocument() const { return m_scopedResolverForDocument && m_authorStyles.size() == 1; }
-    ScopedStyleResolver* scopedStyleResolverForDocument() { return m_scopedResolverForDocument; }
-
-    void resolveScopedStyles(const Element*, Vector<ScopedStyleResolver*, 8>&);
-    void collectScopedResolversForHostedShadowTrees(const Element*, Vector<ScopedStyleResolver*, 8>&);
-    void resolveScopedKeyframesRules(const Element*, Vector<ScopedStyleResolver*, 8>&);
-    ScopedStyleResolver* scopedResolverFor(const Element*);
-
-    void remove(const ContainerNode* scopingNode);
-
-    void pushStyleCache(const ContainerNode& scopingNode, const ContainerNode* parent);
-    void popStyleCache(const ContainerNode& scopingNode);
-
-    void collectFeaturesTo(RuleFeatureSet& features);
-    void setBuildInDocumentOrder(bool enabled) { m_buildInDocumentOrder = enabled; }
-    bool buildInDocumentOrder() const { return m_buildInDocumentOrder; }
-
-private:
-    void setupScopedStylesTree(ScopedStyleResolver* target);
-
-    bool cacheIsValid(const ContainerNode* parent) const { return parent && parent == m_cache.nodeForScopedStyles; }
-    void resolveStyleCache(const ContainerNode* scopingNode);
-    ScopedStyleResolver* enclosingScopedStyleResolverFor(const ContainerNode* scopingNode);
-
-    void reparentNodes(const ScopedStyleResolver* oldParent, ScopedStyleResolver* newParent);
-
-private:
-    HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> > m_authorStyles;
-    ScopedStyleResolver* m_scopedResolverForDocument;
-    bool m_buildInDocumentOrder;
-
-    struct ScopedStyleCache {
-        ScopedStyleResolver* scopedResolver;
-        const ContainerNode* nodeForScopedStyles;
-
-        void clear()
-        {
-            scopedResolver = 0;
-            nodeForScopedStyles = 0;
-        }
-    };
-    ScopedStyleCache m_cache;
-};
-
-inline ScopedStyleResolver* ScopedStyleTree::scopedResolverFor(const Element* element)
-{
-    if (!cacheIsValid(element))
-        resolveStyleCache(element);
-
-    return m_cache.scopedResolver;
-}
 
 } // namespace WebCore
 

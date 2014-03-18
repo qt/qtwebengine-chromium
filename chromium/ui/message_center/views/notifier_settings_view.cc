@@ -30,12 +30,15 @@
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
+#include "ui/views/controls/link_listener.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/scrollbar/overlay_scroll_bar.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/grid_layout.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -43,71 +46,135 @@
 #endif
 
 namespace message_center {
+namespace settings {
+
+// Additional views-specific parameters.
+
+// The width of the settings pane in pixels.
+const int kWidth = 360;
+
+// The width of the learn more icon in pixels.
+const int kLearnMoreSize = 12;
+
+// The width of the click target that contains the learn more button in pixels.
+const int kLearnMoreTargetWidth = 28;
+
+// The height of the click target that contains the learn more button in pixels.
+const int kLearnMoreTargetHeight = 40;
+
+// The minimum height of the settings pane in pixels.
+const int kMinimumHeight = 480;
+
+// The horizontal margin of the title area of the settings pane in addition to
+// the standard margin from settings::kHorizontalMargin.
+const int kTitleMargin = 10;
+
+}  // namespace settings
+
 namespace {
+
+// The amount of built-in padding for the notifier group switcher.
 const int kButtonPainterInsets = 5;
-// We really want the margin to be 20px, but various views are padded by
-// whitespace.
-const int kDesiredMargin = 20;
-// The MenuButton has 2px whitespace built-in.
+
+// Menu button metrics to make the text line up.
 const int kMenuButtonInnateMargin = 2;
-const int kMinimumHorizontalMargin = kDesiredMargin - kMenuButtonInnateMargin;
-// The EntryViews' leftmost view is a checkbox with 1px whitespace built in, so
-// the margin for entry views should be one less than the target margin.
-const int kCheckboxInnateMargin = 1;
-const int kEntryMargin = kDesiredMargin - kCheckboxInnateMargin;
 const int kMenuButtonLeftPadding = 12;
 const int kMenuButtonRightPadding = 13;
 const int kMenuButtonVerticalPadding = 9;
+
+// Used to place the context menu correctly.
 const int kMenuWhitespaceOffset = 2;
-const int kMinimumWindowHeight = 480;
-const int kMinimumWindowWidth = 320;
-const int kSettingsTitleBottomMargin = 12;
-const int kSettingsTitleTopMargin = 15;
-const int kSpaceInButtonComponents = 16;
-const int kTitleVerticalMargin = 1;
-const int kTitleElementSpacing = 10;
-const int kEntryHeight = kMinimumWindowHeight / 10;
+
+// The innate vertical blank space in the label for the title of the settings
+// pane.
+const int kInnateTitleBottomMargin = 1;
+const int kInnateTitleTopMargin = 7;
+
+// The innate top blank space in the label for the description of the settings
+// pane.
+const int kInnateDescriptionTopMargin = 2;
+
+// Checkboxes have some built-in right padding blank space.
+const int kInnateCheckboxRightPadding = 2;
+
+// Spec defines the checkbox size; the innate padding throws this measurement
+// off so we need to compute a slightly different area for the checkbox to
+// inhabit.
+const int kComputedCheckboxSize =
+    settings::kCheckboxSizeWithPadding - kInnateCheckboxRightPadding;
+
+// The menubutton has innate margin, so we need to compensate for that when
+// figuring the margin of the title area.
+const int kComputedContentsTitleMargin = 0 - kMenuButtonInnateMargin;
+
+// The spec doesn't include the bottom blank area of the title bar or the innate
+// blank area in the description label, so we'll use this as the space between
+// the title and description.
+const int kComputedTitleBottomMargin = settings::kDescriptionToSwitcherSpace -
+                                       kInnateTitleBottomMargin -
+                                       kInnateDescriptionTopMargin;
+
+// The blank space above the title needs to be adjusted by the amount of blank
+// space included in the title label.
+const int kComputedTitleTopMargin =
+    settings::kTopMargin - kInnateTitleTopMargin;
+
+// The switcher has a lot of blank space built in so we should include that when
+// spacing the title area vertically.
+const int kComputedTitleElementSpacing =
+    settings::kDescriptionToSwitcherSpace - kButtonPainterInsets - 1;
+
+// A function to create a focus border.
+scoped_ptr<views::Painter> CreateFocusPainter() {
+  return views::Painter::CreateSolidFocusPainter(kFocusBorderColor,
+                                                 gfx::Insets(1, 2, 3, 2));
+}
+
+// EntryView ------------------------------------------------------------------
 
 // The view to guarantee the 48px height and place the contents at the
 // middle. It also guarantee the left margin.
 class EntryView : public views::View {
  public:
-  EntryView(views::View* contents);
+  explicit EntryView(views::View* contents);
   virtual ~EntryView();
 
-  // Overridden from views::View:
+  // views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
 
  private:
+  scoped_ptr<views::Painter> focus_painter_;
+
   DISALLOW_COPY_AND_ASSIGN(EntryView);
 };
 
-EntryView::EntryView(views::View* contents) {
+EntryView::EntryView(views::View* contents)
+    : focus_painter_(CreateFocusPainter()) {
   AddChildView(contents);
 }
 
-EntryView::~EntryView() {
-}
+EntryView::~EntryView() {}
 
 void EntryView::Layout() {
   DCHECK_EQ(1, child_count());
   views::View* content = child_at(0);
-  int content_width = width() - kEntryMargin * 2;
+  int content_width = width();
   int content_height = content->GetHeightForWidth(content_width);
   int y = std::max((height() - content_height) / 2, 0);
-  content->SetBounds(kEntryMargin, y, content_width, content_height);
+  content->SetBounds(0, y, content_width, content_height);
 }
 
 gfx::Size EntryView::GetPreferredSize() {
   DCHECK_EQ(1, child_count());
   gfx::Size size = child_at(0)->GetPreferredSize();
-  size.SetToMax(gfx::Size(kMinimumWindowWidth, kEntryHeight));
+  size.SetToMax(gfx::Size(settings::kWidth, settings::kEntryHeight));
   return size;
 }
 
@@ -119,13 +186,8 @@ void EntryView::GetAccessibleState(ui::AccessibleViewState* state) {
 void EntryView::OnFocus() {
   views::View::OnFocus();
   ScrollRectToVisible(GetLocalBounds());
-}
-
-void EntryView::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    canvas->DrawRect(gfx::Rect(2, 1, width() - 4, height() - 3),
-                     kFocusBorderColor);
-  }
+  // We render differently when focused.
+  SchedulePaint();
 }
 
 bool EntryView::OnKeyPressed(const ui::KeyEvent& event) {
@@ -136,51 +198,29 @@ bool EntryView::OnKeyReleased(const ui::KeyEvent& event) {
   return child_at(0)->OnKeyReleased(event);
 }
 
-}  // namespace
-
-// NotifierGroupMenuButtonBorder ///////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-class NotifierGroupMenuButtonBorder : public views::TextButtonDefaultBorder {
- public:
-  NotifierGroupMenuButtonBorder();
-
- private:
-  virtual ~NotifierGroupMenuButtonBorder();
-};
-
-NotifierGroupMenuButtonBorder::NotifierGroupMenuButtonBorder()
-    : views::TextButtonDefaultBorder() {
-  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-
-  gfx::Insets insets(kButtonPainterInsets,
-                     kButtonPainterInsets,
-                     kButtonPainterInsets,
-                     kButtonPainterInsets);
-
-  set_normal_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_NORMAL), insets));
-  set_hot_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_HOVER), insets));
-  set_pushed_painter(views::Painter::CreateImagePainter(
-      *rb.GetImageSkiaNamed(IDR_BUTTON_PRESSED), insets));
-
-  SetInsets(gfx::Insets(kMenuButtonVerticalPadding,
-                        kMenuButtonLeftPadding,
-                        kMenuButtonVerticalPadding,
-                        kMenuButtonRightPadding));
+void EntryView::OnPaint(gfx::Canvas* canvas) {
+  View::OnPaint(canvas);
+  views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
-NotifierGroupMenuButtonBorder::~NotifierGroupMenuButtonBorder() {}
+void EntryView::OnBlur() {
+  View::OnBlur();
+  // We render differently when focused.
+  SchedulePaint();
+}
 
-// NotifierGroupMenuModel //////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+}  // namespace
+
+
+// NotifierGroupMenuModel -----------------------------------------------------
+
 class NotifierGroupMenuModel : public ui::SimpleMenuModel,
                                public ui::SimpleMenuModel::Delegate {
  public:
   NotifierGroupMenuModel(NotifierSettingsProvider* notifier_settings_provider);
   virtual ~NotifierGroupMenuModel();
 
-  // Overridden from ui::SimpleMenuModel::Delegate:
+  // ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
@@ -190,6 +230,8 @@ class NotifierGroupMenuModel : public ui::SimpleMenuModel,
 
  private:
   NotifierSettingsProvider* notifier_settings_provider_;
+
+  DISALLOW_COPY_AND_ASSIGN(NotifierGroupMenuModel);
 };
 
 NotifierGroupMenuModel::NotifierGroupMenuModel(
@@ -212,10 +254,8 @@ NotifierGroupMenuModel::~NotifierGroupMenuModel() {}
 
 bool NotifierGroupMenuModel::IsCommandIdChecked(int command_id) const {
   // If there's no provider, assume only one notifier group - the active one.
-  if (!notifier_settings_provider_)
-    return true;
-
-  return notifier_settings_provider_->IsNotifierGroupActiveAt(command_id);
+  return !notifier_settings_provider_ ||
+      notifier_settings_provider_->IsNotifierGroupActiveAt(command_id);
 }
 
 bool NotifierGroupMenuModel::IsCommandIdEnabled(int command_id) const {
@@ -241,80 +281,197 @@ void NotifierGroupMenuModel::ExecuteCommand(int command_id, int event_flags) {
   notifier_settings_provider_->SwitchToNotifierGroup(notifier_group_index);
 }
 
+
+// NotifierSettingsView::NotifierButton ---------------------------------------
+
 // We do not use views::Checkbox class directly because it doesn't support
 // showing 'icon'.
-class NotifierSettingsView::NotifierButton : public views::CustomButton,
-                                             public views::ButtonListener {
- public:
-  NotifierButton(Notifier* notifier, views::ButtonListener* listener)
-      : views::CustomButton(listener),
-        notifier_(notifier),
-        icon_view_(NULL),
-        checkbox_(new views::Checkbox(string16())) {
-    DCHECK(notifier);
-    SetLayoutManager(new views::BoxLayout(
-        views::BoxLayout::kHorizontal, 0, 0, kSpaceInButtonComponents));
-    checkbox_->SetChecked(notifier_->enabled);
-    checkbox_->set_listener(this);
-    checkbox_->set_focusable(false);
-    checkbox_->SetAccessibleName(notifier_->name);
-    AddChildView(checkbox_);
-    UpdateIconImage(notifier_->icon);
-    AddChildView(new views::Label(notifier_->name));
+NotifierSettingsView::NotifierButton::NotifierButton(
+    NotifierSettingsProvider* provider,
+    Notifier* notifier,
+    views::ButtonListener* listener)
+    : views::CustomButton(listener),
+      provider_(provider),
+      notifier_(notifier),
+      icon_view_(new views::ImageView()),
+      name_view_(new views::Label(notifier_->name)),
+      checkbox_(new views::Checkbox(string16())),
+      learn_more_(NULL) {
+  DCHECK(provider);
+  DCHECK(notifier);
+
+  // Since there may never be an icon (but that could change at a later time),
+  // we own the icon view here.
+  icon_view_->set_owned_by_client();
+
+  checkbox_->SetChecked(notifier_->enabled);
+  checkbox_->set_listener(this);
+  checkbox_->SetFocusable(false);
+  checkbox_->SetAccessibleName(notifier_->name);
+
+  if (ShouldHaveLearnMoreButton()) {
+    // Create a more-info button that will be right-aligned.
+    learn_more_ = new views::ImageButton(this);
+    learn_more_->SetFocusPainter(CreateFocusPainter());
+    learn_more_->set_request_focus_on_press(false);
+    learn_more_->SetFocusable(true);
+
+    ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    learn_more_->SetImage(
+        views::Button::STATE_NORMAL,
+        rb.GetImageSkiaNamed(IDR_NOTIFICATION_ADVANCED_SETTINGS));
+    learn_more_->SetImage(
+        views::Button::STATE_HOVERED,
+        rb.GetImageSkiaNamed(IDR_NOTIFICATION_ADVANCED_SETTINGS_HOVER));
+    learn_more_->SetImage(
+        views::Button::STATE_PRESSED,
+        rb.GetImageSkiaNamed(IDR_NOTIFICATION_ADVANCED_SETTINGS_PRESSED));
+    learn_more_->SetState(views::Button::STATE_NORMAL);
+    int learn_more_border_width =
+        (settings::kLearnMoreTargetWidth - settings::kLearnMoreSize) / 2;
+    int learn_more_border_height =
+        (settings::kLearnMoreTargetHeight - settings::kLearnMoreSize) / 2;
+    // The image itself is quite small, this large invisible border creates a
+    // much bigger click target.
+    learn_more_->set_border(
+        views::Border::CreateEmptyBorder(learn_more_border_height,
+                                         learn_more_border_width,
+                                         learn_more_border_height,
+                                         learn_more_border_width));
+    learn_more_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                   views::ImageButton::ALIGN_MIDDLE);
   }
 
-  void UpdateIconImage(const gfx::Image& icon) {
-    notifier_->icon = icon;
-    if (icon.IsEmpty()) {
-      delete icon_view_;
-      icon_view_ = NULL;
-    } else {
-      if (!icon_view_) {
-        icon_view_ = new views::ImageView();
-        AddChildViewAt(icon_view_, 1);
-      }
-      icon_view_->SetImage(icon.ToImageSkia());
-      icon_view_->SetImageSize(gfx::Size(kSettingsIconSize, kSettingsIconSize));
-    }
-    Layout();
-    SchedulePaint();
-  }
+  UpdateIconImage(notifier_->icon);
+}
 
-  void SetChecked(bool checked) {
-    checkbox_->SetChecked(checked);
-    notifier_->enabled = checked;
-  }
+NotifierSettingsView::NotifierButton::~NotifierButton() {
+}
 
-  bool checked() const {
-    return checkbox_->checked();
-  }
+void NotifierSettingsView::NotifierButton::UpdateIconImage(
+    const gfx::Image& icon) {
+  bool has_icon_view = false;
 
-  const Notifier& notifier() const {
-    return *notifier_.get();
+  notifier_->icon = icon;
+  if (!icon.IsEmpty()) {
+    icon_view_->SetImage(icon.ToImageSkia());
+    icon_view_->SetImageSize(
+        gfx::Size(settings::kEntryIconSize, settings::kEntryIconSize));
+    has_icon_view = true;
   }
+  GridChanged(ShouldHaveLearnMoreButton(), has_icon_view);
+}
 
- private:
-  // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* button,
-                             const ui::Event& event) OVERRIDE {
-    DCHECK(button == checkbox_);
+void NotifierSettingsView::NotifierButton::SetChecked(bool checked) {
+  checkbox_->SetChecked(checked);
+  notifier_->enabled = checked;
+}
+
+bool NotifierSettingsView::NotifierButton::checked() const {
+  return checkbox_->checked();
+}
+
+bool NotifierSettingsView::NotifierButton::has_learn_more() const {
+  return learn_more_ != NULL;
+}
+
+const Notifier& NotifierSettingsView::NotifierButton::notifier() const {
+  return *notifier_.get();
+}
+
+void NotifierSettingsView::NotifierButton::SendLearnMorePressedForTest() {
+  if (learn_more_ == NULL)
+    return;
+  gfx::Point point(110, 120);
+  ui::MouseEvent pressed(
+      ui::ET_MOUSE_PRESSED, point, point, ui::EF_LEFT_MOUSE_BUTTON);
+  ButtonPressed(learn_more_, pressed);
+}
+
+void NotifierSettingsView::NotifierButton::ButtonPressed(
+    views::Button* button,
+    const ui::Event& event) {
+  if (button == checkbox_) {
     // The checkbox state has already changed at this point, but we'll update
     // the state on NotifierSettingsView::ButtonPressed() too, so here change
     // back to the previous state.
     checkbox_->SetChecked(!checkbox_->checked());
     CustomButton::NotifyClick(event);
+  } else if (button == learn_more_) {
+    DCHECK(provider_);
+    provider_->OnNotifierAdvancedSettingsRequested(notifier_->notifier_id,
+                                                   NULL);
+  }
+}
+
+void NotifierSettingsView::NotifierButton::GetAccessibleState(
+    ui::AccessibleViewState* state) {
+  static_cast<views::View*>(checkbox_)->GetAccessibleState(state);
+}
+
+bool NotifierSettingsView::NotifierButton::ShouldHaveLearnMoreButton() const {
+  if (!provider_)
+    return false;
+
+  return provider_->NotifierHasAdvancedSettings(notifier_->notifier_id);
+}
+
+void NotifierSettingsView::NotifierButton::GridChanged(bool has_learn_more,
+                                                       bool has_icon_view) {
+  using views::ColumnSet;
+  using views::GridLayout;
+
+  GridLayout* layout = new GridLayout(this);
+  SetLayoutManager(layout);
+  ColumnSet* cs = layout->AddColumnSet(0);
+  // Add a column for the checkbox.
+  cs->AddPaddingColumn(0, kInnateCheckboxRightPadding);
+  cs->AddColumn(GridLayout::CENTER,
+                GridLayout::CENTER,
+                0,
+                GridLayout::FIXED,
+                kComputedCheckboxSize,
+                0);
+  cs->AddPaddingColumn(0, settings::kInternalHorizontalSpacing);
+
+  if (has_icon_view) {
+    // Add a column for the icon.
+    cs->AddColumn(GridLayout::CENTER,
+                  GridLayout::CENTER,
+                  0,
+                  GridLayout::FIXED,
+                  settings::kEntryIconSize,
+                  0);
+    cs->AddPaddingColumn(0, settings::kInternalHorizontalSpacing);
   }
 
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE {
-    static_cast<views::View*>(checkbox_)->GetAccessibleState(state);
+  // Add a column for the name.
+  cs->AddColumn(
+      GridLayout::LEADING, GridLayout::CENTER, 0, GridLayout::USE_PREF, 0, 0);
+
+  // Add a padding column which contains expandable blank space.
+  cs->AddPaddingColumn(1, 0);
+
+  // Add a column for the learn more button if necessary.
+  if (has_learn_more) {
+    cs->AddPaddingColumn(0, settings::kInternalHorizontalSpacing);
+    cs->AddColumn(
+        GridLayout::CENTER, GridLayout::CENTER, 0, GridLayout::USE_PREF, 0, 0);
   }
 
-  scoped_ptr<Notifier> notifier_;
-  views::ImageView* icon_view_;
-  views::Checkbox* checkbox_;
+  layout->StartRow(0, 0);
+  layout->AddView(checkbox_);
+  if (has_icon_view)
+    layout->AddView(icon_view_.get());
+  layout->AddView(name_view_);
+  if (has_learn_more)
+    layout->AddView(learn_more_);
 
-  DISALLOW_COPY_AND_ASSIGN(NotifierButton);
-};
+  Layout();
+}
+
+
+// NotifierSettingsView -------------------------------------------------------
 
 NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
     : title_arrow_(NULL),
@@ -326,10 +483,9 @@ NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
   if (provider_)
     provider_->AddObserver(this);
 
-  set_focusable(true);
-  set_focus_border(NULL);
-  set_background(views::Background::CreateSolidBackground(
-      kMessageCenterBackgroundColor));
+  SetFocusable(true);
+  set_background(
+      views::Background::CreateSolidBackground(kMessageCenterBackgroundColor));
   if (get_use_acceleration_when_possible())
     SetPaintToLayer(true);
 
@@ -341,10 +497,10 @@ NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
   title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label_->SetMultiLine(true);
   title_label_->set_border(
-      views::Border::CreateEmptyBorder(kSettingsTitleTopMargin,
-                                       kDesiredMargin,
-                                       kSettingsTitleBottomMargin,
-                                       kDesiredMargin));
+      views::Border::CreateEmptyBorder(kComputedTitleTopMargin,
+                                       settings::kTitleMargin,
+                                       kComputedTitleBottomMargin,
+                                       settings::kTitleMargin));
 
   AddChildView(title_label_);
 
@@ -372,7 +528,8 @@ bool NotifierSettingsView::IsScrollable() {
 void NotifierSettingsView::UpdateIconImage(const NotifierId& notifier_id,
                                            const gfx::Image& icon) {
   for (std::set<NotifierButton*>::iterator iter = buttons_.begin();
-       iter != buttons_.end(); ++iter) {
+       iter != buttons_.end();
+       ++iter) {
     if ((*iter)->notifier().notifier_id == notifier_id) {
       (*iter)->UpdateIconImage(icon);
       return;
@@ -393,15 +550,15 @@ void NotifierSettingsView::UpdateContentsView(
   buttons_.clear();
 
   views::View* contents_view = new views::View();
-  contents_view->SetLayoutManager(
-      new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
+  contents_view->SetLayoutManager(new views::BoxLayout(
+      views::BoxLayout::kVertical, settings::kHorizontalMargin, 0, 0));
 
   views::View* contents_title_view = new views::View();
   contents_title_view->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kVertical,
-                           kMinimumHorizontalMargin,
-                           kTitleVerticalMargin,
-                           kTitleElementSpacing));
+                           kComputedContentsTitleMargin,
+                           0,
+                           kComputedTitleElementSpacing));
 
   bool need_account_switcher =
       provider_ && provider_->GetNotifierGroupCount() > 1;
@@ -415,33 +572,62 @@ void NotifierSettingsView::UpdateContentsView(
   top_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   top_label->SetMultiLine(true);
   top_label->set_border(views::Border::CreateEmptyBorder(
-      0, kMenuButtonInnateMargin, 0, kMenuButtonInnateMargin));
+      0,
+      settings::kTitleMargin + kMenuButtonInnateMargin,
+      0,
+      settings::kTitleMargin + kMenuButtonInnateMargin));
   contents_title_view->AddChildView(top_label);
 
-  string16 notifier_group_text;
-  if (provider_ && provider_->GetNotifierGroupCount() > 0) {
-    const NotifierGroup& active_group = provider_->GetActiveNotifierGroup();
-    notifier_group_text = active_group.login_info.empty()
-                              ? active_group.name
-                              : active_group.login_info;
-  }
-
   if (need_account_switcher) {
+    const NotifierGroup& active_group = provider_->GetActiveNotifierGroup();
+    string16 notifier_group_text = active_group.login_info.empty() ?
+        active_group.name : active_group.login_info;
     notifier_group_selector_ =
         new views::MenuButton(NULL, notifier_group_text, this, true);
-    notifier_group_selector_->set_border(new NotifierGroupMenuButtonBorder);
-    notifier_group_selector_->set_focus_border(NULL);
+    scoped_ptr<views::TextButtonDefaultBorder> selector_border(
+        new views::TextButtonDefaultBorder());
+    ui::ResourceBundle* rb = &ResourceBundle::GetSharedInstance();
+    gfx::Insets painter_insets(kButtonPainterInsets, kButtonPainterInsets,
+                               kButtonPainterInsets, kButtonPainterInsets);
+    selector_border->set_normal_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_NORMAL), painter_insets));
+    selector_border->set_hot_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_HOVER), painter_insets));
+    selector_border->set_pushed_painter(views::Painter::CreateImagePainter(
+        *rb->GetImageSkiaNamed(IDR_BUTTON_PRESSED), painter_insets));
+    selector_border->SetInsets(gfx::Insets(
+        kMenuButtonVerticalPadding, kMenuButtonLeftPadding,
+        kMenuButtonVerticalPadding, kMenuButtonRightPadding));
+    notifier_group_selector_->set_border(selector_border.release());
+    notifier_group_selector_->SetFocusPainter(scoped_ptr<views::Painter>());
     notifier_group_selector_->set_animate_on_state_change(false);
-    notifier_group_selector_->set_focusable(true);
+    notifier_group_selector_->SetFocusable(true);
     contents_title_view->AddChildView(notifier_group_selector_);
   }
 
   contents_view->AddChildView(contents_title_view);
 
-  for (size_t i = 0; i < notifiers.size(); ++i) {
-    NotifierButton* button = new NotifierButton(notifiers[i], this);
+  size_t notifier_count = notifiers.size();
+  for (size_t i = 0; i < notifier_count; ++i) {
+    NotifierButton* button = new NotifierButton(provider_, notifiers[i], this);
     EntryView* entry = new EntryView(button);
-    entry->set_focusable(true);
+
+    // This code emulates separators using borders.  We will create an invisible
+    // border on the last notifier, as the spec leaves a space for it.
+    scoped_ptr<views::Border> entry_border;
+    if (i == notifier_count - 1) {
+      entry_border.reset(views::Border::CreateEmptyBorder(
+          0, 0, settings::kEntrySeparatorHeight, 0));
+    } else {
+      entry_border.reset(views::Border::CreateSolidSidedBorder(
+          0,
+          0,
+          settings::kEntrySeparatorHeight,
+          0,
+          settings::kEntrySeparatorColor));
+    }
+    entry->set_border(entry_border.release());
+    entry->SetFocusable(true);
     contents_view->AddChildView(entry);
     buttons_.insert(button);
   }
@@ -454,7 +640,10 @@ void NotifierSettingsView::UpdateContentsView(
 
 void NotifierSettingsView::Layout() {
   int title_height = title_label_->GetHeightForWidth(width());
-  title_label_->SetBounds(0, 0, width(), title_height);
+  title_label_->SetBounds(settings::kTitleMargin,
+                          0,
+                          width() - settings::kTitleMargin * 2,
+                          title_height);
 
   views::View* contents_view = scroller_->contents();
   int content_width = width();
@@ -468,10 +657,10 @@ void NotifierSettingsView::Layout() {
 }
 
 gfx::Size NotifierSettingsView::GetMinimumSize() {
-  gfx::Size size(kMinimumWindowWidth, kMinimumWindowHeight);
+  gfx::Size size(settings::kWidth, settings::kMinimumHeight);
   int total_height = title_label_->GetPreferredSize().height() +
                      scroller_->contents()->GetPreferredSize().height();
-  if (total_height > kMinimumWindowHeight)
+  if (total_height > settings::kMinimumHeight)
     size.Enlarge(scroller_->GetScrollBarWidth(), 0);
   return size;
 }
@@ -505,8 +694,8 @@ void NotifierSettingsView::ButtonPressed(views::Button* sender,
     return;
   }
 
-  std::set<NotifierButton*>::iterator iter = buttons_.find(
-      static_cast<NotifierButton*>(sender));
+  std::set<NotifierButton*>::iterator iter =
+      buttons_.find(static_cast<NotifierButton*>(sender));
 
   if (iter == buttons_.end())
     return;

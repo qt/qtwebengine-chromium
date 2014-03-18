@@ -68,8 +68,6 @@ namespace views {
 const char NativeTextfieldViews::kViewClassName[] =
     "views/NativeTextfieldViews";
 
-const int NativeTextfieldViews::kCursorBlinkCycleMs = 1000;
-
 NativeTextfieldViews::NativeTextfieldViews(Textfield* parent)
     : textfield_(parent),
       model_(new TextfieldViewsModel(this)),
@@ -180,6 +178,11 @@ void NativeTextfieldViews::OnGestureEvent(ui::GestureEvent* event) {
       if (MoveCursorTo(event->location(), true))
         SchedulePaint();
       OnAfterUserAction();
+      event->SetHandled();
+      break;
+    case ui::ET_GESTURE_SCROLL_END:
+    case ui::ET_SCROLL_FLING_START:
+      CreateTouchSelectionControllerAndNotifyIt();
       event->SetHandled();
       break;
     case ui::ET_GESTURE_TAP:
@@ -344,7 +347,6 @@ void NativeTextfieldViews::OnDragDone() {
 }
 
 void NativeTextfieldViews::OnPaint(gfx::Canvas* canvas) {
-  text_border_->set_has_focus(textfield_->HasFocus());
   OnPaintBackground(canvas);
   PaintTextAndCursor(canvas);
   if (textfield_->draw_border())
@@ -607,11 +609,6 @@ void NativeTextfieldViews::UpdateVerticalMargins() {
   OnBoundsChanged(GetBounds());
 }
 
-void NativeTextfieldViews::UpdateVerticalAlignment() {
-  GetRenderText()->SetVerticalAlignment(textfield_->vertical_alignment());
-  SchedulePaint();
-}
-
 bool NativeTextfieldViews::SetFocus() {
   return false;
 }
@@ -683,12 +680,15 @@ void NativeTextfieldViews::HandleFocus() {
   SchedulePaint();
   GetInputMethod()->OnFocus();
   OnCaretBoundsChanged();
-  // Start blinking cursor.
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&NativeTextfieldViews::UpdateCursor,
-                 cursor_timer_.GetWeakPtr()),
-      base::TimeDelta::FromMilliseconds(kCursorBlinkCycleMs / 2));
+
+  const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
+  if (caret_blink_ms != 0) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&NativeTextfieldViews::UpdateCursor,
+                   cursor_timer_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(caret_blink_ms));
+  }
 }
 
 void NativeTextfieldViews::HandleBlur() {
@@ -702,8 +702,6 @@ void NativeTextfieldViews::HandleBlur() {
   }
 
   touch_selection_controller_.reset();
-
-  ClearSelection();
 }
 
 ui::TextInputClient* NativeTextfieldViews::GetTextInputClient() {
@@ -746,6 +744,10 @@ bool NativeTextfieldViews::IsCommandIdChecked(int command_id) const {
 }
 
 bool NativeTextfieldViews::IsCommandIdEnabled(int command_id) const {
+  TextfieldController* controller = textfield_->GetController();
+  if (controller && controller->HandlesCommand(command_id))
+    return controller->IsCommandIdEnabled(command_id);
+
   bool editable = !textfield_->read_only();
   string16 result;
   switch (command_id) {
@@ -757,14 +759,14 @@ bool NativeTextfieldViews::IsCommandIdEnabled(int command_id) const {
       return model_->HasSelection() && !textfield_->IsObscured();
     case IDS_APP_PASTE:
       ui::Clipboard::GetForCurrentThread()->ReadText(
-          ui::Clipboard::BUFFER_STANDARD, &result);
+          ui::CLIPBOARD_TYPE_COPY_PASTE, &result);
       return editable && !result.empty();
     case IDS_APP_DELETE:
       return editable && model_->HasSelection();
     case IDS_APP_SELECT_ALL:
       return !model_->GetText().empty();
     default:
-      return textfield_->GetController()->IsCommandIdEnabled(command_id);
+      return controller->IsCommandIdEnabled(command_id);
   }
 }
 
@@ -982,7 +984,7 @@ bool NativeTextfieldViews::CanComposeInline() const {
   return true;
 }
 
-gfx::Rect NativeTextfieldViews::GetCaretBounds() {
+gfx::Rect NativeTextfieldViews::GetCaretBounds() const {
   // TextInputClient::GetCaretBounds is expected to return a value in screen
   // coordinates.
   gfx::Rect rect = GetRenderText()->GetUpdatedCursorBounds();
@@ -990,41 +992,36 @@ gfx::Rect NativeTextfieldViews::GetCaretBounds() {
   return rect;
 }
 
-bool NativeTextfieldViews::GetCompositionCharacterBounds(uint32 index,
-                                                         gfx::Rect* rect) {
+bool NativeTextfieldViews::GetCompositionCharacterBounds(
+    uint32 index,
+    gfx::Rect* rect) const {
   DCHECK(rect);
   if (!HasCompositionText())
     return false;
   const gfx::Range& composition_range = GetRenderText()->GetCompositionRange();
-  const uint32 left_cursor_pos = composition_range.start() + index;
-  const uint32 right_cursor_pos = composition_range.start() + index + 1;
   DCHECK(!composition_range.is_empty());
-  if (composition_range.end() < right_cursor_pos)
-    return false;
-  const gfx::SelectionModel start_position(left_cursor_pos,
-                                           gfx::CURSOR_BACKWARD);
-  const gfx::SelectionModel end_position(right_cursor_pos,
-                                         gfx::CURSOR_BACKWARD);
-  gfx::Rect start_cursor = GetRenderText()->GetCursorBounds(start_position,
-                                                            false);
-  gfx::Rect end_cursor = GetRenderText()->GetCursorBounds(end_position, false);
 
-  // TextInputClient::GetCompositionCharacterBounds is expected to fill |rect|
-  // in screen coordinates and GetCaretBounds returns screen coordinates.
-  *rect = gfx::Rect(start_cursor.x(),
-                    start_cursor.y(),
-                    end_cursor.x() - start_cursor.x(),
-                    start_cursor.height());
+  size_t text_index = composition_range.start() + index;
+  if (composition_range.end() <= text_index)
+    return false;
+  if (!GetRenderText()->IsCursorablePosition(text_index)) {
+    text_index = GetRenderText()->IndexOfAdjacentGrapheme(
+        text_index, gfx::CURSOR_BACKWARD);
+  }
+  if (text_index < composition_range.start())
+    return false;
+  const gfx::SelectionModel caret(text_index, gfx::CURSOR_BACKWARD);
+  *rect = GetRenderText()->GetCursorBounds(caret, false);
   ConvertRectToScreen(this, rect);
 
   return true;
 }
 
-bool NativeTextfieldViews::HasCompositionText() {
+bool NativeTextfieldViews::HasCompositionText() const {
   return model_->HasCompositionText();
 }
 
-bool NativeTextfieldViews::GetTextRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetTextRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1032,7 +1029,7 @@ bool NativeTextfieldViews::GetTextRange(gfx::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1040,7 +1037,7 @@ bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetSelectionRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetSelectionRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
   *range = GetSelectedRange();
@@ -1073,7 +1070,7 @@ bool NativeTextfieldViews::DeleteRange(const gfx::Range& range) {
 
 bool NativeTextfieldViews::GetTextFromRange(
     const gfx::Range& range,
-    string16* text) {
+    string16* text) const {
   if (!ImeEditingAllowed() || !range.IsValid())
     return false;
 
@@ -1091,8 +1088,17 @@ void NativeTextfieldViews::OnInputMethodChanged() {
 
 bool NativeTextfieldViews::ChangeTextDirectionAndLayoutAlignment(
     base::i18n::TextDirection direction) {
-  NOTIMPLEMENTED();
-  return false;
+  // Restore text directionality mode when the indicated direction matches the
+  // current forced mode; otherwise, force the mode indicated. This helps users
+  // manage BiDi text layout without getting stuck in forced LTR or RTL modes.
+  const gfx::DirectionalityMode mode = direction == base::i18n::RIGHT_TO_LEFT ?
+      gfx::DIRECTIONALITY_FORCE_RTL : gfx::DIRECTIONALITY_FORCE_LTR;
+  if (mode == GetRenderText()->directionality_mode())
+    GetRenderText()->SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
+  else
+    GetRenderText()->SetDirectionalityMode(mode);
+  SchedulePaint();
+  return true;
 }
 
 void NativeTextfieldViews::ExtendSelectionAndDelete(
@@ -1109,6 +1115,15 @@ void NativeTextfieldViews::ExtendSelectionAndDelete(
 }
 
 void NativeTextfieldViews::EnsureCaretInRect(const gfx::Rect& rect) {
+}
+
+void NativeTextfieldViews::OnCandidateWindowShown() {
+}
+
+void NativeTextfieldViews::OnCandidateWindowUpdated() {
+}
+
+void NativeTextfieldViews::OnCandidateWindowHidden() {
 }
 
 void NativeTextfieldViews::OnCompositionTextConfirmedOrCleared() {
@@ -1139,13 +1154,16 @@ void NativeTextfieldViews::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
 }
 
 void NativeTextfieldViews::UpdateCursor() {
-  is_cursor_visible_ = !is_cursor_visible_;
+  const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
+  is_cursor_visible_ = !is_cursor_visible_ || (caret_blink_ms == 0);
   RepaintCursor();
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&NativeTextfieldViews::UpdateCursor,
-                 cursor_timer_.GetWeakPtr()),
-      base::TimeDelta::FromMilliseconds(kCursorBlinkCycleMs / 2));
+  if (caret_blink_ms != 0) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&NativeTextfieldViews::UpdateCursor,
+                   cursor_timer_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(caret_blink_ms));
+  }
 }
 
 void NativeTextfieldViews::RepaintCursor() {
@@ -1168,9 +1186,9 @@ void NativeTextfieldViews::PaintTextAndCursor(gfx::Canvas* canvas) {
 
   // Draw placeholder text if needed.
   if (model_->GetText().empty() &&
-      !textfield_->placeholder_text().empty()) {
+      !textfield_->GetPlaceholderText().empty()) {
     canvas->DrawStringInt(
-        textfield_->placeholder_text(),
+        textfield_->GetPlaceholderText(),
         GetRenderText()->GetPrimaryFont(),
         textfield_->placeholder_text_color(),
         GetRenderText()->display_rect());

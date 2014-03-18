@@ -32,9 +32,11 @@
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
+#include "platform/Task.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -68,14 +70,14 @@ private:
 #endif
 };
 
-class DatabaseTask {
+class DatabaseTask : public blink::WebThread::Task {
     WTF_MAKE_NONCOPYABLE(DatabaseTask); WTF_MAKE_FAST_ALLOCATED;
 public:
     virtual ~DatabaseTask();
 
-    void performTask();
+    virtual void run() OVERRIDE;
 
-    DatabaseBackend* database() const { return m_database; }
+    DatabaseBackend* database() const { return m_database.get(); }
 #ifndef NDEBUG
     bool hasSynchronizer() const { return m_synchronizer; }
     bool hasCheckedForTermination() const { return m_synchronizer->hasCheckedForTermination(); }
@@ -86,8 +88,9 @@ protected:
 
 private:
     virtual void doPerformTask() = 0;
+    virtual void taskCancelled() { }
 
-    DatabaseBackend* m_database;
+    RefPtr<DatabaseBackend> m_database;
     DatabaseTaskSynchronizer* m_synchronizer;
 
 #if !LOG_DISABLED
@@ -149,12 +152,12 @@ private:
     explicit DatabaseTransactionTask(PassRefPtr<SQLTransactionBackend>);
 
     virtual void doPerformTask();
+    virtual void taskCancelled();
 #if !LOG_DISABLED
     virtual const char* debugTaskName() const;
 #endif
 
     RefPtr<SQLTransactionBackend> m_transaction;
-    bool m_didPerformTask;
 };
 
 class DatabaseBackend::DatabaseTableNamesTask : public DatabaseTask {

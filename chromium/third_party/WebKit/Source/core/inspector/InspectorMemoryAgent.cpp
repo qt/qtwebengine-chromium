@@ -31,10 +31,8 @@
 #include "config.h"
 #include "core/inspector/InspectorMemoryAgent.h"
 
-#include "InspectorFrontend.h"
 #include "core/inspector/InspectorCounters.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -46,7 +44,7 @@ void InspectorMemoryAgent::getDOMCounters(ErrorString*, int* documents, int* nod
 {
     *documents = InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
     *nodes = InspectorCounters::counterValue(InspectorCounters::NodeCounter);
-    *jsEventListeners = ThreadLocalInspectorCounters::current().counterValue(ThreadLocalInspectorCounters::JSEventListenerCounter);
+    *jsEventListeners = InspectorCounters::counterValue(InspectorCounters::JSEventListenerCounter);
 }
 
 InspectorMemoryAgent::InspectorMemoryAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state)

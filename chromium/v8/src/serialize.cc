@@ -297,15 +297,6 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       RUNTIME_ENTRY,
       1,
       "Runtime::PerformGC");
-  Add(ExternalReference::fill_heap_number_with_random_function(
-          isolate).address(),
-      RUNTIME_ENTRY,
-      2,
-      "V8::FillHeapNumberWithRandom");
-  Add(ExternalReference::random_uint32_function(isolate).address(),
-      RUNTIME_ENTRY,
-      3,
-      "V8::Random");
   Add(ExternalReference::delete_handle_scope_extensions(isolate).address(),
       RUNTIME_ENTRY,
       4,
@@ -324,8 +315,6 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       RUNTIME_ENTRY,
       7,
       "IncrementalMarking::RecordWrite");
-
-
 
   // Miscellaneous
   Add(ExternalReference::roots_array_start(isolate).address(),
@@ -532,55 +521,51 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       UNCLASSIFIED,
       52,
       "cpu_features");
-  Add(ExternalReference::new_space_allocation_top_address(isolate).address(),
-      UNCLASSIFIED,
-      53,
-      "Heap::NewSpaceAllocationTopAddress");
-  Add(ExternalReference::new_space_allocation_limit_address(isolate).address(),
-      UNCLASSIFIED,
-      54,
-      "Heap::NewSpaceAllocationLimitAddress");
   Add(ExternalReference(Runtime::kAllocateInNewSpace, isolate).address(),
       UNCLASSIFIED,
-      55,
+      53,
       "Runtime::AllocateInNewSpace");
+  Add(ExternalReference(Runtime::kAllocateInTargetSpace, isolate).address(),
+      UNCLASSIFIED,
+      54,
+      "Runtime::AllocateInTargetSpace");
   Add(ExternalReference::old_pointer_space_allocation_top_address(
       isolate).address(),
       UNCLASSIFIED,
-      56,
+      55,
       "Heap::OldPointerSpaceAllocationTopAddress");
   Add(ExternalReference::old_pointer_space_allocation_limit_address(
       isolate).address(),
       UNCLASSIFIED,
-      57,
+      56,
       "Heap::OldPointerSpaceAllocationLimitAddress");
-  Add(ExternalReference(Runtime::kAllocateInOldPointerSpace, isolate).address(),
-      UNCLASSIFIED,
-      58,
-      "Runtime::AllocateInOldPointerSpace");
   Add(ExternalReference::old_data_space_allocation_top_address(
       isolate).address(),
       UNCLASSIFIED,
-      59,
+      57,
       "Heap::OldDataSpaceAllocationTopAddress");
   Add(ExternalReference::old_data_space_allocation_limit_address(
       isolate).address(),
       UNCLASSIFIED,
-      60,
+      58,
       "Heap::OldDataSpaceAllocationLimitAddress");
-  Add(ExternalReference(Runtime::kAllocateInOldDataSpace, isolate).address(),
-      UNCLASSIFIED,
-      61,
-      "Runtime::AllocateInOldDataSpace");
   Add(ExternalReference::new_space_high_promotion_mode_active_address(isolate).
       address(),
       UNCLASSIFIED,
-      62,
+      59,
       "Heap::NewSpaceAllocationLimitAddress");
   Add(ExternalReference::allocation_sites_list_address(isolate).address(),
       UNCLASSIFIED,
-      63,
+      60,
       "Heap::allocation_sites_list_address()");
+  Add(ExternalReference::address_of_uint32_bias().address(),
+      UNCLASSIFIED,
+      61,
+      "uint32_bias");
+  Add(ExternalReference::get_mark_code_as_executed_function(isolate).address(),
+      UNCLASSIFIED,
+      62,
+      "Code::MarkCodeAsExecuted");
 
   // Add a small set of deopt entry addresses to encoder without generating the
   // deopt table code, which isn't possible at deserialization time.
@@ -591,7 +576,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
         entry,
         Deoptimizer::LAZY,
         Deoptimizer::CALCULATE_ENTRY_ADDRESS);
-    Add(address, LAZY_DEOPTIMIZATION, 64 + entry, "lazy_deopt");
+    Add(address, LAZY_DEOPTIMIZATION, entry, "lazy_deopt");
   }
 }
 
@@ -809,6 +794,15 @@ Deserializer::Deserializer(SnapshotByteSource* source)
 }
 
 
+void Deserializer::FlushICacheForNewCodeObjects() {
+  PageIterator it(isolate_->heap()->code_space());
+  while (it.has_next()) {
+    Page* p = it.next();
+    CPU::FlushICache(p->area_start(), p->area_end() - p->area_start());
+  }
+}
+
+
 void Deserializer::Deserialize(Isolate* isolate) {
   isolate_ = isolate;
   ASSERT(isolate_ != NULL);
@@ -835,6 +829,8 @@ void Deserializer::Deserialize(Isolate* isolate) {
         isolate_->heap()->undefined_value());
   }
 
+  isolate_->heap()->InitializeWeakObjectToCodeTable();
+
   // Update data pointers to the external strings containing natives sources.
   for (int i = 0; i < Natives::GetBuiltinsCount(); i++) {
     Object* source = isolate_->heap()->natives_source_cache()->get(i);
@@ -842,6 +838,8 @@ void Deserializer::Deserialize(Isolate* isolate) {
       ExternalAsciiString::cast(source)->update_data_cache();
     }
   }
+
+  FlushICacheForNewCodeObjects();
 
   // Issue code events for newly deserialized code objects.
   LOG_CODE_EVENT(isolate_, LogCodeObjects());
@@ -1284,7 +1282,6 @@ Serializer::Serializer(Isolate* isolate, SnapshotByteSink* sink)
       root_index_wave_front_(0) {
   // The serializer is meant to be used only to generate initial heap images
   // from a context in which there is only one isolate.
-  ASSERT(isolate_->IsDefaultIsolate());
   for (int i = 0; i <= LAST_SPACE; i++) {
     fullness_[i] = 0;
   }
@@ -1317,6 +1314,14 @@ void PartialSerializer::Serialize(Object** object) {
 }
 
 
+bool Serializer::ShouldBeSkipped(Object** current) {
+  Object** roots = isolate()->heap()->roots_array_start();
+  return current == &roots[Heap::kStoreBufferTopRootIndex]
+      || current == &roots[Heap::kStackLimitRootIndex]
+      || current == &roots[Heap::kRealStackLimitRootIndex];
+}
+
+
 void Serializer::VisitPointers(Object** start, Object** end) {
   Isolate* isolate = this->isolate();;
 
@@ -1325,8 +1330,7 @@ void Serializer::VisitPointers(Object** start, Object** end) {
       root_index_wave_front_ =
           Max(root_index_wave_front_, static_cast<intptr_t>(current - start));
     }
-    if (reinterpret_cast<Address>(current) ==
-        isolate->heap()->store_buffer()->TopAddress()) {
+    if (ShouldBeSkipped(current)) {
       sink_->Put(kSkip, "Skip");
       sink_->PutInt(kPointerSize, "SkipOneWord");
     } else if ((*current)->IsSmi()) {
@@ -1656,90 +1660,71 @@ void Serializer::ObjectSerializer::VisitPointers(Object** start,
 
 
 void Serializer::ObjectSerializer::VisitEmbeddedPointer(RelocInfo* rinfo) {
-  Object** current = rinfo->target_object_address();
-
   int skip = OutputRawData(rinfo->target_address_address(),
                            kCanReturnSkipInsteadOfSkipping);
-  HowToCode representation = rinfo->IsCodedSpecially() ? kFromCode : kPlain;
-  serializer_->SerializeObject(*current, representation, kStartOfObject, skip);
+  HowToCode how_to_code = rinfo->IsCodedSpecially() ? kFromCode : kPlain;
+  Object* object = rinfo->target_object();
+  serializer_->SerializeObject(object, how_to_code, kStartOfObject, skip);
   bytes_processed_so_far_ += rinfo->target_address_size();
 }
 
 
-void Serializer::ObjectSerializer::VisitExternalReferences(Address* start,
-                                                           Address* end) {
-  Address references_start = reinterpret_cast<Address>(start);
-  int skip = OutputRawData(references_start, kCanReturnSkipInsteadOfSkipping);
-
-  for (Address* current = start; current < end; current++) {
-    sink_->Put(kExternalReference + kPlain + kStartOfObject, "ExternalRef");
-    sink_->PutInt(skip, "SkipB4ExternalRef");
-    skip = 0;
-    int reference_id = serializer_->EncodeExternalReference(*current);
-    sink_->PutInt(reference_id, "reference id");
-  }
-  bytes_processed_so_far_ += static_cast<int>((end - start) * kPointerSize);
+void Serializer::ObjectSerializer::VisitExternalReference(Address* p) {
+  int skip = OutputRawData(reinterpret_cast<Address>(p),
+                           kCanReturnSkipInsteadOfSkipping);
+  sink_->Put(kExternalReference + kPlain + kStartOfObject, "ExternalRef");
+  sink_->PutInt(skip, "SkipB4ExternalRef");
+  Address target = *p;
+  sink_->PutInt(serializer_->EncodeExternalReference(target), "reference id");
+  bytes_processed_so_far_ += kPointerSize;
 }
 
 
 void Serializer::ObjectSerializer::VisitExternalReference(RelocInfo* rinfo) {
-  Address references_start = rinfo->target_address_address();
-  int skip = OutputRawData(references_start, kCanReturnSkipInsteadOfSkipping);
-
-  Address* current = rinfo->target_reference_address();
-  int representation = rinfo->IsCodedSpecially() ?
-                       kFromCode + kStartOfObject : kPlain + kStartOfObject;
-  sink_->Put(kExternalReference + representation, "ExternalRef");
+  int skip = OutputRawData(rinfo->target_address_address(),
+                           kCanReturnSkipInsteadOfSkipping);
+  HowToCode how_to_code = rinfo->IsCodedSpecially() ? kFromCode : kPlain;
+  sink_->Put(kExternalReference + how_to_code + kStartOfObject, "ExternalRef");
   sink_->PutInt(skip, "SkipB4ExternalRef");
-  int reference_id = serializer_->EncodeExternalReference(*current);
-  sink_->PutInt(reference_id, "reference id");
+  Address target = rinfo->target_reference();
+  sink_->PutInt(serializer_->EncodeExternalReference(target), "reference id");
   bytes_processed_so_far_ += rinfo->target_address_size();
 }
 
 
 void Serializer::ObjectSerializer::VisitRuntimeEntry(RelocInfo* rinfo) {
-  Address target_start = rinfo->target_address_address();
-  int skip = OutputRawData(target_start, kCanReturnSkipInsteadOfSkipping);
-  Address target = rinfo->target_address();
-  uint32_t encoding = serializer_->EncodeExternalReference(target);
-  CHECK(target == NULL ? encoding == 0 : encoding != 0);
-  int representation;
-  // Can't use a ternary operator because of gcc.
-  if (rinfo->IsCodedSpecially()) {
-    representation = kStartOfObject + kFromCode;
-  } else {
-    representation = kStartOfObject + kPlain;
-  }
-  sink_->Put(kExternalReference + representation, "ExternalReference");
+  int skip = OutputRawData(rinfo->target_address_address(),
+                           kCanReturnSkipInsteadOfSkipping);
+  HowToCode how_to_code = rinfo->IsCodedSpecially() ? kFromCode : kPlain;
+  sink_->Put(kExternalReference + how_to_code + kStartOfObject, "ExternalRef");
   sink_->PutInt(skip, "SkipB4ExternalRef");
-  sink_->PutInt(encoding, "reference id");
+  Address target = rinfo->target_address();
+  sink_->PutInt(serializer_->EncodeExternalReference(target), "reference id");
   bytes_processed_so_far_ += rinfo->target_address_size();
 }
 
 
 void Serializer::ObjectSerializer::VisitCodeTarget(RelocInfo* rinfo) {
-  CHECK(RelocInfo::IsCodeTarget(rinfo->rmode()));
-  Address target_start = rinfo->target_address_address();
-  int skip = OutputRawData(target_start, kCanReturnSkipInsteadOfSkipping);
-  Code* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
-  serializer_->SerializeObject(target, kFromCode, kInnerPointer, skip);
+  int skip = OutputRawData(rinfo->target_address_address(),
+                           kCanReturnSkipInsteadOfSkipping);
+  Code* object = Code::GetCodeFromTargetAddress(rinfo->target_address());
+  serializer_->SerializeObject(object, kFromCode, kInnerPointer, skip);
   bytes_processed_so_far_ += rinfo->target_address_size();
 }
 
 
 void Serializer::ObjectSerializer::VisitCodeEntry(Address entry_address) {
-  Code* target = Code::cast(Code::GetObjectFromEntryAddress(entry_address));
   int skip = OutputRawData(entry_address, kCanReturnSkipInsteadOfSkipping);
-  serializer_->SerializeObject(target, kPlain, kInnerPointer, skip);
+  Code* object = Code::cast(Code::GetObjectFromEntryAddress(entry_address));
+  serializer_->SerializeObject(object, kPlain, kInnerPointer, skip);
   bytes_processed_so_far_ += kPointerSize;
 }
 
 
 void Serializer::ObjectSerializer::VisitCell(RelocInfo* rinfo) {
-  ASSERT(rinfo->rmode() == RelocInfo::CELL);
-  Cell* cell = Cell::cast(rinfo->target_cell());
   int skip = OutputRawData(rinfo->pc(), kCanReturnSkipInsteadOfSkipping);
-  serializer_->SerializeObject(cell, kPlain, kInnerPointer, skip);
+  Cell* object = Cell::cast(rinfo->target_cell());
+  serializer_->SerializeObject(object, kPlain, kInnerPointer, skip);
 }
 
 
@@ -1768,10 +1753,29 @@ void Serializer::ObjectSerializer::VisitExternalAsciiString(
 }
 
 
+static Code* CloneCodeObject(HeapObject* code) {
+  Address copy = new byte[code->Size()];
+  OS::MemCopy(copy, code->address(), code->Size());
+  return Code::cast(HeapObject::FromAddress(copy));
+}
+
+
+static void WipeOutRelocations(Code* code) {
+  int mode_mask =
+      RelocInfo::kCodeTargetMask |
+      RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
+      RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
+      RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
+  for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
+    it.rinfo()->WipeOut();
+  }
+}
+
+
 int Serializer::ObjectSerializer::OutputRawData(
     Address up_to, Serializer::ObjectSerializer::ReturnSkip return_skip) {
   Address object_start = object_->address();
-  Address base = object_start + bytes_processed_so_far_;
+  int base = bytes_processed_so_far_;
   int up_to_offset = static_cast<int>(up_to - object_start);
   int to_skip = up_to_offset - bytes_processed_so_far_;
   int bytes_to_output = to_skip;
@@ -1801,10 +1805,22 @@ int Serializer::ObjectSerializer::OutputRawData(
       sink_->Put(kRawData, "RawData");
       sink_->PutInt(bytes_to_output, "length");
     }
-    for (int i = 0; i < bytes_to_output; i++) {
-      unsigned int data = base[i];
-      sink_->PutSection(data, "Byte");
+
+    // To make snapshots reproducible, we need to wipe out all pointers in code.
+    if (code_object_) {
+      Code* code = CloneCodeObject(object_);
+      WipeOutRelocations(code);
+      // We need to wipe out the header fields *after* wiping out the
+      // relocations, because some of these fields are needed for the latter.
+      code->WipeOutHeader();
+      object_start = code->address();
     }
+
+    const char* description = code_object_ ? "Code" : "Byte";
+    for (int i = 0; i < bytes_to_output; i++) {
+      sink_->PutSection(object_start[base + i], description);
+    }
+    if (code_object_) delete[] object_start;
   }
   if (to_skip != 0 && return_skip == kIgnoringReturn) {
     sink_->Put(kSkip, "Skip");

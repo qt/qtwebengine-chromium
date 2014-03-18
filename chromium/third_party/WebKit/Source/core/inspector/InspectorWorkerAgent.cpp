@@ -36,9 +36,9 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/JSONParser.h"
-#include "core/platform/JSONValues.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
-#include "weborigin/KURL.h"
+#include "platform/JSONValues.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 

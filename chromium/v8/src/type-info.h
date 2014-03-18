@@ -218,20 +218,9 @@ enum StringStubFeedback {
 
 
 // Forward declarations.
-// TODO(rossberg): these should all go away eventually.
-class Assignment;
-class Call;
-class CallNew;
-class CaseClause;
 class CompilationInfo;
-class CountOperation;
-class Expression;
-class ForInStatement;
 class ICStub;
-class Property;
 class SmallMapList;
-class ObjectLiteral;
-class ObjectLiteralProperty;
 
 
 class TypeFeedbackOracle: public ZoneObject {
@@ -241,55 +230,58 @@ class TypeFeedbackOracle: public ZoneObject {
                      Isolate* isolate,
                      Zone* zone);
 
-  bool LoadIsMonomorphicNormal(Property* expr);
-  bool LoadIsUninitialized(Property* expr);
-  bool LoadIsPolymorphic(Property* expr);
-  bool StoreIsUninitialized(TypeFeedbackId ast_id);
-  bool StoreIsMonomorphicNormal(TypeFeedbackId ast_id);
-  bool StoreIsKeyedPolymorphic(TypeFeedbackId ast_id);
-  bool CallIsMonomorphic(Call* expr);
-  bool CallNewIsMonomorphic(CallNew* expr);
-  bool ObjectLiteralStoreIsMonomorphic(ObjectLiteralProperty* prop);
+  bool LoadIsUninitialized(TypeFeedbackId id);
+  bool LoadIsPreMonomorphic(TypeFeedbackId id);
+  bool StoreIsUninitialized(TypeFeedbackId id);
+  bool StoreIsPreMonomorphic(TypeFeedbackId id);
+  bool StoreIsKeyedPolymorphic(TypeFeedbackId id);
+  bool CallIsMonomorphic(TypeFeedbackId aid);
+  bool KeyedArrayCallIsHoley(TypeFeedbackId id);
+  bool CallNewIsMonomorphic(TypeFeedbackId id);
 
   // TODO(1571) We can't use ForInStatement::ForInType as the return value due
   // to various cycles in our headers.
-  byte ForInType(ForInStatement* expr);
+  // TODO(rossberg): once all oracle access is removed from ast.cc, it should
+  // be possible.
+  byte ForInType(TypeFeedbackId id);
 
-  Handle<Map> LoadMonomorphicReceiverType(Property* expr);
-  Handle<Map> StoreMonomorphicReceiverType(TypeFeedbackId id);
+  KeyedAccessStoreMode GetStoreMode(TypeFeedbackId id);
 
-  KeyedAccessStoreMode GetStoreMode(TypeFeedbackId ast_id);
-
-  void LoadReceiverTypes(Property* expr,
+  void CallReceiverTypes(TypeFeedbackId id,
                          Handle<String> name,
-                         SmallMapList* types);
-  void StoreReceiverTypes(Assignment* expr,
-                          Handle<String> name,
-                          SmallMapList* types);
-  void CallReceiverTypes(Call* expr,
-                         Handle<String> name,
+                         int arity,
                          CallKind call_kind,
                          SmallMapList* types);
-  void CollectKeyedReceiverTypes(TypeFeedbackId ast_id,
-                                 SmallMapList* types);
-  void CollectPolymorphicStoreReceiverTypes(TypeFeedbackId ast_id,
-                                            SmallMapList* types);
+  void PropertyReceiverTypes(TypeFeedbackId id,
+                             Handle<String> name,
+                             SmallMapList* receiver_types,
+                             bool* is_prototype);
+  void KeyedPropertyReceiverTypes(TypeFeedbackId id,
+                                  SmallMapList* receiver_types,
+                                  bool* is_string);
+  void AssignmentReceiverTypes(TypeFeedbackId id,
+                               Handle<String> name,
+                               SmallMapList* receiver_types);
+  void KeyedAssignmentReceiverTypes(TypeFeedbackId id,
+                                    SmallMapList* receiver_types,
+                                    KeyedAccessStoreMode* store_mode);
+  void CountReceiverTypes(TypeFeedbackId id,
+                          SmallMapList* receiver_types);
+
+  void CollectReceiverTypes(TypeFeedbackId id,
+                            SmallMapList* types);
 
   static bool CanRetainOtherContext(Map* map, Context* native_context);
   static bool CanRetainOtherContext(JSFunction* function,
                                     Context* native_context);
 
-  void CollectPolymorphicMaps(Handle<Code> code, SmallMapList* types);
+  CheckType GetCallCheckType(TypeFeedbackId id);
+  Handle<JSFunction> GetCallTarget(TypeFeedbackId id);
+  Handle<JSFunction> GetCallNewTarget(TypeFeedbackId id);
+  Handle<Cell> GetCallNewAllocationInfoCell(TypeFeedbackId id);
 
-  CheckType GetCallCheckType(Call* expr);
-  Handle<JSFunction> GetCallTarget(Call* expr);
-  Handle<JSFunction> GetCallNewTarget(CallNew* expr);
-  Handle<Cell> GetCallNewAllocationInfoCell(CallNew* expr);
-
-  Handle<Map> GetObjectLiteralStoreMap(ObjectLiteralProperty* prop);
-
-  bool LoadIsBuiltin(Property* expr, Builtins::Name id);
-  bool LoadIsStub(Property* expr, ICStub* stub);
+  bool LoadIsBuiltin(TypeFeedbackId id, Builtins::Name builtin_id);
+  bool LoadIsStub(TypeFeedbackId id, ICStub* stub);
 
   // TODO(1571) We can't use ToBooleanStub::Types as the return value because
   // of various cycles in our headers. Death to tons of implementations in
@@ -301,27 +293,28 @@ class TypeFeedbackOracle: public ZoneObject {
                   Handle<Type>* left,
                   Handle<Type>* right,
                   Handle<Type>* result,
-                  Maybe<int>* fixed_right_arg);
+                  Maybe<int>* fixed_right_arg,
+                  Token::Value operation);
 
   void CompareType(TypeFeedbackId id,
                    Handle<Type>* left,
                    Handle<Type>* right,
                    Handle<Type>* combined);
 
-  Handle<Type> ClauseType(TypeFeedbackId id);
+  Handle<Type> CountType(TypeFeedbackId id);
 
-  TypeInfo IncrementType(CountOperation* expr);
+  Handle<Type> ClauseType(TypeFeedbackId id);
 
   Zone* zone() const { return zone_; }
   Isolate* isolate() const { return isolate_; }
 
  private:
-  void CollectReceiverTypes(TypeFeedbackId ast_id,
+  void CollectReceiverTypes(TypeFeedbackId id,
                             Handle<String> name,
                             Code::Flags flags,
                             SmallMapList* types);
 
-  void SetInfo(TypeFeedbackId ast_id, Object* target);
+  void SetInfo(TypeFeedbackId id, Object* target);
 
   void BuildDictionary(Handle<Code> code);
   void GetRelocInfos(Handle<Code> code, ZoneList<RelocInfo>* infos);
@@ -334,10 +327,10 @@ class TypeFeedbackOracle: public ZoneObject {
 
   // Returns an element from the backing store. Returns undefined if
   // there is no information.
-  Handle<Object> GetInfo(TypeFeedbackId ast_id);
+  Handle<Object> GetInfo(TypeFeedbackId id);
 
   // Return the cell that contains type feedback.
-  Handle<Cell> GetInfoCell(TypeFeedbackId ast_id);
+  Handle<Cell> GetInfoCell(TypeFeedbackId id);
 
  private:
   Handle<Context> native_context_;

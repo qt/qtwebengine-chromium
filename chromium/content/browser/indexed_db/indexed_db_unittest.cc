@@ -9,6 +9,8 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/mock_indexed_db_callbacks.h"
+#include "content/browser/indexed_db/mock_indexed_db_database_callbacks.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/test_browser_context.h"
@@ -46,6 +48,8 @@ class IndexedDBTest : public testing::Test {
  private:
   BrowserThreadImpl file_thread_;
   BrowserThreadImpl io_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBTest);
 };
 
 TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
@@ -65,8 +69,8 @@ TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
         webkit_database::GetIdentifierFromOrigin(kNormalOrigin));
     session_only_path = idb_context->GetFilePathForTesting(
         webkit_database::GetIdentifierFromOrigin(kSessionOnlyOrigin));
-    ASSERT_TRUE(file_util::CreateDirectory(normal_path));
-    ASSERT_TRUE(file_util::CreateDirectory(session_only_path));
+    ASSERT_TRUE(base::CreateDirectory(normal_path));
+    ASSERT_TRUE(base::CreateDirectory(session_only_path));
     FlushIndexedDBTaskRunner();
     message_loop_.RunUntilIdle();
   }
@@ -99,8 +103,8 @@ TEST_F(IndexedDBTest, SetForceKeepSessionState) {
         webkit_database::GetIdentifierFromOrigin(kNormalOrigin));
     session_only_path = idb_context->GetFilePathForTesting(
         webkit_database::GetIdentifierFromOrigin(kSessionOnlyOrigin));
-    ASSERT_TRUE(file_util::CreateDirectory(normal_path));
-    ASSERT_TRUE(file_util::CreateDirectory(session_only_path));
+    ASSERT_TRUE(base::CreateDirectory(normal_path));
+    ASSERT_TRUE(base::CreateDirectory(session_only_path));
     message_loop_.RunUntilIdle();
   }
 
@@ -128,6 +132,10 @@ class MockConnection : public IndexedDBConnection {
     force_close_called_ = true;
   }
 
+  virtual bool IsConnected() OVERRIDE {
+    return !force_close_called_;
+  }
+
  private:
   bool expect_force_close_;
   bool force_close_called_;
@@ -150,7 +158,7 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
 
     test_path = idb_context->GetFilePathForTesting(
         webkit_database::GetIdentifierFromOrigin(kTestOrigin));
-    ASSERT_TRUE(file_util::CreateDirectory(test_path));
+    ASSERT_TRUE(base::CreateDirectory(test_path));
 
     const bool kExpectForceClose = true;
 
@@ -188,6 +196,68 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
   message_loop_.RunUntilIdle();
 
   EXPECT_FALSE(base::DirectoryExists(test_path));
+}
+
+TEST_F(IndexedDBTest, DeleteFailsIfDirectoryLocked) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const GURL kTestOrigin("http://test/");
+
+  scoped_refptr<IndexedDBContextImpl> idb_context = new IndexedDBContextImpl(
+      temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+
+  base::FilePath test_path = idb_context->GetFilePathForTesting(
+      webkit_database::GetIdentifierFromOrigin(kTestOrigin));
+  ASSERT_TRUE(base::CreateDirectory(test_path));
+
+  scoped_ptr<LevelDBLock> lock =
+      LevelDBDatabase::LockForTesting(test_path);
+  ASSERT_TRUE(lock);
+
+  idb_context->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &IndexedDBContextImpl::DeleteForOrigin, idb_context, kTestOrigin));
+  FlushIndexedDBTaskRunner();
+
+  EXPECT_TRUE(base::DirectoryExists(test_path));
+}
+
+TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnCommitFailure) {
+  const GURL kTestOrigin("http://test/");
+
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  scoped_refptr<IndexedDBContextImpl> context = new IndexedDBContextImpl(
+      temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+
+  scoped_refptr<IndexedDBFactory> factory = context->GetIDBFactory();
+
+  scoped_refptr<MockIndexedDBCallbacks> callbacks(new MockIndexedDBCallbacks());
+  scoped_refptr<MockIndexedDBDatabaseCallbacks> db_callbacks(
+      new MockIndexedDBDatabaseCallbacks());
+  const int64 transaction_id = 1;
+  factory->Open(ASCIIToUTF16("db"),
+                IndexedDBDatabaseMetadata::DEFAULT_INT_VERSION,
+                transaction_id,
+                callbacks,
+                db_callbacks,
+                kTestOrigin,
+                temp_dir.path());
+
+  EXPECT_TRUE(callbacks->connection());
+
+  // ConnectionOpened() is usually called by the dispatcher.
+  context->ConnectionOpened(kTestOrigin, callbacks->connection());
+
+  EXPECT_TRUE(factory->IsBackingStoreOpen(kTestOrigin));
+
+  // Simulate the write failure.
+  callbacks->connection()->database()->TransactionCommitFailed();
+
+  EXPECT_TRUE(db_callbacks->forced_close_called());
+  EXPECT_FALSE(factory->IsBackingStoreOpen(kTestOrigin));
 }
 
 }  // namespace content

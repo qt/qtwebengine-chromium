@@ -27,21 +27,22 @@
 #define IDBOpenDBRequest_h
 
 #include "modules/indexeddb/IDBRequest.h"
+#include "public/platform/WebIDBDatabase.h"
 
 namespace WebCore {
 
-class IDBDatabaseCallbacksImpl;
+class IDBDatabaseCallbacks;
 
 class IDBOpenDBRequest : public IDBRequest {
 public:
-    static PassRefPtr<IDBOpenDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
+    static PassRefPtr<IDBOpenDBRequest> create(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
     virtual ~IDBOpenDBRequest();
 
     using IDBRequest::onSuccess;
 
     virtual void onBlocked(int64_t existingVersion) OVERRIDE;
-    virtual void onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss) OVERRIDE;
-    virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&) OVERRIDE;
+    virtual void onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&, blink::WebIDBDataLoss, String dataLossMessage) OVERRIDE;
+    virtual void onSuccess(PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&) OVERRIDE;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const;
@@ -54,9 +55,9 @@ protected:
     virtual bool shouldEnqueueEvent() const OVERRIDE;
 
 private:
-    IDBOpenDBRequest(ScriptExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
+    IDBOpenDBRequest(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacks>, int64_t transactionId, int64_t version);
 
-    RefPtr<IDBDatabaseCallbacksImpl> m_databaseCallbacks;
+    RefPtr<IDBDatabaseCallbacks> m_databaseCallbacks;
     const int64_t m_transactionId;
     int64_t m_version;
 };

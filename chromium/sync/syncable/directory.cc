@@ -343,12 +343,12 @@ EntryKernel* Directory::GetRootEntry() {
   return GetEntryById(Id());
 }
 
-bool Directory::InsertEntry(WriteTransaction* trans, EntryKernel* entry) {
+bool Directory::InsertEntry(BaseWriteTransaction* trans, EntryKernel* entry) {
   ScopedKernelLock lock(this);
   return InsertEntry(trans, entry, &lock);
 }
 
-bool Directory::InsertEntry(WriteTransaction* trans,
+bool Directory::InsertEntry(BaseWriteTransaction* trans,
                             EntryKernel* entry,
                             ScopedKernelLock* lock) {
   DCHECK(NULL != lock);
@@ -394,9 +394,9 @@ bool Directory::InsertEntry(WriteTransaction* trans,
   return true;
 }
 
-bool Directory::ReindexId(WriteTransaction* trans,
-                         EntryKernel* const entry,
-                         const Id& new_id) {
+bool Directory::ReindexId(BaseWriteTransaction* trans,
+                          EntryKernel* const entry,
+                          const Id& new_id) {
   ScopedKernelLock lock(this);
   if (NULL != GetEntryById(new_id, &lock))
     return false;
@@ -413,7 +413,7 @@ bool Directory::ReindexId(WriteTransaction* trans,
   return true;
 }
 
-bool Directory::ReindexParentId(WriteTransaction* trans,
+bool Directory::ReindexParentId(BaseWriteTransaction* trans,
                                 EntryKernel* const entry,
                                 const Id& new_parent_id) {
   ScopedKernelLock lock(this);
@@ -910,17 +910,9 @@ int64 Directory::unsynced_entity_count() const {
   return kernel_->unsynced_metahandles.size();
 }
 
-FullModelTypeSet Directory::GetServerTypesWithUnappliedUpdates(
-    BaseTransaction* trans) const {
-  FullModelTypeSet server_types;
+bool Directory::TypeHasUnappliedUpdates(ModelType type) {
   ScopedKernelLock lock(this);
-  for (int i = UNSPECIFIED; i < MODEL_TYPE_COUNT; ++i) {
-    const ModelType type = ModelTypeFromInt(i);
-    if (!kernel_->unapplied_update_metahandles[type].empty()) {
-      server_types.Put(type);
-    }
-  }
-  return server_types;
+  return !kernel_->unapplied_update_metahandles[type].empty();
 }
 
 void Directory::GetUnappliedUpdateMetaHandles(
@@ -957,26 +949,24 @@ void Directory::CollectMetaHandleCounts(
 
 bool Directory::CheckInvariantsOnTransactionClose(
     syncable::BaseTransaction* trans,
-    const EntryKernelMutationMap& mutations) {
+    const MetahandleSet& modified_handles) {
   // NOTE: The trans may be in the process of being destructed.  Be careful if
   // you wish to call any of its virtual methods.
-  MetahandleSet handles;
-
   switch (invariant_check_level_) {
-  case FULL_DB_VERIFICATION:
-    GetAllMetaHandles(trans, &handles);
-    break;
-  case VERIFY_CHANGES:
-    for (EntryKernelMutationMap::const_iterator i = mutations.begin();
-         i != mutations.end(); ++i) {
-      handles.insert(i->first);
+    case FULL_DB_VERIFICATION: {
+      MetahandleSet all_handles;
+      GetAllMetaHandles(trans, &all_handles);
+      return CheckTreeInvariants(trans, all_handles);
     }
-    break;
-  case OFF:
-    break;
+    case VERIFY_CHANGES: {
+      return CheckTreeInvariants(trans, modified_handles);
+    }
+    case OFF: {
+      return true;
+    }
   }
-
-  return CheckTreeInvariants(trans, handles);
+  NOTREACHED();
+  return false;
 }
 
 bool Directory::FullyCheckTreeInvariants(syncable::BaseTransaction* trans) {

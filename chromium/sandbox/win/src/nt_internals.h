@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -601,6 +601,11 @@ typedef size_t  (__cdecl *strlenFunction)(
 typedef size_t (__cdecl *wcslenFunction)(
   IN const wchar_t* _Str);
 
+typedef void* (__cdecl *memcpyFunction)(
+  IN void* dest,
+  IN const void* src,
+  IN size_t count);
+
 typedef NTSTATUS (WINAPI *RtlAnsiStringToUnicodeStringFunction)(
   IN OUT PUNICODE_STRING  DestinationString,
   IN PANSI_STRING  SourceString,
@@ -614,6 +619,32 @@ typedef LONG (WINAPI *RtlCompareUnicodeStringFunction)(
 typedef VOID (WINAPI *RtlInitUnicodeStringFunction) (
   IN OUT PUNICODE_STRING DestinationString,
   IN PCWSTR SourceString);
+
+typedef enum _EVENT_TYPE {
+  NotificationEvent,
+  SynchronizationEvent
+} EVENT_TYPE, *PEVENT_TYPE;
+
+typedef NTSTATUS (WINAPI* NtOpenDirectoryObjectFunction) (
+    PHANDLE DirectoryHandle,
+    ACCESS_MASK DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes);
+
+typedef NTSTATUS (WINAPI* NtQuerySymbolicLinkObjectFunction) (
+    HANDLE LinkHandle,
+    PUNICODE_STRING LinkTarget,
+    PULONG ReturnedLength);
+
+typedef NTSTATUS (WINAPI* NtOpenSymbolicLinkObjectFunction) (
+    PHANDLE LinkHandle,
+    ACCESS_MASK DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes);
+
+#define DIRECTORY_QUERY               0x0001
+#define DIRECTORY_TRAVERSE            0x0002
+#define DIRECTORY_CREATE_OBJECT       0x0004
+#define DIRECTORY_CREATE_SUBDIRECTORY 0x0008
+#define DIRECTORY_ALL_ACCESS          0x000F
 
 #endif  // SANDBOX_WIN_SRC_NT_INTERNALS_H__
 

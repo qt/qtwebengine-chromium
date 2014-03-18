@@ -22,6 +22,8 @@
 
 #if defined(USE_X11)
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#elif defined(USE_OZONE)
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
 namespace {
@@ -42,17 +44,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
       "Don't know how to copy base::NativeEvent for this platform";
   return NULL;
 #endif
-}
-
-gfx::Point CalibratePoint(const gfx::Point& point,
-                          const gfx::Size& from,
-                          const gfx::Size& to) {
-  float calibrated_x =
-      static_cast<float>(point.x()) * to.width() / from.width();
-  float calibrated_y =
-      static_cast<float>(point.y()) * to.height() / from.height();
-  return gfx::Point(static_cast<int>(floorf(calibrated_x + 0.5f)),
-                    static_cast<int>(floorf(calibrated_y + 0.5f)));
 }
 
 std::string EventTypeName(ui::EventType type) {
@@ -81,6 +72,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_GESTURE_SCROLL_BEGIN);
     CASE_TYPE(ET_GESTURE_SCROLL_END);
     CASE_TYPE(ET_GESTURE_SCROLL_UPDATE);
+    CASE_TYPE(ET_GESTURE_SHOW_PRESS);
     CASE_TYPE(ET_GESTURE_TAP);
     CASE_TYPE(ET_GESTURE_TAP_DOWN);
     CASE_TYPE(ET_GESTURE_TAP_CANCEL);
@@ -155,7 +147,6 @@ Event::Event(EventType type, base::TimeDelta time_stamp, int flags)
     : type_(type),
       time_stamp_(time_stamp),
       flags_(flags),
-      dispatch_to_hidden_targets_(false),
 #if defined(USE_X11)
       native_event_(NULL),
 #endif
@@ -175,7 +166,6 @@ Event::Event(const base::NativeEvent& native_event,
     : type_(type),
       time_stamp_(EventTimeFromNative(native_event)),
       flags_(flags),
-      dispatch_to_hidden_targets_(false),
       delete_native_event_(false),
       cancelable_(true),
       target_(NULL),
@@ -204,7 +194,6 @@ Event::Event(const Event& copy)
       time_stamp_(copy.time_stamp_),
       latency_(copy.latency_),
       flags_(copy.flags_),
-      dispatch_to_hidden_targets_(false),
       native_event_(::CopyNativeEvent(copy.native_event_)),
       delete_native_event_(false),
       cancelable_(true),
@@ -233,16 +222,6 @@ void Event::Init() {
 
 void Event::InitWithNativeEvent(const base::NativeEvent& native_event) {
   native_event_ = native_event;
-}
-
-void Event::InitLatencyInfo() {
-  latency_.AddLatencyNumberWithTimestamp(INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
-                                         0,
-                                         0,
-                                         base::TimeTicks::FromInternalValue(
-                                             time_stamp_.ToInternalValue()),
-                                         1);
-  latency_.AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -464,7 +443,14 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
       radius_y_(GetTouchRadiusY(native_event)),
       rotation_angle_(GetTouchAngle(native_event)),
       force_(GetTouchForce(native_event)) {
-  InitLatencyInfo();
+  latency()->AddLatencyNumberWithTimestamp(
+      INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+      0,
+      0,
+      base::TimeTicks::FromInternalValue(time_stamp().ToInternalValue()),
+      1,
+      true);
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::TouchEvent(EventType type,
@@ -477,7 +463,7 @@ TouchEvent::TouchEvent(EventType type,
       radius_y_(0.0f),
       rotation_angle_(0.0f),
       force_(0.0f) {
-  InitLatencyInfo();
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::TouchEvent(EventType type,
@@ -495,7 +481,7 @@ TouchEvent::TouchEvent(EventType type,
       radius_y_(radius_y),
       rotation_angle_(angle),
       force_(force) {
-  InitLatencyInfo();
+  latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 TouchEvent::~TouchEvent() {
@@ -531,9 +517,9 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
             EventTypeFromNative(native_event),
             EventFlagsFromNative(native_event)),
       key_code_(KeyboardCodeFromNative(native_event)),
+      code_(CodeFromNative(native_event)),
       is_char_(is_char),
-      character_(0),
-      unmodified_character_(0) {
+      character_(0) {
 #if defined(USE_X11)
   NormalizeFlags();
 #endif
@@ -546,8 +532,19 @@ KeyEvent::KeyEvent(EventType type,
     : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
       is_char_(is_char),
-      character_(GetCharacterFromKeyCode(key_code, flags)),
-      unmodified_character_(0) {
+      character_(GetCharacterFromKeyCode(key_code, flags)) {
+}
+
+KeyEvent::KeyEvent(EventType type,
+                   KeyboardCode key_code,
+                   const std::string& code,
+                   int flags,
+                   bool is_char)
+    : Event(type, EventTimeForNow(), flags),
+      key_code_(key_code),
+      code_(code),
+      is_char_(is_char),
+      character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
 
 uint16 KeyEvent::GetCharacter() const {
@@ -569,54 +566,13 @@ uint16 KeyEvent::GetCharacter() const {
     ch = GetCharacterFromXEvent(native_event());
   return ch ? ch : GetCharacterFromKeyCode(key_code_, flags());
 #else
-  NOTIMPLEMENTED();
-  return 0;
+  if (native_event()) {
+    DCHECK(EventTypeFromNative(native_event()) == ET_KEY_PRESSED ||
+           EventTypeFromNative(native_event()) == ET_KEY_RELEASED);
+  }
+
+  return GetCharacterFromKeyCode(key_code_, flags());
 #endif
-}
-
-uint16 KeyEvent::GetUnmodifiedCharacter() const {
-  if (unmodified_character_)
-    return unmodified_character_;
-
-#if defined(OS_WIN)
-  // Looks like there is no way to get unmodified character on Windows.
-  return (native_event().message == WM_CHAR) ? key_code_ :
-      GetCharacterFromKeyCode(key_code_, flags() & EF_SHIFT_DOWN);
-#elif defined(USE_X11)
-  if (!native_event())
-    return GetCharacterFromKeyCode(key_code_, flags() & EF_SHIFT_DOWN);
-
-  DCHECK(native_event()->type == KeyPress ||
-         native_event()->type == KeyRelease);
-
-  static const unsigned int kIgnoredModifiers = ControlMask | LockMask |
-      Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask;
-
-  XKeyEvent copy = native_event()->xkey;  // bit-wise copy is safe.
-  // We can't use things like (native_event()->xkey.state & ShiftMask), as it
-  // may mask out bits used by X11 internally.
-  copy.state &= ~kIgnoredModifiers;
-  uint16 ch = GetCharacterFromXEvent(reinterpret_cast<XEvent*>(&copy));
-  return ch ? ch : GetCharacterFromKeyCode(key_code_, flags() & EF_SHIFT_DOWN);
-#elif defined(USE_OZONE)
-  return is_char() ? key_code_ : GetCharacterFromKeyCode(
-                                     key_code_, flags() & EF_SHIFT_DOWN);
-#else
-  NOTIMPLEMENTED();
-  return 0;
-#endif
-}
-
-KeyEvent* KeyEvent::Copy() const {
-#if defined(USE_OZONE)
-  KeyEvent* copy = new KeyEvent(*this);
-#else
-  KeyEvent* copy = new KeyEvent(::CopyNativeEvent(native_event()), is_char());
-#endif
-#if defined(USE_X11)
-  copy->set_delete_native_event(true);
-#endif
-  return copy;
 }
 
 bool KeyEvent::IsUnicodeKeyCode() const {
@@ -681,22 +637,6 @@ TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
 void TranslatedKeyEvent::ConvertToKeyEvent() {
   SetType(type() == ET_TRANSLATED_KEY_PRESS ?
           ET_KEY_PRESSED : ET_KEY_RELEASED);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// DropTargetEvent
-
-DropTargetEvent::DropTargetEvent(const OSExchangeData& data,
-                                 const gfx::Point& location,
-                                 const gfx::Point& root_location,
-                                 int source_operations)
-    : LocatedEvent(ET_DROP_TARGET_EVENT,
-                   location,
-                   root_location,
-                   EventTimeForNow(),
-                   0),
-      data_(data),
-      source_operations_(source_operations) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

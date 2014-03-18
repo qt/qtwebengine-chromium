@@ -4,6 +4,8 @@
 
 #include "webkit/browser/fileapi/async_file_util_adapter.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
@@ -168,10 +170,10 @@ void AsyncFileUtilAdapter::EnsureFileExists(
   EnsureFileExistsHelper* helper = new EnsureFileExistsHelper;
   FileSystemOperationContext* context_ptr = context.release();
   const bool success = context_ptr->task_runner()->PostTaskAndReply(
-        FROM_HERE,
-        Bind(&EnsureFileExistsHelper::RunWork, Unretained(helper),
-             sync_file_util_.get(), base::Owned(context_ptr), url),
-        Bind(&EnsureFileExistsHelper::Reply, Owned(helper), callback));
+      FROM_HERE,
+      Bind(&EnsureFileExistsHelper::RunWork, Unretained(helper),
+           sync_file_util_.get(), base::Owned(context_ptr), url),
+      Bind(&EnsureFileExistsHelper::Reply, Owned(helper), callback));
   DCHECK(success);
 }
 
@@ -198,10 +200,10 @@ void AsyncFileUtilAdapter::GetFileInfo(
   FileSystemOperationContext* context_ptr = context.release();
   GetFileInfoHelper* helper = new GetFileInfoHelper;
   const bool success = context_ptr->task_runner()->PostTaskAndReply(
-        FROM_HERE,
-        Bind(&GetFileInfoHelper::GetFileInfo, Unretained(helper),
-             sync_file_util_.get(), base::Owned(context_ptr), url),
-        Bind(&GetFileInfoHelper::ReplyFileInfo, Owned(helper), callback));
+      FROM_HERE,
+      Bind(&GetFileInfoHelper::GetFileInfo, Unretained(helper),
+           sync_file_util_.get(), base::Owned(context_ptr), url),
+      Bind(&GetFileInfoHelper::ReplyFileInfo, Owned(helper), callback));
   DCHECK(success);
 }
 
@@ -212,10 +214,10 @@ void AsyncFileUtilAdapter::ReadDirectory(
   FileSystemOperationContext* context_ptr = context.release();
   ReadDirectoryHelper* helper = new ReadDirectoryHelper;
   const bool success = context_ptr->task_runner()->PostTaskAndReply(
-        FROM_HERE,
-        Bind(&ReadDirectoryHelper::RunWork, Unretained(helper),
-             sync_file_util_.get(), base::Owned(context_ptr), url),
-        Bind(&ReadDirectoryHelper::Reply, Owned(helper), callback));
+      FROM_HERE,
+      Bind(&ReadDirectoryHelper::RunWork, Unretained(helper),
+           sync_file_util_.get(), base::Owned(context_ptr), url),
+      Bind(&ReadDirectoryHelper::Reply, Owned(helper), callback));
   DCHECK(success);
 }
 
@@ -253,6 +255,7 @@ void AsyncFileUtilAdapter::CopyFileLocal(
     scoped_ptr<FileSystemOperationContext> context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   // TODO(hidehiko): Support progress_callback.
@@ -260,8 +263,8 @@ void AsyncFileUtilAdapter::CopyFileLocal(
   const bool success = base::PostTaskAndReplyWithResult(
       context_ptr->task_runner(), FROM_HERE,
       Bind(&FileSystemFileUtil::CopyOrMoveFile,
-           Unretained(sync_file_util_.get()),
-           base::Owned(context_ptr), src_url, dest_url, true /* copy */),
+           Unretained(sync_file_util_.get()), base::Owned(context_ptr),
+           src_url, dest_url, option, true /* copy */),
       callback);
   DCHECK(success);
 }
@@ -270,13 +273,14 @@ void AsyncFileUtilAdapter::MoveFileLocal(
     scoped_ptr<FileSystemOperationContext> context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   FileSystemOperationContext* context_ptr = context.release();
   const bool success = base::PostTaskAndReplyWithResult(
       context_ptr->task_runner(), FROM_HERE,
       Bind(&FileSystemFileUtil::CopyOrMoveFile,
-           Unretained(sync_file_util_.get()),
-           base::Owned(context_ptr), src_url, dest_url, false /* copy */),
+           Unretained(sync_file_util_.get()), base::Owned(context_ptr),
+           src_url, dest_url, option, false /* copy */),
       callback);
   DCHECK(success);
 }
@@ -338,10 +342,10 @@ void AsyncFileUtilAdapter::CreateSnapshotFile(
   FileSystemOperationContext* context_ptr = context.release();
   GetFileInfoHelper* helper = new GetFileInfoHelper;
   const bool success = context_ptr->task_runner()->PostTaskAndReply(
-        FROM_HERE,
-        Bind(&GetFileInfoHelper::CreateSnapshotFile, Unretained(helper),
-             sync_file_util_.get(), base::Owned(context_ptr), url),
-        Bind(&GetFileInfoHelper::ReplySnapshotFile, Owned(helper), callback));
+      FROM_HERE,
+      Bind(&GetFileInfoHelper::CreateSnapshotFile, Unretained(helper),
+           sync_file_util_.get(), base::Owned(context_ptr), url),
+      Bind(&GetFileInfoHelper::ReplySnapshotFile, Owned(helper), callback));
   DCHECK(success);
 }
 

@@ -32,12 +32,13 @@
 
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/inspector/AsyncCallStackTracker.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/ScriptBreakpoint.h"
 #include "core/inspector/ScriptDebugListener.h"
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
@@ -46,6 +47,7 @@
 
 namespace WebCore {
 
+class Document;
 class InjectedScriptManager;
 class InspectorFrontend;
 class InstrumentingAgents;
@@ -55,7 +57,7 @@ class ScriptCallStack;
 class ScriptDebugServer;
 class ScriptSourceCode;
 class ScriptValue;
-class RegularExpression;
+class ScriptRegexp;
 
 typedef String ErrorString;
 
@@ -68,7 +70,7 @@ public:
         MonitorCommandBreakpointSource
     };
 
-    static const char* backtraceObjectGroup;
+    static const char backtraceObjectGroup[];
 
     virtual ~InspectorDebuggerAgent();
 
@@ -97,18 +99,18 @@ public:
     virtual void removeBreakpoint(ErrorString*, const String& breakpointId);
     virtual void continueToLocation(ErrorString*, const RefPtr<JSONObject>& location, const bool* interstateLocationOpt);
     virtual void getStepInPositions(ErrorString*, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& positions);
-    virtual void getBacktrace(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >&);
+    virtual void getBacktrace(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >&, RefPtr<TypeBuilder::Debugger::StackTrace>&);
 
     virtual void searchInContent(ErrorString*, const String& scriptId, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> >&);
-    virtual void setScriptSource(ErrorString*, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, const String& scriptId, const String& newContent, const bool* preview, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result);
-    virtual void restartFrame(ErrorString*, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result);
+    virtual void setScriptSource(ErrorString*, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, const String& scriptId, const String& newContent, const bool* preview, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result, RefPtr<TypeBuilder::Debugger::StackTrace>& asyncStackTrace);
+    virtual void restartFrame(ErrorString*, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result, RefPtr<TypeBuilder::Debugger::StackTrace>& asyncStackTrace);
     virtual void getScriptSource(ErrorString*, const String& scriptId, String* scriptSource);
     virtual void getFunctionDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::FunctionDetails>&);
     virtual void pause(ErrorString*);
     virtual void resume(ErrorString*);
-    virtual void stepOver(ErrorString*);
+    virtual void stepOver(ErrorString*, const String* callFrameId);
     virtual void stepInto(ErrorString*);
-    virtual void stepOut(ErrorString*);
+    virtual void stepOut(ErrorString*, const String* callFrameId);
     virtual void setPauseOnExceptions(ErrorString*, const String& pauseState);
     virtual void evaluateOnCallFrame(ErrorString*,
                              const String& callFrameId,
@@ -125,9 +127,17 @@ public:
     virtual void setOverlayMessage(ErrorString*, const String*);
     virtual void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId);
     virtual void skipStackFrames(ErrorString*, const String* pattern);
+    virtual void setAsyncCallStackDepth(ErrorString*, int depth);
 
     void schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<JSONObject> data);
+    void didInstallTimer(ExecutionContext*, int timerId, int timeout, bool singleShot);
+    void didRemoveTimer(ExecutionContext*, int timerId);
+    bool willFireTimer(ExecutionContext*, int timerId);
     void didFireTimer();
+    void didRequestAnimationFrame(Document*, int callbackId);
+    void didCancelAnimationFrame(Document*, int callbackId);
+    bool willFireAnimationFrame(Document*, int callbackId);
+    void didFireAnimationFrame();
     void didHandleEvent();
     bool canBreakProgram();
     void breakProgram(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<JSONObject> data);
@@ -176,6 +186,7 @@ private:
     bool enabled();
 
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();
+    PassRefPtr<TypeBuilder::Debugger::StackTrace> currentAsyncStackTrace();
 
     virtual void didParseSource(const String& scriptId, const Script&);
     virtual void failedToParseSource(const String& url, const String& data, int firstLine, int errorLine, const String& errorMessage);
@@ -191,6 +202,8 @@ private:
     String sourceMapURLForScript(const Script&);
 
     String scriptURL(JavaScriptCallFrame*);
+
+    ScriptValue resolveCallFrame(ErrorString*, const String* callFrameId);
 
     typedef HashMap<String, Script> ScriptsMap;
     typedef HashMap<String, Vector<String> > BreakpointIdToDebugServerBreakpointIdsMap;
@@ -211,7 +224,8 @@ private:
 
     int m_skipStepInCount;
     bool m_skipAllPauses;
-    OwnPtr<RegularExpression> m_cachedSkipStackRegExp;
+    OwnPtr<ScriptRegexp> m_cachedSkipStackRegExp;
+    AsyncCallStackTracker m_asyncCallStackTracker;
 };
 
 } // namespace WebCore

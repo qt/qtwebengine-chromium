@@ -8,6 +8,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
@@ -16,11 +17,13 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace content {
 
@@ -78,15 +81,58 @@ void BrowserPluginEmbedder::GetRenderViewHostAtPosition(
   ++next_get_render_view_request_id_;
 }
 
+bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
+   BrowserPluginGuest* guest) {
+  static_cast<RenderViewHostImpl*>(
+      guest->GetWebContents()->GetRenderViewHost())->SendScreenRects();
+  // Not handled => Iterate over all guests.
+  return false;
+}
+
 void BrowserPluginEmbedder::DidSendScreenRects() {
-  GetBrowserPluginGuestManager()->DidSendScreenRects(
-      static_cast<WebContentsImpl*>(web_contents()));
+  WebContentsImpl* embedder =
+      static_cast<WebContentsImpl*>(web_contents());
+  GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
+      &BrowserPluginEmbedder::DidSendScreenRectsCallback,
+      base::Unretained(this)));
+}
+
+bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(
+    const NativeWebKeyboardEvent& event,
+    BrowserPluginGuest* guest) {
+  return guest->UnlockMouseIfNecessary(event);
 }
 
 bool BrowserPluginEmbedder::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
-  return GetBrowserPluginGuestManager()->UnlockMouseIfNecessary(
-      static_cast<WebContentsImpl*>(web_contents()), event);
+  if ((event.type != blink::WebInputEvent::RawKeyDown) ||
+      (event.windowsKeyCode != ui::VKEY_ESCAPE) ||
+      (event.modifiers & blink::WebInputEvent::InputModifiers)) {
+    return false;
+  }
+
+  WebContentsImpl* embedder =
+      static_cast<WebContentsImpl*>(web_contents());
+  return GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
+      &BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
+      base::Unretained(this),
+      event));
+}
+
+bool BrowserPluginEmbedder::SetZoomLevelCallback(
+    double level, BrowserPluginGuest* guest) {
+  guest->GetWebContents()->SetZoomLevel(level);
+  // Not handled => Iterate over all guests.
+  return false;
+}
+
+void BrowserPluginEmbedder::SetZoomLevel(double level) {
+  WebContentsImpl* embedder =
+      static_cast<WebContentsImpl*>(web_contents());
+  GetBrowserPluginGuestManager()->ForEachGuest(embedder, base::Bind(
+      &BrowserPluginEmbedder::SetZoomLevelCallback,
+      base::Unretained(this),
+      level));
 }
 
 void BrowserPluginEmbedder::RenderProcessGone(base::TerminationStatus status) {
@@ -109,7 +155,7 @@ bool BrowserPluginEmbedder::OnMessageReceived(const IPC::Message& message) {
 }
 
 void BrowserPluginEmbedder::DragSourceEndedAt(int client_x, int client_y,
-    int screen_x, int screen_y, WebKit::WebDragOperation operation) {
+    int screen_x, int screen_y, blink::WebDragOperation operation) {
   if (guest_started_drag_.get()) {
     gfx::Point guest_offset =
         guest_started_drag_->GetScreenCoordinates(gfx::Point());
@@ -177,7 +223,6 @@ void BrowserPluginEmbedder::OnAttach(
       GetBrowserPluginGuestManager()->GetGuestByInstanceID(
           instance_id, web_contents()->GetRenderProcessHost()->GetID());
 
-
   if (guest) {
     // There is an implicit order expectation here:
     // 1. The content embedder is made aware of the attachment.
@@ -203,7 +248,7 @@ void BrowserPluginEmbedder::OnAttach(
         guest->GetWebContents(),
         web_contents(),
         extra_params);
-    guest->Initialize(static_cast<WebContentsImpl*>(web_contents()), params);
+    guest->Initialize(params, static_cast<WebContentsImpl*>(web_contents()));
   }
 }
 

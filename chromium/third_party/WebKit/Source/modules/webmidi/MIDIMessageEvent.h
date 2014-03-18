@@ -31,7 +31,7 @@
 #ifndef MIDIMessageEvent_h
 #define MIDIMessageEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
@@ -66,7 +66,7 @@ public:
     double receivedTime() { return m_receivedTime; }
     PassRefPtr<Uint8Array> data() { return m_data; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForMIDIMessageEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MIDIMessageEvent; }
 
 private:
     MIDIMessageEvent()
@@ -76,7 +76,7 @@ private:
     }
 
     MIDIMessageEvent(double receivedTime, PassRefPtr<Uint8Array> data)
-        : Event(eventNames().midimessageEvent, true, false)
+        : Event(EventTypeNames::midimessage, true, false)
         , m_receivedTime(receivedTime)
         , m_data(data)
     {

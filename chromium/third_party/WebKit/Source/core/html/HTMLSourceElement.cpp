@@ -27,10 +27,10 @@
 #include "core/html/HTMLSourceElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 
 using namespace std;
 
@@ -38,18 +38,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLSourceElement::HTMLSourceElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLSourceElement::HTMLSourceElement(Document& document)
+    : HTMLElement(sourceTag, document)
     , m_errorEventTimer(this, &HTMLSourceElement::errorEventTimerFired)
 {
-    LOG(Media, "HTMLSourceElement::HTMLSourceElement - %p", this);
-    ASSERT(hasTagName(sourceTag));
+    WTF_LOG(Media, "HTMLSourceElement::HTMLSourceElement - %p", this);
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLSourceElement> HTMLSourceElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLSourceElement> HTMLSourceElement::create(Document& document)
 {
-    return adoptRef(new HTMLSourceElement(tagName, document));
+    return adoptRef(new HTMLSourceElement(document));
 }
 
 Node::InsertionNotificationRequest HTMLSourceElement::insertedInto(ContainerNode* insertionPoint)
@@ -73,32 +72,32 @@ void HTMLSourceElement::removedFrom(ContainerNode* removalRoot)
 
 void HTMLSourceElement::setSrc(const String& url)
 {
-    setAttribute(srcAttr, url);
+    setAttribute(srcAttr, AtomicString(url));
 }
 
-String HTMLSourceElement::media() const
+const AtomicString& HTMLSourceElement::media() const
 {
     return getAttribute(mediaAttr);
 }
 
-void HTMLSourceElement::setMedia(const String& media)
+void HTMLSourceElement::setMedia(const AtomicString& media)
 {
     setAttribute(mediaAttr, media);
 }
 
-String HTMLSourceElement::type() const
+const AtomicString& HTMLSourceElement::type() const
 {
     return getAttribute(typeAttr);
 }
 
-void HTMLSourceElement::setType(const String& type)
+void HTMLSourceElement::setType(const AtomicString& type)
 {
     setAttribute(typeAttr, type);
 }
 
 void HTMLSourceElement::scheduleErrorEvent()
 {
-    LOG(Media, "HTMLSourceElement::scheduleErrorEvent - %p", this);
+    WTF_LOG(Media, "HTMLSourceElement::scheduleErrorEvent - %p", this);
     if (m_errorEventTimer.isActive())
         return;
 
@@ -107,14 +106,14 @@ void HTMLSourceElement::scheduleErrorEvent()
 
 void HTMLSourceElement::cancelPendingErrorEvent()
 {
-    LOG(Media, "HTMLSourceElement::cancelPendingErrorEvent - %p", this);
+    WTF_LOG(Media, "HTMLSourceElement::cancelPendingErrorEvent - %p", this);
     m_errorEventTimer.stop();
 }
 
 void HTMLSourceElement::errorEventTimerFired(Timer<HTMLSourceElement>*)
 {
-    LOG(Media, "HTMLSourceElement::errorEventTimerFired - %p", this);
-    dispatchEvent(Event::createCancelable(eventNames().errorEvent));
+    WTF_LOG(Media, "HTMLSourceElement::errorEventTimerFired - %p", this);
+    dispatchEvent(Event::createCancelable(EventTypeNames::error));
 }
 
 bool HTMLSourceElement::isURLAttribute(const Attribute& attribute) const

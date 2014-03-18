@@ -30,8 +30,9 @@
 #include "bindings/v8/ScriptString.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleTypes.h"
 #include "wtf/Forward.h"
+#include "wtf/HashCountedSet.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
@@ -54,6 +55,7 @@ class ScriptArguments;
 class ScriptCallStack;
 class ScriptProfile;
 class ThreadableLoaderClient;
+class XMLHttpRequest;
 
 typedef String ErrorString;
 
@@ -81,18 +83,18 @@ public:
 
     Vector<unsigned> consoleMessageArgumentCounts();
 
-    void consoleTime(ScriptExecutionContext*, const String& title);
-    void consoleTimeEnd(ScriptExecutionContext*, const String& title, ScriptState*);
-    void consoleTimeline(ScriptExecutionContext*, const String& title, ScriptState*);
-    void consoleTimelineEnd(ScriptExecutionContext*, const String& title, ScriptState*);
+    void consoleTime(ExecutionContext*, const String& title);
+    void consoleTimeEnd(ExecutionContext*, const String& title, ScriptState*);
+    void consoleTimeline(ExecutionContext*, const String& title, ScriptState*);
+    void consoleTimelineEnd(ExecutionContext*, const String& title, ScriptState*);
 
     void consoleCount(ScriptState*, PassRefPtr<ScriptArguments>);
 
     void frameWindowDiscarded(DOMWindow*);
     void didCommitLoad(Frame*, DocumentLoader*);
 
-    void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber);
-    void didReceiveResourceResponse(unsigned long requestIdentifier, DocumentLoader*, const ResourceResponse& response, ResourceLoader*);
+    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber);
+    void didReceiveResourceResponse(Frame*, unsigned long requestIdentifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFailLoading(unsigned long requestIdentifier, DocumentLoader*, const ResourceError&);
     void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
     void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
@@ -111,7 +113,7 @@ protected:
     ConsoleMessage* m_previousMessage;
     Vector<OwnPtr<ConsoleMessage> > m_consoleMessages;
     int m_expiredConsoleMessageCount;
-    HashMap<String, unsigned> m_counts;
+    HashCountedSet<String> m_counts;
     HashMap<String, double> m_times;
     bool m_enabled;
 private:

@@ -6,14 +6,17 @@
 #define CONTENT_BROWSER_ANDROID_DATE_TIME_CHOOSER_ANDROID_H_
 
 #include <string>
+#include <vector>
 
 #include "base/android/jni_helper.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/base/ime/text_input_type.h"
 
 namespace content {
 
 class ContentViewCore;
 class RenderViewHost;
+struct DateTimeSuggestion;
 
 // Android implementation for DateTimeChooser dialogs.
 class DateTimeChooserAndroid {
@@ -22,33 +25,19 @@ class DateTimeChooserAndroid {
   ~DateTimeChooserAndroid();
 
   // DateTimeChooser implementation:
+  // Shows the dialog. |dialog_value| is the date/time value converted to a
+  // number as defined in HTML. (See blink::InputType::parseToNumber())
   void ShowDialog(ContentViewCore* content,
-                  RenderViewHost* sender,
-                  int type,
-                  int year,
-                  int month,
-                  int day,
-                  int hour,
-                  int minute,
-                  int second,
-                  int milli,
-                  int week,
+                  RenderViewHost* host,
+                  ui::TextInputType dialog_type,
+                  double dialog_value,
                   double min,
                   double max,
-                  double step);
+                  double step,
+                  const std::vector<DateTimeSuggestion>& suggestions);
 
-  // Replaces the current value with the one passed the different fields
-  void ReplaceDateTime(JNIEnv* env,
-                       jobject,
-                       jint dialog_type,
-                       jint year,
-                       jint month,
-                       jint day,
-                       jint hour,
-                       jint minute,
-                       jint second,
-                       jint milli,
-                       jint week);
+  // Replaces the current value
+  void ReplaceDateTime(JNIEnv* env, jobject, jdouble value);
 
   // Closes the dialog without propagating any changes.
   void CancelDialog(JNIEnv* env, jobject);
@@ -61,11 +50,7 @@ class DateTimeChooserAndroid {
        int text_input_type_time, int text_input_type_week);
 
  private:
-  class DateTimeIPCSender;
-
-  // The DateTimeIPCSender class is a render view observer, so it will take care
-  // of its own deletion.
-  DateTimeIPCSender* sender_;
+  RenderViewHost* host_;
 
   base::android::ScopedJavaGlobalRef<jobject> j_date_time_chooser_;
 

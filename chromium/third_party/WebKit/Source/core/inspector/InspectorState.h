@@ -32,7 +32,7 @@
 #define InspectorState_h
 
 
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
 
@@ -46,11 +46,10 @@ public:
     virtual void inspectorStateUpdated() = 0;
 };
 
-class InspectorState {
+class InspectorState FINAL {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     InspectorState(InspectorStateUpdateListener*, PassRefPtr<JSONObject>);
-    virtual ~InspectorState() {}
 
     void loadFromCookie(const String& inspectorStateCookie);
 

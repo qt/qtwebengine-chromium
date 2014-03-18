@@ -92,7 +92,7 @@ static SkOpSegment* findChaseOp(SkTDArray<SkOpSpan*>& chase, int& nextStart, int
                     nextEnd = end;
                 }
                 (void) segment->markAngle(maxWinding, sumWinding, oppMaxWinding,
-                    oppSumWinding, true, angle);
+                    oppSumWinding, angle);
             }
         } while (++nextIndex != lastIndex);
         if (first) {
@@ -165,8 +165,8 @@ static bool bridgeOp(SkTArray<SkOpContour*, true>& contourList, const SkPathOp o
             #endif
                         if (simple->isEmpty()) {
                             simple->init();
-                            break;
                         }
+                        break;
                     }
                     SkASSERT(unsortable || !current->done());
                     int nextStart = index;
@@ -304,20 +304,7 @@ bool Op(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result) {
     for (index = 0; index < contourList.count(); ++index) {
         total += contourList[index]->segments().count();
     }
-#if DEBUG_SHOW_WINDING
-    SkOpContour::debugShowWindingValues(contourList);
-#endif
-    CoincidenceCheck(&contourList, total);
-#if DEBUG_SHOW_WINDING
-    SkOpContour::debugShowWindingValues(contourList);
-#endif
-    FixOtherTIndex(&contourList);
-    CheckEnds(&contourList);
-    CheckTiny(&contourList);
-    SortSegments(&contourList);
-#if DEBUG_ACTIVE_SPANS || DEBUG_ACTIVE_SPANS_FIRST_ONLY
-    DebugShowActiveSpans(contourList);
-#endif
+    HandleCoincidence(&contourList, total);
     // construct closed contours
     SkPathWriter wrapper(*result);
     bridgeOp(contourList, op, xorMask, xorOpMask, &wrapper);

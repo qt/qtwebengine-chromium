@@ -33,11 +33,10 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/DocumentWriter.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/PagePopup.h"
-#include "core/page/PagePopupClient.h"
 #include "core/page/PagePopupController.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
@@ -62,7 +61,7 @@ inline MockPagePopup::MockPagePopup(PagePopupClient* client, const IntRect& orig
 {
     Document* document = mainFrame->document();
     ASSERT(document);
-    m_iframe = HTMLIFrameElement::create(HTMLNames::iframeTag, *document);
+    m_iframe = HTMLIFrameElement::create(*document);
     m_iframe->setIdAttribute("mock-page-popup");
     m_iframe->setInlineStyleProperty(CSSPropertyBorderWidth, 0.0, CSSPrimitiveValue::CSS_PX);
     m_iframe->setInlineStyleProperty(CSSPropertyPosition, CSSValueAbsolute);
@@ -71,11 +70,11 @@ inline MockPagePopup::MockPagePopup(PagePopupClient* client, const IntRect& orig
     if (document->body())
         document->body()->appendChild(m_iframe.get());
     Frame* contentFrame = m_iframe->contentFrame();
-    DocumentWriter* writer = contentFrame->loader()->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
+    DocumentWriter* writer = contentFrame->loader().activeDocumentLoader()->beginWriting("text/html", "UTF-8");
     const char scriptToSetUpPagePopupController[] = "<script>window.pagePopupController = parent.internals.pagePopupController;</script>";
     writer->addData(scriptToSetUpPagePopupController, sizeof(scriptToSetUpPagePopupController));
     m_popupClient->writeDocument(*writer);
-    contentFrame->loader()->activeDocumentLoader()->endWriting(writer);
+    contentFrame->loader().activeDocumentLoader()->endWriting(writer);
 }
 
 PassRefPtr<MockPagePopup> MockPagePopup::create(PagePopupClient* client, const IntRect& originBoundsInRootView, Frame* mainFrame)

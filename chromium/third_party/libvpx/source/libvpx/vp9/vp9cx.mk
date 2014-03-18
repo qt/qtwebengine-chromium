@@ -20,6 +20,7 @@ VP9_CX_SRCS-yes += vp9_cx_iface.c
 VP9_CX_SRCS-yes += encoder/vp9_bitstream.c
 VP9_CX_SRCS-yes += encoder/vp9_boolhuff.c
 VP9_CX_SRCS-yes += encoder/vp9_dct.c
+VP9_CX_SRCS-yes += encoder/vp9_dct.h
 VP9_CX_SRCS-yes += encoder/vp9_encodeframe.c
 VP9_CX_SRCS-yes += encoder/vp9_encodeframe.h
 VP9_CX_SRCS-yes += encoder/vp9_encodeintra.c
@@ -64,6 +65,8 @@ VP9_CX_SRCS-$(CONFIG_INTERNAL_STATS) += encoder/vp9_ssim.c
 VP9_CX_SRCS-yes += encoder/vp9_tokenize.c
 VP9_CX_SRCS-yes += encoder/vp9_treewriter.c
 VP9_CX_SRCS-yes += encoder/vp9_variance_c.c
+VP9_CX_SRCS-yes += encoder/vp9_vaq.c
+VP9_CX_SRCS-yes += encoder/vp9_vaq.h
 ifeq ($(CONFIG_VP9_POSTPROC),yes)
 VP9_CX_SRCS-$(CONFIG_INTERNAL_STATS) += common/vp9_postproc.h
 VP9_CX_SRCS-$(CONFIG_INTERNAL_STATS) += common/vp9_postproc.c

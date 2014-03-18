@@ -29,18 +29,14 @@
 #include "modules/webdatabase/DatabaseContext.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/webdatabase/Database.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "modules/webdatabase/DatabaseThread.h"
-#include "weborigin/SchemeRegistry.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SchemeRegistry.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -50,7 +46,7 @@ namespace WebCore {
 // it need to stay alive?
 //
 // The DatabaseContext is referenced from RefPtrs in:
-// 1. ScriptExecutionContext
+// 1. ExecutionContext
 // 2. Database
 //
 // At Birth:
@@ -58,26 +54,23 @@ namespace WebCore {
 // We create a DatabaseContext only when there is a need i.e. the script tries to
 // open a Database via DatabaseManager::openDatabase().
 //
-// The DatabaseContext constructor will call setDatabaseContext() on the
-// the ScriptExecutionContext. This sets the RefPtr in the ScriptExecutionContext
-// for keeping the DatabaseContext alive. Since the DatabaseContext is only
-// created from the script thread, it is safe for the constructor to call
-// ScriptExecutionContext::setDatabaseContext().
+// The DatabaseContext constructor will call ref(). This lets DatabaseContext keep itself alive.
+// Note that paired deref() is called from contextDestroyed().
 //
-// Once a DatabaseContext is associated with a ScriptExecutionContext, it will
-// live until after the ScriptExecutionContext destructs. This is true even if
+// Once a DatabaseContext is associated with a ExecutionContext, it will
+// live until after the ExecutionContext destructs. This is true even if
 // we don't succeed in opening any Databases for that context. When we do
-// succeed in opening Databases for this ScriptExecutionContext, the Database
+// succeed in opening Databases for this ExecutionContext, the Database
 // will re-use the same DatabaseContext.
 //
 // At Shutdown:
 // ===========
 // During shutdown, the DatabaseContext needs to:
-// 1. "outlive" the ScriptExecutionContext.
+// 1. "outlive" the ExecutionContext.
 //    - This is needed because the DatabaseContext needs to remove itself from the
-//      ScriptExecutionContext's ActiveDOMObject list and ContextLifecycleObserver
+//      ExecutionContext's ActiveDOMObject list and ContextLifecycleObserver
 //      list. This removal needs to be executed on the script's thread. Hence, we
-//      rely on the ScriptExecutionContext's shutdown process to call
+//      rely on the ExecutionContext's shutdown process to call
 //      stop() and contextDestroyed() to give us a chance to clean these up from
 //      the script thread.
 //
@@ -86,16 +79,22 @@ namespace WebCore {
 //      task and shutdown in an orderly manner. When the Databases are destructed,
 //      they will deref the DatabaseContext from the DatabaseThread.
 //
-// During shutdown, the ScriptExecutionContext is shutting down on the script thread
+// During shutdown, the ExecutionContext is shutting down on the script thread
 // while the Databases are shutting down on the DatabaseThread. Hence, there can be
-// a race condition as to whether the ScriptExecutionContext or the Databases
+// a race condition as to whether the ExecutionContext or the Databases
 // destruct first.
 //
-// The RefPtrs in the Databases and ScriptExecutionContext will ensure that the
+// The RefPtrs in the Databases and ExecutionContext will ensure that the
 // DatabaseContext will outlive both regardless of which of the 2 destructs first.
 
+PassRefPtr<DatabaseContext> DatabaseContext::create(ExecutionContext* context)
+{
+    RefPtr<DatabaseContext> self = adoptRef(new DatabaseContext(context));
+    self->ref(); // Is deref()-ed on contextDestroyed().
+    return self.release();
+}
 
-DatabaseContext::DatabaseContext(ScriptExecutionContext* context)
+DatabaseContext::DatabaseContext(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_hasOpenDatabases(false)
     , m_isRegistered(true) // will register on construction below.
@@ -103,8 +102,6 @@ DatabaseContext::DatabaseContext(ScriptExecutionContext* context)
 {
     // ActiveDOMObject expects this to be called to set internal flags.
     suspendIfNeeded();
-
-    context->setDatabaseContext(this);
 
     // For debug accounting only. We must do this before we register the
     // instance. The assertions assume this.
@@ -123,7 +120,7 @@ DatabaseContext::~DatabaseContext()
     DatabaseManager::manager().didDestructDatabaseContext();
 }
 
-// This is called if the associated ScriptExecutionContext is destructing while
+// This is called if the associated ExecutionContext is destructing while
 // we're still associated with it. That's our cue to disassociate and shutdown.
 // To do this, we stop the database and let everything shutdown naturally
 // because the database closing process may still make use of this context.
@@ -132,6 +129,7 @@ void DatabaseContext::contextDestroyed()
 {
     stopDatabases();
     ActiveDOMObject::contextDestroyed();
+    deref(); // paired with the ref() call on create().
 }
 
 // stop() is from stopActiveDOMObjects() which indicates that the owner Frame
@@ -142,9 +140,9 @@ void DatabaseContext::stop()
     stopDatabases();
 }
 
-PassRefPtr<DatabaseBackendContext> DatabaseContext::backend()
+PassRefPtr<DatabaseContext> DatabaseContext::backend()
 {
-    DatabaseBackendContext* backend = static_cast<DatabaseBackendContext*>(this);
+    DatabaseContext* backend = static_cast<DatabaseContext*>(this);
     return backend;
 }
 
@@ -160,8 +158,7 @@ DatabaseThread* DatabaseContext::databaseThread()
         // Create the database thread on first request - but not if at least one database was already opened,
         // because in that case we already had a database thread and terminated it and should not create another.
         m_databaseThread = DatabaseThread::create();
-        if (!m_databaseThread->start())
-            m_databaseThread = 0;
+        m_databaseThread->start();
     }
 
     return m_databaseThread.get();
@@ -194,13 +191,21 @@ bool DatabaseContext::stopDatabases(DatabaseTaskSynchronizer* cleanupSync)
 
 bool DatabaseContext::allowDatabaseAccess() const
 {
-    if (scriptExecutionContext()->isDocument()) {
-        Document* document = toDocument(scriptExecutionContext());
-        return document->page();
-    }
-    ASSERT(scriptExecutionContext()->isWorkerGlobalScope());
+    if (executionContext()->isDocument())
+        return toDocument(executionContext())->isActive();
+    ASSERT(executionContext()->isWorkerGlobalScope());
     // allowDatabaseAccess is not yet implemented for workers.
     return true;
+}
+
+SecurityOrigin* DatabaseContext::securityOrigin() const
+{
+    return executionContext()->securityOrigin();
+}
+
+bool DatabaseContext::isContextThread() const
+{
+    return executionContext()->isContextThread();
 }
 
 } // namespace WebCore

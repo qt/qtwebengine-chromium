@@ -22,7 +22,7 @@
 #define CSSCursorImageValue_h
 
 #include "core/css/CSSImageValue.h"
-#include "core/platform/graphics/IntPoint.h"
+#include "platform/geometry/IntPoint.h"
 #include "wtf/HashSet.h"
 
 namespace WebCore {
@@ -48,7 +48,7 @@ public:
         return IntPoint(-1, -1);
     }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     bool updateIfSVGCursorIsUsed(Element*);
     StyleImage* cachedImage(ResourceFetcher*, float deviceScaleFactor);
@@ -74,6 +74,8 @@ private:
 
     HashSet<SVGElement*> m_referencedElements;
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSCursorImageValue, isCursorImageValue());
 
 } // namespace WebCore
 

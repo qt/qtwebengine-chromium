@@ -12,7 +12,7 @@
 #include "content/public/renderer/render_view_observer.h"
 #include "ipc/ipc_sender.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 struct WebPluginParams;
 }
@@ -45,9 +45,7 @@ class CONTENT_EXPORT BrowserPluginManager
   // BrowserPluginManager via AddBrowserPlugin. When it is destroyed, it is
   // responsible for removing its association via RemoveBrowserPlugin.
   virtual BrowserPlugin* CreateBrowserPlugin(
-      RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params) = 0;
+      RenderViewImpl* render_view, blink::WebFrame* frame) = 0;
 
   // Asynchronously requests a new browser-process-allocated instance ID.
   // After the browser process allocates an ID, it calls back into the

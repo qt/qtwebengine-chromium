@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 cr.define('cr.ui', function() {
-  /** @const */ var Event = cr.Event;
   /** @const */ var EventTarget = cr.EventTarget;
 
   /**
@@ -99,15 +98,21 @@ cr.define('cr.ui', function() {
     },
 
     /**
-     * Returns the last selected index or -1 if no item selected.
+     * Returns the nearest selected index or -1 if no item selected.
+     * @param {number} index The origin index.
      * @type {number}
+     * @private
      */
-    get lastSelectedIndex() {
-      var result = -1;
+    getNearestSelectedIndex_: function(index) {
+      if (index == -1)
+        return -1;
+
+      var result = Infinity;
       for (var i in this.selectedIndexes_) {
-        result = Math.max(result, Number(i));
+        if (Math.abs(i - index) < Math.abs(result - index))
+          result = i;
       }
-      return result;
+      return result < this.length ? Number(result) : -1;
     },
 
     /**
@@ -298,7 +303,8 @@ cr.define('cr.ui', function() {
       // selected items. This rule is not enforces until end of batch update.
       if (!this.changeCount_ && !this.independentLeadItem_ &&
           !this.getIndexSelected(index)) {
-        index = this.lastSelectedIndex;
+        var index2 = this.getNearestSelectedIndex_(index);
+        index = index2;
       }
       return index;
     },
@@ -334,7 +340,7 @@ cr.define('cr.ui', function() {
         this.anchorIndex = permutation[oldAnchorIndex];
 
       if (oldSelectedItemsCount && !this.selectedIndexes.length &&
-          this.length_) {
+          this.length_ && oldLeadIndex != -1) {
         // All selected items are deleted. We move selection to next item of
         // last selected item.
         this.selectedIndexes = [Math.min(oldLeadIndex, this.length_ - 1)];

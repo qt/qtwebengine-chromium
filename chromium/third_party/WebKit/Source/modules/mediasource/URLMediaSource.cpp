@@ -31,20 +31,20 @@
 #include "config.h"
 #include "modules/mediasource/URLMediaSource.h"
 
-#include "core/html/DOMURL.h"
+#include "core/dom/DOMURL.h"
 #include "modules/mediasource/MediaSourceBase.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
 
-String URLMediaSource::createObjectURL(ScriptExecutionContext* scriptExecutionContext, MediaSourceBase* source)
+String URLMediaSource::createObjectURL(ExecutionContext* executionContext, MediaSourceBase* source)
 {
     // Since WebWorkers cannot obtain MediaSource objects, we should be on the main thread.
     ASSERT(isMainThread());
 
-    if (!scriptExecutionContext || !source)
+    if (!executionContext || !source)
         return String();
-    return DOMURL::createPublicURL(scriptExecutionContext, source);
+    return DOMURL::createPublicURL(executionContext, source);
 }
 
 } // namespace WebCore

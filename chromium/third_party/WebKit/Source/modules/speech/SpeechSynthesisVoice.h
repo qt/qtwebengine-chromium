@@ -27,16 +27,15 @@
 #define SpeechSynthesisVoice_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/PlatformSpeechSynthesisVoice.h"
+#include "platform/speech/PlatformSpeechSynthesisVoice.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class SpeechSynthesisVoice : public ScriptWrappable, public RefCounted<SpeechSynthesisVoice> {
+class SpeechSynthesisVoice FINAL : public ScriptWrappable, public RefCounted<SpeechSynthesisVoice> {
 public:
-    virtual ~SpeechSynthesisVoice() { }
     static PassRefPtr<SpeechSynthesisVoice> create(PassRefPtr<PlatformSpeechSynthesisVoice>);
 
     const String& voiceURI() const { return m_platformVoice->voiceURI(); }

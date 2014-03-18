@@ -8,7 +8,6 @@
 #include "base/command_line.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/windows_version.h"
-#include "ui/base/layout.h"
 #include "base/win/registry.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/switches.h"
@@ -21,31 +20,6 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
-// Tests to see if the command line flag "--high-dpi-support" is set.
-bool IsHighDPIEnabled() {
-  // Default is disabled.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHighDPISupport)) {
-    return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kHighDPISupport).compare("1") == 0;
-  }
-  return false;
-}
-
-// Gets the device scale factor. If support is enabled, this will return the
-// best available scale based on the screen's pixel density. This can be
-// affected (overridden) by --force-device-scale-factor=x
-float GetDeviceScaleFactorImpl() {
-  if (IsHighDPIEnabled()) {
-    float scale = gfx::Display::HasForceDeviceScaleFactor() ?
-        gfx::Display::GetForcedDeviceScaleFactor() : gfx::GetDPIScale();
-    // Quantize to nearest supported scale factor.
-    scale = ui::GetScaleFactorScale(ui::GetScaleFactorFromScale(scale));
-    return scale;
-  }
-  return 1.0f;
-}
-
 BOOL IsProcessDPIAwareWrapper() {
   typedef BOOL(WINAPI *IsProcessDPIAwarePtr)(VOID);
   IsProcessDPIAwarePtr is_process_dpi_aware_func =
@@ -56,9 +30,40 @@ BOOL IsProcessDPIAwareWrapper() {
   return FALSE;
 }
 
+float g_device_scale_factor = 0.0f;
+
+float GetUnforcedDeviceScaleFactor() {
+  return static_cast<float>(gfx::GetDPI().width()) /
+      static_cast<float>(kDefaultDPIX);
+}
+
+float GetModernUIScaleWrapper() {
+  float result = 1.0f;
+  typedef float(WINAPI *GetModernUIScalePtr)(VOID);
+  HMODULE lib = LoadLibraryA("metro_driver.dll");
+  if (lib) {
+    GetModernUIScalePtr func =
+        reinterpret_cast<GetModernUIScalePtr>(
+        GetProcAddress(lib, "GetModernUIScale"));
+    if (func)
+      result = func();
+    FreeLibrary(lib);
+  }
+  return result;
+}
+
 }  // namespace
 
 namespace gfx {
+
+float GetModernUIScale() {
+  return GetModernUIScaleWrapper();
+}
+
+void InitDeviceScaleFactor(float scale) {
+  DCHECK_NE(0.0f, scale);
+  g_device_scale_factor = scale;
+}
 
 Size GetDPI() {
   static int dpi_x = 0;
@@ -79,10 +84,21 @@ Size GetDPI() {
 
 float GetDPIScale() {
   if (IsHighDPIEnabled()) {
-    return static_cast<float>(GetDPI().width()) /
-        static_cast<float>(kDefaultDPIX);
+    return gfx::Display::HasForceDeviceScaleFactor() ?
+        gfx::Display::GetForcedDeviceScaleFactor() :
+        GetUnforcedDeviceScaleFactor();
   }
   return 1.0;
+}
+
+bool IsHighDPIEnabled() {
+  // Default is disabled.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kHighDPISupport)) {
+    return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        switches::kHighDPISupport).compare("1") == 0;
+  }
+  return false;
 }
 
 bool IsInHighDPIMode() {
@@ -90,7 +106,8 @@ bool IsInHighDPIMode() {
 }
 
 void EnableHighDPISupport() {
-  if (IsHighDPIEnabled()) {
+  if (IsHighDPIEnabled() &&
+      (base::win::GetVersion() < base::win::VERSION_WIN8_1)) {
     typedef BOOL(WINAPI *SetProcessDPIAwarePtr)(VOID);
     SetProcessDPIAwarePtr set_process_dpi_aware_func =
         reinterpret_cast<SetProcessDPIAwarePtr>(
@@ -104,12 +121,17 @@ void EnableHighDPISupport() {
 namespace win {
 
 float GetDeviceScaleFactor() {
-  static const float device_scale_factor = GetDeviceScaleFactorImpl();
-  return device_scale_factor;
+  DCHECK_NE(0.0f, g_device_scale_factor);
+  return g_device_scale_factor;
 }
 
 Point ScreenToDIPPoint(const Point& pixel_point) {
-  return ToFlooredPoint(ScalePoint(pixel_point, 1.0f / GetDeviceScaleFactor()));
+  static float scaling_factor =
+      GetDeviceScaleFactor() > GetUnforcedDeviceScaleFactor() ?
+      1.0f / GetDeviceScaleFactor() :
+      1.0f;
+  return ToFlooredPoint(ScalePoint(pixel_point,
+      scaling_factor));
 }
 
 Point DIPToScreenPoint(const Point& dip_point) {
@@ -162,14 +184,12 @@ double GetUndocumentedDPIScale() {
   return scale;
 }
 
-
 double GetUndocumentedDPITouchScale() {
   static double scale =
       (base::win::GetVersion() < base::win::VERSION_WIN8_1) ?
       GetUndocumentedDPIScale() : 1.0;
   return scale;
 }
-
 
 }  // namespace win
 }  // namespace gfx

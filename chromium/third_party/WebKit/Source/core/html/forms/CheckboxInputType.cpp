@@ -32,32 +32,32 @@
 #include "config.h"
 #include "core/html/forms/CheckboxInputType.h"
 
-#include "core/dom/KeyboardEvent.h"
+#include "InputTypeNames.h"
+#include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/LocalizedStrings.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> CheckboxInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> CheckboxInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new CheckboxInputType(element));
 }
 
 const AtomicString& CheckboxInputType::formControlType() const
 {
-    return InputTypeNames::checkbox();
+    return InputTypeNames::checkbox;
 }
 
 bool CheckboxInputType::valueMissing(const String&) const
 {
-    return element()->isRequired() && !element()->checked();
+    return element().isRequired() && !element().checked();
 }
 
 String CheckboxInputType::valueMissingText() const
 {
-    return validationMessageValueMissingForCheckboxText();
+    return locale().queryString(blink::WebLocalizedString::ValidationValueMissingForCheckbox);
 }
 
 void CheckboxInputType::handleKeyupEvent(KeyboardEvent* event)
@@ -75,13 +75,13 @@ PassOwnPtr<ClickHandlingState> CheckboxInputType::willDispatchClick()
 
     OwnPtr<ClickHandlingState> state = adoptPtr(new ClickHandlingState);
 
-    state->checked = element()->checked();
-    state->indeterminate = element()->indeterminate();
+    state->checked = element().checked();
+    state->indeterminate = element().indeterminate();
 
     if (state->indeterminate)
-        element()->setIndeterminate(false);
+        element().setIndeterminate(false);
 
-    element()->setChecked(!state->checked, DispatchChangeEvent);
+    element().setChecked(!state->checked, DispatchChangeEvent);
 
     return state.release();
 }
@@ -89,8 +89,8 @@ PassOwnPtr<ClickHandlingState> CheckboxInputType::willDispatchClick()
 void CheckboxInputType::didDispatchClick(Event* event, const ClickHandlingState& state)
 {
     if (event->defaultPrevented() || event->defaultHandled()) {
-        element()->setIndeterminate(state.indeterminate);
-        element()->setChecked(state.checked);
+        element().setIndeterminate(state.indeterminate);
+        element().setChecked(state.checked);
     }
 
     // The work we did in willDispatchClick was default handling.

@@ -48,9 +48,7 @@ public:
 
     StringImpl* dataImpl() { return m_data.impl(); }
 
-    // Like appendData, but optimized for the parser (e.g., no mutation events).
-    // Returns how much could be added before length limit was met.
-    unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
+    void parserAppendData(const String&);
 
 protected:
     CharacterData(TreeScope& treeScope, const String& text, ConstructionType type)
@@ -79,17 +77,7 @@ private:
     void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, RecalcStyleBehavior = DoNotRecalcStyle);
 };
 
-inline CharacterData* toCharacterData(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isCharacterDataNode());
-    return static_cast<CharacterData*>(node);
-}
-
-inline const CharacterData* toCharacterData(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isCharacterDataNode());
-    return static_cast<const CharacterData*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(CharacterData, isCharacterDataNode());
 
 } // namespace WebCore
 

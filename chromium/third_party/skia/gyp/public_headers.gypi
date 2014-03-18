@@ -76,7 +76,7 @@
       'effects/SkMergeImageFilter.h',
       'effects/SkPerlinNoiseShader.h',
       'effects/SkLerpXfermode.h',
-      'effects/SkLumaXfermode.h',
+      'effects/SkLumaColorFilter.h',
       'effects/SkRectShaderImageFilter.h',
       'effects/SkMagnifierImageFilter.h',
       'effects/SkBicubicImageFilter.h',
@@ -218,8 +218,6 @@
       'core/SkStrokeRec.h',
       'core/SkImageDecoder.h',
       'core/SkTime.h',
-      'core/SkImageTypes.h',
-      'core/SkScalarCompare.h',
       'core/SkPathMeasure.h',
       'core/SkMaskFilter.h',
       'core/SkBounder.h',
@@ -252,7 +250,6 @@
       'core/SkPreConfig.h',
       'core/SkImageFilterUtils.h',
       'core/SkLineClipper.h',
-      'core/SkDataSet.h',
       'core/SkPathEffect.h',
       'core/SkString.h',
       'core/SkPixelRef.h',
@@ -299,16 +296,6 @@
       'views/SkOSWindow_Unix.h',
       'views/SkWidget.h',
       'views/SkOSWindow_Win.h',
-      'lazy/SkBitmapFactory.h',
-      'lazy/SkImageCache.h',
-      'lazy/SkPurgeableImageCache.h',
-      'lazy/SkLruImageCache.h',
     ],
   },
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -33,7 +33,7 @@
 
 #include "WebDevToolsAgent.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrameImpl;
 class WebInputEvent;
 struct WebSize;
@@ -47,13 +47,6 @@ public:
     // in this context should be done here.
     virtual void didCreateScriptContext(WebFrameImpl*, int worldId) = 0;
 
-    // A new FrameView has been created for the specified WebFrame using
-    // the Frame::createView() call.
-    virtual void mainFrameViewCreated(WebFrameImpl*) = 0;
-
-    // Returns true if the device metrics override mode is enabled.
-    virtual bool metricsOverridden() = 0;
-
     // WebViewImpl has been resized.
     virtual void webViewResized(const WebSize&) = 0;
 
@@ -61,6 +54,6 @@ public:
     virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

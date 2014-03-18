@@ -12,8 +12,6 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "gpu/command_buffer/common/mailbox.h"
 
-#ifdef ENABLE_GPU
-
 class CommandBufferProxy;
 namespace gpu {
 class CommandBuffer;
@@ -43,6 +41,9 @@ class PlatformContext3D {
   // destroyed.
   gpu::CommandBuffer* GetCommandBuffer();
 
+  // Returns the GpuControl class that services out-of-band messages.
+  gpu::GpuControl* GetGpuControl();
+
   // If the command buffer is routed in the GPU channel, return the route id.
   // Otherwise return 0.
   int GetCommandBufferRouteId();
@@ -58,7 +59,7 @@ class PlatformContext3D {
   void SetOnConsoleMessageCallback(const ConsoleMessageCallback& callback);
 
   // Run the callback once the channel has been flushed.
-  bool Echo(const base::Closure& task);
+  void Echo(const base::Closure& task);
 
  private:
   bool InitRaw();
@@ -75,7 +76,5 @@ class PlatformContext3D {
 };
 
 }  // namespace content
-
-#endif  // ENABLE_GPU
 
 #endif  // CONTENT_RENDERER_PEPPER_PEPPER_PLATFORM_CONTEXT_3D_H_

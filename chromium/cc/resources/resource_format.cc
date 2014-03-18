@@ -6,13 +6,14 @@
 
 namespace cc {
 
-SkBitmap::Config SkBitmapConfigFromFormat(ResourceFormat format) {
+SkBitmap::Config SkBitmapConfig(ResourceFormat format) {
   switch (format) {
     case RGBA_4444:
       return SkBitmap::kARGB_4444_Config;
     case RGBA_8888:
     case BGRA_8888:
       return SkBitmap::kARGB_8888_Config;
+    case ETC1:
     case LUMINANCE_8:
     case RGB_565:
       NOTREACHED();

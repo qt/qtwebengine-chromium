@@ -211,7 +211,7 @@ static void decode_macroblock(VP8D_COMP *pbi, MACROBLOCKD *xd,
                             (b->qcoeff[0] * DQC[0],
                                 dst, dst_stride,
                                 dst, dst_stride);
-                        ((int *)b->qcoeff)[0] = 0;
+                        vpx_memset(b->qcoeff, 0, 2 * sizeof(b->qcoeff[0]));
                     }
                 }
             }
@@ -248,21 +248,14 @@ static void decode_macroblock(VP8D_COMP *pbi, MACROBLOCKD *xd,
 
                     vp8_short_inv_walsh4x4(&b->dqcoeff[0],
                         xd->qcoeff);
-                    ((int *)b->qcoeff)[0] = 0;
-                    ((int *)b->qcoeff)[1] = 0;
-                    ((int *)b->qcoeff)[2] = 0;
-                    ((int *)b->qcoeff)[3] = 0;
-                    ((int *)b->qcoeff)[4] = 0;
-                    ((int *)b->qcoeff)[5] = 0;
-                    ((int *)b->qcoeff)[6] = 0;
-                    ((int *)b->qcoeff)[7] = 0;
+                    vpx_memset(b->qcoeff, 0, 16 * sizeof(b->qcoeff[0]));
                 }
                 else
                 {
                     b->dqcoeff[0] = b->qcoeff[0] * xd->dequant_y2[0];
                     vp8_short_inv_walsh4x4_1(&b->dqcoeff[0],
                         xd->qcoeff);
-                    ((int *)b->qcoeff)[0] = 0;
+                    vpx_memset(b->qcoeff, 0, 2 * sizeof(b->qcoeff[0]));
                 }
 
                 /* override the dc dequant constant in order to preserve the
@@ -576,7 +569,7 @@ static void decode_mb_rows(VP8D_COMP *pbi)
 
         xd->left_available = 0;
 
-        xd->mb_to_top_edge = -((mb_row * 16)) << 3;
+        xd->mb_to_top_edge = -((mb_row * 16) << 3);
         xd->mb_to_bottom_edge = ((pc->mb_rows - 1 - mb_row) * 16) << 3;
 
         xd->recon_above[0] = dst_buffer[0] + recon_yoffset;

@@ -6,10 +6,13 @@
 
 #include <ctype.h>
 
+#include <algorithm>
+
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/spdy/write_blocked_list.h"
 
 using base::StringPiece;
 using std::string;
@@ -111,6 +114,15 @@ void QuicUtils::SerializeUint128(uint128 v, uint8* out) {
   memcpy(out + sizeof(lo), &hi, sizeof(hi));
 }
 
+// static
+void QuicUtils::SerializeUint128Short(uint128 v, uint8* out) {
+  const uint64 lo = Uint128Low64(v);
+  const uint64 hi = Uint128High64(v);
+  // This assumes that the system is little-endian.
+  memcpy(out, &lo, sizeof(lo));
+  memcpy(out + sizeof(lo), &hi, sizeof(hi) / 2);
+}
+
 #define RETURN_STRING_LITERAL(x) \
 case x: \
 return #x;
@@ -188,6 +200,10 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_CRYPTO_DUPLICATE_TAG);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_SERVER_CONFIG_EXPIRED);
+    RETURN_STRING_LITERAL(QUIC_INVALID_CHANNEL_ID_SIGNATURE);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO);
+    RETURN_STRING_LITERAL(QUIC_VERSION_NEGOTIATION_MISMATCH);
     RETURN_STRING_LITERAL(QUIC_LAST_ERROR);
     // Intentionally have no default case, so we'll break the build
     // if we add errors and don't put them here.
@@ -217,7 +233,7 @@ string QuicUtils::TagToString(QuicTag tag) {
 
   for (size_t i = 0; i < sizeof(chars); i++) {
     chars[i] = tag;
-    if (chars[i] == 0 && i == 3) {
+    if ((chars[i] == 0 || chars[i] == '\xff') && i == 3) {
       chars[i] = ' ';
     }
     if (!isprint(static_cast<unsigned char>(chars[i]))) {
@@ -264,6 +280,16 @@ string QuicUtils::StringToHexASCIIDump(StringPiece in_buffer) {
     s += '\n';
   }
   return s;
+}
+
+// static
+QuicPriority QuicUtils::LowestPriority() {
+  return static_cast<QuicPriority>(kLowestPriority);
+}
+
+// static
+QuicPriority QuicUtils::HighestPriority() {
+  return static_cast<QuicPriority>(kHighestPriority);
 }
 
 }  // namespace net

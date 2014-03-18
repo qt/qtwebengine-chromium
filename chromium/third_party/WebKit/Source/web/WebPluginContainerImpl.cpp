@@ -33,7 +33,6 @@
 
 #include "ChromeClientImpl.h"
 #include "ScrollbarGroup.h"
-#include "WebCursorInfo.h"
 #include "WebDataSourceImpl.h"
 #include "WebElement.h"
 #include "WebInputEvent.h"
@@ -43,42 +42,44 @@
 #include "WebViewImpl.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/platform/chromium/ClipboardChromium.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
+#include "platform/exported/WrappedResourceResponse.h"
 
 #include "HTMLNames.h"
 #include "WebPrintParams.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/GestureEvent.h"
-#include "core/dom/KeyboardEvent.h"
-#include "core/dom/MouseEvent.h"
-#include "core/dom/TouchEvent.h"
-#include "core/dom/UserGestureIndicator.h"
-#include "core/dom/WheelEvent.h"
+#include "core/dom/Clipboard.h"
+#include "core/events/GestureEvent.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/events/TouchEvent.h"
+#include "core/events/WheelEvent.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/FocusController.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/HostWindow.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/ScrollAnimator.h"
-#include "core/platform/ScrollView.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/chromium/KeyboardCodes.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsLayer.h"
+#include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
+#include "platform/HostWindow.h"
+#include "platform/KeyboardCodes.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsLayer.h"
+#include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollView.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 #include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebCursorInfo.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebRect.h"
@@ -90,7 +91,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Public methods --------------------------------------------------------------
 
@@ -123,7 +124,7 @@ void WebPluginContainerImpl::paint(GraphicsContext* gc, const IntRect& damageRec
     gc->save();
 
     ASSERT(parent()->isFrameView());
-    ScrollView* view = parent();
+    ScrollView* view =  toScrollView(parent());
 
     // The plugin is positioned in window coordinates, so it needs to be painted
     // in window coordinates.
@@ -188,8 +189,8 @@ void WebPluginContainerImpl::handleEvent(Event* event)
     // where mozilla behaves differently than the spec.
     if (event->isMouseEvent())
         handleMouseEvent(toMouseEvent(event));
-    else if (event->hasInterface(eventNames().interfaceForWheelEvent))
-        handleWheelEvent(static_cast<WheelEvent*>(event));
+    else if (event->isWheelEvent())
+        handleWheelEvent(toWheelEvent(event));
     else if (event->isKeyboardEvent())
         handleKeyboardEvent(toKeyboardEvent(event));
     else if (event->isTouchEvent())
@@ -245,15 +246,15 @@ void WebPluginContainerImpl::setParentVisible(bool parentVisible)
     m_webPlugin->updateVisibility(isVisible());
 }
 
-void WebPluginContainerImpl::setParent(ScrollView* view)
+void WebPluginContainerImpl::setParent(Widget* widget)
 {
     // We override this function so that if the plugin is windowed, we can call
     // NPP_SetWindow at the first possible moment.  This ensures that
     // NPP_SetWindow is called before the manual load data is sent to a plugin.
     // If this order is reversed, Flash won't load videos.
 
-    Widget::setParent(view);
-    if (view)
+    Widget::setParent(widget);
+    if (widget)
         reportGeometry();
 }
 
@@ -340,7 +341,7 @@ void WebPluginContainerImpl::copy()
     if (!m_webPlugin->hasSelection())
         return;
 
-    WebKit::Platform::current()->clipboard()->writeHTML(m_webPlugin->selectionAsMarkup(), WebURL(), m_webPlugin->selectionAsText(), false);
+    blink::Platform::current()->clipboard()->writeHTML(m_webPlugin->selectionAsMarkup(), WebURL(), m_webPlugin->selectionAsText(), false);
 }
 
 bool WebPluginContainerImpl::executeEditCommand(const WebString& name)
@@ -420,7 +421,7 @@ void WebPluginContainerImpl::clearScriptObjects()
     Frame* frame = m_element->document().frame();
     if (!frame)
         return;
-    frame->script()->cleanupScriptObjectsForPlugin(this);
+    frame->script().cleanupScriptObjectsForPlugin(this);
 }
 
 NPObject* WebPluginContainerImpl::scriptableObjectForElement()
@@ -440,7 +441,8 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
     String script = decodeURLEscapeSequences(
         kurl.string().substring(strlen("javascript:")));
 
-    ScriptValue result = frame->script()->executeScript(script, popupsAllowed);
+    UserGestureIndicator gestureIndicator(popupsAllowed ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
+    ScriptValue result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
 
     // Failure is reported as a null string.
     String resultStr;
@@ -451,7 +453,7 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
 {
     Frame* frame = m_element->document().frame();
-    if (!frame || !frame->loader()->documentLoader())
+    if (!frame || !frame->loader().documentLoader())
         return;  // FIXME: send a notification in this case?
 
     if (notifyNeeded) {
@@ -464,9 +466,9 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
         WebDataSourceImpl::setNextPluginLoadObserver(observer.release());
     }
 
-    FrameLoadRequest frameRequest(frame->document()->securityOrigin(), request.toResourceRequest(), target);
+    FrameLoadRequest frameRequest(frame->document(), request.toResourceRequest(), target);
     UserGestureIndicator gestureIndicator(request.hasUserGesture() ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
-    frame->loader()->load(frameRequest);
+    frame->loader().load(frameRequest);
 }
 
 void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
@@ -487,7 +489,7 @@ bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
     LayoutPoint center = documentRect.center();
     // Make the rect we're checking (the point surrounded by padding rects) contained inside the requested rect. (Note that -1/2 is 0.)
     LayoutSize padding((documentRect.width() - 1) / 2, (documentRect.height() - 1) / 2);
-    HitTestResult result = frame->eventHandler()->hitTestResultAtPoint(center, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent, padding);
+    HitTestResult result = frame->eventHandler().hitTestResultAtPoint(center, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent, padding);
     const HitTestResult::NodeSet& nodes = result.rectBasedTestResult();
     if (nodes.size() != 1)
         return false;
@@ -514,14 +516,14 @@ void WebPluginContainerImpl::setWantsWheelEvents(bool wantsWheelEvents)
     if (Page* page = m_element->document().page()) {
         if (ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator()) {
             if (parent() && parent()->isFrameView())
-                scrollingCoordinator->frameViewLayoutUpdated(toFrameView(parent()));
+                scrollingCoordinator->notifyLayoutUpdated();
         }
     }
 }
 
 WebPoint WebPluginContainerImpl::windowToLocalPoint(const WebPoint& point)
 {
-    ScrollView* view = parent();
+    ScrollView* view = toScrollView(parent());
     if (!view)
         return point;
     WebPoint windowPoint = view->windowToContents(point);
@@ -530,7 +532,7 @@ WebPoint WebPluginContainerImpl::windowToLocalPoint(const WebPoint& point)
 
 WebPoint WebPluginContainerImpl::localToWindowPoint(const WebPoint& point)
 {
-    ScrollView* view = parent();
+    ScrollView* view = toScrollView(parent());
     if (!view)
         return point;
     IntPoint absolutePoint = roundedIntPoint(m_element->renderer()->localToAbsolute(LayoutPoint(point), UseTransforms));
@@ -585,6 +587,11 @@ bool WebPluginContainerImpl::getFormValue(String& value)
 bool WebPluginContainerImpl::supportsKeyboardFocus() const
 {
     return m_webPlugin->supportsKeyboardFocus();
+}
+
+bool WebPluginContainerImpl::supportsInputMethod() const
+{
+    return m_webPlugin->supportsInputMethod();
 }
 
 bool WebPluginContainerImpl::canProcessDrag() const
@@ -675,18 +682,18 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     if (webEvent.type == WebInputEvent::Undefined)
         return;
 
-    if (event->type() == eventNames().mousedownEvent)
+    if (event->type() == EventTypeNames::mousedown)
         focusPlugin();
 
     if (m_scrollbarGroup) {
         // This needs to be set before the other callbacks in this scope, since
         // the scroll animator class might query the position in response.
         m_scrollbarGroup->setLastMousePosition(IntPoint(event->x(), event->y()));
-        if (event->type() == eventNames().mousemoveEvent)
+        if (event->type() == EventTypeNames::mousemove)
             m_scrollbarGroup->scrollAnimator()->mouseMovedInContentArea();
-        else if (event->type() == eventNames().mouseoverEvent)
+        else if (event->type() == EventTypeNames::mouseover)
             m_scrollbarGroup->scrollAnimator()->mouseEnteredContentArea();
-        else if (event->type() == eventNames().mouseoutEvent)
+        else if (event->type() == EventTypeNames::mouseout)
             m_scrollbarGroup->scrollAnimator()->mouseExitedContentArea();
     }
 
@@ -700,7 +707,7 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     Page* page = parentView->frame().page();
     if (!page)
         return;
-    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(&page->chrome().client());
+    ChromeClientImpl* chromeClient = toChromeClientImpl(page->chrome().client());
     chromeClient->setCursorForPlugin(cursorInfo);
 }
 
@@ -709,19 +716,19 @@ void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)
     ASSERT(event->isDragEvent());
 
     WebDragStatus dragStatus = WebDragStatusUnknown;
-    if (event->type() == eventNames().dragenterEvent)
+    if (event->type() == EventTypeNames::dragenter)
         dragStatus = WebDragStatusEnter;
-    else if (event->type() == eventNames().dragleaveEvent)
+    else if (event->type() == EventTypeNames::dragleave)
         dragStatus = WebDragStatusLeave;
-    else if (event->type() == eventNames().dragoverEvent)
+    else if (event->type() == EventTypeNames::dragover)
         dragStatus = WebDragStatusOver;
-    else if (event->type() == eventNames().dropEvent)
+    else if (event->type() == EventTypeNames::drop)
         dragStatus = WebDragStatusDrop;
 
     if (dragStatus == WebDragStatusUnknown)
         return;
 
-    ClipboardChromium* clipboard = static_cast<ClipboardChromium*>(event->dataTransfer());
+    Clipboard* clipboard = event->dataTransfer();
     WebDragData dragData = clipboard->dataObject();
     WebDragOperationsMask dragOperationMask = static_cast<WebDragOperationsMask>(clipboard->sourceOperation());
     WebPoint dragScreenLocation(event->screenX(), event->screenY());
@@ -794,7 +801,7 @@ void WebPluginContainerImpl::handleTouchEvent(TouchEvent* event)
         if (webEvent.type == WebInputEvent::Undefined)
             return;
 
-        if (event->type() == eventNames().touchstartEvent)
+        if (event->type() == EventTypeNames::touchstart)
             focusPlugin();
 
         WebCursorInfo cursorInfo;
@@ -864,7 +871,7 @@ void WebPluginContainerImpl::calculateGeometry(const IntRect& frameRect,
                                                IntRect& clipRect,
                                                Vector<IntRect>& cutOutRects)
 {
-    windowRect = parent()->contentsToWindow(frameRect);
+    windowRect = toScrollView(parent())->contentsToWindow(frameRect);
 
     // Calculate a clip-rect so that we don't overlap the scrollbars, etc.
     clipRect = windowClipRect();
@@ -884,6 +891,7 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
 
     // document().renderer() can be 0 when we receive messages from the
     // plugins while we are destroying a frame.
+    // FIXME: Can we just check m_element->document().isActive() ?
     if (m_element->renderer()->document().renderer()) {
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
@@ -894,4 +902,4 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     return clipRect;
 }
 
-} // namespace WebKit
+} // namespace blink

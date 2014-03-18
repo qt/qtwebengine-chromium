@@ -34,18 +34,17 @@
 #include <skia/ext/platform_canvas.h>
 #include "WebFontDescription.h"
 #include "WebTextRun.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/FontDescription.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/TextRun.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/text/TextRun.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebFont* WebFont::create(const WebFontDescription& desc)
 {
@@ -127,4 +126,4 @@ WebFloatRect WebFontImpl::selectionRectForText(const WebTextRun& run, const WebF
     return m_font.selectionRectForText(run, leftBaseline, height, from, to);
 }
 
-} // namespace WebKit
+} // namespace blink

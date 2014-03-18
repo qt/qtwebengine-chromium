@@ -284,6 +284,21 @@ public:
     virtual int32_t next(int32_t n) = 0;
 
     /**
+     * For RuleBasedBreakIterators, return the status tag from the
+     * break rule that determined the most recently
+     * returned break position.
+     * <p>
+     * For break iterator types that do not support a rule status,
+     * a default value of 0 is returned.
+     * <p>
+     * @return the status from the break rule that determined the most recently
+     *         returned break position.
+     * @see RuleBaseBreakIterator::getRuleStatus()
+     * @see UWordBreak
+     */
+    virtual int32_t getRuleStatus() const;
+
+    /**
      * Create BreakIterator for word-breaks using the given locale.
      * Returns an instance of a BreakIterator implementing word breaks.
      * WordBreak is useful for word selection (ex. double click)

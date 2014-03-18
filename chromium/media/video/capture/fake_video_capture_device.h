@@ -10,64 +10,70 @@
 
 #include <string>
 
+#include "base/atomicops.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_checker.h"
 #include "media/video/capture/video_capture_device.h"
 
 namespace media {
 
-class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice1 {
+class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
  public:
   static VideoCaptureDevice* Create(const Name& device_name);
   virtual ~FakeVideoCaptureDevice();
   // Used for testing. This will make sure the next call to Create will
   // return NULL;
   static void SetFailNextCreate();
+  static void SetNumberOfFakeDevices(size_t number_of_devices);
+  static size_t NumberOfFakeDevices();
 
   static void GetDeviceNames(Names* device_names);
+  static void GetDeviceSupportedFormats(const Name& device,
+                                        VideoCaptureFormats* supported_formats);
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(const VideoCaptureCapability& capture_format,
-                        VideoCaptureDevice::EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const VideoCaptureParams& params,
+                                scoped_ptr<VideoCaptureDevice::Client> client)
+      OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
 
  private:
-  // Flag indicating the internal state.
-  enum InternalState {
-    kIdle,
-    kAllocated,
-    kCapturing,
-    kError
-  };
-  explicit FakeVideoCaptureDevice(const Name& device_name);
+  FakeVideoCaptureDevice();
 
-  // Called on the capture_thread_.
+  // Called on the |capture_thread_| only.
+  void OnAllocateAndStart(const VideoCaptureParams& params,
+                          scoped_ptr<Client> client);
+  void OnStopAndDeAllocate();
   void OnCaptureTask();
-
-  // EXPERIMENTAL, similar to allocate, but changes resolution and calls
-  // observer->OnFrameInfoChanged(VideoCaptureCapability&)
   void Reallocate();
-  void PopulateCapabilitiesRoster();
+  void PopulateFormatRoster();
 
-  Name device_name_;
-  VideoCaptureDevice::EventHandler* observer_;
-  InternalState state_;
+  // |thread_checker_| is used to check that destructor, AllocateAndStart() and
+  // StopAndDeAllocate() are called in the correct thread that owns the object.
+  base::ThreadChecker thread_checker_;
+
   base::Thread capture_thread_;
+  // The following members are only used on the |capture_thread_|.
+  scoped_ptr<VideoCaptureDevice::Client> client_;
   scoped_ptr<uint8[]> fake_frame_;
   int frame_count_;
-  VideoCaptureCapability capture_format_;
+  VideoCaptureFormat capture_format_;
 
-  // When the device is configured as mutating video captures, this vector
-  // holds the available ones which are used in sequence, restarting at the end.
-  std::vector<VideoCaptureCapability> capabilities_roster_;
-  int capabilities_roster_index_;
+  // When the device is allowed to change resolution, this vector holds the
+  // available ones which are used in sequence, restarting at the end. These
+  // two members belong to and are only used in |capture_thread_|.
+  std::vector<VideoCaptureFormat> format_roster_;
+  int format_roster_index_;
 
   static bool fail_next_create_;
+  // |number_of_devices_| is atomic since tests can call SetNumberOfFakeDevices
+  // on the IO thread to set |number_of_devices_|. The variable can be
+  // read from a separate thread.
+  // TODO(perkj): Make tests independent of global state. crbug/323913
+  static base::subtle::Atomic32 number_of_devices_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(FakeVideoCaptureDevice);
+  DISALLOW_COPY_AND_ASSIGN(FakeVideoCaptureDevice);
 };
 
 }  // namespace media

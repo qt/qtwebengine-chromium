@@ -31,15 +31,17 @@
 #include "samplefmt.h"
 
 enum AVColorSpace{
-    AVCOL_SPC_RGB         = 0,
-    AVCOL_SPC_BT709       = 1, ///< also ITU-R BT1361 / IEC 61966-2-4 xvYCC709 / SMPTE RP177 Annex B
-    AVCOL_SPC_UNSPECIFIED = 2,
-    AVCOL_SPC_FCC         = 4,
-    AVCOL_SPC_BT470BG     = 5, ///< also ITU-R BT601-6 625 / ITU-R BT1358 625 / ITU-R BT1700 625 PAL & SECAM / IEC 61966-2-4 xvYCC601
-    AVCOL_SPC_SMPTE170M   = 6, ///< also ITU-R BT601-6 525 / ITU-R BT1358 525 / ITU-R BT1700 NTSC / functionally identical to above
-    AVCOL_SPC_SMPTE240M   = 7,
-    AVCOL_SPC_YCOCG       = 8, ///< Used by Dirac / VC-2 and H.264 FRext, see ITU-T SG16
-    AVCOL_SPC_NB             , ///< Not part of ABI
+    AVCOL_SPC_RGB         =  0,
+    AVCOL_SPC_BT709       =  1, ///< also ITU-R BT1361 / IEC 61966-2-4 xvYCC709 / SMPTE RP177 Annex B
+    AVCOL_SPC_UNSPECIFIED =  2,
+    AVCOL_SPC_FCC         =  4,
+    AVCOL_SPC_BT470BG     =  5, ///< also ITU-R BT601-6 625 / ITU-R BT1358 625 / ITU-R BT1700 625 PAL & SECAM / IEC 61966-2-4 xvYCC601
+    AVCOL_SPC_SMPTE170M   =  6, ///< also ITU-R BT601-6 525 / ITU-R BT1358 525 / ITU-R BT1700 NTSC / functionally identical to above
+    AVCOL_SPC_SMPTE240M   =  7,
+    AVCOL_SPC_YCOCG       =  8, ///< Used by Dirac / VC-2 and H.264 FRext, see ITU-T SG16
+    AVCOL_SPC_BT2020_NCL  =  9, ///< ITU-R BT2020 non-constant luminance system
+    AVCOL_SPC_BT2020_CL   = 10, ///< ITU-R BT2020 constant luminance system
+    AVCOL_SPC_NB              , ///< Not part of ABI
 };
 #define AVCOL_SPC_YCGCO AVCOL_SPC_YCOCG
 
@@ -50,11 +52,23 @@ enum AVColorRange{
     AVCOL_RANGE_NB             , ///< Not part of ABI
 };
 
+
 enum AVFrameSideDataType {
     /**
      * The data is the AVPanScan struct defined in libavcodec.
      */
     AV_FRAME_DATA_PANSCAN,
+    /**
+     * ATSC A53 Part 4 Closed Captions.
+     * A53 CC bitstream is stored as uint8_t in AVFrameSideData.data.
+     * The number of bytes of CC data is AVFrameSideData.size.
+     */
+    AV_FRAME_DATA_A53_CC,
+    /**
+     * Stereoscopic 3d metadata.
+     * The data is the AVStereo3D struct defined in libavutil/stereo3d.h.
+     */
+    AV_FRAME_DATA_STEREO3D,
 };
 
 typedef struct AVFrameSideData {
@@ -117,6 +131,9 @@ typedef struct AVFrame {
      * preference, this is 16 or 32 for modern desktop CPUs.
      * Some code requires such alignment other code can be slower without
      * correct alignment, for yet other it makes no difference.
+     *
+     * @note The linesize may be larger than the size of usable data -- there
+     * may be extra padding present for performance reasons.
      */
     int linesize[AV_NUM_DATA_POINTERS];
 
@@ -385,6 +402,16 @@ typedef struct AVFrame {
     AVFrameSideData **side_data;
     int            nb_side_data;
 
+/**
+ * The frame data may be corrupted, e.g. due to decoding errors.
+ */
+#define AV_FRAME_FLAG_CORRUPT       (1 << 0)
+
+    /**
+     * Frame flags, a combination of AV_FRAME_FLAG_*
+     */
+    int flags;
+
     /**
      * frame timestamp estimated using various heuristics, in stream time base
      * Code outside libavcodec should access this field using:
@@ -511,6 +538,12 @@ enum AVColorRange av_frame_get_color_range(const AVFrame *frame);
 void    av_frame_set_color_range(AVFrame *frame, enum AVColorRange val);
 
 /**
+ * Get the name of a colorspace.
+ * @return a static string identifying the colorspace; can be NULL.
+ */
+const char *av_get_colorspace_name(enum AVColorSpace val);
+
+/**
  * Allocate an AVFrame and set its fields to default values.  The resulting
  * struct must be freed using av_frame_free().
  *
@@ -542,7 +575,7 @@ void av_frame_free(AVFrame **frame);
  *
  * @return 0 on success, a negative AVERROR on error
  */
-int av_frame_ref(AVFrame *dst, AVFrame *src);
+int av_frame_ref(AVFrame *dst, const AVFrame *src);
 
 /**
  * Create a new frame that references the same data as src.
@@ -551,7 +584,7 @@ int av_frame_ref(AVFrame *dst, AVFrame *src);
  *
  * @return newly created AVFrame on success, NULL on error.
  */
-AVFrame *av_frame_clone(AVFrame *src);
+AVFrame *av_frame_clone(const AVFrame *src);
 
 /**
  * Unreference all the buffers referenced by frame and reset the frame fields.

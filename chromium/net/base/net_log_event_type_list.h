@@ -558,6 +558,38 @@ EVENT_TYPE(SOCKET_WRITE_ERROR)
 //  }
 EVENT_TYPE(SSL_CERTIFICATES_RECEIVED)
 
+// Signed Certificate Timestamps were received from the server.
+// The following parameters are attached to the event:
+// {
+//    "embedded_scts": Base64-encoded SignedCertificateTimestampList,
+//    "scts_from_ocsp_response": Base64-encoded SignedCertificateTimestampList,
+//    "scts_from_tls_extension": Base64-encoded SignedCertificateTimestampList,
+// }
+//
+// The SignedCertificateTimestampList is defined in RFC6962 and is exactly as
+// received from the server.
+EVENT_TYPE(SIGNED_CERTIFICATE_TIMESTAMPS_RECEIVED)
+
+// Signed Certificate Timestamps were checked.
+// The following parameters are attached to the event:
+// {
+//    "verified_scts": <A list of SCTs>,
+//    "invalid_scts": <A list of SCTs>,
+//    "scts_from_unknown_logs": <A list of SCTs>,
+// }
+//
+// Where each SCT is an object:
+// {
+//    "origin": <one of: "embedded_in_certificate", "tls_extension", "ocsp">,
+//    "version": <numeric version>,
+//    "log_id": <base64-encoded log id>,
+//    "timestamp": <numeric timestamp in milliseconds since the Unix epoch>,
+//    "hash_algorithm": <name of the hash algorithm>,
+//    "signature_algorithm": <name of the signature algorithm>,
+//    "signature_data": <base64-encoded signature bytes>,
+// }
+EVENT_TYPE(SIGNED_CERTIFICATE_TIMESTAMPS_CHECKED)
+
 // ------------------------------------------------------------------------
 // DatagramSocket
 // ------------------------------------------------------------------------
@@ -666,8 +698,8 @@ EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKET)
 EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS)
 
 
-// A backup socket is created due to slow connect
-EVENT_TYPE(SOCKET_BACKUP_CREATED)
+// A backup connect job is created due to slow connect.
+EVENT_TYPE(BACKUP_CONNECT_JOB_CREATED)
 
 // This event is sent when a connect job is eventually bound to a request
 // (because of late binding and socket backup jobs, we don't assign the job to
@@ -726,14 +758,16 @@ EVENT_TYPE(URL_REQUEST_START_JOB)
 //   }
 EVENT_TYPE(URL_REQUEST_REDIRECTED)
 
-// Measures the time a net::URLRequest is blocked waiting for either the
-// NetworkDelegate or a URLRequest::Delegate to respond.
-//
-// The parameters attached to the event are:
+// Measures the time between when a net::URLRequest calls a delegate that can
+// block it, and when the delegate allows the request to resume.
+EVENT_TYPE(URL_REQUEST_DELEGATE)
+
+// Logged when a delegate informs the URL_REQUEST of what's currently blocking
+// the request. The parameters attached to the begin event are:
 //   {
-//     "delegate": <What's blocking the request, if known>,
+//     "delegate_info": <Information about what's blocking the request>,
 //   }
-EVENT_TYPE(URL_REQUEST_BLOCKED_ON_DELEGATE)
+EVENT_TYPE(DELEGATE_INFO)
 
 // The specified number of bytes were read from the net::URLRequest.
 // The filtered event is used when the bytes were passed through a filter before

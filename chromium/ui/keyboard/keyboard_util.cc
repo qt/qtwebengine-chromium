@@ -7,7 +7,9 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
 #include "grit/keyboard_resources.h"
 #include "grit/keyboard_resources_map.h"
@@ -22,12 +24,16 @@ namespace {
 const char kKeyDown[] ="keydown";
 const char kKeyUp[] = "keyup";
 
-void SendProcessKeyEvent(ui::EventType type, aura::RootWindow* root_window) {
+void SendProcessKeyEvent(ui::EventType type,
+                         aura::WindowEventDispatcher* dispatcher) {
   ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
                                ui::VKEY_PROCESSKEY,
                                ui::EF_NONE);
-  root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+  dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
 }
+
+base::LazyInstance<base::Time> g_keyboard_load_time_start =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -35,10 +41,16 @@ namespace keyboard {
 
 bool IsKeyboardEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableVirtualKeyboard);
+      switches::kEnableVirtualKeyboard) ||
+          IsKeyboardUsabilityExperimentEnabled();
 }
 
-bool InsertText(const base::string16& text, aura::RootWindow* root_window) {
+bool IsKeyboardUsabilityExperimentEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kKeyboardUsabilityExperiment);
+}
+
+bool InsertText(const base::string16& text, aura::Window* root_window) {
   if (!root_window)
     return false;
 
@@ -62,8 +74,8 @@ bool InsertText(const base::string16& text, aura::RootWindow* root_window) {
 // ui::TextInputClient from that (see above in InsertText()).
 bool MoveCursor(int swipe_direction,
                 int modifier_flags,
-                aura::RootWindow* root_window) {
-  if (!root_window)
+                aura::WindowEventDispatcher* dispatcher) {
+  if (!dispatcher)
     return false;
   ui::KeyboardCode codex = ui::VKEY_UNKNOWN;
   ui::KeyboardCode codey = ui::VKEY_UNKNOWN;
@@ -80,17 +92,17 @@ bool MoveCursor(int swipe_direction,
   // First deal with the x movement.
   if (codex != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
   }
 
   // Then deal with the y movement.
   if (codey != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
   }
   return true;
 }
@@ -98,8 +110,9 @@ bool MoveCursor(int swipe_direction,
 bool SendKeyEvent(const std::string type,
                   int key_value,
                   int key_code,
-                  bool shift_modifier,
-                  aura::RootWindow* root_window) {
+                  std::string key_name,
+                  int modifiers,
+                  aura::WindowEventDispatcher* dispatcher) {
   ui::EventType event_type = ui::ET_UNKNOWN;
   if (type == kKeyDown)
     event_type = ui::ET_KEY_PRESSED;
@@ -108,32 +121,63 @@ bool SendKeyEvent(const std::string type,
   if (event_type == ui::ET_UNKNOWN)
     return false;
 
-  int flags = ui::EF_NONE;
-  if (shift_modifier)
-    flags = ui::EF_SHIFT_DOWN;
-
   ui::KeyboardCode code = static_cast<ui::KeyboardCode>(key_code);
 
   if (code == ui::VKEY_UNKNOWN) {
     // Handling of special printable characters (e.g. accented characters) for
     // which there is no key code.
     if (event_type == ui::ET_KEY_RELEASED) {
-      ui::InputMethod* input_method = root_window->GetProperty(
+      ui::InputMethod* input_method = dispatcher->window()->GetProperty(
           aura::client::kRootWindowInputMethodKey);
       if (!input_method)
         return false;
 
       ui::TextInputClient* tic = input_method->GetTextInputClient();
 
-      SendProcessKeyEvent(ui::ET_KEY_PRESSED, root_window);
+      SendProcessKeyEvent(ui::ET_KEY_PRESSED, dispatcher);
       tic->InsertChar(static_cast<uint16>(key_value), ui::EF_NONE);
-      SendProcessKeyEvent(ui::ET_KEY_RELEASED, root_window);
+      SendProcessKeyEvent(ui::ET_KEY_RELEASED, dispatcher);
     }
   } else {
-    ui::KeyEvent event(event_type, code, flags, false);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+    if (event_type == ui::ET_KEY_RELEASED) {
+      // The number of key press events seen since the last backspace.
+      static int keys_seen = 0;
+      if (code == ui::VKEY_BACK) {
+        // Log the rough lengths of characters typed between backspaces. This
+        // metric will be used to determine the error rate for the keyboard.
+        UMA_HISTOGRAM_CUSTOM_COUNTS(
+            "VirtualKeyboard.KeystrokesBetweenBackspaces",
+            keys_seen, 1, 1000, 50);
+        keys_seen = 0;
+      } else {
+        ++keys_seen;
+      }
+    }
+
+    ui::KeyEvent event(event_type, code, key_name, modifiers, false);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
   }
   return true;
+}
+
+const void MarkKeyboardLoadStarted() {
+  if (!g_keyboard_load_time_start.Get().ToInternalValue())
+    g_keyboard_load_time_start.Get() = base::Time::Now();
+}
+
+const void MarkKeyboardLoadFinished() {
+  // It should not be possible to finish loading the keyboard without starting
+  // to load it first.
+  DCHECK(g_keyboard_load_time_start.Get().ToInternalValue());
+
+  static bool logged = false;
+  if (!logged) {
+    // Log the delta only once.
+    UMA_HISTOGRAM_TIMES(
+        "VirtualKeyboard.FirstLoadTime",
+        base::Time::Now() - g_keyboard_load_time_start.Get());
+    logged = true;
+  }
 }
 
 const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
@@ -158,12 +202,34 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
         IDR_KEYBOARD_ELEMENTS_KEY_SEQUENCE},
     {"keyboard/elements/kb-keyboard.html", IDR_KEYBOARD_ELEMENTS_KEYBOARD},
     {"keyboard/elements/kb-keyset.html", IDR_KEYBOARD_ELEMENTS_KEYSET},
+    {"keyboard/elements/kb-modifier-key.html",
+        IDR_KEYBOARD_ELEMENTS_MODIFIER_KEY},
+    {"keyboard/elements/kb-options-menu.html",
+        IDR_KEYBOARD_ELEMENTS_OPTIONS_MENU},
     {"keyboard/elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW},
     {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
+    {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
+    {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
+    {"keyboard/images/brightness-down.svg",
+        IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
+    {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
+    {"keyboard/images/change-window.svg", IDR_KEYBOARD_IMAGES_CHANGE_WINDOW},
+    {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
+    {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
+    {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
     {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
+    {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
     {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
     {"keyboard/images/microphone-green.svg",
         IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
+    {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
+    {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
+    {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
+    {"keyboard/images/search.svg", IDR_KEYBOARD_IMAGES_SEARCH},
+    {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
+    {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
+    {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
+    {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
     {"keyboard/index.html", IDR_KEYBOARD_INDEX},
     {"keyboard/layouts/dvorak.html", IDR_KEYBOARD_LAYOUTS_DVORAK},
     {"keyboard/layouts/latin-accents.js", IDR_KEYBOARD_LAYOUTS_LATIN_ACCENTS},
@@ -171,16 +237,24 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
     {"keyboard/layouts/symbol-altkeys.js",
         IDR_KEYBOARD_LAYOUTS_SYMBOL_ALTKEYS},
+    {"keyboard/layouts/system-qwerty.html", IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
     {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
     {"keyboard/main.js", IDR_KEYBOARD_MAIN_JS},
     {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
     {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
-    {"keyboard/polymer.min.js", IDR_KEYBOARD_POLYMER},
+    {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
     {"keyboard/voice_input.js", IDR_KEYBOARD_VOICE_INPUT_JS},
   };
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);
   *size = kKeyboardResourcesSize;
   return kKeyboardResources;
+}
+
+void LogKeyboardControlEvent(KeyboardControlEvent event) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "VirtualKeyboard.KeyboardControlEvent",
+      event,
+      keyboard::KEYBOARD_CONTROL_MAX);
 }
 
 }  // namespace keyboard

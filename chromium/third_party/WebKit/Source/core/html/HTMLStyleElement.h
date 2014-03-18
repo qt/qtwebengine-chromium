@@ -36,7 +36,7 @@ typedef EventSender<HTMLStyleElement> StyleEventSender;
 
 class HTMLStyleElement FINAL : public HTMLElement, private StyleElement {
 public:
-    static PassRefPtr<HTMLStyleElement> create(const QualifiedName&, Document&, bool createdByParser);
+    static PassRefPtr<HTMLStyleElement> create(Document&, bool createdByParser);
     virtual ~HTMLStyleElement();
 
     void setType(const AtomicString&);
@@ -67,7 +67,7 @@ public:
     static void dispatchPendingLoadEvents();
 
 private:
-    HTMLStyleElement(const QualifiedName&, Document&, bool createdByParser);
+    HTMLStyleElement(Document&, bool createdByParser);
 
     // overload from HTMLElement
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -109,11 +109,7 @@ inline bool isHTMLStyleElement(Node* node)
     return node->hasTagName(HTMLNames::styleTag);
 }
 
-inline HTMLStyleElement* toHTMLStyleElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::styleTag));
-    return static_cast<HTMLStyleElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLStyleElement, hasTagName(HTMLNames::styleTag));
 
 } //namespace
 

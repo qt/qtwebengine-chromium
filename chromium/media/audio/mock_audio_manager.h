@@ -27,7 +27,7 @@ class MockAudioManager : public media::AudioManager {
 
   virtual bool HasAudioInputDevices() OVERRIDE;
 
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
 
   virtual void ShowAudioInputSettings() OVERRIDE;
 
@@ -67,9 +67,15 @@ class MockAudioManager : public media::AudioManager {
   virtual std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) OVERRIDE;
 
- private:
+  virtual scoped_ptr<AudioLog> CreateAudioLog(
+      AudioLogFactory::AudioComponent component) OVERRIDE;
+
+  virtual void FixWedgedAudio() OVERRIDE;
+
+ protected:
   virtual ~MockAudioManager();
 
+ private:
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAudioManager);

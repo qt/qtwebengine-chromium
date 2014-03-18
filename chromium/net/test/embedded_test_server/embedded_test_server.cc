@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -99,12 +100,13 @@ HttpListenSocket::~HttpListenSocket() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
-EmbeddedTestServer::EmbeddedTestServer(
-    const scoped_refptr<base::SingleThreadTaskRunner>& io_thread)
-    : io_thread_(io_thread),
-      port_(-1),
+void HttpListenSocket::DetachFromThread() {
+  thread_checker_.DetachFromThread();
+}
+
+EmbeddedTestServer::EmbeddedTestServer()
+    : port_(-1),
       weak_factory_(this) {
-  DCHECK(io_thread_.get());
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
@@ -117,14 +119,45 @@ EmbeddedTestServer::~EmbeddedTestServer() {
 }
 
 bool EmbeddedTestServer::InitializeAndWaitUntilReady() {
+  StartThread();
   DCHECK(thread_checker_.CalledOnValidThread());
-
   if (!PostTaskToIOThreadAndWait(base::Bind(
           &EmbeddedTestServer::InitializeOnIOThread, base::Unretained(this)))) {
     return false;
   }
-
   return Started() && base_url_.is_valid();
+}
+
+void EmbeddedTestServer::StopThread() {
+  DCHECK(io_thread_ && io_thread_->IsRunning());
+
+#if defined(OS_LINUX)
+  const int thread_count =
+      base::GetNumberOfThreads(base::GetCurrentProcessHandle());
+#endif
+
+  io_thread_->Stop();
+  io_thread_.reset();
+  thread_checker_.DetachFromThread();
+  listen_socket_->DetachFromThread();
+
+#if defined(OS_LINUX)
+  // Busy loop to wait for thread count to decrease. This is needed because
+  // pthread_join does not guarantee that kernel stat is updated when it
+  // returns. Thus, GetNumberOfThreads does not immediately reflect the stopped
+  // thread and hits the thread number DCHECK in render_sandbox_host_linux.cc
+  // in browser_tests.
+  while (thread_count ==
+         base::GetNumberOfThreads(base::GetCurrentProcessHandle())) {
+    base::PlatformThread::YieldCurrentThread();
+  }
+#endif
+}
+
+void EmbeddedTestServer::RestartThreadAndListen() {
+  StartThread();
+  CHECK(PostTaskToIOThreadAndWait(base::Bind(
+      &EmbeddedTestServer::ListenOnIOThread, base::Unretained(this))));
 }
 
 bool EmbeddedTestServer::ShutdownAndWaitUntilComplete() {
@@ -134,8 +167,16 @@ bool EmbeddedTestServer::ShutdownAndWaitUntilComplete() {
       &EmbeddedTestServer::ShutdownOnIOThread, base::Unretained(this)));
 }
 
+void EmbeddedTestServer::StartThread() {
+  DCHECK(!io_thread_.get());
+  base::Thread::Options thread_options;
+  thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
+  io_thread_.reset(new base::Thread("EmbeddedTestServer io thread"));
+  CHECK(io_thread_->StartWithOptions(thread_options));
+}
+
 void EmbeddedTestServer::InitializeOnIOThread() {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
   DCHECK(!Started());
 
   SocketDescriptor socket_descriptor =
@@ -155,8 +196,14 @@ void EmbeddedTestServer::InitializeOnIOThread() {
   }
 }
 
+void EmbeddedTestServer::ListenOnIOThread() {
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(Started());
+  listen_socket_->Listen();
+}
+
 void EmbeddedTestServer::ShutdownOnIOThread() {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   listen_socket_.reset();
   STLDeleteContainerPairSecondPointers(connections_.begin(),
@@ -166,7 +213,7 @@ void EmbeddedTestServer::ShutdownOnIOThread() {
 
 void EmbeddedTestServer::HandleRequest(HttpConnection* connection,
                                scoped_ptr<HttpRequest> request) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   bool request_handled = false;
 
@@ -196,6 +243,7 @@ void EmbeddedTestServer::HandleRequest(HttpConnection* connection,
 }
 
 GURL EmbeddedTestServer::GetURL(const std::string& relative_url) const {
+  DCHECK(Started()) << "You must start the server first.";
   DCHECK(StartsWithASCII(relative_url, "/", true /* case_sensitive */))
       << relative_url;
   return base_url_.Resolve(relative_url);
@@ -214,7 +262,7 @@ void EmbeddedTestServer::RegisterRequestHandler(
 void EmbeddedTestServer::DidAccept(
     StreamListenSocket* server,
     scoped_ptr<StreamListenSocket> connection) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   HttpConnection* http_connection = new HttpConnection(
       connection.Pass(),
@@ -227,7 +275,7 @@ void EmbeddedTestServer::DidAccept(
 void EmbeddedTestServer::DidRead(StreamListenSocket* connection,
                          const char* data,
                          int length) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   HttpConnection* http_connection = FindConnection(connection);
   if (http_connection == NULL) {
@@ -238,7 +286,7 @@ void EmbeddedTestServer::DidRead(StreamListenSocket* connection,
 }
 
 void EmbeddedTestServer::DidClose(StreamListenSocket* connection) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   HttpConnection* http_connection = FindConnection(connection);
   if (http_connection == NULL) {
@@ -251,7 +299,7 @@ void EmbeddedTestServer::DidClose(StreamListenSocket* connection) {
 
 HttpConnection* EmbeddedTestServer::FindConnection(
     StreamListenSocket* socket) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
+  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
 
   std::map<StreamListenSocket*, HttpConnection*>::iterator it =
       connections_.find(socket);
@@ -276,8 +324,10 @@ bool EmbeddedTestServer::PostTaskToIOThreadAndWait(
     temporary_loop.reset(new base::MessageLoop());
 
   base::RunLoop run_loop;
-  if (!io_thread_->PostTaskAndReply(FROM_HERE, closure, run_loop.QuitClosure()))
+  if (!io_thread_->message_loop_proxy()->PostTaskAndReply(
+          FROM_HERE, closure, run_loop.QuitClosure())) {
     return false;
+  }
   run_loop.Run();
 
   return true;

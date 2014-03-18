@@ -16,8 +16,9 @@ see .cc files in green and get confused.
 - For file base name with ambiguous state and that should not be checked for
   shebang, add it to IGNORED_FILENAMES.
 
-Any file not matching the above will be opened and looked if it has a shebang.
-It this doesn't match the executable bit on the file, the file will be flagged.
+Any file not matching the above will be opened and looked if it has a shebang
+or an ELF header. If this does not match the executable bit on the file, the
+file will be flagged.
 
 Note that all directory separators must be slashes (Unix-style) and not
 backslashes. All directories should be relative to the source root and all
@@ -28,12 +29,15 @@ import logging
 import optparse
 import os
 import stat
+import string
 import subprocess
 import sys
 
 #### USER EDITABLE SECTION STARTS HERE ####
 
 # Files with these extensions must have executable bit set.
+#
+# Case-sensitive.
 EXECUTABLE_EXTENSIONS = (
   'bat',
   'dll',
@@ -42,16 +46,21 @@ EXECUTABLE_EXTENSIONS = (
 )
 
 # These files must have executable bit set.
+#
+# Case-insensitive, lower-case only.
 EXECUTABLE_PATHS = (
-  # TODO(maruel): Detect ELF files.
-  'chrome/installer/mac/sign_app.sh.in',
-  'chrome/installer/mac/sign_versioned_dir.sh.in',
+  'chrome/test/data/extensions/uitest/plugins/plugin.plugin/contents/'
+      'macos/testnetscapeplugin',
+  'chrome/test/data/extensions/uitest/plugins_private/plugin.plugin/contents/'
+      'macos/testnetscapeplugin',
 )
 
 # These files must not have the executable bit set. This is mainly a performance
 # optimization as these files are not checked for shebang. The list was
 # partially generated from:
 # git ls-files | grep "\\." | sed 's/.*\.//' | sort | uniq -c | sort -b -g
+#
+# Case-sensitive.
 NON_EXECUTABLE_EXTENSIONS = (
   '1',
   '3ds',
@@ -91,6 +100,7 @@ NON_EXECUTABLE_EXTENSIONS = (
   'mm',
   'mms',
   'mock-http-headers',
+  'nexe',
   'nmf',
   'onc',
   'pat',
@@ -122,7 +132,30 @@ NON_EXECUTABLE_EXTENSIONS = (
   'zip',
 )
 
-# File names that are always whitelisted.  (These are all autoconf spew.)
+# These files must not have executable bit set.
+#
+# Case-insensitive, lower-case only.
+NON_EXECUTABLE_PATHS = (
+  'build/android/tests/symbolize/liba.so',
+  'build/android/tests/symbolize/libb.so',
+  'chrome/installer/mac/sign_app.sh.in',
+  'chrome/installer/mac/sign_versioned_dir.sh.in',
+  'chrome/test/data/components/ihfokbkgjpifnbbojhneepfflplebdkc/'
+      'ihfokbkgjpifnbbojhneepfflplebdkc_1/a_changing_binary_file',
+  'chrome/test/data/components/ihfokbkgjpifnbbojhneepfflplebdkc/'
+      'ihfokbkgjpifnbbojhneepfflplebdkc_2/a_changing_binary_file',
+  'chrome/test/data/extensions/uitest/plugins/plugin32.so',
+  'chrome/test/data/extensions/uitest/plugins/plugin64.so',
+  'chrome/test/data/extensions/uitest/plugins_private/plugin32.so',
+  'chrome/test/data/extensions/uitest/plugins_private/plugin64.so',
+  'courgette/testdata/elf-32-1',
+  'courgette/testdata/elf-32-2',
+  'courgette/testdata/elf-64',
+)
+
+# File names that are always whitelisted.  (These are mostly autoconf spew.)
+#
+# Case-sensitive.
 IGNORED_FILENAMES = (
   'config.guess',
   'config.sub',
@@ -137,15 +170,11 @@ IGNORED_FILENAMES = (
 
 # File paths starting with one of these will be ignored as well.
 # Please consider fixing your file permissions, rather than adding to this list.
+#
+# Case-insensitive, lower-case only.
 IGNORED_PATHS = (
-  # TODO(maruel): Detect ELF files.
-  'chrome/test/data/extensions/uitest/plugins/plugin.plugin/contents/'
-      'macos/testnetscapeplugin',
-  'chrome/test/data/extensions/uitest/plugins_private/plugin.plugin/contents/'
-      'macos/testnetscapeplugin',
-  'chrome/installer/mac/sign_app.sh.in',
-  'chrome/installer/mac/sign_versioned_dir.sh.in',
-  'native_client_sdk/src/build_tools/sdk_tools/third_party/',
+  'native_client_sdk/src/build_tools/sdk_tools/third_party/fancy_urllib/'
+      '__init__.py',
   'out/',
   # TODO(maruel): Fix these.
   'third_party/android_testrunner/',
@@ -174,6 +203,11 @@ IGNORED_PATHS = (
 #### USER EDITABLE SECTION ENDS HERE ####
 
 assert set(EXECUTABLE_EXTENSIONS) & set(NON_EXECUTABLE_EXTENSIONS) == set()
+assert set(EXECUTABLE_PATHS) & set(NON_EXECUTABLE_PATHS) == set()
+
+VALID_CHARS = set(string.ascii_lowercase + string.digits + '/-_.')
+for paths in (EXECUTABLE_PATHS, NON_EXECUTABLE_PATHS, IGNORED_PATHS):
+  assert all([set(path).issubset(VALID_CHARS) for path in paths])
 
 
 def capture(cmd, cwd):
@@ -229,23 +263,23 @@ def is_ignored(rel_path):
   rel_path = rel_path.lower()
   return (
       os.path.basename(rel_path) in IGNORED_FILENAMES or
-      rel_path.startswith(IGNORED_PATHS))
+      rel_path.lower().startswith(IGNORED_PATHS))
 
 
 def must_be_executable(rel_path):
   """The file name represents a file type that must have the executable bit
   set.
   """
-  return (
-      os.path.splitext(rel_path)[1][1:].lower() in EXECUTABLE_EXTENSIONS or
-      rel_path in EXECUTABLE_PATHS)
+  return (os.path.splitext(rel_path)[1][1:] in EXECUTABLE_EXTENSIONS or
+          rel_path.lower() in EXECUTABLE_PATHS)
 
 
 def must_not_be_executable(rel_path):
   """The file name represents a file type that must not have the executable
   bit set.
   """
-  return os.path.splitext(rel_path)[1][1:].lower() in NON_EXECUTABLE_EXTENSIONS
+  return (os.path.splitext(rel_path)[1][1:] in NON_EXECUTABLE_EXTENSIONS or
+          rel_path.lower() in NON_EXECUTABLE_PATHS)
 
 
 def has_executable_bit(full_path):
@@ -254,25 +288,28 @@ def has_executable_bit(full_path):
   return bool(permission & os.stat(full_path).st_mode)
 
 
-def has_shebang(full_path):
-  """Returns if the file starts with #!/.
+def has_shebang_or_is_elf(full_path):
+  """Returns if the file starts with #!/ or is an ELF binary.
 
-  file_path is the absolute path to the file.
+  full_path is the absolute path to the file.
   """
   with open(full_path, 'rb') as f:
-    return f.read(3) == '#!/'
+    data = f.read(4)
+    return (data[:3] == '#!/', data == '\x7fELF')
 
-def check_file(full_path, bare_output):
-  """Checks file_path's permissions and returns an error if it is
-  inconsistent.
+
+def check_file(root_path, rel_path, bare_output):
+  """Checks the permissions of the file whose path is root_path + rel_path and
+  returns an error if it is inconsistent.
 
   It is assumed that the file is not ignored by is_ignored().
 
   If the file name is matched with must_be_executable() or
   must_not_be_executable(), only its executable bit is checked.
-  Otherwise, the 3 first bytes of the file are read to verify if it has a
-  shebang and compares this with the executable bit on the file.
+  Otherwise, the first few bytes of the file are read to verify if it has a
+  shebang or ELF header and compares this with the executable bit on the file.
   """
+  full_path = os.path.join(root_path, rel_path)
   try:
     bit = has_executable_bit(full_path)
   except OSError:
@@ -281,50 +318,50 @@ def check_file(full_path, bare_output):
     # third_party/openssl/openssl/test/.
     return None
 
-  if must_be_executable(full_path):
+  if must_be_executable(rel_path):
     if not bit:
       if bare_output:
         return full_path
       return '%s: Must have executable bit set' % full_path
     return
-  if must_not_be_executable(full_path):
+  if must_not_be_executable(rel_path):
     if bit:
       if bare_output:
         return full_path
       return '%s: Must not have executable bit set' % full_path
     return
 
-  # For the others, it depends on the shebang.
-  shebang = has_shebang(full_path)
-  if bit != shebang:
+  # For the others, it depends on the file header.
+  (shebang, elf) = has_shebang_or_is_elf(full_path)
+  if bit != (shebang or elf):
     if bare_output:
       return full_path
     if bit:
-      return '%s: Has executable bit but not shebang' % full_path
-    else:
+      return '%s: Has executable bit but not shebang or ELF header' % full_path
+    if shebang:
       return '%s: Has shebang but not executable bit' % full_path
+    return '%s: Has ELF header but not executable bit' % full_path
 
 
 def check_files(root, files, bare_output):
   errors = []
-  for file_path in files:
-    if is_ignored(file_path):
+  for rel_path in files:
+    if is_ignored(rel_path):
       continue
 
-    full_file_path = os.path.join(root, file_path)
-
-    error = check_file(full_file_path, bare_output)
+    error = check_file(root, rel_path, bare_output)
     if error:
       errors.append(error)
 
   return errors
+
 
 class ApiBase(object):
   def __init__(self, root_dir, bare_output):
     self.root_dir = root_dir
     self.bare_output = bare_output
     self.count = 0
-    self.count_shebang = 0
+    self.count_read_header = 0
 
   def check_file(self, rel_path):
     logging.debug('check_file(%s)' % rel_path)
@@ -332,10 +369,9 @@ class ApiBase(object):
 
     if (not must_be_executable(rel_path) and
         not must_not_be_executable(rel_path)):
-      self.count_shebang += 1
+      self.count_read_header += 1
 
-    full_path = os.path.join(self.root_dir, rel_path)
-    return check_file(full_path, self.bare_output)
+    return check_file(self.root_dir, rel_path, self.bare_output)
 
   def check_dir(self, rel_path):
     return self.check(rel_path)
@@ -491,8 +527,8 @@ Examples:
   errors = api.check(start_dir)
 
   if not options.bare:
-    print 'Processed %s files, %d files where tested for shebang' % (
-        api.count, api.count_shebang)
+    print 'Processed %s files, %d files where tested for shebang/ELF header' % (
+        api.count, api.count_read_header)
 
   if errors:
     if not options.bare:

@@ -17,6 +17,7 @@
 #include <limits>
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
@@ -25,28 +26,25 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "ui/aura/client/capture_client.h"
+#include "base/sys_info.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/x/device_list_cache_x.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_list_cache_x.h"
+#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/screen.h"
-
-#if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
-#endif
 
 using std::max;
 using std::min;
@@ -81,27 +79,13 @@ const char* kAtomsToCache[] = {
 bool IsSideBezelsEnabled() {
   static bool side_bezels_enabled =
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kTouchSideBezels) == "1";
+          switches::kTouchSideBezels) != "0";
   return side_bezels_enabled;
 }
 #endif
 
-void SelectEventsForRootWindow() {
-  XDisplay* display = gfx::GetXDisplay();
-  ::Window root_window = ui::GetX11RootWindow();
-
-  // Receive resize events for the root-window so |x_root_bounds_| can be
-  // updated.
-  XWindowAttributes attr;
-  XGetWindowAttributes(display, root_window, &attr);
-  if (!(attr.your_event_mask & StructureNotifyMask)) {
-    XSelectInput(display, root_window,
-                 StructureNotifyMask | attr.your_event_mask);
-  }
-
-  if (!base::MessagePumpForUI::HasXInput2())
-    return;
-
+void SelectXInput2EventsForRootWindow(XDisplay* display, ::Window root_window) {
+  CHECK(ui::IsXInput2Available());
   unsigned char mask[XIMaskLen(XI_LASTEVENT)] = {};
   memset(mask, 0, sizeof(mask));
 
@@ -115,57 +99,21 @@ void SelectEventsForRootWindow() {
   evmask.mask = mask;
   XISelectEvents(display, root_window, &evmask, 1);
 
-  // Selecting for touch events seems to fail on some cases (e.g. when logging
-  // in incognito). So select for non-touch events first, and then select for
-  // touch-events (but keep the other events in the mask, i.e. do not memset
-  // |mask| back to 0).
-  // TODO(sad): Figure out why this happens. http://crbug.com/153976
-#if defined(USE_XI2_MT)
-  XISetMask(mask, XI_TouchBegin);
-  XISetMask(mask, XI_TouchUpdate);
-  XISetMask(mask, XI_TouchEnd);
-  XISelectEvents(display, root_window, &evmask, 1);
+#if defined(OS_CHROMEOS)
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    // It is necessary to listen for touch events on the root window for proper
+    // touch event calibration on Chrome OS, but this is not currently necessary
+    // on the desktop. This seems to fail in some cases (e.g. when logging
+    // in incognito). So select for non-touch events first, and then select for
+    // touch-events (but keep the other events in the mask, i.e. do not memset
+    // |mask| back to 0).
+    // TODO(sad): Figure out why this happens. http://crbug.com/153976
+    XISetMask(mask, XI_TouchBegin);
+    XISetMask(mask, XI_TouchUpdate);
+    XISetMask(mask, XI_TouchEnd);
+    XISelectEvents(display, root_window, &evmask, 1);
+  }
 #endif
-}
-
-// We emulate Windows' WM_KEYDOWN and WM_CHAR messages.  WM_CHAR events are only
-// generated for certain keys; see
-// http://msdn.microsoft.com/en-us/library/windows/desktop/ms646268.aspx.  Per
-// discussion on http://crbug.com/108480, char events should furthermore not be
-// generated for Tab, Escape, and Backspace.
-bool ShouldSendCharEventForKeyboardCode(ui::KeyboardCode keycode) {
-  if ((keycode >= ui::VKEY_0 && keycode <= ui::VKEY_9) ||
-      (keycode >= ui::VKEY_A && keycode <= ui::VKEY_Z) ||
-      (keycode >= ui::VKEY_NUMPAD0 && keycode <= ui::VKEY_NUMPAD9)) {
-    return true;
-  }
-
-  switch (keycode) {
-    case ui::VKEY_RETURN:
-    case ui::VKEY_SPACE:
-    // In addition to the keys listed at MSDN, we include other
-    // graphic-character and numpad keys.
-    case ui::VKEY_MULTIPLY:
-    case ui::VKEY_ADD:
-    case ui::VKEY_SUBTRACT:
-    case ui::VKEY_DECIMAL:
-    case ui::VKEY_DIVIDE:
-    case ui::VKEY_OEM_1:
-    case ui::VKEY_OEM_2:
-    case ui::VKEY_OEM_3:
-    case ui::VKEY_OEM_4:
-    case ui::VKEY_OEM_5:
-    case ui::VKEY_OEM_6:
-    case ui::VKEY_OEM_7:
-    case ui::VKEY_OEM_102:
-    case ui::VKEY_OEM_PLUS:
-    case ui::VKEY_OEM_COMMA:
-    case ui::VKEY_OEM_MINUS:
-    case ui::VKEY_OEM_PERIOD:
-      return true;
-    default:
-      return false;
-  }
 }
 
 bool default_override_redirect = false;
@@ -362,15 +310,13 @@ class RootWindowHostX11::MouseMoveFilter {
 // RootWindowHostX11
 
 RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
-    : delegate_(NULL),
-      xdisplay_(gfx::GetXDisplay()),
+    : xdisplay_(gfx::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_cursor_(ui::kCursorNull),
       window_mapped_(false),
       bounds_(bounds),
       is_internal_display_(false),
-      focus_when_shown_(false),
       touch_calibrate_(new internal::TouchEventCalibrate),
       mouse_move_filter_(new MouseMoveFilter),
       atom_cache_(xdisplay_, kAtomsToCache),
@@ -400,15 +346,10 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
   XSelectInput(xdisplay_, xwindow_, event_mask);
   XFlush(xdisplay_);
 
-  if (base::MessagePumpForUI::HasXInput2())
+  if (ui::IsXInput2Available()) {
     ui::TouchFactory::GetInstance()->SetupXI2ForXWindow(xwindow_);
-
-  SelectEventsForRootWindow();
-
-  // Get the initial size of the X root window.
-  XWindowAttributes attrs;
-  XGetWindowAttributes(xdisplay_, x_root_window_, &attrs);
-  x_root_bounds_.SetRect(attrs.x, attrs.y, attrs.width, attrs.height);
+    SelectXInput2EventsForRootWindow(xdisplay_, x_root_window_);
+  }
 
   // TODO(erg): We currently only request window deletion events. We also
   // should listen for activation events and anything else that GTK+ listens
@@ -424,7 +365,9 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
 
   // Likewise, the X server needs to know this window's pid so it knows which
   // program to kill if the window hangs.
-  pid_t pid = getpid();
+  // XChangeProperty() expects "pid" to be long.
+  COMPILE_ASSERT(sizeof(long) >= sizeof(pid_t), pid_t_bigger_than_long);
+  long pid = getpid();
   XChangeProperty(xdisplay_,
                   xwindow_,
                   atom_cache_.GetAtom("_NET_WM_PID"),
@@ -456,6 +399,14 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
 
   switch (xev->type) {
     case EnterNotify: {
+      aura::Window* root_window = GetRootWindow()->window();
+      client::CursorClient* cursor_client =
+          client::GetCursorClient(root_window);
+      if (cursor_client) {
+        const gfx::Display display = gfx::Screen::GetScreenFor(root_window)->
+            GetDisplayNearestWindow(root_window);
+        cursor_client->SetDisplay(display);
+      }
       ui::MouseEvent mouse_event(xev);
       // EnterNotify creates ET_MOUSE_MOVE. Mark as synthesized as this is not
       // real mouse move event.
@@ -488,7 +439,7 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
       if (static_cast<int>(xev->xbutton.button) == kBackMouseButton ||
           static_cast<int>(xev->xbutton.button) == kForwardMouseButton) {
         client::UserActionClient* gesture_client =
-            client::GetUserActionClient(delegate_->AsRootWindow());
+            client::GetUserActionClient(delegate_->AsRootWindow()->window());
         if (gesture_client) {
           gesture_client->OnUserAction(
               static_cast<int>(xev->xbutton.button) == kBackMouseButton ?
@@ -499,8 +450,24 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
       }
     }  // fallthrough
     case ButtonRelease: {
-      ui::MouseEvent mouseev(xev);
-      TranslateAndDispatchMouseEvent(&mouseev);
+      switch (ui::EventTypeFromNative(xev)) {
+        case ui::ET_MOUSEWHEEL: {
+          ui::MouseWheelEvent mouseev(xev);
+          TranslateAndDispatchMouseEvent(&mouseev);
+          break;
+        }
+        case ui::ET_MOUSE_PRESSED:
+        case ui::ET_MOUSE_RELEASED: {
+          ui::MouseEvent mouseev(xev);
+          TranslateAndDispatchMouseEvent(&mouseev);
+          break;
+        }
+        case ui::ET_UNKNOWN:
+          // No event is created for X11-release events for mouse-wheel buttons.
+          break;
+        default:
+          NOTREACHED();
+      }
       break;
     }
     case FocusOut:
@@ -534,13 +501,6 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
     case GenericEvent:
       DispatchXI2Event(event);
       break;
-    case MapNotify: {
-      // If there's no window manager running, we need to assign the X input
-      // focus to our host window.
-      if (!IsWindowManagerPresent() && focus_when_shown_)
-        XSetInputFocus(xdisplay_, xwindow_, RevertToNone, CurrentTime);
-      break;
-    }
     case ClientMessage: {
       Atom message_type = static_cast<Atom>(xev->xclient.data.l[0]);
       if (message_type == atom_cache_.GetAtom("WM_DELETE_WINDOW")) {
@@ -566,7 +526,7 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
           delegate_->AsRootWindow()->OnKeyboardMappingChanged();
           break;
         case MappingPointer:
-          ui::UpdateButtonMap();
+          ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
           break;
         default:
           NOTIMPLEMENTED() << " Unknown request: " << xev->xmapping.request;
@@ -598,10 +558,6 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
     }
   }
   return true;
-}
-
-void RootWindowHostX11::SetDelegate(RootWindowHostDelegate* delegate) {
-  delegate_ = delegate;
 }
 
 RootWindow* RootWindowHostX11::GetRootWindow() {
@@ -654,8 +610,9 @@ void RootWindowHostX11::SetBounds(const gfx::Rect& bounds) {
   // Even if the host window's size doesn't change, aura's root window
   // size, which is in DIP, changes when the scale changes.
   float current_scale = delegate_->GetDeviceScaleFactor();
-  float new_scale = gfx::Screen::GetScreenFor(delegate_->AsRootWindow())->
-      GetDisplayNearestWindow(delegate_->AsRootWindow()).device_scale_factor();
+  float new_scale = gfx::Screen::GetScreenFor(
+      delegate_->AsRootWindow()->window())->GetDisplayNearestWindow(
+          delegate_->AsRootWindow()->window()).device_scale_factor();
   bool origin_changed = bounds_.origin() != bounds.origin();
   bool size_changed = bounds_.size() != bounds.size();
   XWindowChanges changes = {0};
@@ -687,8 +644,8 @@ void RootWindowHostX11::SetBounds(const gfx::Rect& bounds) {
   if (size_changed || current_scale != new_scale) {
     delegate_->OnHostResized(bounds.size());
   } else {
-    delegate_->AsRootWindow()->SchedulePaintInRect(
-        delegate_->AsRootWindow()->bounds());
+    delegate_->AsRootWindow()->window()->SchedulePaintInRect(
+        delegate_->AsRootWindow()->window()->bounds());
   }
 }
 
@@ -725,7 +682,7 @@ void RootWindowHostX11::SetCursor(gfx::NativeCursor cursor) {
 
 bool RootWindowHostX11::QueryMouseLocation(gfx::Point* location_return) {
   client::CursorClient* cursor_client =
-      client::GetCursorClient(GetRootWindow());
+      client::GetCursorClient(GetRootWindow()->window());
   if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
     *location_return = gfx::Point(0, 0);
     return false;
@@ -805,17 +762,6 @@ void RootWindowHostX11::MoveCursorTo(const gfx::Point& location) {
                bounds_.y() + location.y());
 }
 
-void RootWindowHostX11::SetFocusWhenShown(bool focus_when_shown) {
-  static const char* k_NET_WM_USER_TIME = "_NET_WM_USER_TIME";
-  focus_when_shown_ = focus_when_shown;
-  if (IsWindowManagerPresent() && !focus_when_shown_) {
-    ui::SetIntProperty(xwindow_,
-                       k_NET_WM_USER_TIME,
-                       k_NET_WM_USER_TIME,
-                       0);
-  }
-}
-
 void RootWindowHostX11::PostNativeEvent(
     const base::NativeEvent& native_event) {
   DCHECK(xwindow_);
@@ -839,7 +785,7 @@ void RootWindowHostX11::PostNativeEvent(
       xevent.xmotion.time = CurrentTime;
 
       gfx::Point point(xevent.xmotion.x, xevent.xmotion.y);
-      delegate_->AsRootWindow()->ConvertPointToNativeScreen(&point);
+      delegate_->AsRootWindow()->host()->ConvertPointToNativeScreen(&point);
       xevent.xmotion.x_root = point.x();
       xevent.xmotion.y_root = point.y();
     }
@@ -876,15 +822,13 @@ void RootWindowHostX11::OnRootWindowInitialized(RootWindow* root_window) {
   SetCrOSTapPaused(false);
 }
 
+ui::EventProcessor* RootWindowHostX11::GetEventProcessor() {
+  return delegate_->GetEventProcessor();
+}
+
 bool RootWindowHostX11::DispatchEventForRootWindow(
     const base::NativeEvent& event) {
   switch (event->type) {
-    case ConfigureNotify:
-      DCHECK_EQ(x_root_window_, event->xconfigure.event);
-      x_root_bounds_.SetRect(event->xconfigure.x, event->xconfigure.y,
-          event->xconfigure.width, event->xconfigure.height);
-      break;
-
     case GenericEvent:
       DispatchXI2Event(event);
       break;
@@ -913,6 +857,18 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
     case ui::ET_TOUCH_PRESSED:
     case ui::ET_TOUCH_CANCELLED:
     case ui::ET_TOUCH_RELEASED: {
+#if defined(OS_CHROMEOS)
+      // Bail out early before generating a ui::TouchEvent if this event
+      // is not within the range of this RootWindow. Converting an xevent
+      // to ui::TouchEvent might change the state of the global touch tracking
+      // state, e.g. touch release event can remove the touch id from the
+      // record, and doing this multiple time when there are multiple
+      // RootWindow will cause problem. So only generate the ui::TouchEvent
+      // when we are sure it belongs to this RootWindow.
+      if (base::SysInfo::IsRunningOnChromeOS() &&
+          !bounds_.Contains(ui::EventLocationFromNative(xev)))
+        break;
+#endif  // defined(OS_CHROMEOS)
       ui::TouchEvent touchev(xev);
 #if defined(USE_XI2_MT)
       // Ignore touch events with touch press happening on the side bezel.
@@ -930,9 +886,7 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
       }
 #endif  // defined(USE_XI2_MT)
 #if defined(OS_CHROMEOS)
-      if (base::chromeos::IsRunningOnChromeOS()) {
-        if (!bounds_.Contains(touchev.location()))
-          break;
+      if (base::SysInfo::IsRunningOnChromeOS()) {
         // X maps the touch-surface to the size of the X root-window.
         // In multi-monitor setup, Coordinate Transformation Matrix
         // repositions the touch-surface onto part of X root-window
@@ -973,7 +927,7 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
           if (type == ui::ET_MOUSE_RELEASED)
             break;
           client::UserActionClient* gesture_client =
-              client::GetUserActionClient(delegate_->AsRootWindow());
+              client::GetUserActionClient(delegate_->AsRootWindow()->window());
           if (gesture_client) {
             bool reverse_direction =
                 ui::IsTouchpadEvent(xev) && ui::IsNaturalScrollEnabled();
@@ -1028,9 +982,9 @@ void RootWindowHostX11::SetCursorInternal(gfx::NativeCursor cursor) {
 
 void RootWindowHostX11::TranslateAndDispatchMouseEvent(
     ui::MouseEvent* event) {
-  RootWindow* root_window = GetRootWindow();
+  Window* root_window = GetRootWindow()->window();
   client::ScreenPositionClient* screen_position_client =
-      GetScreenPositionClient(root_window);
+      client::GetScreenPositionClient(root_window);
   gfx::Rect local(bounds_.size());
 
   if (screen_position_client && !local.Contains(event->location())) {
@@ -1041,7 +995,7 @@ void RootWindowHostX11::TranslateAndDispatchMouseEvent(
     // host window, then convert it back to this host window's coordinate.
     screen_position_client->ConvertHostPointToScreen(root_window, &location);
     screen_position_client->ConvertPointFromScreen(root_window, &location);
-    root_window->ConvertPointToHost(&location);
+    root_window->GetDispatcher()->ConvertPointToHost(&location);
     event->set_location(location);
     event->set_root_location(location);
   }
@@ -1049,7 +1003,7 @@ void RootWindowHostX11::TranslateAndDispatchMouseEvent(
 }
 
 void RootWindowHostX11::UpdateIsInternalDisplay() {
-  RootWindow* root_window = GetRootWindow();
+  Window* root_window = GetRootWindow()->window();
   gfx::Screen* screen = gfx::Screen::GetScreenFor(root_window);
   gfx::Display display = screen->GetDisplayNearestWindow(root_window);
   is_internal_display_ = display.IsInternal();
@@ -1057,6 +1011,8 @@ void RootWindowHostX11::UpdateIsInternalDisplay() {
 
 void RootWindowHostX11::SetCrOSTapPaused(bool state) {
 #if defined(OS_CHROMEOS)
+  if (!ui::IsXInput2Available())
+    return;
   // Temporarily pause tap-to-click when the cursor is hidden.
   Atom prop = atom_cache_.GetAtom("Tap Paused");
   unsigned char value = state;

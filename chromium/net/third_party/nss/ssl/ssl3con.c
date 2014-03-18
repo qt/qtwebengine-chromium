@@ -3469,6 +3469,9 @@ ssl3_HandleAlert(sslSocket *ss, sslBuffer *buf)
     case certificate_unknown: 	error = SSL_ERROR_CERTIFICATE_UNKNOWN_ALERT;
 			        					  break;
     case illegal_parameter: 	error = SSL_ERROR_ILLEGAL_PARAMETER_ALERT;break;
+    case inappropriate_fallback:
+        error = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+        break;
 
     /* All alerts below are TLS only. */
     case unknown_ca: 		error = SSL_ERROR_UNKNOWN_CA_ALERT;       break;
@@ -4973,8 +4976,9 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     int              num_suites;
     int              actual_count = 0;
     PRBool           isTLS = PR_FALSE;
-    PRBool           requestingResume = PR_FALSE;
+    PRBool           requestingResume = PR_FALSE, fallbackSCSV = PR_FALSE;
     PRInt32          total_exten_len = 0;
+    unsigned         paddingExtensionLen;
     unsigned         numCompressionMethods;
     PRInt32          flags;
 
@@ -5222,8 +5226,15 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     num_suites = count_cipher_suites(ss, ss->ssl3.policy, PR_TRUE);
     if (!num_suites)
     	return SECFailure;	/* count_cipher_suites has set error code. */
+
+    fallbackSCSV = ss->opt.enableFallbackSCSV && (!requestingResume ||
+						  ss->version < sid->version);
+    /* make room for SCSV */
     if (ss->ssl3.hs.sendingSCSV) {
-	++num_suites;   /* make room for SCSV */
+	++num_suites;
+    }
+    if (fallbackSCSV) {
+	++num_suites;
     }
 
     /* count compression methods */
@@ -5239,6 +5250,20 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
 	1 + numCompressionMethods + total_exten_len;
     if (IS_DTLS(ss)) {
 	length += 1 + ss->ssl3.hs.cookieLen;
+    }
+
+    /* A padding extension may be included to ensure that the record containing
+     * the ClientHello doesn't have a length between 256 and 511 bytes
+     * (inclusive). Initial, ClientHello records with such lengths trigger bugs
+     * in F5 devices.
+     *
+     * This is not done for DTLS nor for renegotiation. */
+    if (!IS_DTLS(ss) && isTLS && !ss->firstHsDone) {
+        paddingExtensionLen = ssl3_CalculatePaddingExtensionLength(length);
+        total_exten_len += paddingExtensionLen;
+        length += paddingExtensionLen;
+    } else {
+        paddingExtensionLen = 0;
     }
 
     rv = ssl3_AppendHandshakeHeader(ss, client_hello, length);
@@ -5307,6 +5332,14 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
 	}
 	actual_count++;
     }
+    if (fallbackSCSV) {
+	rv = ssl3_AppendHandshakeNumber(ss, TLS_FALLBACK_SCSV,
+					sizeof(ssl3CipherSuite));
+	if (rv != SECSuccess) {
+	    return rv;	/* err set by ssl3_AppendHandshake* */
+	}
+	actual_count++;
+    }
     for (i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
 	ssl3CipherSuiteCfg *suite = &ss->cipherSuites[i];
 	if (config_match(suite, ss->ssl3.policy, PR_TRUE, &ss->vrange)) {
@@ -5360,6 +5393,13 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
 	    return SECFailure;
 	}
 	maxBytes -= extLen;
+
+	extLen = ssl3_AppendPaddingExtension(ss, paddingExtensionLen, maxBytes);
+	if (extLen < 0) {
+	    return SECFailure;
+	}
+	maxBytes -= extLen;
+
 	PORT_Assert(!maxBytes);
     } 
     if (ss->ssl3.hs.sendingSCSV) {
@@ -6617,10 +6657,22 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     sid->u.ssl3.sessionIDLength = sidBytes.len;
     PORT_Memcpy(sid->u.ssl3.sessionID, sidBytes.data, sidBytes.len);
 
+    /* Copy Signed Certificate Timestamps, if any. */
+    if (ss->xtnData.signedCertTimestamps.data) {
+	rv = SECITEM_CopyItem(NULL, &sid->u.ssl3.signedCertTimestamps,
+			      &ss->xtnData.signedCertTimestamps);
+	if (rv != SECSuccess)
+	    goto loser;
+    }
+
     ss->ssl3.hs.isResuming = PR_FALSE;
     ss->ssl3.hs.ws         = wait_server_cert;
 
 winner:
+    /* Clean up the temporary pointer to the handshake buffer. */
+    ss->xtnData.signedCertTimestamps.data = NULL;
+    ss->xtnData.signedCertTimestamps.len = 0;
+
     /* If we will need a ChannelID key then we make the callback now. This
      * allows the handshake to be restarted cleanly if the callback returns
      * SECWouldBlock. */
@@ -6646,6 +6698,9 @@ alert_loser:
     (void)SSL3_SendAlert(ss, alert_fatal, desc);
 
 loser:
+    /* Clean up the temporary pointer to the handshake buffer. */
+    ss->xtnData.signedCertTimestamps.data = NULL;
+    ss->xtnData.signedCertTimestamps.len = 0;
     errCode = ssl_MapLowLevelError(errCode);
     return SECFailure;
 }
@@ -6936,14 +6991,27 @@ no_memory:	/* no-memory error has already been set. */
 
 
 /*
- * Returns true if the client authentication key is an RSA or DSA key that
- * may be able to sign only SHA-1 hashes.
+ * Returns the TLS signature algorithm for the client authentication key and
+ * whether it is an RSA or DSA key that may be able to sign only SHA-1 hashes.
  */
-static PRBool
-ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
+static SECStatus
+ssl3_ExtractClientKeyInfo(sslSocket *ss,
+			  TLSSignatureAlgorithm *sigAlg,
+			  PRBool *preferSha1)
 {
+    SECStatus rv = SECSuccess;
     SECKEYPublicKey *pubk;
-    PRBool prefer_sha1 = PR_FALSE;
+
+    pubk = CERT_ExtractPublicKey(ss->ssl3.clientCertificate);
+    if (pubk == NULL) {
+	rv = SECFailure;
+	goto done;
+    }
+
+    rv = ssl3_TLSSignatureAlgorithmForKeyType(pubk->keyType, sigAlg);
+    if (rv != SECSuccess) {
+	goto done;
+    }
 
 #if defined(NSS_PLATFORM_CLIENT_AUTH) && defined(_WIN32)
     /* If the key is in CAPI, assume conservatively that the CAPI service
@@ -6952,7 +7020,8 @@ ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
     if (ss->ssl3.platformClientKey->dwKeySpec != CERT_NCRYPT_KEY_SPEC) {
 	/* CAPI only supports RSA and DSA signatures, so we don't need to
 	 * check the key type. */
-	return PR_TRUE;
+	*preferSha1 = PR_TRUE;
+	goto done;
     }
 #endif  /* NSS_PLATFORM_CLIENT_AUTH && _WIN32 */
 
@@ -6962,38 +7031,61 @@ ssl3_ClientKeyPrefersSHA1(sslSocket *ss)
      * older, DSA key size is at most 1024 bits and the hash function must
      * be SHA-1.
      */
-    pubk = CERT_ExtractPublicKey(ss->ssl3.clientCertificate);
-    if (pubk == NULL) {
-	return PR_FALSE;
-    }
     if (pubk->keyType == rsaKey || pubk->keyType == dsaKey) {
-	prefer_sha1 = SECKEY_PublicKeyStrength(pubk) <= 128;
+	*preferSha1 = SECKEY_PublicKeyStrength(pubk) <= 128;
+    } else {
+	*preferSha1 = PR_FALSE;
     }
-    SECKEY_DestroyPublicKey(pubk);
-    return prefer_sha1;
+
+  done:
+    if (pubk)
+	SECKEY_DestroyPublicKey(pubk);
+    return rv;
 }
 
-/* Destroys the backup handshake hash context if we don't need it. */
+/* Destroys the backup handshake hash context if we don't need it. Note that
+ * this function selects the hash algorithm for client authentication
+ * signatures; ssl3_SendCertificateVerify uses the presence of the backup hash
+ * to determine whether to use SHA-1 or SHA-256. */
 static void
 ssl3_DestroyBackupHandshakeHashIfNotNeeded(sslSocket *ss,
 					   const SECItem *algorithms)
 {
-    PRBool need_backup_hash = PR_FALSE;
+    SECStatus rv;
+    TLSSignatureAlgorithm sigAlg;
+    PRBool preferSha1;
+    PRBool supportsSha1 = PR_FALSE;
+    PRBool supportsSha256 = PR_FALSE;
+    PRBool needBackupHash = PR_FALSE;
     unsigned int i;
 
     PORT_Assert(ss->ssl3.hs.md5);
-    if (ssl3_ClientKeyPrefersSHA1(ss)) {
-	/* Use SHA-1 if the server supports it. */
-	for (i = 0; i < algorithms->len; i += 2) {
-	    if (algorithms->data[i] == tls_hash_sha1 &&
-		(algorithms->data[i+1] == tls_sig_rsa ||
-		 algorithms->data[i+1] == tls_sig_dsa)) {
-		need_backup_hash = PR_TRUE;
-		break;
+
+    /* Determine the key's signature algorithm and whether it prefers SHA-1. */
+    rv = ssl3_ExtractClientKeyInfo(ss, &sigAlg, &preferSha1);
+    if (rv != SECSuccess) {
+	goto done;
+    }
+
+    /* Determine the server's hash support for that signature algorithm. */
+    for (i = 0; i < algorithms->len; i += 2) {
+	if (algorithms->data[i+1] == sigAlg) {
+	    if (algorithms->data[i] == tls_hash_sha1) {
+		supportsSha1 = PR_TRUE;
+	    } else if (algorithms->data[i] == tls_hash_sha256) {
+		supportsSha256 = PR_TRUE;
 	    }
 	}
     }
-    if (!need_backup_hash) {
+
+    /* If either the server does not support SHA-256 or the client key prefers
+     * SHA-1, leave the backup hash. */
+    if (supportsSha1 && (preferSha1 || !supportsSha256)) {
+	needBackupHash = PR_TRUE;
+    }
+
+done:
+    if (!needBackupHash) {
 	PK11_DestroyContext(ss->ssl3.hs.md5, PR_TRUE);
 	ss->ssl3.hs.md5 = NULL;
     }
@@ -7352,40 +7444,69 @@ ssl3_RestartHandshakeAfterCertReq(sslSocket *         ss,
 static SECStatus
 ssl3_CheckFalseStart(sslSocket *ss)
 {
-    SECStatus rv;
-    PRBool maybeFalseStart = PR_TRUE;
-
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
     PORT_Assert( !ss->ssl3.hs.authCertificatePending );
-
-    /* An attacker can control the selected ciphersuite so we only wish to
-     * do False Start in the case that the selected ciphersuite is
-     * sufficiently strong that the attack can gain no advantage.
-     * Therefore we always require an 80-bit cipher. */
-
-    ssl_GetSpecReadLock(ss);
-    if (ss->ssl3.cwSpec->cipher_def->secret_key_size < 10) {
-	ss->ssl3.hs.canFalseStart = PR_FALSE;
-	maybeFalseStart = PR_FALSE;
-    }
-    ssl_ReleaseSpecReadLock(ss);
-    if (!maybeFalseStart) {
-	return SECSuccess;
-    }
+    PORT_Assert( !ss->ssl3.hs.canFalseStart );
 
     if (!ss->canFalseStartCallback) {
-	rv = SSL_DefaultCanFalseStart(ss->fd, &ss->ssl3.hs.canFalseStart);
+	SSL_TRC(3, ("%d: SSL[%d]: no false start callback so no false start",
+		    SSL_GETPID(), ss->fd));
     } else {
-	rv = (ss->canFalseStartCallback)(ss->fd,
- 					 ss->canFalseStartCallbackData,
-					 &ss->ssl3.hs.canFalseStart);
+	PRBool maybeFalseStart;
+	SECStatus rv;
+
+	/* An attacker can control the selected ciphersuite so we only wish to
+	 * do False Start in the case that the selected ciphersuite is
+	 * sufficiently strong that the attack can gain no advantage.
+	 * Therefore we always require an 80-bit cipher. */
+        ssl_GetSpecReadLock(ss);
+        maybeFalseStart = ss->ssl3.cwSpec->cipher_def->secret_key_size >= 10;
+        ssl_ReleaseSpecReadLock(ss);
+
+	if (!maybeFalseStart) {
+	    SSL_TRC(3, ("%d: SSL[%d]: no false start due to weak cipher",
+			SSL_GETPID(), ss->fd));
+	} else {
+	    rv = (ss->canFalseStartCallback)(ss->fd,
+					     ss->canFalseStartCallbackData,
+					     &ss->ssl3.hs.canFalseStart);
+	    if (rv == SECSuccess) {
+		SSL_TRC(3, ("%d: SSL[%d]: false start callback returned %s",
+			    SSL_GETPID(), ss->fd,
+			    ss->ssl3.hs.canFalseStart ? "TRUE" : "FALSE"));
+	    } else {
+		SSL_TRC(3, ("%d: SSL[%d]: false start callback failed (%s)",
+			    SSL_GETPID(), ss->fd,
+			    PR_ErrorToName(PR_GetError())));
+	    }
+	    return rv;
+	}
     }
 
-    if (rv != SECSuccess) {
-	ss->ssl3.hs.canFalseStart = PR_FALSE;
+    ss->ssl3.hs.canFalseStart = PR_FALSE;
+    return SECSuccess;
+}
+
+PRBool
+ssl3_WaitingForStartOfServerSecondRound(sslSocket *ss)
+{
+    PRBool result;
+
+    PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
+
+    switch (ss->ssl3.hs.ws) {
+    case wait_new_session_ticket:
+        result = PR_TRUE;
+        break;
+    case wait_change_cipher:
+        result = !ssl3_ExtensionNegotiated(ss, ssl_session_ticket_xtn);
+        break;
+    default:
+        result = PR_FALSE;
+        break;
     }
 
-    return rv;
+    return result;
 }
 
 static SECStatus ssl3_SendClientSecondRound(sslSocket *ss);
@@ -7475,6 +7596,9 @@ ssl3_SendClientSecondRound(sslSocket *ss)
     }
     if (ss->ssl3.hs.authCertificatePending &&
 	(sendClientCert || ss->ssl3.sendEmptyCert || ss->firstHsDone)) {
+	SSL_TRC(3, ("%d: SSL3[%p]: deferring ssl3_SendClientSecondRound because"
+		    " certificate authentication is still pending.",
+		    SSL_GETPID(), ss->fd));
 	ss->ssl3.hs.restartTarget = ssl3_SendClientSecondRound;
 	return SECWouldBlock;
     }
@@ -7544,7 +7668,7 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 		 * call ssl3_CheckFalseStart before calling ssl3_SendFinished,
 		 * which includes a call to ssl3_FlushHandshake, so that
 		 * no application develops a reliance on such flushing being
-                 * done before its false start callback is called.
+		 * done before its false start callback is called.
 		 */
 		ssl_ReleaseXmitBufLock(ss);
 		rv = ssl3_CheckFalseStart(ss);
@@ -7572,23 +7696,39 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 
     ssl_ReleaseXmitBufLock(ss);		/*******************************/
 
+    if (!ss->ssl3.hs.isResuming &&
+        ssl3_ExtensionNegotiated(ss, ssl_channel_id_xtn)) {
+        /* If we are negotiating ChannelID on a full handshake then we record
+         * the handshake hashes in |sid| at this point. They will be needed in
+         * the event that we resume this session and use ChannelID on the
+         * resumption handshake. */
+        SSL3Hashes hashes;
+        SECItem *originalHandshakeHash =
+            &ss->sec.ci.sid->u.ssl3.originalHandshakeHash;
+        PORT_Assert(ss->sec.ci.sid->cached == never_cached);
+
+        ssl_GetSpecReadLock(ss);
+        PORT_Assert(ss->version > SSL_LIBRARY_VERSION_3_0);
+        rv = ssl3_ComputeHandshakeHashes(ss, ss->ssl3.cwSpec, &hashes, 0);
+        ssl_ReleaseSpecReadLock(ss);
+        if (rv != SECSuccess) {
+            return rv;
+        }
+
+        PORT_Assert(originalHandshakeHash->len == 0);
+        originalHandshakeHash->data = PORT_Alloc(hashes.len);
+        if (!originalHandshakeHash->data)
+            return SECFailure;
+        originalHandshakeHash->len = hashes.len;
+        memcpy(originalHandshakeHash->data, hashes.u.raw, hashes.len);
+    }
+
     if (ssl3_ExtensionNegotiated(ss, ssl_session_ticket_xtn))
 	ss->ssl3.hs.ws = wait_new_session_ticket;
     else
 	ss->ssl3.hs.ws = wait_change_cipher;
 
-    if (ss->handshakeCallback &&
-	(ss->ssl3.hs.canFalseStart && !ss->canFalseStartCallback)) {
-	/* Call the handshake callback here for backwards compatibility with
-	 * applications that were using false start before
-	 * canFalseStartCallback was added. Note that we do this after calling
-	 * ssl3_SendFinished, which includes a call to ssl3_FlushHandshake,
-	 * just in case the application is relying on having the handshake
-	 * messages flushed to the network before its handshake callback is
-	 * called.
-	 */
-	(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
-    }
+    PORT_Assert(ssl3_WaitingForStartOfServerSecondRound(ss));
 
     return SECSuccess;
 
@@ -7913,6 +8053,19 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     rv = ssl3_ConsumeHandshakeVariable(ss, &suites, 2, &b, &length);
     if (rv != SECSuccess) {
 	goto loser;		/* malformed */
+    }
+
+    /* If the ClientHello version is less than our maximum version, check for a
+     * TLS_FALLBACK_SCSV and reject the connection if found. */
+    if (ss->vrange.max > ss->clientHelloVersion) {
+	for (i = 0; i + 1 < suites.len; i += 2) {
+	    PRUint16 suite_i = (suites.data[i] << 8) | suites.data[i + 1];
+	    if (suite_i != TLS_FALLBACK_SCSV)
+		continue;
+	    desc = inappropriate_fallback;
+	    errCode = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+	    goto alert_loser;
+	}
     }
 
     /* grab the list of compression methods. */
@@ -10345,36 +10498,24 @@ ssl3_AuthCertificateComplete(sslSocket *ss, PRErrorCode error)
 	    rv = SECSuccess;
 	}
     } else {
-	SSL_TRC(3, ("%d: SSL3[%p]: certificate authentication won the race"
-        	    " with peer's finished message", SSL_GETPID(), ss->fd));
+	SSL_TRC(3, ("%d: SSL3[%p]: certificate authentication won the race with"
+        	    " peer's finished message", SSL_GETPID(), ss->fd));
 
 	PORT_Assert(!ss->firstHsDone);
 	PORT_Assert(!ss->sec.isServer);
 	PORT_Assert(!ss->ssl3.hs.isResuming);
-	PORT_Assert(ss->ssl3.hs.ws == wait_change_cipher ||
-		    ss->ssl3.hs.ws == wait_finished ||		
-		    ss->ssl3.hs.ws == wait_new_session_ticket);
+	PORT_Assert(ss->ssl3.hs.ws != idle_handshake);
 
-	/* ssl3_SendClientSecondRound deferred the false start check because
-	 * certificate authentication was pending, so we have to do it now.
-	 */
 	if (ss->opt.enableFalseStart &&
 	    !ss->firstHsDone &&
 	    !ss->sec.isServer &&
 	    !ss->ssl3.hs.isResuming &&
-	    (ss->ssl3.hs.ws == wait_change_cipher ||
-	     ss->ssl3.hs.ws == wait_finished ||		
-	     ss->ssl3.hs.ws == wait_new_session_ticket)) {
+	    ssl3_WaitingForStartOfServerSecondRound(ss)) {
+	    /* ssl3_SendClientSecondRound deferred the false start check because
+	     * certificate authentication was pending, so we do it now if we still
+	     * haven't received any of the server's second round yet.
+	     */
 	    rv = ssl3_CheckFalseStart(ss);
-	    if (rv == SECSuccess &&
-		ss->handshakeCallback &&
-		(ss->ssl3.hs.canFalseStart && !ss->canFalseStartCallback)) {
-		/* Call the handshake callback here for backwards compatibility
-		 * with applications that were using false start before
-		 * canFalseStartCallback was added.
-		 */
-		(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
-	    }
 	} else {
 	    rv = SECSuccess;
 	}
@@ -10568,6 +10709,7 @@ static SECStatus
 ssl3_SendEncryptedExtensions(sslSocket *ss)
 {
     static const char CHANNEL_ID_MAGIC[] = "TLS Channel ID signature";
+    static const char CHANNEL_ID_RESUMPTION_MAGIC[] = "Resumption";
     /* This is the ASN.1 prefix for a P-256 public key. Specifically it's:
      * SEQUENCE
      *   SEQUENCE
@@ -10593,7 +10735,10 @@ ssl3_SendEncryptedExtensions(sslSocket *ss)
     SECItem *spki = NULL;
     SSL3Hashes hashes;
     const unsigned char *pub_bytes;
-    unsigned char signed_data[sizeof(CHANNEL_ID_MAGIC) + sizeof(SSL3Hashes)];
+    unsigned char signed_data[sizeof(CHANNEL_ID_MAGIC) +
+                              sizeof(CHANNEL_ID_RESUMPTION_MAGIC) +
+                              sizeof(SSL3Hashes)*2];
+    size_t signed_data_len;
     unsigned char digest[SHA256_LENGTH];
     SECItem digest_item;
     unsigned char signature[64];
@@ -10635,7 +10780,7 @@ ssl3_SendEncryptedExtensions(sslSocket *ss)
     spki = SECKEY_EncodeDERSubjectPublicKeyInfo(ss->ssl3.channelIDPub);
 
     if (spki->len != sizeof(P256_SPKI_PREFIX) + CHANNEL_ID_PUBLIC_KEY_LENGTH ||
-	memcmp(spki->data, P256_SPKI_PREFIX, sizeof(P256_SPKI_PREFIX) != 0)) {
+	memcmp(spki->data, P256_SPKI_PREFIX, sizeof(P256_SPKI_PREFIX)) != 0) {
 	PORT_SetError(SSL_ERROR_INVALID_CHANNEL_ID_KEY);
 	rv = SECFailure;
 	goto loser;
@@ -10643,11 +10788,26 @@ ssl3_SendEncryptedExtensions(sslSocket *ss)
 
     pub_bytes = spki->data + sizeof(P256_SPKI_PREFIX);
 
-    memcpy(signed_data, CHANNEL_ID_MAGIC, sizeof(CHANNEL_ID_MAGIC));
-    memcpy(signed_data + sizeof(CHANNEL_ID_MAGIC), hashes.u.raw, hashes.len);
+    signed_data_len = 0;
+    memcpy(signed_data + signed_data_len, CHANNEL_ID_MAGIC,
+           sizeof(CHANNEL_ID_MAGIC));
+    signed_data_len += sizeof(CHANNEL_ID_MAGIC);
+    if (ss->ssl3.hs.isResuming) {
+        SECItem *originalHandshakeHash =
+            &ss->sec.ci.sid->u.ssl3.originalHandshakeHash;
+        PORT_Assert(originalHandshakeHash->len > 0);
 
-    rv = PK11_HashBuf(SEC_OID_SHA256, digest, signed_data,
-		      sizeof(CHANNEL_ID_MAGIC) + hashes.len);
+        memcpy(signed_data + signed_data_len, CHANNEL_ID_RESUMPTION_MAGIC,
+               sizeof(CHANNEL_ID_RESUMPTION_MAGIC));
+        signed_data_len += sizeof(CHANNEL_ID_RESUMPTION_MAGIC);
+        memcpy(signed_data + signed_data_len, originalHandshakeHash->data,
+               originalHandshakeHash->len);
+        signed_data_len += originalHandshakeHash->len;
+    }
+    memcpy(signed_data + signed_data_len, hashes.u.raw, hashes.len);
+    signed_data_len += hashes.len;
+
+    rv = PK11_HashBuf(SEC_OID_SHA256, digest, signed_data, signed_data_len);
     if (rv != SECSuccess)
 	goto loser;
 
@@ -11003,9 +11163,6 @@ xmit_loser:
         return rv;
     }
 
-    ss->gs.writeOffset = 0;
-    ss->gs.readOffset  = 0;
-
     if (ss->ssl3.hs.kea_def->kea == kea_ecdhe_rsa) {
 	effectiveExchKeyType = kt_rsa;
     } else {
@@ -11070,36 +11227,28 @@ xmit_loser:
     return rv;
 }
 
+/* The return type is SECStatus instead of void because this function needs
+ * to have type sslRestartTarget.
+ */
 SECStatus
 ssl3_FinishHandshake(sslSocket * ss)
 {
-    PRBool falseStarted;
-
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
     PORT_Assert( ss->ssl3.hs.restartTarget == NULL );
 
     /* The first handshake is now completed. */
     ss->handshake           = NULL;
-    ss->firstHsDone         = PR_TRUE;
-    ss->enoughFirstHsDone   = PR_TRUE;
 
-    if (ss->ssl3.hs.cacheSID) {
+    if (ss->ssl3.hs.cacheSID && ss->sec.isServer) {
 	(*ss->sec.cache)(ss->sec.ci.sid);
 	ss->ssl3.hs.cacheSID = PR_FALSE;
     }
 
-    ss->ssl3.hs.ws = idle_handshake;
-    falseStarted = ss->ssl3.hs.canFalseStart;
     ss->ssl3.hs.canFalseStart = PR_FALSE; /* False Start phase is complete */
+    ss->ssl3.hs.ws = idle_handshake;
 
-    /* Call the handshake callback for sslv3 here, unless we called it already
-     * for the case where false start was done without a canFalseStartCallback.
-     */
-    if (ss->handshakeCallback &&
-	!(falseStarted && !ss->canFalseStartCallback)) {
-	(ss->handshakeCallback)(ss->fd, ss->handshakeCallbackData);
-    }
+    ssl_FinishHandshake(ss);
 
     return SECSuccess;
 }
@@ -12064,7 +12213,6 @@ process_it:
 
     ssl_ReleaseSSL3HandshakeLock(ss);
     return rv;
-
 }
 
 /*
@@ -12341,6 +12489,46 @@ ssl3_CipherPrefGet(sslSocket *ss, ssl3CipherSuite which, PRBool *enabled)
     }
     *enabled = pref;
     return rv;
+}
+
+SECStatus
+ssl3_CipherOrderSet(sslSocket *ss, const ssl3CipherSuite *ciphers, unsigned int len)
+{
+    /* |i| iterates over |ciphers| while |done| and |j| iterate over
+     * |ss->cipherSuites|. */
+    unsigned int i, done;
+
+    for (i = done = 0; i < len; i++) {
+	PRUint16 id = ciphers[i];
+	unsigned int existingIndex, j;
+	PRBool found = PR_FALSE;
+
+	for (j = done; j < ssl_V3_SUITES_IMPLEMENTED; j++) {
+	    if (ss->cipherSuites[j].cipher_suite == id) {
+		existingIndex = j;
+		found = PR_TRUE;
+		break;
+	    }
+	}
+
+	if (!found) {
+	    continue;
+	}
+
+	if (existingIndex != done) {
+	    const ssl3CipherSuiteCfg temp = ss->cipherSuites[done];
+	    ss->cipherSuites[done] = ss->cipherSuites[existingIndex];
+	    ss->cipherSuites[existingIndex] = temp;
+	}
+	done++;
+    }
+
+    /* Disable all cipher suites that weren't included. */
+    for (; done < ssl_V3_SUITES_IMPLEMENTED; done++) {
+	ss->cipherSuites[done].enabled = 0;
+    }
+
+    return SECSuccess;
 }
 
 /* copy global default policy into socket. */

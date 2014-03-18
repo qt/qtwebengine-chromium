@@ -16,16 +16,18 @@
 #include "./vpx_config.h"
 #include "vpx/vpx_integer.h"
 #include "vp9/common/vp9_common.h"
+#include "vp9/common/vp9_enums.h"
 
 
 // Constants and Macros used by all idct/dct functions
 #define DCT_CONST_BITS 14
 #define DCT_CONST_ROUNDING  (1 << (DCT_CONST_BITS - 1))
 
-#define WHT_UPSCALE_FACTOR 2
+#define UNIT_QUANT_SHIFT 2
+#define UNIT_QUANT_FACTOR (1 << UNIT_QUANT_SHIFT)
 
 #define pair_set_epi16(a, b) \
-  _mm_set1_epi32(((uint16_t)(a)) + (((uint16_t)(b)) << 16))
+  _mm_set_epi16(b, a, b, a, b, a, b, a)
 
 #define pair_set_epi32(a, b) \
   _mm_set_epi32(b, a, b, a)
@@ -79,10 +81,27 @@ static INLINE int dct_const_round_shift(int input) {
   return rv;
 }
 
-typedef void (*transform_1d)(int16_t*, int16_t*);
+typedef void (*transform_1d)(const int16_t*, int16_t*);
 
 typedef struct {
   transform_1d cols, rows;  // vertical and horizontal
 } transform_2d;
+
+void vp9_iwht4x4_add(const int16_t *input, uint8_t *dest, int stride, int eob);
+
+void vp9_idct4x4_add(const int16_t *input, uint8_t *dest, int stride, int eob);
+void vp9_idct8x8_add(const int16_t *input, uint8_t *dest, int stride, int eob);
+void vp9_idct16x16_add(const int16_t *input, uint8_t *dest, int stride, int
+                       eob);
+void vp9_idct32x32_add(const int16_t *input, uint8_t *dest, int stride,
+                       int eob);
+
+void vp9_iht4x4_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                    int stride, int eob);
+void vp9_iht8x8_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                    int stride, int eob);
+void vp9_iht16x16_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
+                      int stride, int eob);
+
 
 #endif  // VP9_COMMON_VP9_IDCT_H_

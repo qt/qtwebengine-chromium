@@ -37,11 +37,11 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebString canonicalizeSelector(WebString webSelector, WebSelectorType restriction)
 {
-    CSSParserContext context(CSSStrictMode);
+    CSSParserContext context(HTMLStandardMode);
     CSSParser parser(context);
     CSSSelectorList selectorList;
     parser.parseSelector(webSelector, selectorList);
@@ -55,4 +55,4 @@ WebString canonicalizeSelector(WebString webSelector, WebSelectorType restrictio
     return selectorList.selectorsText();
 }
 
-} // namespace WebKit
+} // namespace blink

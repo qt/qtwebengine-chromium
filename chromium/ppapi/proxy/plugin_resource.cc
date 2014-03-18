@@ -6,7 +6,9 @@
 
 #include <limits>
 
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 
 namespace ppapi {
 namespace proxy {
@@ -16,7 +18,10 @@ PluginResource::PluginResource(Connection connection, PP_Instance instance)
       connection_(connection),
       next_sequence_number_(1),
       sent_create_to_browser_(false),
-      sent_create_to_renderer_(false) {
+      sent_create_to_renderer_(false),
+      resource_reply_thread_registrar_(
+          PpapiGlobals::Get()->IsPluginGlobals() ?
+              PluginGlobals::Get()->resource_reply_thread_registrar() : NULL) {
 }
 
 PluginResource::~PluginResource() {
@@ -28,6 +33,9 @@ PluginResource::~PluginResource() {
     connection_.renderer_sender->Send(
         new PpapiHostMsg_ResourceDestroyed(pp_resource()));
   }
+
+  if (resource_reply_thread_registrar_)
+    resource_reply_thread_registrar_->Unregister(pp_resource());
 }
 
 void PluginResource::OnReplyReceived(
@@ -115,7 +123,7 @@ bool PluginResource::SendResourceCall(
     const IPC::Message& nested_msg) {
   // For in-process plugins, we need to send the routing ID with the request.
   // The browser then uses that routing ID when sending the reply so it will be
-  // routed back to the correct RenderViewImpl.
+  // routed back to the correct RenderFrameImpl.
   if (dest == BROWSER && connection_.in_process) {
     return GetSender(dest)->Send(new PpapiHostMsg_InProcessResourceCall(
         connection_.browser_sender_routing_id,

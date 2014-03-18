@@ -1,9 +1,9 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2011 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/bcp47/*.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/bcp47/timezone.xml
 // *
 // ***************************************************************************
 timezoneTypes:table(nofallback){
@@ -226,6 +226,7 @@ timezoneTypes:table(nofallback){
             "America:Coral_Harbour"{"cayzs"}
             "America:Cordoba"{"arcor"}
             "America:Costa_Rica"{"crsjo"}
+            "America:Creston"{"cacfq"}
             "America:Cuiaba"{"brcgb"}
             "America:Curacao"{"ancur"}
             "America:Danmarkshavn"{"gldkshvn"}
@@ -264,10 +265,12 @@ timezoneTypes:table(nofallback){
             "America:Jujuy"{"arjuj"}
             "America:Juneau"{"usjnu"}
             "America:Kentucky:Monticello"{"usmoc"}
+            "America:Kralendijk"{"bqkra"}
             "America:La_Paz"{"bolpb"}
             "America:Lima"{"pelim"}
             "America:Los_Angeles"{"uslax"}
             "America:Louisville"{"uslui"}
+            "America:Lower_Princes"{"sxphi"}
             "America:Maceio"{"brmcz"}
             "America:Managua"{"nimga"}
             "America:Manaus"{"brmao"}
@@ -384,6 +387,7 @@ timezoneTypes:table(nofallback){
             "Asia:Karachi"{"pkkhi"}
             "Asia:Kashgar"{"cnkhg"}
             "Asia:Katmandu"{"npktm"}
+            "Asia:Khandyga"{"rukhndg"}
             "Asia:Krasnoyarsk"{"rukra"}
             "Asia:Kuala_Lumpur"{"mykul"}
             "Asia:Kuching"{"mykch"}
@@ -419,6 +423,7 @@ timezoneTypes:table(nofallback){
             "Asia:Tokyo"{"jptyo"}
             "Asia:Ulaanbaatar"{"mnuln"}
             "Asia:Urumqi"{"cnurc"}
+            "Asia:Ust-Nera"{"ruunera"}
             "Asia:Vientiane"{"lavte"}
             "Asia:Vladivostok"{"ruvvo"}
             "Asia:Yakutsk"{"ruyks"}
@@ -483,6 +488,7 @@ timezoneTypes:table(nofallback){
             "Europe:Brussels"{"bebru"}
             "Europe:Bucharest"{"robuh"}
             "Europe:Budapest"{"hubud"}
+            "Europe:Busingen"{"debsngn"}
             "Europe:Chisinau"{"mdkiv"}
             "Europe:Copenhagen"{"dkcph"}
             "Europe:Dublin"{"iedub"}

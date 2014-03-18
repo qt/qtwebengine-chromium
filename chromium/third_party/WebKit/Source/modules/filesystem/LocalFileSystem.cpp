@@ -34,12 +34,11 @@
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/fileapi/FileError.h"
-#include "core/page/Page.h"
-#include "core/platform/AsyncFileSystemCallbacks.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "modules/filesystem/FileSystemClient.h"
-#include "modules/filesystem/WorkerLocalFileSystem.h"
+#include "platform/AsyncFileSystemCallbacks.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileSystem.h"
 
@@ -47,38 +46,42 @@ namespace WebCore {
 
 namespace {
 
-void fileSystemNotAllowed(ScriptExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
+void fileSystemNotAllowed(ExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     callbacks->didFail(FileError::ABORT_ERR);
 }
 
 } // namespace
 
-LocalFileSystemBase::~LocalFileSystemBase()
+PassOwnPtr<LocalFileSystem> LocalFileSystem::create(PassOwnPtr<FileSystemClient> client)
+{
+    return adoptPtr(new LocalFileSystem(client));
+}
+
+LocalFileSystem::~LocalFileSystem()
 {
 }
 
-void LocalFileSystemBase::readFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
+void LocalFileSystem::resolveURL(ExecutionContext* context, const KURL& fileSystemURL, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
+{
+    if (!client() || !client()->allowFileSystem(context)) {
+        context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
+        return;
+    }
+    blink::Platform::current()->fileSystem()->resolveURL(fileSystemURL, callbacks);
+}
+
+void LocalFileSystem::requestFileSystem(ExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     if (!client() || !client()->allowFileSystem(context)) {
         context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
         return;
     }
     KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    WebKit::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), false, callbacks);
+    blink::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks);
 }
 
-void LocalFileSystemBase::requestFileSystem(ScriptExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
-{
-    if (!client() || !client()->allowFileSystem(context)) {
-        context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
-        return;
-    }
-    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    WebKit::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), true, callbacks);
-}
-
-void LocalFileSystemBase::deleteFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
+void LocalFileSystem::deleteFileSystem(ExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     ASSERT(context);
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
@@ -88,17 +91,12 @@ void LocalFileSystemBase::deleteFileSystem(ScriptExecutionContext* context, File
         return;
     }
     KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    WebKit::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<WebKit::WebFileSystemType>(type), callbacks);
+    blink::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks);
 }
 
-LocalFileSystemBase::LocalFileSystemBase(PassOwnPtr<FileSystemClient> client)
+LocalFileSystem::LocalFileSystem(PassOwnPtr<FileSystemClient> client)
     : m_client(client)
 {
-}
-
-PassOwnPtr<LocalFileSystem> LocalFileSystem::create(PassOwnPtr<FileSystemClient> client)
-{
-    return adoptPtr(new LocalFileSystem(client));
 }
 
 const char* LocalFileSystem::supplementName()
@@ -106,23 +104,23 @@ const char* LocalFileSystem::supplementName()
     return "LocalFileSystem";
 }
 
-LocalFileSystem::LocalFileSystem(PassOwnPtr<FileSystemClient> client)
-    : LocalFileSystemBase(client)
+LocalFileSystem* LocalFileSystem::from(ExecutionContext* context)
 {
-}
-
-LocalFileSystem::~LocalFileSystem()
-{
-}
-
-LocalFileSystem* LocalFileSystem::from(ScriptExecutionContext* context)
-{
-    return static_cast<LocalFileSystem*>(Supplement<Page>::from(toDocument(context)->page(), supplementName()));
+    if (context->isDocument()) {
+        return static_cast<LocalFileSystem*>(Supplement<Page>::from(toDocument(context)->page(), supplementName()));
+    }
+    ASSERT(context->isWorkerGlobalScope());
+    return static_cast<LocalFileSystem*>(Supplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
 }
 
 void provideLocalFileSystemTo(Page* page, PassOwnPtr<FileSystemClient> client)
 {
-    LocalFileSystem::provideTo(page, LocalFileSystem::supplementName(), LocalFileSystem::create(client));
+    page->provideSupplement(LocalFileSystem::supplementName(), LocalFileSystem::create(client));
+}
+
+void provideLocalFileSystemToWorker(WorkerClients* clients, PassOwnPtr<FileSystemClient> client)
+{
+    clients->provideSupplement(LocalFileSystem::supplementName(), LocalFileSystem::create(client));
 }
 
 } // namespace WebCore

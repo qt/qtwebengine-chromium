@@ -11,7 +11,7 @@
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/label_button_border.h"
-#include "ui/views/focus_border.h"
+#include "ui/views/painter.h"
 #include "ui/views/window/dialog_delegate.h"
 
 #if defined(OS_WIN)
@@ -23,9 +23,6 @@ namespace {
 // The spacing between the icon and text.
 const int kSpacing = 5;
 
-// The length of the hover fade animation.
-const int kHoverAnimationDurationMs = 170;
-
 // Default text and shadow colors for STYLE_BUTTON.
 const SkColor kStyleButtonTextColor = SK_ColorBLACK;
 const SkColor kStyleButtonShadowColor = SK_ColorWHITE;
@@ -33,6 +30,9 @@ const SkColor kStyleButtonShadowColor = SK_ColorWHITE;
 }  // namespace
 
 namespace views {
+
+// static
+const int LabelButton::kHoverAnimationDurationMs = 170;
 
 // static
 const char LabelButton::kViewClassName[] = "LabelButton";
@@ -109,6 +109,10 @@ void LabelButton::SetFont(const gfx::Font& font) {
   label_->SetFont(font);
 }
 
+void LabelButton::SetElideBehavior(Label::ElideBehavior elide_behavior) {
+  label_->SetElideBehavior(elide_behavior);
+}
+
 gfx::HorizontalAlignment LabelButton::GetHorizontalAlignment() const {
   return label_->horizontal_alignment();
 }
@@ -136,23 +140,31 @@ void LabelButton::SetIsDefault(bool is_default) {
 void LabelButton::SetStyle(ButtonStyle style) {
   // Use the new button style instead of the native button style.
   // TODO(msw): Officialy deprecate and remove STYLE_NATIVE_TEXTBUTTON.
-  if (DialogDelegate::UseNewStyle() && style == STYLE_NATIVE_TEXTBUTTON)
+  if (style == STYLE_NATIVE_TEXTBUTTON)
     style = STYLE_BUTTON;
 
   style_ = style;
   set_border(new LabelButtonBorder(style));
   // Inset the button focus rect from the actual border; roughly match Windows.
-  set_focus_border(style == STYLE_BUTTON ?
-      NULL : FocusBorder::CreateDashedFocusBorder(3, 3, 3, 3));
+  if (style == STYLE_BUTTON) {
+    SetFocusPainter(scoped_ptr<Painter>());
+  } else {
+    SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(
+                        gfx::Insets(3, 3, 3, 3)));
+  }
   if (style == STYLE_BUTTON || style == STYLE_NATIVE_TEXTBUTTON) {
     label_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    set_focusable(true);
+    SetFocusable(true);
   }
   if (style == STYLE_BUTTON)
     set_min_size(gfx::Size(70, 33));
   // Invalidate the layout to pickup the new insets from the border.
   InvalidateLayout();
   ResetColorsFromNativeTheme();
+}
+
+void LabelButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
+  focus_painter_ = focus_painter.Pass();
 }
 
 gfx::Size LabelButton::GetPreferredSize() {
@@ -183,6 +195,9 @@ gfx::Size LabelButton::GetPreferredSize() {
   size.SetToMax(gfx::Size(0, image_size.height()));
   const gfx::Insets insets(GetInsets());
   size.Enlarge(image_size.width() + insets.width(), insets.height());
+
+  // Make the size at least as large as the minimum size needed by the border.
+  size.SetToMax(border()->GetMinimumSize());
 
   // Increase the minimum size monotonically with the preferred size.
   size.SetToMax(min_size_);
@@ -245,6 +260,23 @@ void LabelButton::Layout() {
 
 const char* LabelButton::GetClassName() const {
   return kViewClassName;
+}
+
+void LabelButton::OnPaint(gfx::Canvas* canvas) {
+  View::OnPaint(canvas);
+  Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+}
+
+void LabelButton::OnFocus() {
+  View::OnFocus();
+  // Typically the border renders differently when focused.
+  SchedulePaint();
+}
+
+void LabelButton::OnBlur() {
+  View::OnBlur();
+  // Typically the border renders differently when focused.
+  SchedulePaint();
 }
 
 void LabelButton::GetExtraParams(ui::NativeTheme::ExtraParams* params) const {

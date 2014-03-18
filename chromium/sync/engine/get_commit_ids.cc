@@ -73,9 +73,8 @@ void GetCommitIdsForType(
 
   // We filter out all unready entries from the set of unsynced handles. This
   // new set of ready and unsynced items is then what we use to determine what
-  // is a candidate for commit.  The caller of this SyncerCommand is responsible
-  // for ensuring that no throttled types are included among the
-  // requested_types.
+  // is a candidate for commit.  The caller is responsible for ensuring that no
+  // throttled types are included among the requested_types.
   FilterUnreadyEntries(trans,
                        ModelTypeSet(type),
                        encrypted_types,
@@ -505,26 +504,5 @@ void OrderCommitIds(
 }
 
 }  // namespace
-
-void GetCommitIds(
-    syncable::BaseTransaction* trans,
-    ModelTypeSet requested_types,
-    size_t commit_batch_size,
-    sessions::OrderedCommitSet* ordered_commit_set) {
-  for (ModelTypeSet::Iterator it = requested_types.First();
-       it.Good(); it.Inc()) {
-    DCHECK_LE(ordered_commit_set->Size(), commit_batch_size);
-    if (ordered_commit_set->Size() >= commit_batch_size)
-      break;
-    size_t space_remaining = commit_batch_size - ordered_commit_set->Size();
-    syncable::Directory::Metahandles out;
-    GetCommitIdsForType(
-        trans,
-        it.Get(),
-        space_remaining,
-        &out);
-    ordered_commit_set->AddCommitItems(out, it.Get());
-  }
-}
 
 }  // namespace syncer

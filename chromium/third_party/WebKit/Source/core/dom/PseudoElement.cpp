@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/dom/PseudoElement.h"
 
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderQuote.h"
 #include "core/rendering/style/ContentData.h"
@@ -54,7 +55,7 @@ String PseudoElement::pseudoElementNameForEvents(PseudoId pseudoId)
 }
 
 PseudoElement::PseudoElement(Element* parent, PseudoId pseudoId)
-    : Element(pseudoElementTagName(), &parent->document(), CreatePseudoElement)
+    : Element(pseudoElementTagName(), &parent->document(), CreateElement)
     , m_pseudoId(pseudoId)
 {
     ASSERT(pseudoId != NOPSEUDO);
@@ -67,6 +68,19 @@ PassRefPtr<RenderStyle> PseudoElement::customStyleForRenderer()
     return parentOrShadowHostElement()->renderer()->getCachedPseudoStyle(m_pseudoId);
 }
 
+void PseudoElement::dispose()
+{
+    InspectorInstrumentation::pseudoElementDestroyed(this);
+
+    ASSERT(!nextSibling());
+    ASSERT(!previousSibling());
+
+    detach();
+    RefPtr<Element> parent = parentOrShadowHostElement();
+    setParentOrShadowHostNode(0);
+    removedFrom(parent.get());
+}
+
 void PseudoElement::attach(const AttachContext& context)
 {
     ASSERT(!renderer());
@@ -77,7 +91,7 @@ void PseudoElement::attach(const AttachContext& context)
     if (!renderer)
         return;
     RenderStyle* style = renderer->style();
-    if (!style->regionThread().isEmpty())
+    if (style->hasFlowFrom())
         return;
     if (style->styleType() != BEFORE && style->styleType() != AFTER)
         return;

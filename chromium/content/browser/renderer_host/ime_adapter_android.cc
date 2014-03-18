@@ -40,11 +40,11 @@ NativeWebKeyboardEvent NativeWebKeyboardEventFromKeyEvent(
     int key_code,
     bool is_system_key,
     int unicode_char) {
-  WebKit::WebInputEvent::Type type = WebKit::WebInputEvent::Undefined;
+  blink::WebInputEvent::Type type = blink::WebInputEvent::Undefined;
   if (action == AKEY_EVENT_ACTION_DOWN)
-    type = WebKit::WebInputEvent::RawKeyDown;
+    type = blink::WebInputEvent::RawKeyDown;
   else if (action == AKEY_EVENT_ACTION_UP)
-    type = WebKit::WebInputEvent::KeyUp;
+    type = blink::WebInputEvent::KeyUp;
   return NativeWebKeyboardEvent(java_key_event, type, modifiers,
       time_ms, key_code, unicode_char, is_system_key);
 }
@@ -56,16 +56,14 @@ bool RegisterImeAdapter(JNIEnv* env) {
     return false;
 
   Java_ImeAdapter_initializeWebInputEvents(env,
-                                           WebKit::WebInputEvent::RawKeyDown,
-                                           WebKit::WebInputEvent::KeyUp,
-                                           WebKit::WebInputEvent::Char,
-                                           WebKit::WebInputEvent::ShiftKey,
-                                           WebKit::WebInputEvent::AltKey,
-                                           WebKit::WebInputEvent::ControlKey,
-                                           WebKit::WebInputEvent::CapsLockOn,
-                                           WebKit::WebInputEvent::NumLockOn);
-  // TODO(miguelg): remove date time related enums after
-  // https://bugs.webkit.org/show_bug.cgi?id=100935.
+                                           blink::WebInputEvent::RawKeyDown,
+                                           blink::WebInputEvent::KeyUp,
+                                           blink::WebInputEvent::Char,
+                                           blink::WebInputEvent::ShiftKey,
+                                           blink::WebInputEvent::AltKey,
+                                           blink::WebInputEvent::ControlKey,
+                                           blink::WebInputEvent::CapsLockOn,
+                                           blink::WebInputEvent::NumLockOn);
   Java_ImeAdapter_initializeTextInputTypes(
       env,
       ui::TEXT_INPUT_TYPE_NONE,
@@ -77,12 +75,6 @@ bool RegisterImeAdapter(JNIEnv* env) {
       ui::TEXT_INPUT_TYPE_EMAIL,
       ui::TEXT_INPUT_TYPE_TELEPHONE,
       ui::TEXT_INPUT_TYPE_NUMBER,
-      ui::TEXT_INPUT_TYPE_DATE,
-      ui::TEXT_INPUT_TYPE_DATE_TIME,
-      ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL,
-      ui::TEXT_INPUT_TYPE_MONTH,
-      ui::TEXT_INPUT_TYPE_TIME,
-      ui::TEXT_INPUT_TYPE_WEEK,
       ui::TEXT_INPUT_TYPE_CONTENT_EDITABLE);
   return true;
 }
@@ -104,7 +96,7 @@ bool ImeAdapterAndroid::SendSyntheticKeyEvent(JNIEnv*,
                                               long time_ms,
                                               int key_code,
                                               int text) {
-  NativeWebKeyboardEvent event(static_cast<WebKit::WebInputEvent::Type>(type),
+  NativeWebKeyboardEvent event(static_cast<blink::WebInputEvent::Type>(type),
                                0 /* modifiers */, time_ms / 1000.0, key_code,
                                text, false /* is_system_key */);
   rwhva_->SendKeyEvent(event);
@@ -120,7 +112,7 @@ bool ImeAdapterAndroid::SendKeyEvent(JNIEnv* env, jobject,
           env, original_key_event, action, modifiers,
           time_ms, key_code, is_system_key, unicode_char);
   bool key_down_text_insertion =
-      event.type == WebKit::WebInputEvent::RawKeyDown && event.text[0];
+      event.type == blink::WebInputEvent::RawKeyDown && event.text[0];
   // If we are going to follow up with a synthetic Char event, then that's the
   // one we expect to test if it's handled or unhandled, so skip handling the
   // "real" event in the browser.
@@ -129,7 +121,7 @@ bool ImeAdapterAndroid::SendKeyEvent(JNIEnv* env, jobject,
   if (key_down_text_insertion) {
     // Send a Char event, but without an os_event since we don't want to
     // roundtrip back to java such synthetic event.
-    NativeWebKeyboardEvent char_event(WebKit::WebInputEvent::Char, modifiers,
+    NativeWebKeyboardEvent char_event(blink::WebInputEvent::Char, modifiers,
                                       time_ms, key_code, unicode_char,
                                       is_system_key);
     char_event.skip_in_browser = key_down_text_insertion;
@@ -144,10 +136,10 @@ void ImeAdapterAndroid::SetComposingText(JNIEnv* env, jobject, jstring text,
   if (!rwhi)
     return;
 
-  string16 text16 = ConvertJavaStringToUTF16(env, text);
-  std::vector<WebKit::WebCompositionUnderline> underlines;
+  base::string16 text16 = ConvertJavaStringToUTF16(env, text);
+  std::vector<blink::WebCompositionUnderline> underlines;
   underlines.push_back(
-      WebKit::WebCompositionUnderline(0, text16.length(), SK_ColorBLACK,
+      blink::WebCompositionUnderline(0, text16.length(), SK_ColorBLACK,
                                       false));
   // new_cursor_position is as described in the Android API for
   // InputConnection#setComposingText, whereas the parameters for
@@ -158,22 +150,12 @@ void ImeAdapterAndroid::SetComposingText(JNIEnv* env, jobject, jstring text,
   rwhi->ImeSetComposition(text16, underlines, new_cursor_pos, new_cursor_pos);
 }
 
-void ImeAdapterAndroid::ImeBatchStateChanged(JNIEnv* env,
-                                             jobject,
-                                             jboolean is_begin) {
-  RenderWidgetHostImpl* rwhi = GetRenderWidgetHostImpl();
-  if (!rwhi)
-    return;
-
-  rwhi->Send(new ViewMsg_ImeBatchStateChanged(rwhi->GetRoutingID(), is_begin));
-}
-
 void ImeAdapterAndroid::CommitText(JNIEnv* env, jobject, jstring text) {
   RenderWidgetHostImpl* rwhi = GetRenderWidgetHostImpl();
   if (!rwhi)
     return;
 
-  string16 text16 = ConvertJavaStringToUTF16(env, text);
+  base::string16 text16 = ConvertJavaStringToUTF16(env, text);
   rwhi->ImeConfirmComposition(text16, gfx::Range::InvalidRange(), false);
 }
 
@@ -182,7 +164,8 @@ void ImeAdapterAndroid::FinishComposingText(JNIEnv* env, jobject) {
   if (!rwhi)
     return;
 
-  rwhi->ImeConfirmComposition(string16(), gfx::Range::InvalidRange(), true);
+  rwhi->ImeConfirmComposition(base::string16(), gfx::Range::InvalidRange(),
+                              true);
 }
 
 void ImeAdapterAndroid::AttachImeAdapter(JNIEnv* env, jobject java_object) {
@@ -212,9 +195,9 @@ void ImeAdapterAndroid::SetComposingRegion(JNIEnv*, jobject,
   if (!rwhi)
     return;
 
-  std::vector<WebKit::WebCompositionUnderline> underlines;
+  std::vector<blink::WebCompositionUnderline> underlines;
   underlines.push_back(
-      WebKit::WebCompositionUnderline(0, end - start, SK_ColorBLACK, false));
+      blink::WebCompositionUnderline(0, end - start, SK_ColorBLACK, false));
 
   rwhi->Send(new ViewMsg_SetCompositionFromExistingText(
       rwhi->GetRoutingID(), start, end, underlines));

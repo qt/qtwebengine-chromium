@@ -170,14 +170,15 @@ class StandardFrameConstants : public AllStatic {
   // context and function.
   // StandardFrame::IterateExpressions assumes that kContextOffset is the last
   // object pointer.
-  static const int kFixedFrameSize    =  kPCOnStackSize + kFPOnStackSize +
-                                         2 * kPointerSize;
-  static const int kExpressionsOffset = -3 * kPointerSize;
-  static const int kMarkerOffset      = -2 * kPointerSize;
-  static const int kContextOffset     = -1 * kPointerSize;
-  static const int kCallerFPOffset    =  0 * kPointerSize;
-  static const int kCallerPCOffset    = +1 * kFPOnStackSize;
-  static const int kCallerSPOffset    =  kCallerPCOffset + 1 * kPCOnStackSize;
+  static const int kFixedFrameSizeFromFp =  2 * kPointerSize;
+  static const int kFixedFrameSize       =  kPCOnStackSize + kFPOnStackSize +
+                                            kFixedFrameSizeFromFp;
+  static const int kExpressionsOffset    = -3 * kPointerSize;
+  static const int kMarkerOffset         = -2 * kPointerSize;
+  static const int kContextOffset        = -1 * kPointerSize;
+  static const int kCallerFPOffset       =  0 * kPointerSize;
+  static const int kCallerPCOffset       = +1 * kFPOnStackSize;
+  static const int kCallerSPOffset       = kCallerPCOffset + 1 * kPCOnStackSize;
 };
 
 
@@ -919,6 +920,13 @@ class StackFrameLocator BASE_EMBEDDED {
 
  private:
   StackFrameIterator iterator_;
+};
+
+
+// Used specify the type of prologue to generate.
+enum PrologueFrameMode {
+  BUILD_FUNCTION_FRAME,
+  BUILD_STUB_FRAME
 };
 
 

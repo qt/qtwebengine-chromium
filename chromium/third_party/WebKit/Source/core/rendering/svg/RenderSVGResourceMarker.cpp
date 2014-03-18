@@ -23,17 +23,16 @@
 
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
-#include "core/svg/SVGElement.h"
-#include "core/svg/SVGMarkerElement.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 #include "wtf/TemporaryChange.h"
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
+const RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
 
 RenderSVGResourceMarker::RenderSVGResourceMarker(SVGMarkerElement* node)
     : RenderSVGResourceContainer(node)
@@ -50,6 +49,7 @@ void RenderSVGResourceMarker::layout()
     if (m_isInLayout)
         return;
 
+    LayoutRectRecorder recorder(*this);
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
 
     // Invalidate all resources if our layout changed.
@@ -60,6 +60,8 @@ void RenderSVGResourceMarker::layout()
     // layouting of RenderSVGContainer for calculating  local
     // transformations and repaint.
     RenderSVGContainer::layout();
+
+    clearInvalidationMask();
 }
 
 void RenderSVGResourceMarker::removeAllClientsFromCache(bool markForInvalidation)
@@ -135,10 +137,12 @@ AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& 
 
 void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& transform)
 {
+    clearInvalidationMask();
+
     // An empty viewBox disables rendering.
     SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
-    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxIsValid() && marker->viewBoxCurrentValue().isEmpty())
+    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxCurrentValue().isValid() && marker->viewBoxCurrentValue().isEmpty())
         return;
 
     PaintInfo info(paintInfo);

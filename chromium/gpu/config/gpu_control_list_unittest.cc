@@ -11,9 +11,7 @@
 
 const char kOsVersion[] = "10.6.4";
 const uint32 kIntelVendorId = 0x8086;
-const uint32 kIntelDeviceId = 0x0166;  // 3rd Gen Core Graphics
 const uint32 kNvidiaVendorId = 0x10de;
-const uint32 kNvidiaDeviceId = 0x0fd5;  // GeForce GT 650M
 
 #define LONG_STRING_CONST(...) #__VA_ARGS__
 
@@ -192,40 +190,6 @@ TEST_F(GpuControlListTest, VendorOnAllOsEntry) {
       GpuControlList::kOsLinux, kOsVersion, gpu_info());
   EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
 #endif
-}
-
-TEST_F(GpuControlListTest, ChromeVersionEntry) {
-  const std::string browser_version_json = LONG_STRING_CONST(
-      {
-        "name": "gpu control list",
-        "version": "0.1",
-        "entries": [
-          {
-            "id": 1,
-            "browser_version": {
-              "op": ">=",
-              "value": "10"
-            },
-            "features": [
-              "test_feature_0"
-            ]
-          }
-        ]
-      }
-  );
-  scoped_ptr<GpuControlList> control_list9(Create());
-  EXPECT_TRUE(control_list9->LoadList(
-      "9.0", browser_version_json, GpuControlList::kAllOs));
-  std::set<int> features = control_list9->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_EMPTY_SET(features);
-
-  scoped_ptr<GpuControlList> control_list10(Create());
-  EXPECT_TRUE(control_list10->LoadList(
-      "10.0", browser_version_json, GpuControlList::kAllOs));
-  features = control_list10->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
 }
 
 TEST_F(GpuControlListTest, UnknownField) {

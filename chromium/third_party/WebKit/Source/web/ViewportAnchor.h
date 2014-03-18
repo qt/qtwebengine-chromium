@@ -31,10 +31,10 @@
 #ifndef ViewportAnchor_h
 #define ViewportAnchor_h
 
-#include "core/platform/graphics/FloatSize.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/LayoutRect.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/geometry/LayoutRect.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -43,7 +43,7 @@ class IntSize;
 class Node;
 }
 
-namespace WebKit {
+namespace blink {
 
 // ViewportAnchor provides a way to anchor a viewport origin to a DOM node.
 // In particular, the user supplies the current viewport (in CSS coordinates)
@@ -73,6 +73,6 @@ private:
     WebCore::FloatSize m_anchorInNodeCoords;
 };
 
-} // namespace WebKit
+} // namespace blink
 
  #endif

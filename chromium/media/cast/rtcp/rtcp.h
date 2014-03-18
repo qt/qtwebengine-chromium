@@ -7,16 +7,17 @@
 
 #include <list>
 #include <map>
+#include <queue>
 #include <set>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time/default_tick_clock.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/cast_environment.h"
 #include "media/cast/rtcp/rtcp_defines.h"
 
 namespace media {
@@ -28,19 +29,12 @@ class PacedPacketSender;
 class RtcpReceiver;
 class RtcpSender;
 
+typedef std::pair<uint32, base::TimeTicks> RtcpSendTimePair;
+typedef std::map<uint32, base::TimeTicks> RtcpSendTimeMap;
+typedef std::queue<RtcpSendTimePair> RtcpSendTimeQueue;
+
 class RtcpSenderFeedback {
  public:
-  virtual void OnReceivedReportBlock(const RtcpReportBlock& report_block) = 0;
-
-  virtual void OnReceivedIntraFrameRequest() = 0;
-
-  virtual void OnReceivedRpsi(uint8 payload_type, uint64 picture_id) = 0;
-
-  virtual void OnReceivedRemb(uint32 bitrate) = 0;
-
-  virtual void OnReceivedNackRequest(
-      const std::list<uint16>& nack_sequence_numbers) = 0;
-
   virtual void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) = 0;
 
   virtual ~RtcpSenderFeedback() {}
@@ -66,38 +60,48 @@ class RtpReceiverStatistics {
 
 class Rtcp {
  public:
-  Rtcp(RtcpSenderFeedback* sender_feedback,
+  Rtcp(scoped_refptr<CastEnvironment> cast_environment,
+       RtcpSenderFeedback* sender_feedback,
        PacedPacketSender* paced_packet_sender,
        RtpSenderStatistics* rtp_sender_statistics,
        RtpReceiverStatistics* rtp_receiver_statistics,
        RtcpMode rtcp_mode,
        const base::TimeDelta& rtcp_interval,
-       bool sending_media,
        uint32 local_ssrc,
+       uint32 remote_ssrc,
        const std::string& c_name);
 
   virtual ~Rtcp();
 
-  static bool IsRtcpPacket(const uint8* rtcp_buffer, int length);
+  static bool IsRtcpPacket(const uint8* rtcp_buffer, size_t length);
 
-  static uint32 GetSsrcOfSender(const uint8* rtcp_buffer, int length);
+  static uint32 GetSsrcOfSender(const uint8* rtcp_buffer, size_t length);
 
   base::TimeTicks TimeToSendNextRtcpReport();
-  void SendRtcpReport(uint32 media_ssrc);
-  void SendRtcpPli(uint32 media_ssrc);
-  void SendRtcpCast(const RtcpCastMessage& cast_message);
-  void SetRemoteSSRC(uint32 ssrc);
+  // |sender_log_message| is optional; without it no log messages will be
+  // attached to the RTCP report; instead a normal RTCP send report will be
+  // sent.
+  // Additionally if all messages in |sender_log_message| does
+  // not fit in the packet the |sender_log_message| will contain the remaining
+  // unsent messages.
+  void SendRtcpFromRtpSender(RtcpSenderLogMessage* sender_log_message);
 
-  void IncomingRtcpPacket(const uint8* rtcp_buffer, int length);
+  // |cast_message| and |receiver_log| is optional; if |cast_message| is
+  // provided the RTCP receiver report will append a Cast message containing
+  // Acks and Nacks; if |receiver_log| is provided the RTCP receiver report will
+  // append the log messages. If no argument is set a normal RTCP receiver
+  // report will be sent. Additionally if all messages in |receiver_log| does
+  // not fit in the packet the |receiver_log| will contain the remaining unsent
+  // messages.
+  void SendRtcpFromRtpReceiver(const RtcpCastMessage* cast_message,
+                               RtcpReceiverLogMessage* receiver_log);
+
+  void IncomingRtcpPacket(const uint8* rtcp_buffer, size_t length);
   bool Rtt(base::TimeDelta* rtt, base::TimeDelta* avg_rtt,
            base::TimeDelta* min_rtt,  base::TimeDelta* max_rtt) const;
   bool RtpTimestampInSenderTime(int frequency,
                                 uint32 rtp_timestamp,
                                 base::TimeTicks* rtp_timestamp_in_ticks) const;
-
-  void set_clock(base::TickClock* clock) {
-    clock_ = clock;
-  }
 
  protected:
   int CheckForWrapAround(uint32 new_timestamp,
@@ -129,10 +133,14 @@ class Rtcp {
 
   void UpdateNextTimeToSendRtcp();
 
+  void SaveLastSentNtpTime(const base::TimeTicks& now, uint32 last_ntp_seconds,
+                           uint32 last_ntp_fraction);
+
+  scoped_refptr<CastEnvironment> cast_environment_;
   const base::TimeDelta rtcp_interval_;
   const RtcpMode rtcp_mode_;
-  const bool sending_media_;
   const uint32 local_ssrc_;
+  const uint32 remote_ssrc_;
 
   // Not owned by this class.
   RtpSenderStatistics* const rtp_sender_statistics_;
@@ -144,10 +152,8 @@ class Rtcp {
   scoped_ptr<RtcpReceiver> rtcp_receiver_;
 
   base::TimeTicks next_time_to_send_rtcp_;
-
-  base::TimeTicks time_last_report_sent_;
-  uint32 last_report_sent_;
-
+  RtcpSendTimeMap last_reports_sent_map_;
+  RtcpSendTimeQueue last_reports_sent_queue_;
   base::TimeTicks time_last_report_received_;
   uint32 last_report_received_;
 
@@ -160,9 +166,6 @@ class Rtcp {
   base::TimeDelta max_rtt_;
   int number_of_rtt_in_avg_;
   float avg_rtt_ms_;
-
-  base::DefaultTickClock default_tick_clock_;
-  base::TickClock* clock_;
 
   DISALLOW_COPY_AND_ASSIGN(Rtcp);
 };

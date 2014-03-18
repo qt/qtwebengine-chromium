@@ -33,23 +33,25 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
+#include "wtf/ThreadSpecific.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class Blob;
 class ExceptionState;
-class ScriptExecutionContext;
+class ExecutionContext;
 
-class FileReader : public RefCounted<FileReader>, public ScriptWrappable, public ActiveDOMObject, public EventTarget, public FileReaderLoaderClient {
+class FileReader : public RefCounted<FileReader>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public FileReaderLoaderClient {
+    REFCOUNTED_EVENT_TARGET(FileReader);
 public:
-    static PassRefPtr<FileReader> create(ScriptExecutionContext*);
+    static PassRefPtr<FileReader> create(ExecutionContext*);
 
     virtual ~FileReader();
 
@@ -75,21 +77,17 @@ public:
     String stringResult();
 
     // ActiveDOMObject
-    virtual bool canSuspend() const;
     virtual void stop();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return ActiveDOMObject::scriptExecutionContext(); }
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     // FileReaderLoaderClient
     virtual void didStartLoading();
     virtual void didReceiveData();
     virtual void didFinishLoading();
     virtual void didFail(FileError::ErrorCode);
-
-    using RefCounted<FileReader>::ref;
-    using RefCounted<FileReader>::deref;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(progress);
@@ -99,18 +97,17 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadend);
 
 private:
-    FileReader(ScriptExecutionContext*);
+    class ThrottlingController;
 
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData() { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() { return &m_eventTargetData; }
+    FileReader(ExecutionContext*);
 
     void terminate();
     void readInternal(Blob*, FileReaderLoader::ReadType, ExceptionState&);
     void fireErrorEvent(int httpStatusCode);
     void fireEvent(const AtomicString& type);
+
+    static ThreadSpecific<ThrottlingController>& throttlingController();
+    void executePendingRead();
 
     ReadyState m_state;
 
@@ -118,12 +115,11 @@ private:
     // for script-visible state while this one's for internal state.
     enum LoadingState {
         LoadingStateNone,
+        LoadingStatePending,
         LoadingStateLoading,
         LoadingStateAborted
     };
     LoadingState m_loadingState;
-
-    EventTargetData m_eventTargetData;
 
     RefPtr<Blob> m_blob;
     FileReaderLoader::ReadType m_readType;

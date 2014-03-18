@@ -7,6 +7,10 @@
 #include "SkOpContour.h"
 #include "SkPath.h"
 
+#ifdef SK_DEBUG
+#include "SkPathOpsPoint.h"
+#endif
+
 class SkIntersectionHelper {
 public:
     enum SegmentType {
@@ -17,8 +21,8 @@ public:
         kCubic_Segment = SkPath::kCubic_Verb,
     };
 
-    void addCoincident(SkIntersectionHelper& other, const SkIntersections& ts, bool swap) {
-        fContour->addCoincident(fIndex, other.fContour, other.fIndex, ts, swap);
+    bool addCoincident(SkIntersectionHelper& other, const SkIntersections& ts, bool swap) {
+        return fContour->addCoincident(fIndex, other.fContour, other.fIndex, ts, swap);
     }
 
     // FIXME: does it make sense to write otherIndex now if we're going to
@@ -27,9 +31,10 @@ public:
         fContour->addOtherT(fIndex, index, otherT, otherIndex);
     }
 
-    void addPartialCoincident(SkIntersectionHelper& other, const SkIntersections& ts, int index,
+    bool addPartialCoincident(SkIntersectionHelper& other, const SkIntersections& ts, int index,
             bool swap) {
-        fContour->addPartialCoincident(fIndex, other.fContour, other.fIndex, ts, index, swap);
+        return fContour->addPartialCoincident(fIndex, other.fContour, other.fIndex, ts, index,
+                swap);
     }
 
     // Avoid collapsing t values that are close to the same since
@@ -37,8 +42,8 @@ public:
     // be nearly equal, any problems caused by this should be taken care
     // of later.
     // On the edge or out of range values are negative; add 2 to get end
-    int addT(const SkIntersectionHelper& other, const SkPoint& pt, double newT, bool isNear) {
-        return fContour->addT(fIndex, other.fContour, other.fIndex, pt, newT, isNear);
+    int addT(const SkIntersectionHelper& other, const SkPoint& pt, double newT) {
+        return fContour->addT(fIndex, other.fContour, other.fIndex, pt, newT);
     }
 
     int addSelfT(const SkIntersectionHelper& other, const SkPoint& pt, double newT) {
@@ -72,12 +77,12 @@ public:
                 && next.fIndex == fLast - 1;
     }
 
-    bool isNear(double t1, double t2, const SkDPoint& pt1, const SkDPoint& pt2) const {
+    bool isPartial(double t1, double t2, const SkDPoint& pt1, const SkDPoint& pt2) const {
         const SkOpSegment& segment = fContour->segments()[fIndex];
         double mid = (t1 + t2) / 2;
         SkDPoint midPtByT = segment.dPtAtT(mid);
         SkDPoint midPtByAvg = SkDPoint::Mid(pt1, pt2);
-        return midPtByT.approximatelyEqualHalf(midPtByAvg);
+        return midPtByT.approximatelyPEqual(midPtByAvg);
     }
 
     SkScalar left() const {
@@ -135,6 +140,19 @@ public:
     bool yFlipped() const {
         return y() != pts()[0].fY;
     }
+
+#ifdef SK_DEBUG
+    void dump() {
+        SkDPoint::dump(pts()[0]);
+        SkDPoint::dump(pts()[1]);
+        if (verb() >= SkPath::kQuad_Verb) {
+            SkDPoint::dump(pts()[2]);
+        }
+        if (verb() >= SkPath::kCubic_Verb) {
+            SkDPoint::dump(pts()[3]);
+        }
+    }
+#endif
 
 private:
     SkOpContour* fContour;

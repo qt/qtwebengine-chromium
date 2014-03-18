@@ -27,7 +27,9 @@ LOCAL_SRC_FILES := \
     source/row_posix.cc         \
     source/scale.cc             \
     source/scale_argb.cc        \
+    source/scale_common.cc      \
     source/scale_mips.cc        \
+    source/scale_posix.cc       \
     source/video_common.cc
 
 # TODO(fbarchard): Enable mjpeg encoder.
@@ -41,7 +43,6 @@ ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
         source/compare_neon.cc.neon    \
         source/rotate_neon.cc.neon     \
         source/row_neon.cc.neon        \
-        source/scale_argb_neon.cc.neon \
         source/scale_neon.cc.neon
 endif
 

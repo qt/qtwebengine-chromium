@@ -11,9 +11,9 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "build/build_config.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "ipc/ipc_channel.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
@@ -27,18 +27,22 @@ typedef struct _GtkToolItem GtkToolItem;
 #include "base/android/scoped_java_ref.h"
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-namespace content {
-class MinimalShell;
+namespace wm {
+class WMTestHelper;
 }
-#endif
+#endif  // defined(OS_CHROMEOS)
 namespace views {
 class Widget;
 class ViewsDelegate;
 }
-#endif
+#endif  // defined(USE_AURA)
 
 class GURL;
 namespace content {
+
+#if defined(USE_AURA)
+class ShellAuraPlatformData;
+#endif
 
 class BrowserContext;
 class ShellDevToolsFrontend;
@@ -49,7 +53,7 @@ class WebContents;
 // This represents one window of the Content Shell, i.e. all the UI including
 // buttons and url bar, as well as the web content area.
 class Shell : public WebContentsDelegate,
-              public NotificationObserver {
+              public WebContentsObserver {
  public:
   static const int kDefaultTestWindowWidthDip;
   static const int kDefaultTestWindowHeightDip;
@@ -68,7 +72,7 @@ class Shell : public WebContentsDelegate,
 #if (defined(OS_WIN) && !defined(USE_AURA)) || \
     defined(TOOLKIT_GTK) || defined(OS_MACOSX)
   // Resizes the main window to the given dimensions.
-  void SizeTo(int width, int height);
+  void SizeTo(const gfx::Size& content_size);
 #endif
 
   // Do one time initialization at application startup.
@@ -89,9 +93,6 @@ class Shell : public WebContentsDelegate,
   // Closes all windows and returns. This runs a message loop.
   static void CloseAllWindows();
 
-  // Closes all windows and exits.
-  static void PlatformExit();
-
   // Used for content_browsertests. Called once.
   static void SetShellCreatedCallback(
       base::Callback<void(Shell*)> shell_created_callback);
@@ -111,6 +112,12 @@ class Shell : public WebContentsDelegate,
   // WebContentsDelegate
   virtual WebContents* OpenURLFromTab(WebContents* source,
                                       const OpenURLParams& params) OVERRIDE;
+  virtual void AddNewContents(WebContents* source,
+                              WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void LoadingStateChanged(WebContents* source) OVERRIDE;
 #if defined(OS_ANDROID)
   virtual void LoadProgressChanged(WebContents* source,
@@ -125,11 +132,6 @@ class Shell : public WebContentsDelegate,
                                   bool last_unlocked_by_target) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual bool CanOverscrollContent() const OVERRIDE;
-  virtual void WebContentsCreated(WebContents* source_contents,
-                                  int64 source_frame_id,
-                                  const string16& frame_name,
-                                  const GURL& target_url,
-                                  WebContents* new_contents) OVERRIDE;
   virtual void DidNavigateMainFramePostCommit(
       WebContents* web_contents) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
@@ -140,9 +142,9 @@ class Shell : public WebContentsDelegate,
 #endif
   virtual bool AddMessageToConsole(WebContents* source,
                                    int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id) OVERRIDE;
+                                   const base::string16& source_id) OVERRIDE;
   virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
   virtual void ActivateContents(WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(WebContents* contents) OVERRIDE;
@@ -165,6 +167,12 @@ class Shell : public WebContentsDelegate,
 
   // Helper for one time initialization of application
   static void PlatformInitialize(const gfx::Size& default_window_size);
+  // Helper for one time deinitialization of platform specific state.
+  static void PlatformExit();
+
+  // Adjust the size when Blink sends 0 for width and/or height.
+  // This happens when Blink requests a default-sized window.
+  static gfx::Size AdjustWindowSize(const gfx::Size& initial_size);
 
   // All the methods that begin with Platform need to be implemented by the
   // platform specific Shell implementation.
@@ -183,7 +191,7 @@ class Shell : public WebContentsDelegate,
   // Sets whether the spinner is spinning.
   void PlatformSetIsLoading(bool loading);
   // Set the title of shell window
-  void PlatformSetTitle(const string16& title);
+  void PlatformSetTitle(const base::string16& title);
 #if defined(OS_ANDROID)
   void PlatformToggleFullscreenModeForTab(WebContents* web_contents,
                                           bool enter_fullscreen);
@@ -193,10 +201,8 @@ class Shell : public WebContentsDelegate,
 
   gfx::NativeView GetContentView();
 
-  // NotificationObserver
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // WebContentsObserver
+  virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
   void OnDevToolsWebContentsDestroyed();
 
@@ -234,8 +240,7 @@ class Shell : public WebContentsDelegate,
   gfx::NativeWindow window_;
   gfx::NativeEditView url_edit_view_;
 
-  // Notification manager
-  NotificationRegistrar registrar_;
+  gfx::Size content_size_;
 
 #if defined(OS_WIN) && !defined(USE_AURA)
   WNDPROC default_edit_wnd_proc_;
@@ -251,21 +256,20 @@ class Shell : public WebContentsDelegate,
   GtkWidget* spinner_;
   GtkToolItem* spinner_item_;
 
-  int content_width_;
-  int content_height_;
   int ui_elements_height_; // height of menubar, toolbar, etc.
 #elif defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-  static content::MinimalShell* minimal_shell_;
+  static wm::WMTestHelper* wm_test_helper_;
 #endif
+#if defined(TOOLKIT_VIEWS)
   static views::ViewsDelegate* views_delegate_;
 
   views::Widget* window_widget_;
-#elif defined(OS_MACOSX)
-  int content_width_;
-  int content_height_;
+#else // defined(TOOLKIT_VIEWS)
+  static ShellAuraPlatformData* platform_;
+#endif // defined(TOOLKIT_VIEWS)
 #endif
 
   bool headless_;

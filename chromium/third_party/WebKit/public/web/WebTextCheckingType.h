@@ -31,15 +31,15 @@
 #ifndef WebTextCheckingType_h
 #define WebTextCheckingType_h
 
-namespace WebKit {
+namespace blink {
 
 enum WebTextCheckingType {
-    WebTextCheckingTypeSpelling = 1 << 1,
-    WebTextCheckingTypeGrammar  = 1 << 2,
+    WebTextCheckingTypeSpelling                     = 1 << 1,
+    WebTextCheckingTypeGrammar                      = 1 << 2,
 };
 
 typedef unsigned WebTextCheckingTypeMask;
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

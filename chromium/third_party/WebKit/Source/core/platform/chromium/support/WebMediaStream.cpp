@@ -26,10 +26,10 @@
 
 #include "public/platform/WebMediaStream.h"
 
-#include "core/platform/UUID.h"
-#include "core/platform/mediastream/MediaStreamComponent.h"
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
+#include "platform/UUID.h"
+#include "platform/mediastream/MediaStreamComponent.h"
+#include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebMediaStreamSource.h"
 #include "public/platform/WebMediaStreamTrack.h"
 #include "public/platform/WebString.h"
@@ -39,7 +39,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
@@ -158,4 +158,4 @@ void WebMediaStream::assign(const WebMediaStream& other)
     m_private = other.m_private;
 }
 
-} // namespace WebKit
+} // namespace blink

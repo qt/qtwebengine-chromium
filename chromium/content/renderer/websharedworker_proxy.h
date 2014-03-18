@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/public/web/WebSharedWorker.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerConnector.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -23,7 +23,7 @@ class ChildThread;
 // thread. Once the connect event has been sent, all future communication will
 // happen via the WebMessagePortChannel, and the WebSharedWorker instance will
 // be freed.
-class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
+class WebSharedWorkerProxy : public blink::WebSharedWorkerConnector,
                              private IPC::Listener {
  public:
   // If the worker not loaded yet, route_id == MSG_ROUTING_NONE
@@ -36,20 +36,17 @@ class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
 
   // Implementations of WebSharedWorker APIs
   virtual bool isStarted();
-  virtual void connect(WebKit::WebMessagePortChannel* channel,
+  virtual void connect(blink::WebMessagePortChannel* channel,
                        ConnectListener* listener);
 
   virtual void startWorkerContext(
-      const WebKit::WebURL& script_url,
-      const WebKit::WebString& name,
-      const WebKit::WebString& user_agent,
-      const WebKit::WebString& source_code,
-      const WebKit::WebString& content_security_policy,
-      WebKit::WebContentSecurityPolicyType policy_type,
+      const blink::WebURL& script_url,
+      const blink::WebString& name,
+      const blink::WebString& user_agent,
+      const blink::WebString& source_code,
+      const blink::WebString& content_security_policy,
+      blink::WebContentSecurityPolicyType policy_type,
       long long script_resource_appcache_id);
-
-  virtual void terminateWorkerContext();
-  virtual void clientDestroyed();
 
  private:
   // IPC::Listener implementation.
@@ -73,11 +70,11 @@ class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
 
   void CreateWorkerContext(const GURL& script_url,
                            bool is_shared,
-                           const string16& name,
-                           const string16& user_agent,
-                           const string16& source_code,
-                           const string16& content_security_policy,
-                           WebKit::WebContentSecurityPolicyType policy_type,
+                           const base::string16& name,
+                           const base::string16& user_agent,
+                           const base::string16& source_code,
+                           const base::string16& content_security_policy,
+                           blink::WebContentSecurityPolicyType policy_type,
                            int pending_route_id,
                            int64 script_resource_appcache_id);
   void OnWorkerCreated();

@@ -24,8 +24,8 @@
 
 #include "core/loader/NavigationPolicy.h"
 #include "core/page/FocusDirection.h"
-#include "core/platform/Cursor.h"
-#include "core/platform/HostWindow.h"
+#include "platform/Cursor.h"
+#include "platform/HostWindow.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -39,6 +39,7 @@ class FileChooser;
 class FloatRect;
 class Frame;
 class Geolocation;
+class HTMLInputElement;
 class HitTestResult;
 class IntRect;
 class Node;
@@ -49,7 +50,7 @@ class PopupOpeningObserver;
 class SearchPopupMenu;
 
 struct DateTimeChooserParameters;
-struct ViewportArguments;
+struct ViewportDescription;
 struct WindowFeatures;
 
 class Chrome : public HostWindow {
@@ -66,13 +67,14 @@ public:
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE;
     virtual IntPoint screenToRootView(const IntPoint&) const OVERRIDE;
     virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
-    virtual WebKit::WebScreenInfo screenInfo() const OVERRIDE;
-    virtual void setCursor(const Cursor&) OVERRIDE;
+    virtual blink::WebScreenInfo screenInfo() const OVERRIDE;
 
     virtual void scheduleAnimation() OVERRIDE;
 
     void contentsSizeChanged(Frame*, const IntSize&) const;
     void layoutUpdated(Frame*) const;
+
+    void setCursor(const Cursor&);
 
     void setWindowRect(const FloatRect&) const;
     FloatRect windowRect() const;
@@ -120,11 +122,12 @@ public:
 
     PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color& initialColor);
     PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
+    void openTextDataListChooser(HTMLInputElement&);
 
     void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
     void enumerateChosenDirectory(FileChooser*);
 
-    void dispatchViewportPropertiesDidChange(const ViewportArguments&) const;
+    void dispatchViewportPropertiesDidChange(const ViewportDescription&) const;
 
     bool hasOpenedPopup() const;
     PassRefPtr<PopupMenu> createPopupMenu(Frame&, PopupMenuClient*) const;

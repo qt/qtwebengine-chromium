@@ -4,11 +4,10 @@
 
 #include "content/shell/browser/shell_content_browser_client.h"
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -35,8 +34,16 @@
 #if defined(OS_ANDROID)
 #include "base/android/path_utils.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
+#include "components/breakpad/browser/crash_dump_manager_android.h"
 #include "content/shell/android/shell_descriptors.h"
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#include "base/debug/leak_annotations.h"
+#include "base/platform_file.h"
+#include "components/breakpad/app/breakpad_linux.h"
+#include "components/breakpad/browser/crash_handler_host_linux.h"
+#include "content/public/common/content_descriptors.h"
 #endif
 
 namespace content {
@@ -45,6 +52,61 @@ namespace {
 
 ShellContentBrowserClient* g_browser_client;
 bool g_swap_processes_for_redirect = false;
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
+    const std::string& process_type) {
+  base::FilePath dumps_path =
+      CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+          switches::kCrashDumpsDir);
+  {
+    ANNOTATE_SCOPED_MEMORY_LEAK;
+    breakpad::CrashHandlerHostLinux* crash_handler =
+        new breakpad::CrashHandlerHostLinux(
+            process_type, dumps_path, false);
+    crash_handler->StartUploaderThread();
+    return crash_handler;
+  }
+}
+
+int GetCrashSignalFD(const CommandLine& command_line) {
+  if (!breakpad::IsCrashReporterEnabled())
+    return -1;
+
+  std::string process_type =
+      command_line.GetSwitchValueASCII(switches::kProcessType);
+
+  if (process_type == switches::kRendererProcess) {
+    static breakpad::CrashHandlerHostLinux* crash_handler = NULL;
+    if (!crash_handler)
+      crash_handler = CreateCrashHandlerHost(process_type);
+    return crash_handler->GetDeathSignalSocket();
+  }
+
+  if (process_type == switches::kPluginProcess) {
+    static breakpad::CrashHandlerHostLinux* crash_handler = NULL;
+    if (!crash_handler)
+      crash_handler = CreateCrashHandlerHost(process_type);
+    return crash_handler->GetDeathSignalSocket();
+  }
+
+  if (process_type == switches::kPpapiPluginProcess) {
+    static breakpad::CrashHandlerHostLinux* crash_handler = NULL;
+    if (!crash_handler)
+      crash_handler = CreateCrashHandlerHost(process_type);
+    return crash_handler->GetDeathSignalSocket();
+  }
+
+  if (process_type == switches::kGpuProcess) {
+    static breakpad::CrashHandlerHostLinux* crash_handler = NULL;
+    if (!crash_handler)
+      crash_handler = CreateCrashHandlerHost(process_type);
+    return crash_handler->GetDeathSignalSocket();
+  }
+
+  return -1;
+}
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
 }  // namespace
 
@@ -79,7 +141,7 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
     RenderProcessHost* host) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
-  host->GetChannel()->AddFilter(new ShellMessageFilter(
+  host->AddFilter(new ShellMessageFilter(
       host->GetID(),
       BrowserContext::GetDefaultStoragePartition(browser_context())
           ->GetDatabaseTracker(),
@@ -88,12 +150,6 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
       BrowserContext::GetDefaultStoragePartition(browser_context())
           ->GetURLRequestContext()));
   host->Send(new ShellViewMsg_SetWebKitSourceDir(webkit_source_dir_));
-  registrar_.Add(this,
-                 NOTIFICATION_RENDERER_PROCESS_CREATED,
-                 Source<RenderProcessHost>(host));
-  registrar_.Add(this,
-                 NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                 Source<RenderProcessHost>(host));
 }
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
@@ -146,6 +202,16 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     command_line->AppendSwitch(switches::kExposeInternalsForTesting);
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kStableReleaseMode))
     command_line->AppendSwitch(switches::kStableReleaseMode);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCrashReporter)) {
+    command_line->AppendSwitch(switches::kEnableCrashReporter);
+  }
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kCrashDumpsDir)) {
+    command_line->AppendSwitchPath(
+        switches::kCrashDumpsDir,
+        CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+            switches::kCrashDumpsDir));
+  }
 }
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(
@@ -204,11 +270,12 @@ bool ShellContentBrowserClient::ShouldSwapProcessesForRedirect(
   return g_swap_processes_for_redirect;
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const CommandLine& command_line,
     int child_process_id,
     std::vector<content::FileDescriptorInfo>* mappings) {
+#if defined(OS_ANDROID)
   int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
   base::FilePath pak_file;
   bool r = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_file);
@@ -225,37 +292,27 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
   mappings->push_back(
       content::FileDescriptorInfo(kShellPakDescriptor,
                                   base::FileDescriptor(f, true)));
-}
-#endif
 
-void ShellContentBrowserClient::Observe(int type,
-                                        const NotificationSource& source,
-                                        const NotificationDetails& details) {
-  switch (type) {
-    case NOTIFICATION_RENDERER_PROCESS_CREATED: {
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_CREATED,
-                        source);
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                        source);
-      break;
+  if (breakpad::IsCrashReporterEnabled()) {
+    f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(
+        child_process_id);
+    if (f == base::kInvalidPlatformFileValue) {
+      LOG(ERROR) << "Failed to create file for minidump, crash reporting will "
+                 << "be disabled for this process.";
+    } else {
+      mappings->push_back(FileDescriptorInfo(kAndroidMinidumpDescriptor,
+                                             base::FileDescriptor(f, true)));
     }
-
-    case NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_CREATED,
-                        source);
-      registrar_.Remove(this,
-                        NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-                        source);
-      break;
-    }
-
-    default:
-      NOTREACHED();
   }
+#else  // !defined(OS_ANDROID)
+  int crash_signal_fd = GetCrashSignalFD(command_line);
+  if (crash_signal_fd >= 0) {
+    mappings->push_back(FileDescriptorInfo(
+        kCrashDumpSignal, base::FileDescriptor(crash_signal_fd, false)));
+  }
+#endif  // defined(OS_ANDROID)
 }
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
 
 ShellBrowserContext* ShellContentBrowserClient::browser_context() {
   return shell_browser_main_parts_->browser_context();

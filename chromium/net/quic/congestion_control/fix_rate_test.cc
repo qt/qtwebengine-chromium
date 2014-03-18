@@ -63,14 +63,14 @@ TEST_F(FixRateTest, SenderAPI) {
   EXPECT_EQ(300000, sender_->BandwidthEstimate().ToBytesPerSecond());
   EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
       NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE).IsZero());
-  sender_->SentPacket(clock_.Now(), 1, kMaxPacketSize, NOT_RETRANSMISSION,
-                      HAS_RETRANSMITTABLE_DATA);
+  sender_->OnPacketSent(clock_.Now(), 1, kDefaultMaxPacketSize,
+                        NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
   EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
       NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE).IsZero());
-  sender_->SentPacket(clock_.Now(), 2, kMaxPacketSize, NOT_RETRANSMISSION,
-                      HAS_RETRANSMITTABLE_DATA);
-  sender_->SentPacket(clock_.Now(), 3, 600, NOT_RETRANSMISSION,
-                      HAS_RETRANSMITTABLE_DATA);
+  sender_->OnPacketSent(clock_.Now(), 2, kDefaultMaxPacketSize,
+                        NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
+  sender_->OnPacketSent(clock_.Now(), 3, 600, NOT_RETRANSMISSION,
+                        HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(10),
       sender_->TimeUntilSend(clock_.Now(),
           NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE));
@@ -78,9 +78,9 @@ TEST_F(FixRateTest, SenderAPI) {
   EXPECT_EQ(QuicTime::Delta::Infinite(), sender_->TimeUntilSend(clock_.Now(),
       NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE));
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(8));
-  sender_->OnIncomingAck(1, kMaxPacketSize, rtt_);
-  sender_->OnIncomingAck(2, kMaxPacketSize, rtt_);
-  sender_->OnIncomingAck(3, 600, rtt_);
+  sender_->OnPacketAcked(1, kDefaultMaxPacketSize, rtt_);
+  sender_->OnPacketAcked(2, kDefaultMaxPacketSize, rtt_);
+  sender_->OnPacketAcked(3, 600, rtt_);
   EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
       NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE).IsZero());
 }
@@ -100,18 +100,18 @@ TEST_F(FixRateTest, FixRatePacing) {
     EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
          NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
          NOT_HANDSHAKE).IsZero());
-    sender_->SentPacket(clock_.Now(), sequence_number++, packet_size,
-                        NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
+    sender_->OnPacketSent(clock_.Now(), sequence_number++, packet_size,
+                          NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
     EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
         NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
         NOT_HANDSHAKE).IsZero());
-    sender_->SentPacket(clock_.Now(), sequence_number++, packet_size,
-                        NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
+    sender_->OnPacketSent(clock_.Now(), sequence_number++, packet_size,
+                          NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
     QuicTime::Delta advance_time = sender_->TimeUntilSend(clock_.Now(),
         NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA, NOT_HANDSHAKE);
     clock_.AdvanceTime(advance_time);
-    sender_->OnIncomingAck(sequence_number - 1, packet_size, rtt_);
-    sender_->OnIncomingAck(sequence_number - 2, packet_size, rtt_);
+    sender_->OnPacketAcked(sequence_number - 1, packet_size, rtt_);
+    sender_->OnPacketAcked(sequence_number - 2, packet_size, rtt_);
     acc_advance_time = acc_advance_time.Add(advance_time);
   }
   EXPECT_EQ(num_packets * packet_size * 1000000 / bitrate.ToBytesPerSecond(),

@@ -197,6 +197,14 @@ class VideoCodingModuleImpl : public VideoCodingModule {
     return sender_->StopDebugRecording();
   }
 
+  virtual void SuspendBelowMinBitrate() {
+    return sender_->SuspendBelowMinBitrate();
+  }
+
+  virtual bool VideoSuspended() const {
+    return sender_->VideoSuspended();
+  }
+
   virtual int32_t InitializeReceiver() OVERRIDE {
     return receiver_->InitializeReceiver();
   }
@@ -223,6 +231,11 @@ class VideoCodingModuleImpl : public VideoCodingModule {
   virtual int32_t RegisterReceiveStatisticsCallback(
       VCMReceiveStatisticsCallback* receiveStats) OVERRIDE {
     return receiver_->RegisterReceiveStatisticsCallback(receiveStats);
+  }
+
+  virtual int32_t RegisterDecoderTimingCallback(
+      VCMDecoderTimingCallback* decoderTiming) OVERRIDE {
+    return receiver_->RegisterDecoderTimingCallback(decoderTiming);
   }
 
   virtual int32_t RegisterFrameTypeCallback(
@@ -304,6 +317,16 @@ class VideoCodingModuleImpl : public VideoCodingModule {
 
   virtual int32_t SetReceiveChannelParameters(uint32_t rtt) OVERRIDE {
     return receiver_->SetReceiveChannelParameters(rtt);
+  }
+
+  virtual void RegisterPreDecodeImageCallback(
+      EncodedImageCallback* observer) OVERRIDE {
+    receiver_->RegisterPreDecodeImageCallback(observer);
+  }
+
+  virtual void RegisterPostEncodeImageCallback(
+      EncodedImageCallback* observer) OVERRIDE {
+    sender_->RegisterPostEncodeImageCallback(observer);
   }
 
  private:

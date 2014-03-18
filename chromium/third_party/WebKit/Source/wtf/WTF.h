@@ -34,20 +34,28 @@
 #include "wtf/Compiler.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/PartitionAlloc.h"
+#include "wtf/WTFExport.h"
 
 namespace WTF {
 
 // This function must be called exactly once from the main thread before using anything else in WTF.
 WTF_EXPORT void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction);
 WTF_EXPORT void shutdown();
+WTF_EXPORT bool isShutdown();
 
-class Partitions {
+class WTF_EXPORT Partitions {
 public:
     static void initialize();
     static void shutdown();
-    static ALWAYS_INLINE PartitionRoot* getBufferPartition() { return m_bufferAllocator.root(); }
+    static ALWAYS_INLINE PartitionRoot* getBufferPartition()
+    {
+        if (UNLIKELY(!s_initialized))
+            initialize();
+        return m_bufferAllocator.root();
+    }
 
 private:
+    static bool s_initialized;
     static PartitionAllocator<4096> m_bufferAllocator;
 };
 

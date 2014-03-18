@@ -31,20 +31,19 @@
 
 #include "config.h"
 
-#include "modules/websockets/WebSocket.h"
 #include "modules/websockets/WebSocketHandshake.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CookieJar.h"
-#include "core/platform/Cookie.h"
-#include "core/platform/HistogramSupport.h"
-#include "core/platform/Logging.h"
-#include "core/platform/network/HTTPHeaderMap.h"
-#include "core/platform/network/HTTPParsers.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "modules/websockets/WebSocket.h"
+#include "platform/Cookie.h"
+#include "platform/Logging.h"
+#include "platform/network/HTTPHeaderMap.h"
+#include "platform/network/HTTPParsers.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/SHA1.h"
 #include "wtf/StdLibExtras.h"
@@ -53,7 +52,6 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
-#include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
@@ -68,9 +66,12 @@ const char* const missingProtocolWhiteList[] = {
     "ica.citrix.com",
 };
 
-} // namespace
+String formatHandshakeFailureReason(const String& detail)
+{
+    return "Error during WebSocket handshake: " + detail;
+}
 
-static const char randomCharacterInSecWebSocketKey[] = "!\"#$%&'()*+,-./:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+} // namespace
 
 static String resourceName(const KURL& url)
 {
@@ -119,7 +120,7 @@ static String generateSecWebSocketKey()
 
 String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocketKey)
 {
-    static const char* const webSocketKeyGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    static const char webSocketKeyGUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     static const size_t sha1HashSize = 20; // FIXME: This should be defined in SHA1.h.
     SHA1 sha1;
     CString keyData = secWebSocketKey.ascii();
@@ -130,7 +131,7 @@ String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocket
     return base64Encode(reinterpret_cast<const char*>(hash.data()), sha1HashSize);
 }
 
-WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, ScriptExecutionContext* context)
+WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, ExecutionContext* context)
     : m_url(url)
     , m_clientProtocol(protocol)
     , m_secure(m_url.protocolIs("wss"))
@@ -143,7 +144,7 @@ WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, 
 
 WebSocketHandshake::~WebSocketHandshake()
 {
-    HistogramSupport::histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
+    blink::Platform::current()->histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
 }
 
 const KURL& WebSocketHandshake::url() const
@@ -234,7 +235,7 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     fields.append("User-Agent: " + m_context->userAgent(m_context->url()));
 
     // Fields in the handshake are sent by the client in a random order; the
-    // order is not meaningful.  Thus, it's ok to send the order we constructed
+    // order is not meaningful. Thus, it's ok to send the order we constructed
     // the fields.
 
     for (size_t i = 0; i < fields.size(); i++) {
@@ -290,7 +291,7 @@ void WebSocketHandshake::reset()
     m_extensionDispatcher.reset();
 }
 
-void WebSocketHandshake::clearScriptExecutionContext()
+void WebSocketHandshake::clearExecutionContext()
 {
     m_context = 0;
 }
@@ -307,12 +308,12 @@ int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
         m_mode = Failed; // m_failureReason is set inside readStatusLine().
         return len;
     }
-    LOG(Network, "WebSocketHandshake %p readServerHandshake() Status code is %d", this, statusCode);
+    WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() Status code is %d", this, statusCode);
     m_response.setStatusCode(statusCode);
     m_response.setStatusText(statusText);
     if (statusCode != 101) {
         m_mode = Failed;
-        m_failureReason = "Unexpected response code: " + String::number(statusCode);
+        m_failureReason = formatHandshakeFailureReason("Unexpected response code: " + String::number(statusCode));
         return len;
     }
     m_mode = Normal;
@@ -323,12 +324,12 @@ int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
     }
     const char* p = readHTTPHeaders(header + lineLength, header + len);
     if (!p) {
-        LOG(Network, "WebSocketHandshake %p readServerHandshake() readHTTPHeaders() failed", this);
+        WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() readHTTPHeaders() failed", this);
         m_mode = Failed; // m_failureReason is set inside readHTTPHeaders().
         return len;
     }
     if (!checkResponseHeaders()) {
-        LOG(Network, "WebSocketHandshake %p readServerHandshake() checkResponseHeaders() failed", this);
+        WTF_LOG(Network, "WebSocketHandshake %p readServerHandshake() checkResponseHeaders() failed", this);
         m_mode = Failed;
         return p - header;
     }
@@ -347,32 +348,32 @@ String WebSocketHandshake::failureReason() const
     return m_failureReason;
 }
 
-String WebSocketHandshake::serverWebSocketProtocol() const
+const AtomicString& WebSocketHandshake::serverWebSocketProtocol() const
 {
     return m_response.headerFields().get("sec-websocket-protocol");
 }
 
-String WebSocketHandshake::serverSetCookie() const
+const AtomicString& WebSocketHandshake::serverSetCookie() const
 {
     return m_response.headerFields().get("set-cookie");
 }
 
-String WebSocketHandshake::serverSetCookie2() const
+const AtomicString& WebSocketHandshake::serverSetCookie2() const
 {
     return m_response.headerFields().get("set-cookie2");
 }
 
-String WebSocketHandshake::serverUpgrade() const
+const AtomicString& WebSocketHandshake::serverUpgrade() const
 {
     return m_response.headerFields().get("upgrade");
 }
 
-String WebSocketHandshake::serverConnection() const
+const AtomicString& WebSocketHandshake::serverConnection() const
 {
     return m_response.headerFields().get("connection");
 }
 
-String WebSocketHandshake::serverWebSocketAccept() const
+const AtomicString& WebSocketHandshake::serverWebSocketAccept() const
 {
     return m_response.headerFields().get("sec-websocket-accept");
 }
@@ -427,10 +428,11 @@ int WebSocketHandshake::readStatusLine(const char* header, size_t headerLength, 
             // The caller isn't prepared to deal with null bytes in status
             // line. WebSockets specification doesn't prohibit this, but HTTP
             // does, so we'll just treat this as an error.
-            m_failureReason = "Status line contains embedded null";
+            m_failureReason = formatHandshakeFailureReason("Status line contains embedded null");
             return p + 1 - header;
-        } else if (*p == '\n')
+        } else if (*p == '\n') {
             break;
+        }
     }
     if (consumedLength == headerLength)
         return -1; // We have not received '\n' yet.
@@ -438,29 +440,30 @@ int WebSocketHandshake::readStatusLine(const char* header, size_t headerLength, 
     const char* end = p + 1;
     int lineLength = end - header;
     if (lineLength > maximumLength) {
-        m_failureReason = "Status line is too long";
+        m_failureReason = formatHandshakeFailureReason("Status line is too long");
         return maximumLength;
     }
 
     // The line must end with "\r\n".
     if (lineLength < 2 || *(end - 2) != '\r') {
-        m_failureReason = "Status line does not end with CRLF";
+        m_failureReason = formatHandshakeFailureReason("Status line does not end with CRLF");
         return lineLength;
     }
 
     if (!space1 || !space2) {
-        m_failureReason = "No response code found: " + trimInputSample(header, lineLength - 2);
+        m_failureReason = formatHandshakeFailureReason("No response code found in status line: " + trimInputSample(header, lineLength - 2));
         return lineLength;
     }
 
     String statusCodeString(space1 + 1, space2 - space1 - 1);
     if (statusCodeString.length() != 3) // Status code must consist of three digits.
         return lineLength;
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 3; ++i) {
         if (statusCodeString[i] < '0' || statusCodeString[i] > '9') {
-            m_failureReason = "Invalid status code: " + statusCodeString;
+            m_failureReason = formatHandshakeFailureReason("Invalid status code: " + statusCodeString);
             return lineLength;
         }
+    }
 
     bool ok = false;
     statusCode = statusCodeString.toInt(&ok);
@@ -475,7 +478,7 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
     m_response.clearHeaderFields();
 
     AtomicString name;
-    String value;
+    AtomicString value;
     bool sawSecWebSocketAcceptHeaderField = false;
     bool sawSecWebSocketProtocolHeaderField = false;
     const char* p = start;
@@ -491,73 +494,78 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
 
         // Sec-WebSocket-Extensions may be split. We parse and check the
         // header value every time the header appears.
-        if (equalIgnoringCase("sec-websocket-extensions", name)) {
+        if (equalIgnoringCase("Sec-WebSocket-Extensions", name)) {
             if (!m_extensionDispatcher.processHeaderValue(value)) {
-                m_failureReason = m_extensionDispatcher.failureReason();
+                m_failureReason = formatHandshakeFailureReason(m_extensionDispatcher.failureReason());
                 return 0;
             }
         } else if (equalIgnoringCase("Sec-WebSocket-Accept", name)) {
             if (sawSecWebSocketAcceptHeaderField) {
-                m_failureReason = "The Sec-WebSocket-Accept header MUST NOT appear more than once in an HTTP response";
+                m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Accept' header must not appear more than once in a response");
                 return 0;
             }
             m_response.addHeaderField(name, value);
             sawSecWebSocketAcceptHeaderField = true;
         } else if (equalIgnoringCase("Sec-WebSocket-Protocol", name)) {
             if (sawSecWebSocketProtocolHeaderField) {
-                m_failureReason = "The Sec-WebSocket-Protocol header MUST NOT appear more than once in an HTTP response";
+                m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header must not appear more than once in a response");
                 return 0;
             }
             m_response.addHeaderField(name, value);
             sawSecWebSocketProtocolHeaderField = true;
-        } else
+        } else {
             m_response.addHeaderField(name, value);
+        }
     }
+
+    String extensions = m_extensionDispatcher.acceptedExtensions();
+    if (!extensions.isEmpty())
+        m_response.addHeaderField("Sec-WebSocket-Extensions", extensions);
     return p;
 }
 
 bool WebSocketHandshake::checkResponseHeaders()
 {
-    const String& serverWebSocketProtocol = this->serverWebSocketProtocol();
-    const String& serverUpgrade = this->serverUpgrade();
-    const String& serverConnection = this->serverConnection();
-    const String& serverWebSocketAccept = this->serverWebSocketAccept();
+    const AtomicString& serverWebSocketProtocol = this->serverWebSocketProtocol();
+    const AtomicString& serverUpgrade = this->serverUpgrade();
+    const AtomicString& serverConnection = this->serverConnection();
+    const AtomicString& serverWebSocketAccept = this->serverWebSocketAccept();
 
     if (serverUpgrade.isNull()) {
-        m_failureReason = "Error during WebSocket handshake: 'Upgrade' header is missing";
+        m_failureReason = formatHandshakeFailureReason("'Upgrade' header is missing");
         return false;
     }
     if (serverConnection.isNull()) {
-        m_failureReason = "Error during WebSocket handshake: 'Connection' header is missing";
+        m_failureReason = formatHandshakeFailureReason("'Connection' header is missing");
         return false;
     }
     if (serverWebSocketAccept.isNull()) {
-        m_failureReason = "Error during WebSocket handshake: 'Sec-WebSocket-Accept' header is missing";
+        m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Accept' header is missing");
         return false;
     }
 
     if (!equalIgnoringCase(serverUpgrade, "websocket")) {
-        m_failureReason = "Error during WebSocket handshake: 'Upgrade' header value is not 'WebSocket'";
+        m_failureReason = formatHandshakeFailureReason("'Upgrade' header value is not 'WebSocket': " + serverUpgrade);
         return false;
     }
     if (!equalIgnoringCase(serverConnection, "upgrade")) {
-        m_failureReason = "Error during WebSocket handshake: 'Connection' header value is not 'Upgrade'";
+        m_failureReason = formatHandshakeFailureReason("'Connection' header value is not 'Upgrade': " + serverConnection);
         return false;
     }
 
     if (serverWebSocketAccept != m_expectedAccept) {
-        m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Accept mismatch";
+        m_failureReason = formatHandshakeFailureReason("Incorrect 'Sec-WebSocket-Accept' header value");
         return false;
     }
     if (!serverWebSocketProtocol.isNull()) {
         if (m_clientProtocol.isEmpty()) {
-            m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch";
+            m_failureReason = formatHandshakeFailureReason("Response must not include 'Sec-WebSocket-Protocol' header if not present in request: " + serverWebSocketProtocol);
             return false;
         }
         Vector<String> result;
         m_clientProtocol.split(String(WebSocket::subProtocolSeperator()), result);
         if (!result.contains(serverWebSocketProtocol)) {
-            m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch";
+            m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header value '" + serverWebSocketProtocol + "' in response does not match any of sent values");
             return false;
         }
     } else if (!m_clientProtocol.isEmpty()) {
@@ -572,7 +580,7 @@ bool WebSocketHandshake::checkResponseHeaders()
             }
         }
         if (!match) {
-            m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch";
+            m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
             return false;
         }
     }

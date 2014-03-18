@@ -6,10 +6,10 @@
 #define NET_TOOLS_QUIC_TEST_TOOLS_MOCK_QUIC_DISPATCHER_H_
 
 #include "net/base/ip_endpoint.h"
-#include "net/quic/crypto/crypto_server_config.h"
+#include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_dispatcher.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -25,9 +25,10 @@ class MockQuicDispatcher : public QuicDispatcher {
                      EpollServer* eps);
   virtual ~MockQuicDispatcher();
 
-  MOCK_METHOD4(ProcessPacket, void(const IPEndPoint& server_address,
+  MOCK_METHOD5(ProcessPacket, void(const IPEndPoint& server_address,
                                    const IPEndPoint& client_address,
                                    QuicGuid guid,
+                                   bool has_version_flag,
                                    const QuicEncryptedPacket& packet));
 };
 

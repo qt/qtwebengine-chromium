@@ -40,18 +40,18 @@ vpxenc.SRCS                 += tools_common.c tools_common.h
 vpxenc.SRCS                 += vpx_ports/mem_ops.h
 vpxenc.SRCS                 += vpx_ports/mem_ops_aligned.h
 vpxenc.SRCS                 += vpx_ports/vpx_timer.h
-vpxenc.SRCS                 += libmkv/EbmlIDs.h
-vpxenc.SRCS                 += libmkv/EbmlWriter.c
-vpxenc.SRCS                 += libmkv/EbmlWriter.h
+vpxenc.SRCS                 += third_party/libmkv/EbmlIDs.h
+vpxenc.SRCS                 += third_party/libmkv/EbmlWriter.c
+vpxenc.SRCS                 += third_party/libmkv/EbmlWriter.h
 vpxenc.SRCS                 += $(LIBYUV_SRCS)
 vpxenc.GUID                  = 548DEC74-7A15-4B2B-AFC3-AA102E7C25C1
 vpxenc.DESCRIPTION           = Full featured encoder
 UTILS-$(CONFIG_VP8_ENCODER)    += vp8_scalable_patterns.c
 vp8_scalable_patterns.GUID   = 0D6A210B-F482-4D6F-8570-4A9C01ACC88C
 vp8_scalable_patterns.DESCRIPTION = Temporal Scalability Encoder
-UTILS-$(CONFIG_VP8_ENCODER)    += vp9_spatial_scalable_encoder.c
-vp8_scalable_patterns.GUID   = 4A38598D-627D-4505-9C7B-D4020C84100D
-vp8_scalable_patterns.DESCRIPTION = Spatial Scalable Encoder
+UTILS-$(CONFIG_VP9_ENCODER)    += vp9_spatial_scalable_encoder.c
+vp9_spatial_scalable_encoder.GUID   = 4A38598D-627D-4505-9C7B-D4020C84100D
+vp9_spatial_scalable_encoder.DESCRIPTION = Spatial Scalable Encoder
 
 # Clean up old ivfenc, ivfdec binaries.
 ifeq ($(CONFIG_MSVS),yes)

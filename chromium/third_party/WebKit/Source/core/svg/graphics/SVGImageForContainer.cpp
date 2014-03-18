@@ -20,10 +20,9 @@
 #include "config.h"
 #include "core/svg/graphics/SVGImageForContainer.h"
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/FloatSize.h"
-#include "core/platform/graphics/Image.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/FloatSize.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -36,15 +35,15 @@ IntSize SVGImageForContainer::size() const
 }
 
 void SVGImageForContainer::draw(GraphicsContext* context, const FloatRect& dstRect,
-    const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
+    const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
 {
     m_image->drawForContainer(context, m_containerSize, m_zoom, dstRect, srcRect, compositeOp, blendMode);
 }
 
 void SVGImageForContainer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode)
+    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
 {
-    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, scale, phase, compositeOp, dstRect, blendMode);
+    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, scale, phase, compositeOp, dstRect, blendMode, repeatSpacing);
 }
 
 PassRefPtr<NativeImageSkia> SVGImageForContainer::nativeImageForCurrentFrame()

@@ -6,12 +6,17 @@
 
 #include <algorithm>
 
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 
 namespace {
+
+// Font description of the default font set.
+base::LazyInstance<std::string>::Leaky g_default_font_description =
+    LAZY_INSTANCE_INITIALIZER;
 
 // Parses font description into |font_names|, |font_style| and |font_size|.
 void ParseFontDescriptionString(const std::string& font_description_string,
@@ -75,7 +80,14 @@ FontList::FontList()
       common_baseline_(-1),
       font_style_(-1),
       font_size_(-1) {
-  fonts_.push_back(Font());
+  // SetDefaultFontDescription() must be called and the default font description
+  // must be set earlier than any call of the default constructor.
+  DCHECK(!(g_default_font_description == NULL))  // != is not overloaded.
+      << "SetDefaultFontDescription has not been called.";
+
+  font_description_string_ = g_default_font_description.Get();
+  if (font_description_string_.empty())
+    fonts_.push_back(Font());
 }
 
 FontList::FontList(const std::string& font_description_string)
@@ -130,6 +142,16 @@ FontList::FontList(const Font& font)
 FontList::~FontList() {
 }
 
+// static
+void FontList::SetDefaultFontDescription(const std::string& font_description) {
+  // The description string must end with "px" for size in pixel, or must be
+  // the empty string, which specifies to use a single default font.
+  DCHECK(font_description.empty() ||
+         EndsWith(font_description, "px", true));
+
+  g_default_font_description.Get() = font_description;
+}
+
 FontList FontList::DeriveFontList(int font_style) const {
   return DeriveFontListWithSizeDeltaAndStyle(0, font_style);
 }
@@ -175,6 +197,11 @@ int FontList::GetBaseline() const {
   if (common_baseline_ == -1)
     CacheCommonFontHeightAndBaseline();
   return common_baseline_;
+}
+
+int FontList::GetCapHeight() const {
+  // Assume the primary font is used to render Latin characters.
+  return GetPrimaryFont().GetCapHeight();
 }
 
 int FontList::GetStringWidth(const base::string16& text) const {

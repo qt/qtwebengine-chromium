@@ -43,9 +43,10 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // Pause the media.
   virtual void Pause(bool is_media_related_action) = 0;
 
-  // Seek to a particular position. When succeeds, OnSeekComplete() will be
-  // called. Otherwise, nothing will happen.
-  virtual void SeekTo(base::TimeDelta time) = 0;
+  // Seek to a particular position, based on renderer signaling actual seek
+  // with MediaPlayerHostMsg_Seek. If eventual success, OnSeekComplete() will be
+  // called.
+  virtual void SeekTo(const base::TimeDelta& timestamp) = 0;
 
   // Release the player resources.
   virtual void Release() = 0;
@@ -54,6 +55,7 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual void SetVolume(double volume) = 0;
 
   // Get the media information from the player.
+  virtual bool IsRemote() const;
   virtual int GetVideoWidth() = 0;
   virtual int GetVideoHeight() = 0;
   virtual base::TimeDelta GetDuration() = 0;
@@ -78,21 +80,6 @@ class MEDIA_EXPORT MediaPlayerAndroid {
  protected:
   MediaPlayerAndroid(int player_id,
                      MediaPlayerManager* manager);
-
-  // Called when player status changes.
-  virtual void OnMediaError(int error_type);
-  virtual void OnVideoSizeChanged(int width, int height);
-  virtual void OnBufferingUpdate(int percent);
-  virtual void OnPlaybackComplete();
-  virtual void OnSeekComplete();
-  virtual void OnMediaMetadataChanged(
-      base::TimeDelta duration, int width, int height, bool success);
-  virtual void OnMediaInterrupted();
-  virtual void OnTimeUpdated();
-
-  // Request or release decoding resources from |manager_|.
-  virtual void RequestMediaResourcesFromManager();
-  virtual void ReleaseMediaResourcesFromManager();
 
   MediaPlayerManager* manager() { return manager_; }
 

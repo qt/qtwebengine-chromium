@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'chromium_code': 1,
+  },
   'targets': [
     {
       'target_name': 'webkit_storage_common',
@@ -34,6 +37,7 @@
         'common/fileapi/directory_entry.h',
         'common/fileapi/file_system_info.cc',
         'common/fileapi/file_system_info.h',
+        'common/fileapi/file_system_mount_option.h',
         'common/fileapi/file_system_types.h',
         'common/fileapi/file_system_util.cc',
         'common/fileapi/file_system_util.h',

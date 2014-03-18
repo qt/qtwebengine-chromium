@@ -39,17 +39,18 @@
     [Custom] any restart();
 
     // Only declarative scope (local, with and catch) is accepted. Returns undefined.
-    [Custom] any setVariableValue(long scopeIndex, DOMString variableName, any newValue);
+    any setVariableValue([Default=Undefined] optional long scopeIndex, [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString variableName, [Default=Undefined] optional any newValue);
 
     readonly attribute JavaScriptCallFrame caller;
     readonly attribute long sourceID;
     readonly attribute long line;
     readonly attribute long column;
-    [CustomGetter] readonly attribute Array scopeChain;
+    [Custom=Getter] readonly attribute object scopeChain;
     [Custom] unsigned short scopeType(long scopeIndex);
-    [CustomGetter] readonly attribute Object thisObject;
+    [Custom=Getter] readonly attribute object thisObject;
     readonly attribute DOMString stepInPositions;
     readonly attribute DOMString functionName;
-    [CustomGetter] readonly attribute DOMString type;
+    [Custom=Getter] readonly attribute DOMString type;
+    readonly attribute boolean isAtReturn;
+    [Custom=Getter] readonly attribute any returnValue;
 };
-

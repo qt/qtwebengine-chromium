@@ -30,7 +30,6 @@
 #include "core/css/InspectorCSSOMWrappers.h"
 
 #include "core/css/CSSDefaultStyleSheets.h"
-#include "core/css/CSSHostRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSMediaRule.h"
 #include "core/css/CSSRegionRule.h"
@@ -65,22 +64,19 @@ void InspectorCSSOMWrappers::collect(ListType* listType)
         CSSRule* cssRule = listType->item(i);
         switch (cssRule->type()) {
         case CSSRule::IMPORT_RULE:
-            collect(static_cast<CSSImportRule*>(cssRule)->styleSheet());
+            collect(toCSSImportRule(cssRule)->styleSheet());
             break;
         case CSSRule::MEDIA_RULE:
-            collect(static_cast<CSSMediaRule*>(cssRule));
+            collect(toCSSMediaRule(cssRule));
             break;
         case CSSRule::SUPPORTS_RULE:
-            collect(static_cast<CSSSupportsRule*>(cssRule));
+            collect(toCSSSupportsRule(cssRule));
             break;
         case CSSRule::WEBKIT_REGION_RULE:
-            collect(static_cast<CSSRegionRule*>(cssRule));
-            break;
-        case CSSRule::HOST_RULE:
-            collect(static_cast<CSSHostRule*>(cssRule));
+            collect(toCSSRegionRule(cssRule));
             break;
         case CSSRule::STYLE_RULE:
-            m_styleRuleToCSSOMWrapperMap.add(static_cast<CSSStyleRule*>(cssRule)->styleRule(), static_cast<CSSStyleRule*>(cssRule));
+            m_styleRuleToCSSOMWrapperMap.add(toCSSStyleRule(cssRule)->styleRule(), toCSSStyleRule(cssRule));
             break;
         default:
             break;
@@ -105,17 +101,17 @@ void InspectorCSSOMWrappers::collectFromStyleSheets(const Vector<RefPtr<CSSStyle
 
 void InspectorCSSOMWrappers::collectFromStyleEngine(StyleEngine* styleSheetCollection)
 {
-    collectFromStyleSheets(styleSheetCollection->activeAuthorStyleSheets());
-    collect(styleSheetCollection->pageUserSheet());
-    collectFromStyleSheets(styleSheetCollection->injectedUserStyleSheets());
-    collectFromStyleSheets(styleSheetCollection->documentUserStyleSheets());
+    Vector<const Vector<RefPtr<CSSStyleSheet> >*> activeAuthorStyleSheets;
+    styleSheetCollection->getActiveAuthorStyleSheets(activeAuthorStyleSheets);
+    for (size_t i = 0; i < activeAuthorStyleSheets.size(); ++i)
+        collectFromStyleSheets(*activeAuthorStyleSheets[i]);
 }
 
 CSSStyleRule* InspectorCSSOMWrappers::getWrapperForRuleInSheets(StyleRule* rule, StyleEngine* styleSheetCollection)
 {
     if (m_styleRuleToCSSOMWrapperMap.isEmpty()) {
-        collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::simpleDefaultStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::defaultStyleSheet);
+        collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::viewportStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::quirksStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::svgStyleSheet);
         collectFromStyleSheetContents(m_styleSheetCSSOMWrapperSet, CSSDefaultStyleSheets::mediaControlsStyleSheet);

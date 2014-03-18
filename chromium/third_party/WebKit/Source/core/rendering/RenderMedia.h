@@ -35,7 +35,6 @@ class HTMLMediaElement;
 class RenderMedia : public RenderImage {
 public:
     explicit RenderMedia(HTMLMediaElement*);
-    RenderMedia(HTMLMediaElement*, const IntSize& intrinsicSize);
     virtual ~RenderMedia();
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
@@ -63,19 +62,10 @@ private:
     virtual bool isImage() const OVERRIDE FINAL { return false; }
     virtual void paintReplaced(PaintInfo&, const LayoutPoint&);
 
-    virtual bool requiresForcedStyleRecalcPropagation() const OVERRIDE FINAL { return true; }
-
     RenderObjectChildList m_children;
 };
 
-inline RenderMedia* toRenderMedia(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isMedia());
-    return static_cast<RenderMedia*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderMedia(const RenderMedia*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderMedia, isMedia());
 
 } // namespace WebCore
 

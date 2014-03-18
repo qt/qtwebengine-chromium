@@ -176,7 +176,7 @@ def main(argv=None):
   if opts.path:
     extra_path = [os.path.abspath(p) for p in opts.path]
     extra_path = os.pathsep.join(extra_path)
-    os.environ['PATH'] += os.pathsep + extra_path
+    os.environ['PATH'] = extra_path + os.pathsep + os.environ['PATH']
 
   if not args:
     if not opts.all:
@@ -216,6 +216,7 @@ def main(argv=None):
   else:
     # TODO:  not duplicate this mapping from pylib/gyp/__init__.py
     format_list = {
+      'aix5':     ['make'],
       'freebsd7': ['make'],
       'freebsd8': ['make'],
       'openbsd5': ['make'],

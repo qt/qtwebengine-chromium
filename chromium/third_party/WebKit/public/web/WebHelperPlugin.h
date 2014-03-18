@@ -34,7 +34,7 @@
 #include "../platform/WebCommon.h"
 #include "WebWidget.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebFrameClient;
 class WebPlugin;
@@ -42,7 +42,7 @@ class WebWidgetClient;
 
 class WebHelperPlugin : public WebWidget {
 public:
-    WEBKIT_EXPORT static WebHelperPlugin* create(WebWidgetClient*);
+    BLINK_EXPORT static WebHelperPlugin* create(WebWidgetClient*);
 
     virtual void initializeFrame(WebFrameClient*) = 0;
 
@@ -55,6 +55,6 @@ protected:
     ~WebHelperPlugin() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

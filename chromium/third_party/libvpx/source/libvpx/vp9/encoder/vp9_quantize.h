@@ -13,31 +13,19 @@
 
 #include "vp9/encoder/vp9_block.h"
 
-#define prototype_quantize_block(sym) \
-  void (sym)(MACROBLOCK *mb, int b_idx)
+void vp9_regular_quantize_b_4x4(MACROBLOCK *x, int y_blocks, int b_idx,
+                                const int16_t *scan, const int16_t *iscan);
 
-#define prototype_quantize_block_pair(sym) \
-  void (sym)(MACROBLOCK *mb, int b_idx1, int b_idx2)
-
-#define prototype_quantize_mb(sym) \
-  void (sym)(MACROBLOCK *x)
-
-void vp9_regular_quantize_b_4x4_pair(MACROBLOCK *mb, int b_idx1, int b_idx2,
-                                     int y_blocks);
-void vp9_regular_quantize_b_4x4(MACROBLOCK *mb, int b_idx, TX_TYPE tx_type,
-                                int y_blocks);
-void vp9_regular_quantize_b_8x8(MACROBLOCK *mb, int b_idx, TX_TYPE tx_type,
-                                int y_blocks);
 struct VP9_COMP;
 
-extern void vp9_set_quantizer(struct VP9_COMP *cpi, int Q);
+void vp9_set_quantizer(struct VP9_COMP *cpi, int q);
 
-extern void vp9_frame_init_quantizer(struct VP9_COMP *cpi);
+void vp9_frame_init_quantizer(struct VP9_COMP *cpi);
 
-extern void vp9_update_zbin_extra(struct VP9_COMP *cpi, MACROBLOCK *x);
+void vp9_update_zbin_extra(struct VP9_COMP *cpi, MACROBLOCK *x);
 
-extern void vp9_mb_init_quantizer(struct VP9_COMP *cpi, MACROBLOCK *x);
+void vp9_mb_init_quantizer(struct VP9_COMP *cpi, MACROBLOCK *x);
 
-extern void vp9_init_quantizer(struct VP9_COMP *cpi);
+void vp9_init_quantizer(struct VP9_COMP *cpi);
 
 #endif  // VP9_ENCODER_VP9_QUANTIZE_H_

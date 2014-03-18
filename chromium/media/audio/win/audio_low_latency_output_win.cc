@@ -25,23 +25,6 @@ using base::win::ScopedCoMem;
 
 namespace media {
 
-typedef uint32 ChannelConfig;
-
-// Retrieves an integer mask which corresponds to the channel layout the
-// audio engine uses for its internal processing/mixing of shared-mode
-// streams. This mask indicates which channels are present in the multi-
-// channel stream. The least significant bit corresponds with the Front Left
-// speaker, the next least significant bit corresponds to the Front Right
-// speaker, and so on, continuing in the order defined in KsMedia.h.
-// See http://msdn.microsoft.com/en-us/library/windows/hardware/ff537083(v=vs.85).aspx
-// for more details.
-static ChannelConfig GetChannelConfig() {
-  WAVEFORMATPCMEX format;
-  return SUCCEEDED(CoreAudioUtil::GetDefaultSharedModeMixFormat(
-                   eRender, eConsole, &format)) ?
-                   static_cast<int>(format.dwChannelMask) : 0;
-}
-
 // Compare two sets of audio parameters and return true if they are equal.
 // Note that bits_per_sample() is excluded from this comparison since Core
 // Audio can deal with most bit depths. As an example, if the native/mixing
@@ -55,59 +38,12 @@ static bool CompareAudioParametersNoBitDepthOrChannels(
           a.frames_per_buffer() == b.frames_per_buffer());
 }
 
-// Converts Microsoft's channel configuration to ChannelLayout.
-// This mapping is not perfect but the best we can do given the current
-// ChannelLayout enumerator and the Windows-specific speaker configurations
-// defined in ksmedia.h. Don't assume that the channel ordering in
-// ChannelLayout is exactly the same as the Windows specific configuration.
-// As an example: KSAUDIO_SPEAKER_7POINT1_SURROUND is mapped to
-// CHANNEL_LAYOUT_7_1 but the positions of Back L, Back R and Side L, Side R
-// speakers are different in these two definitions.
-static ChannelLayout ChannelConfigToChannelLayout(ChannelConfig config) {
-  switch (config) {
-    case KSAUDIO_SPEAKER_DIRECTOUT:
-      return CHANNEL_LAYOUT_NONE;
-    case KSAUDIO_SPEAKER_MONO:
-      return CHANNEL_LAYOUT_MONO;
-    case KSAUDIO_SPEAKER_STEREO:
-      return CHANNEL_LAYOUT_STEREO;
-    case KSAUDIO_SPEAKER_QUAD:
-      return CHANNEL_LAYOUT_QUAD;
-    case KSAUDIO_SPEAKER_SURROUND:
-      return CHANNEL_LAYOUT_4_0;
-    case KSAUDIO_SPEAKER_5POINT1:
-      return CHANNEL_LAYOUT_5_1_BACK;
-    case KSAUDIO_SPEAKER_5POINT1_SURROUND:
-      return CHANNEL_LAYOUT_5_1;
-    case KSAUDIO_SPEAKER_7POINT1:
-      return CHANNEL_LAYOUT_7_1_WIDE;
-    case KSAUDIO_SPEAKER_7POINT1_SURROUND:
-      return CHANNEL_LAYOUT_7_1;
-    default:
-      VLOG(1) << "Unsupported channel layout: " << config;
-      return CHANNEL_LAYOUT_UNSUPPORTED;
-  }
-}
-
 // static
 AUDCLNT_SHAREMODE WASAPIAudioOutputStream::GetShareMode() {
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kEnableExclusiveAudio))
     return AUDCLNT_SHAREMODE_EXCLUSIVE;
   return AUDCLNT_SHAREMODE_SHARED;
-}
-
-// static
-int WASAPIAudioOutputStream::HardwareChannelCount() {
-  WAVEFORMATPCMEX format;
-  return SUCCEEDED(CoreAudioUtil::GetDefaultSharedModeMixFormat(
-      eRender, eConsole, &format)) ?
-      static_cast<int>(format.Format.nChannels) : 0;
-}
-
-// static
-ChannelLayout WASAPIAudioOutputStream::HardwareChannelLayout() {
-  return ChannelConfigToChannelLayout(GetChannelConfig());
 }
 
 // static
@@ -135,9 +71,12 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
                                                  ERole device_role)
     : creating_thread_id_(base::PlatformThread::CurrentId()),
       manager_(manager),
+      format_(),
       opened_(false),
       audio_parameters_are_valid_(false),
       volume_(1.0),
+      packet_size_frames_(0),
+      packet_size_bytes_(0),
       endpoint_buffer_size_frames_(0),
       device_id_(device_id),
       device_role_(device_role),
@@ -187,18 +126,18 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
 
   // Add the parts which are unique to WAVE_FORMAT_EXTENSIBLE.
   format_.Samples.wValidBitsPerSample = params.bits_per_sample();
-  format_.dwChannelMask = GetChannelConfig();
+  format_.dwChannelMask = CoreAudioUtil::GetChannelConfig(device_id, eRender);
   format_.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
 
   // Store size (in different units) of audio packets which we expect to
   // get from the audio endpoint device in each render event.
   packet_size_frames_ = params.frames_per_buffer();
   packet_size_bytes_ = params.GetBytesPerBuffer();
-  packet_size_ms_ = (1000.0 * packet_size_frames_) / params.sample_rate();
   VLOG(1) << "Number of bytes per audio frame  : " << format->nBlockAlign;
   VLOG(1) << "Number of audio frames per packet: " << packet_size_frames_;
   VLOG(1) << "Number of bytes per packet       : " << packet_size_bytes_;
-  VLOG(1) << "Number of milliseconds per packet: " << packet_size_ms_;
+  VLOG(1) << "Number of milliseconds per packet: "
+          << params.GetBufferDuration().InMillisecondsF();
 
   // All events are auto-reset events and non-signaled initially.
 
@@ -298,6 +237,13 @@ bool WASAPIAudioOutputStream::Open() {
   audio_client_ = audio_client;
   audio_render_client_ = audio_render_client;
 
+  hr = audio_client_->GetService(__uuidof(IAudioClock),
+                                 audio_clock_.ReceiveVoid());
+  if (FAILED(hr)) {
+    LOG(ERROR) << "Failed to get IAudioClock service.";
+    return false;
+  }
+
   opened_ = true;
   return true;
 }
@@ -315,6 +261,17 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
 
   source_ = callback;
 
+  // Ensure that the endpoint buffer is prepared with silence.
+  if (share_mode_ == AUDCLNT_SHAREMODE_SHARED) {
+    if (!CoreAudioUtil::FillRenderEndpointBufferWithSilence(
+             audio_client_, audio_render_client_)) {
+      LOG(ERROR) << "Failed to prepare endpoint buffers with silence.";
+      callback->OnError(this);
+      return;
+    }
+  }
+  num_written_frames_ = endpoint_buffer_size_frames_;
+
   // Create and start the thread that will drive the rendering by waiting for
   // render events.
   render_thread_.reset(
@@ -322,26 +279,18 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
   render_thread_->Start();
   if (!render_thread_->HasBeenStarted()) {
     LOG(ERROR) << "Failed to start WASAPI render thread.";
+    StopThread();
+    callback->OnError(this);
     return;
   }
-
-  // Ensure that the endpoint buffer is prepared with silence.
-  if (share_mode_ == AUDCLNT_SHAREMODE_SHARED) {
-    if (!CoreAudioUtil::FillRenderEndpointBufferWithSilence(
-        audio_client_, audio_render_client_)) {
-      LOG(WARNING) << "Failed to prepare endpoint buffers with silence.";
-      return;
-    }
-  }
-  num_written_frames_ = endpoint_buffer_size_frames_;
 
   // Start streaming data between the endpoint buffer and the audio engine.
   HRESULT hr = audio_client_->Start();
   if (FAILED(hr)) {
-    SetEvent(stop_render_event_.Get());
-    render_thread_->Join();
-    render_thread_.reset();
-    HandleError(hr);
+    LOG_GETLASTERROR(ERROR)
+        << "Failed to start output streaming: " << std::hex << hr;
+    StopThread();
+    callback->OnError(this);
   }
 }
 
@@ -354,27 +303,21 @@ void WASAPIAudioOutputStream::Stop() {
   // Stop output audio streaming.
   HRESULT hr = audio_client_->Stop();
   if (FAILED(hr)) {
-    LOG_IF(ERROR, hr != AUDCLNT_E_NOT_INITIALIZED)
+    LOG_GETLASTERROR(ERROR)
         << "Failed to stop output streaming: " << std::hex << hr;
+    source_->OnError(this);
   }
 
-  // Wait until the thread completes and perform cleanup.
-  SetEvent(stop_render_event_.Get());
-  render_thread_->Join();
-  render_thread_.reset();
-
-  // Ensure that we don't quit the main thread loop immediately next
-  // time Start() is called.
-  ResetEvent(stop_render_event_.Get());
-
-  // Clear source callback, it'll be set again on the next Start() call.
-  source_ = NULL;
+  // Make a local copy of |source_| since StopThread() will clear it.
+  AudioSourceCallback* callback = source_;
+  StopThread();
 
   // Flush all pending data and reset the audio clock stream position to 0.
   hr = audio_client_->Reset();
   if (FAILED(hr)) {
-    LOG_IF(ERROR, hr != AUDCLNT_E_NOT_INITIALIZED)
+    LOG_GETLASTERROR(ERROR)
         << "Failed to reset streaming: " << std::hex << hr;
+    callback->OnError(this);
   }
 
   // Extra safety check to ensure that the buffers are cleared.
@@ -443,17 +386,9 @@ void WASAPIAudioOutputStream::Run() {
                           audio_samples_render_event_ };
   UINT64 device_frequency = 0;
 
-  // The IAudioClock interface enables us to monitor a stream's data
-  // rate and the current position in the stream. Allocate it before we
-  // start spinning.
-  ScopedComPtr<IAudioClock> audio_clock;
-  hr = audio_client_->GetService(__uuidof(IAudioClock),
-                                 audio_clock.ReceiveVoid());
-  if (SUCCEEDED(hr)) {
-    // The device frequency is the frequency generated by the hardware clock in
-    // the audio device. The GetFrequency() method reports a constant frequency.
-    hr = audio_clock->GetFrequency(&device_frequency);
-  }
+  // The device frequency is the frequency generated by the hardware clock in
+  // the audio device. The GetFrequency() method reports a constant frequency.
+  hr = audio_clock_->GetFrequency(&device_frequency);
   error = FAILED(hr);
   PLOG_IF(ERROR, error) << "Failed to acquire IAudioClock interface: "
                         << std::hex << hr;
@@ -474,7 +409,7 @@ void WASAPIAudioOutputStream::Run() {
         break;
       case WAIT_OBJECT_0 + 1:
         // |audio_samples_render_event_| has been set.
-        RenderAudioFromSource(audio_clock, device_frequency);
+        error = !RenderAudioFromSource(device_frequency);
         break;
       default:
         error = true;
@@ -496,8 +431,7 @@ void WASAPIAudioOutputStream::Run() {
   }
 }
 
-void WASAPIAudioOutputStream::RenderAudioFromSource(
-    IAudioClock* audio_clock, UINT64 device_frequency) {
+bool WASAPIAudioOutputStream::RenderAudioFromSource(UINT64 device_frequency) {
   TRACE_EVENT0("audio", "RenderAudioFromSource");
 
   HRESULT hr = S_FALSE;
@@ -518,7 +452,7 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
     if (FAILED(hr)) {
       DLOG(ERROR) << "Failed to retrieve amount of available space: "
                   << std::hex << hr;
-      return;
+      return false;
     }
   } else {
     // While the stream is running, the system alternately sends one
@@ -536,7 +470,7 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
   // Check if there is enough available space to fit the packet size
   // specified by the client.
   if (num_available_frames < packet_size_frames_)
-    return;
+    return true;
 
   DLOG_IF(ERROR, num_available_frames % packet_size_frames_ != 0)
       << "Non-perfect timing detected (num_available_frames="
@@ -559,7 +493,7 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
     if (FAILED(hr)) {
       DLOG(ERROR) << "Failed to use rendering audio buffer: "
                  << std::hex << hr;
-      return;
+      return false;
     }
 
     // Derive the audio delay which corresponds to the delay between
@@ -569,7 +503,7 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
     // unit at the render side.
     UINT64 position = 0;
     int audio_delay_bytes = 0;
-    hr = audio_clock->GetPosition(&position, NULL);
+    hr = audio_clock_->GetPosition(&position, NULL);
     if (SUCCEEDED(hr)) {
       // Stream position of the sample that is currently playing
       // through the speaker.
@@ -617,14 +551,8 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
 
     num_written_frames_ += packet_size_frames_;
   }
-}
 
-void WASAPIAudioOutputStream::HandleError(HRESULT err) {
-  CHECK((started() && GetCurrentThreadId() == render_thread_->tid()) ||
-        (!started() && GetCurrentThreadId() == creating_thread_id_));
-  NOTREACHED() << "Error code: " << std::hex << err;
-  if (source_)
-    source_->OnError(this);
+  return true;
 }
 
 HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
@@ -704,6 +632,24 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
   *endpoint_buffer_size = buffer_size_in_frames;
   VLOG(2) << "endpoint buffer size: " << buffer_size_in_frames;
   return hr;
+}
+
+void WASAPIAudioOutputStream::StopThread() {
+  if (render_thread_ ) {
+    if (render_thread_->HasBeenStarted()) {
+      // Wait until the thread completes and perform cleanup.
+      SetEvent(stop_render_event_.Get());
+      render_thread_->Join();
+    }
+
+    render_thread_.reset();
+
+    // Ensure that we don't quit the main thread loop immediately next
+    // time Start() is called.
+    ResetEvent(stop_render_event_.Get());
+  }
+
+  source_ = NULL;
 }
 
 }  // namespace media

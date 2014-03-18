@@ -27,42 +27,45 @@
 #include "core/html/track/InbandTextTrack.h"
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/html/track/TextTrackCueGeneric.h"
-#include "core/platform/Logging.h"
-#include "core/platform/graphics/InbandTextTrackPrivate.h"
-#include "wtf/UnusedParam.h"
+#include "core/html/track/vtt/VTTCue.h"
+#include "platform/Logging.h"
+#include "public/platform/WebInbandTextTrack.h"
+#include "public/platform/WebString.h"
 #include <math.h>
+
+using blink::WebInbandTextTrack;
+using blink::WebString;
 
 namespace WebCore {
 
-PassRefPtr<InbandTextTrack> InbandTextTrack::create(ScriptExecutionContext* context, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> playerPrivate)
+PassRefPtr<InbandTextTrack> InbandTextTrack::create(Document& document, TextTrackClient* client, WebInbandTextTrack* webTrack)
 {
-    return adoptRef(new InbandTextTrack(context, client, playerPrivate));
+    return adoptRef(new InbandTextTrack(document, client, webTrack));
 }
 
-InbandTextTrack::InbandTextTrack(ScriptExecutionContext* context, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> tracksPrivate)
-    : TextTrack(context, client, emptyString(), tracksPrivate->label(), tracksPrivate->language(), InBand)
-    , m_private(tracksPrivate)
+InbandTextTrack::InbandTextTrack(Document& document, TextTrackClient* client, WebInbandTextTrack* webTrack)
+    : TextTrack(document, client, emptyAtom, webTrack->label(), webTrack->language(), webTrack->id(), InBand)
+    , m_webTrack(webTrack)
 {
-    m_private->setClient(this);
+    m_webTrack->setClient(this);
 
-    switch (m_private->kind()) {
-    case InbandTextTrackPrivate::Subtitles:
+    switch (m_webTrack->kind()) {
+    case WebInbandTextTrack::KindSubtitles:
         setKind(TextTrack::subtitlesKeyword());
         break;
-    case InbandTextTrackPrivate::Captions:
+    case WebInbandTextTrack::KindCaptions:
         setKind(TextTrack::captionsKeyword());
         break;
-    case InbandTextTrackPrivate::Descriptions:
+    case WebInbandTextTrack::KindDescriptions:
         setKind(TextTrack::descriptionsKeyword());
         break;
-    case InbandTextTrackPrivate::Chapters:
+    case WebInbandTextTrack::KindChapters:
         setKind(TextTrack::chaptersKeyword());
         break;
-    case InbandTextTrackPrivate::Metadata:
+    case WebInbandTextTrack::KindMetadata:
         setKind(TextTrack::metadataKeyword());
         break;
-    case InbandTextTrackPrivate::None:
+    case WebInbandTextTrack::KindNone:
     default:
         ASSERT_NOT_REACHED();
         break;
@@ -71,125 +74,29 @@ InbandTextTrack::InbandTextTrack(ScriptExecutionContext* context, TextTrackClien
 
 InbandTextTrack::~InbandTextTrack()
 {
-    // Make sure m_private was cleared by trackRemoved() before destruction.
-    ASSERT(!m_private);
-}
-
-void InbandTextTrack::setMode(const AtomicString& mode)
-{
-    TextTrack::setMode(mode);
-
-    if (!m_private)
-        return;
-
-    if (mode == TextTrack::disabledKeyword())
-        m_private->setMode(InbandTextTrackPrivate::Disabled);
-    else if (mode == TextTrack::hiddenKeyword())
-        m_private->setMode(InbandTextTrackPrivate::Hidden);
-    else if (mode == TextTrack::showingKeyword())
-        m_private->setMode(InbandTextTrackPrivate::Showing);
-    else
-        ASSERT_NOT_REACHED();
-}
-
-bool InbandTextTrack::isClosedCaptions() const
-{
-    if (!m_private)
-        return false;
-
-    return m_private->isClosedCaptions();
-}
-
-bool InbandTextTrack::containsOnlyForcedSubtitles() const
-{
-    if (!m_private)
-        return false;
-
-    return m_private->containsOnlyForcedSubtitles();
-}
-
-bool InbandTextTrack::isMainProgramContent() const
-{
-    if (!m_private)
-        return false;
-
-    return m_private->isMainProgramContent();
-}
-
-bool InbandTextTrack::isEasyToRead() const
-{
-    if (!m_private)
-        return false;
-
-    return m_private->isEasyToRead();
+    // Make sure m_webTrack was cleared by trackRemoved() before destruction.
+    ASSERT(!m_webTrack);
 }
 
 size_t InbandTextTrack::inbandTrackIndex()
 {
-    ASSERT(m_private);
-    return m_private->textTrackIndex();
+    ASSERT(m_webTrack);
+    return m_webTrack->textTrackIndex();
 }
 
 void InbandTextTrack::trackRemoved()
 {
-    ASSERT(m_private);
-    m_private->setClient(0);
-    m_private = 0;
+    ASSERT(m_webTrack);
+    m_webTrack->setClient(0);
+    m_webTrack = 0;
     clearClient();
 }
 
-void InbandTextTrack::addGenericCue(InbandTextTrackPrivate* trackPrivate, GenericCueData* cueData)
+void InbandTextTrack::addWebVTTCue(double start, double end, const WebString& id, const WebString& content, const WebString& settings)
 {
-    UNUSED_PARAM(trackPrivate);
-    ASSERT(trackPrivate == m_private);
-
-    RefPtr<TextTrackCueGeneric> cue = TextTrackCueGeneric::create(scriptExecutionContext(), cueData->startTime(), cueData->endTime(), cueData->content());
-
-    cue->setId(cueData->id());
-    cue->setBaseFontSizeRelativeToVideoHeight(cueData->baseFontSize());
-    cue->setFontSizeMultiplier(cueData->relativeFontSize());
-    cue->setFontName(cueData->fontName());
-
-    if (cueData->position() > 0)
-        cue->setPosition(lround(cueData->position()), IGNORE_EXCEPTION);
-    if (cueData->line() > 0)
-        cue->setLine(lround(cueData->line()), IGNORE_EXCEPTION);
-    if (cueData->size() > 0)
-        cue->setSize(lround(cueData->size()), IGNORE_EXCEPTION);
-    if (cueData->backgroundColor().isValid())
-        cue->setBackgroundColor(cueData->backgroundColor().rgb());
-    if (cueData->foregroundColor().isValid())
-        cue->setForegroundColor(cueData->foregroundColor().rgb());
-
-    if (cueData->align() == GenericCueData::Start)
-        cue->setAlign("start", IGNORE_EXCEPTION);
-    else if (cueData->align() == GenericCueData::Middle)
-        cue->setAlign("middle", IGNORE_EXCEPTION);
-    else if (cueData->align() == GenericCueData::End)
-        cue->setAlign("end", IGNORE_EXCEPTION);
-    cue->setSnapToLines(false);
-
-    if (hasCue(cue.get())) {
-        LOG(Media, "InbandTextTrack::addGenericCue ignoring already added cue: start=%.2f, end=%.2f, content=\"%s\"\n",
-            cueData->startTime(), cueData->endTime(), cueData->content().utf8().data());
-        return;
-    }
-
-    addCue(cue);
-}
-
-void InbandTextTrack::addWebVTTCue(InbandTextTrackPrivate* trackPrivate, double start, double end, const String& id, const String& content, const String& settings)
-{
-    UNUSED_PARAM(trackPrivate);
-    ASSERT(trackPrivate == m_private);
-
-    RefPtr<TextTrackCue> cue = TextTrackCue::create(scriptExecutionContext(), start, end, content);
+    RefPtr<VTTCue> cue = VTTCue::create(document(), start, end, content);
     cue->setId(id);
-    cue->setCueSettings(settings);
-
-    if (hasCue(cue.get()))
-        return;
-
+    cue->parseSettings(settings);
     addCue(cue);
 }
 

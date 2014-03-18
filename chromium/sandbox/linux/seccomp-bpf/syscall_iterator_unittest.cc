@@ -6,13 +6,13 @@
 #include "sandbox/linux/seccomp-bpf/syscall_iterator.h"
 #include "sandbox/linux/tests/unit_tests.h"
 
-using namespace playground2;
+namespace sandbox {
 
 namespace {
 
 SANDBOX_TEST(SyscallIterator, Monotonous) {
   for (int i = 0; i < 2; ++i) {
-    bool invalid_only = !i;   // Testing both |invalid_only| cases.
+    bool invalid_only = !i;  // Testing both |invalid_only| cases.
     SyscallIterator iter(invalid_only);
     uint32_t next = iter.Next();
 
@@ -79,7 +79,7 @@ SANDBOX_TEST(SyscallIterator, ARMHiddenSyscallRange) {
 
 SANDBOX_TEST(SyscallIterator, Invalid) {
   for (int i = 0; i < 2; ++i) {
-    bool invalid_only = !i;   // Testing both |invalid_only| cases.
+    bool invalid_only = !i;  // Testing both |invalid_only| cases.
     SyscallIterator iter(invalid_only);
     uint32_t next = iter.Next();
 
@@ -133,3 +133,4 @@ SANDBOX_TEST(SyscallIterator, InvalidOnly) {
 
 }  // namespace
 
+}  // namespace sandbox

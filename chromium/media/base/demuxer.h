@@ -15,6 +15,8 @@
 
 namespace media {
 
+class TextTrackConfig;
+
 class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
  public:
   // Sets the duration of the media in microseconds.
@@ -24,6 +26,13 @@ class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
   // Stops execution of the pipeline due to a fatal error.  Do not call this
   // method with PIPELINE_OK.
   virtual void OnDemuxerError(PipelineStatus error) = 0;
+
+  // Add |text_stream| to the collection managed by the text renderer.
+  virtual void AddTextStream(DemuxerStream* text_stream,
+                             const TextTrackConfig& config) = 0;
+
+  // Remove |text_stream| from the presentation.
+  virtual void RemoveTextStream(DemuxerStream* text_stream) = 0;
 
  protected:
   virtual ~DemuxerHost();
@@ -45,21 +54,19 @@ class MEDIA_EXPORT Demuxer {
   // The demuxer does not own |host| as it is guaranteed to outlive the
   // lifetime of the demuxer. Don't delete it!
   virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& status_cb) = 0;
-
-  // The pipeline playback rate has been changed.  Demuxers may implement this
-  // method if they need to respond to this call.
-  virtual void SetPlaybackRate(float playback_rate);
+                          const PipelineStatusCB& status_cb,
+                          bool enable_text_tracks) = 0;
 
   // Carry out any actions required to seek to the given time, executing the
   // callback upon completion.
-  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& status_cb);
+  virtual void Seek(base::TimeDelta time,
+                    const PipelineStatusCB& status_cb) = 0;
 
   // Starts stopping this demuxer, executing the callback upon completion.
   //
   // After the callback completes the demuxer may be destroyed. It is illegal to
   // call any method (including Stop()) after a demuxer has stopped.
-  virtual void Stop(const base::Closure& callback);
+  virtual void Stop(const base::Closure& callback) = 0;
 
   // This method is called from the pipeline when the audio renderer
   // is disabled. Demuxers can ignore the notification if they do not
@@ -67,9 +74,10 @@ class MEDIA_EXPORT Demuxer {
   //
   // TODO(acolwell): Change to generic DisableStream(DemuxerStream::Type).
   // TODO(scherkus): this might not be needed http://crbug.com/234708
-  virtual void OnAudioRendererDisabled();
+  virtual void OnAudioRendererDisabled() = 0;
 
-  // Returns the given stream type, or NULL if that type is not present.
+  // Returns the first stream of the given stream type (which is not allowed
+  // to be DemuxerStream::TEXT), or NULL if that type of stream is not present.
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) = 0;
 
   // Returns the starting time for the media file.

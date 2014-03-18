@@ -31,21 +31,20 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/Logging.h"
-#include "core/platform/sql/SQLiteStatement.h"
-#include "core/platform/sql/SQLiteTransaction.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
 #include "modules/webdatabase/DatabaseBase.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseManager.h"
-#include "modules/webdatabase/DatabaseObserver.h"
 #include "modules/webdatabase/DatabaseTracker.h"
-#include "weborigin/SecurityOrigin.h"
+#include "modules/webdatabase/sqlite/SQLiteStatement.h"
+#include "modules/webdatabase/sqlite/SQLiteTransaction.h"
+#include "platform/weborigin/DatabaseIdentifier.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebDatabaseObserver.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringHash.h"
@@ -54,7 +53,7 @@
 // =======================================================
 // The DatabaseTracker maintains a list of databases that have been
 // "opened" so that the client can call interrupt or delete on every database
-// associated with a DatabaseBackendContext.
+// associated with a DatabaseContext.
 //
 // We will only call DatabaseTracker::addOpenDatabase() to add the database
 // to the tracker as opened when we've succeeded in opening the database,
@@ -95,7 +94,7 @@ static bool retrieveTextResultFromDatabase(SQLiteDatabase& db, const String& que
     int result = statement.prepare();
 
     if (result != SQLResultOk) {
-        LOG_ERROR("Error (%i) preparing statement to read text result from database (%s)", result, query.ascii().data());
+        WTF_LOG_ERROR("Error (%i) preparing statement to read text result from database (%s)", result, query.ascii().data());
         return false;
     }
 
@@ -109,7 +108,7 @@ static bool retrieveTextResultFromDatabase(SQLiteDatabase& db, const String& que
         return true;
     }
 
-    LOG_ERROR("Error (%i) reading text result from database (%s)", result, query.ascii().data());
+    WTF_LOG_ERROR("Error (%i) reading text result from database (%s)", result, query.ascii().data());
     return false;
 }
 
@@ -119,7 +118,7 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
     int result = statement.prepare();
 
     if (result != SQLResultOk) {
-        LOG_ERROR("Failed to prepare statement to set value in database (%s)", query.ascii().data());
+        WTF_LOG_ERROR("Failed to prepare statement to set value in database (%s)", query.ascii().data());
         return false;
     }
 
@@ -127,7 +126,7 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
 
     result = statement.step();
     if (result != SQLResultDone) {
-        LOG_ERROR("Failed to step statement to set value in database (%s)", query.ascii().data());
+        WTF_LOG_ERROR("Failed to step statement to set value in database (%s)", query.ascii().data());
         return false;
     }
 
@@ -200,7 +199,7 @@ const char* DatabaseBackendBase::databaseInfoTableName()
     return infoTableName;
 }
 
-DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseBackendContext> databaseContext, const String& name,
+DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseContext> databaseContext, const String& name,
     const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseType databaseType)
     : m_databaseContext(databaseContext)
     , m_name(name.isolatedCopy())
@@ -315,7 +314,7 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
         return false;
     }
     if (!m_sqliteDatabase.turnOnIncrementalAutoVacuum())
-        LOG_ERROR("Unable to turn on incremental auto-vacuum (%d %s)", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
+        WTF_LOG_ERROR("Unable to turn on incremental auto-vacuum (%d %s)", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
 
     m_sqliteDatabase.setBusyTimeout(maxSqliteBusyWaitTime);
 
@@ -327,7 +326,7 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
         if (entry != guidToVersionMap().end()) {
             // Map null string to empty string (see updateGuidVersionMap()).
             currentVersion = entry->value.isNull() ? emptyString() : entry->value.isolatedCopy();
-            LOG(StorageAPI, "Current cached version for guid %i is %s", m_guid, currentVersion.ascii().data());
+            WTF_LOG(StorageAPI, "Current cached version for guid %i is %s", m_guid, currentVersion.ascii().data());
 
             // Note: In multi-process browsers the cached value may be inaccurate, but
             // we cannot read the actual version from the database without potentially
@@ -344,7 +343,7 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
             }
             m_sqliteDatabase.setBusyTimeout(maxSqliteBusyWaitTime);
         } else {
-            LOG(StorageAPI, "No cached version for guid %i", m_guid);
+            WTF_LOG(StorageAPI, "No cached version for guid %i", m_guid);
 
             SQLiteTransaction transaction(m_sqliteDatabase);
             transaction.begin();
@@ -375,9 +374,9 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
             }
 
             if (currentVersion.length()) {
-                LOG(StorageAPI, "Retrieved current version %s from database %s", currentVersion.ascii().data(), databaseDebugName().ascii().data());
+                WTF_LOG(StorageAPI, "Retrieved current version %s from database %s", currentVersion.ascii().data(), databaseDebugName().ascii().data());
             } else if (!m_new || shouldSetVersionInNewDatabase) {
-                LOG(StorageAPI, "Setting version %s in database %s that was just created", m_expectedVersion.ascii().data(), databaseDebugName().ascii().data());
+                WTF_LOG(StorageAPI, "Setting version %s in database %s that was just created", m_expectedVersion.ascii().data(), databaseDebugName().ascii().data());
                 if (!setVersionInDatabase(m_expectedVersion, false)) {
                     reportOpenDatabaseResult(5, InvalidStateError, m_sqliteDatabase.lastError());
                     errorMessage = formatErrorMessage("unable to open database, failed to write current version", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
@@ -393,7 +392,7 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
     }
 
     if (currentVersion.isNull()) {
-        LOG(StorageAPI, "Database %s does not have its version set", databaseDebugName().ascii().data());
+        WTF_LOG(StorageAPI, "Database %s does not have its version set", databaseDebugName().ascii().data());
         currentVersion = "";
     }
 
@@ -468,7 +467,7 @@ bool DatabaseBackendBase::getVersionFromDatabase(String& version, bool shouldCac
         if (shouldCacheVersion)
             setCachedVersion(version);
     } else
-        LOG_ERROR("Failed to retrieve version from database %s", databaseDebugName().ascii().data());
+        WTF_LOG_ERROR("Failed to retrieve version from database %s", databaseDebugName().ascii().data());
 
     m_databaseAuthorizer->enable();
 
@@ -488,7 +487,7 @@ bool DatabaseBackendBase::setVersionInDatabase(const String& version, bool shoul
         if (shouldCacheVersion)
             setCachedVersion(version);
     } else
-        LOG_ERROR("Failed to set version %s in database (%s)", version.ascii().data(), query.ascii().data());
+        WTF_LOG_ERROR("Failed to set version %s in database (%s)", version.ascii().data(), query.ascii().data());
 
     m_databaseAuthorizer->enable();
 
@@ -607,32 +606,61 @@ bool DatabaseBackendBase::isInterrupted()
 // See about:histograms in chromium.
 void DatabaseBackendBase::reportOpenDatabaseResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    DatabaseObserver::reportOpenDatabaseResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportOpenDatabaseResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(),
+            errorSite, webSqlErrorCode, sqliteErrorCode);
+    }
 }
 
 void DatabaseBackendBase::reportChangeVersionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    DatabaseObserver::reportChangeVersionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportChangeVersionResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(),
+            errorSite, webSqlErrorCode, sqliteErrorCode);
+    }
 }
 
 void DatabaseBackendBase::reportStartTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    DatabaseObserver::reportStartTransactionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportStartTransactionResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(),
+            errorSite, webSqlErrorCode, sqliteErrorCode);
+    }
 }
 
 void DatabaseBackendBase::reportCommitTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    DatabaseObserver::reportCommitTransactionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportCommitTransactionResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(),
+            errorSite, webSqlErrorCode, sqliteErrorCode);
+    }
 }
 
 void DatabaseBackendBase::reportExecuteStatementResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
 {
-    DatabaseObserver::reportExecuteStatementResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportExecuteStatementResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(),
+            errorSite, webSqlErrorCode, sqliteErrorCode);
+    }
 }
 
 void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
 {
-    DatabaseObserver::reportVacuumDatabaseResult(this, sqliteErrorCode);
+    if (blink::Platform::current()->databaseObserver()) {
+        blink::Platform::current()->databaseObserver()->reportVacuumDatabaseResult(
+            createDatabaseIdentifierFromSecurityOrigin(securityOrigin()),
+            stringIdentifier(), isSyncDatabase(), sqliteErrorCode);
+    }
 }
 
 

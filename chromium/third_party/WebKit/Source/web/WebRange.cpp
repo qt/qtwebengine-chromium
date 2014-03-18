@@ -41,16 +41,16 @@
 #include "core/dom/Range.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/editing/PlainTextRange.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "public/platform/WebFloatQuad.h"
 #include "public/platform/WebString.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 class WebRangePrivate : public Range {
 };
@@ -81,18 +81,18 @@ int WebRange::endOffset() const
 WebNode WebRange::startContainer(WebExceptionCode& exceptionCode) const
 {
     // FIXME: Create a wrapper class that just sets the internal int.
-    TrackExceptionState es;
-    RefPtr<Node> node(m_private->startContainer(es));
-    exceptionCode = es.code();
+    TrackExceptionState exceptionState;
+    RefPtr<Node> node(m_private->startContainer(exceptionState));
+    exceptionCode = exceptionState.code();
     return node.release();
 }
 
 WebNode WebRange::endContainer(WebExceptionCode& exceptionCode) const
 {
     // FIXME: Create a wrapper class that just sets the internal int.
-    TrackExceptionState es;
-    RefPtr<Node> node(m_private->endContainer(es));
-    exceptionCode = es.code();
+    TrackExceptionState exceptionState;
+    RefPtr<Node> node(m_private->endContainer(exceptionState));
+    exceptionCode = exceptionState.code();
     return node.release();
 }
 
@@ -119,7 +119,7 @@ WebRange WebRange::fromDocumentRange(WebFrame* frame, int start, int length)
     WebCore::Frame* webFrame = toWebFrameImpl(frame)->frame();
     Element* selectionRoot = webFrame->selection().rootEditableElement();
     ContainerNode* scope = selectionRoot ? selectionRoot : webFrame->document()->documentElement();
-    return TextIterator::rangeFromLocationAndLength(scope, start, length);
+    return PlainTextRange(start, start + length).createRange(*scope);
 }
 
 WebVector<WebFloatQuad> WebRange::textQuads() const
@@ -167,4 +167,4 @@ void WebRange::assign(WebRangePrivate* p)
     m_private = p;
 }
 
-} // namespace WebKit
+} // namespace blink

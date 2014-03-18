@@ -31,12 +31,12 @@
 #include "WebPluginContainerImpl.h"
 #include "WebPluginScrollbarClient.h"
 #include "WebViewImpl.h"
-#include "core/platform/ScrollAnimator.h"
-#include "core/platform/ScrollTypes.h"
-#include "core/platform/Scrollbar.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/chromium/KeyboardCodes.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "platform/KeyboardCodes.h"
+#include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/Scrollbar.h"
+#include "platform/scroll/ScrollbarTheme.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebVector.h"
@@ -44,7 +44,7 @@
 using namespace std;
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebPluginScrollbar* WebPluginScrollbar::createForPlugin(Orientation orientation,
                                                         WebPluginContainer* pluginContainer,
@@ -371,4 +371,4 @@ bool WebPluginScrollbarImpl::onKeyDown(const WebInputEvent& event)
     return false;
 }
 
-} // namespace WebKit
+} // namespace blink

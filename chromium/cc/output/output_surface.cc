@@ -13,6 +13,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "cc/output/compositor_frame.h"
@@ -20,9 +21,13 @@
 #include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/scheduler/delay_based_time_source.h"
+#include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -30,62 +35,67 @@ using std::set;
 using std::string;
 using std::vector;
 
+namespace {
+
+const size_t kGpuLatencyHistorySize = 60;
+const double kGpuLatencyEstimationPercentile = 100.0;
+
+}
+
 namespace cc {
 
 OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
     : context_provider_(context_provider),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
-      weak_ptr_factory_(this),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
-      needs_begin_frame_(false),
-      client_ready_for_begin_frame_(true),
+      needs_begin_impl_frame_(false),
+      client_ready_for_begin_impl_frame_(true),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false),
-      external_stencil_test_enabled_(false) {}
+      check_for_retroactive_begin_impl_frame_pending_(false),
+      external_stencil_test_enabled_(false),
+      weak_ptr_factory_(this),
+      gpu_latency_history_(kGpuLatencyHistorySize) {}
 
-OutputSurface::OutputSurface(
-    scoped_ptr<cc::SoftwareOutputDevice> software_device)
+OutputSurface::OutputSurface(scoped_ptr<SoftwareOutputDevice> software_device)
     : software_device_(software_device.Pass()),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
-      weak_ptr_factory_(this),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
-      needs_begin_frame_(false),
-      client_ready_for_begin_frame_(true),
+      needs_begin_impl_frame_(false),
+      client_ready_for_begin_impl_frame_(true),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false),
-      external_stencil_test_enabled_(false) {}
+      check_for_retroactive_begin_impl_frame_pending_(false),
+      external_stencil_test_enabled_(false),
+      weak_ptr_factory_(this),
+      gpu_latency_history_(kGpuLatencyHistorySize) {}
 
-OutputSurface::OutputSurface(
-    scoped_refptr<ContextProvider> context_provider,
-    scoped_ptr<cc::SoftwareOutputDevice> software_device)
+OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider,
+                             scoped_ptr<SoftwareOutputDevice> software_device)
     : context_provider_(context_provider),
       software_device_(software_device.Pass()),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
-      weak_ptr_factory_(this),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
-      needs_begin_frame_(false),
-      client_ready_for_begin_frame_(true),
+      needs_begin_impl_frame_(false),
+      client_ready_for_begin_impl_frame_(true),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false),
-      external_stencil_test_enabled_(false) {}
+      check_for_retroactive_begin_impl_frame_pending_(false),
+      external_stencil_test_enabled_(false),
+      weak_ptr_factory_(this),
+      gpu_latency_history_(kGpuLatencyHistorySize) {}
 
-void OutputSurface::InitializeBeginFrameEmulation(
+void OutputSurface::InitializeBeginImplFrameEmulation(
     base::SingleThreadTaskRunner* task_runner,
     bool throttle_frame_production,
     base::TimeDelta interval) {
   if (throttle_frame_production) {
-    frame_rate_controller_.reset(
-        new FrameRateController(
-            DelayBasedTimeSource::Create(interval, task_runner)));
+    scoped_refptr<DelayBasedTimeSource> time_source;
+    if (gfx::FrameTime::TimestampsAreHighRes())
+      time_source = DelayBasedTimeSourceHighRes::Create(interval, task_runner);
+    else
+      time_source = DelayBasedTimeSource::Create(interval, task_runner);
+    frame_rate_controller_.reset(new FrameRateController(time_source));
   } else {
     frame_rate_controller_.reset(new FrameRateController(task_runner));
   }
@@ -121,9 +131,9 @@ void OutputSurface::FrameRateControllerTick(bool throttled,
                                             const BeginFrameArgs& args) {
   DCHECK(frame_rate_controller_);
   if (throttled)
-    skipped_begin_frame_args_ = args;
+    skipped_begin_impl_frame_args_ = args;
   else
-    BeginFrame(args);
+    BeginImplFrame(args);
 }
 
 // Forwarded to OutputSurfaceClient
@@ -132,71 +142,74 @@ void OutputSurface::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   client_->SetNeedsRedrawRect(damage_rect);
 }
 
-void OutputSurface::SetNeedsBeginFrame(bool enable) {
-  TRACE_EVENT1("cc", "OutputSurface::SetNeedsBeginFrame", "enable", enable);
-  needs_begin_frame_ = enable;
-  client_ready_for_begin_frame_ = true;
+void OutputSurface::SetNeedsBeginImplFrame(bool enable) {
+  TRACE_EVENT1("cc", "OutputSurface::SetNeedsBeginImplFrame", "enable", enable);
+  needs_begin_impl_frame_ = enable;
+  client_ready_for_begin_impl_frame_ = true;
   if (frame_rate_controller_) {
     BeginFrameArgs skipped = frame_rate_controller_->SetActive(enable);
     if (skipped.IsValid())
-      skipped_begin_frame_args_ = skipped;
+      skipped_begin_impl_frame_args_ = skipped;
   }
-  if (needs_begin_frame_)
-    PostCheckForRetroactiveBeginFrame();
+  if (needs_begin_impl_frame_)
+    PostCheckForRetroactiveBeginImplFrame();
 }
 
-void OutputSurface::BeginFrame(const BeginFrameArgs& args) {
-  TRACE_EVENT2("cc", "OutputSurface::BeginFrame",
-               "client_ready_for_begin_frame_", client_ready_for_begin_frame_,
+void OutputSurface::BeginImplFrame(const BeginFrameArgs& args) {
+  TRACE_EVENT2("cc", "OutputSurface::BeginImplFrame",
+               "client_ready_for_begin_impl_frame_",
+               client_ready_for_begin_impl_frame_,
                "pending_swap_buffers_", pending_swap_buffers_);
-  if (!needs_begin_frame_ || !client_ready_for_begin_frame_ ||
+  if (!needs_begin_impl_frame_ || !client_ready_for_begin_impl_frame_ ||
       (pending_swap_buffers_ >= max_frames_pending_ &&
        max_frames_pending_ > 0)) {
-    skipped_begin_frame_args_ = args;
+    skipped_begin_impl_frame_args_ = args;
   } else {
-    client_ready_for_begin_frame_ = false;
-    client_->BeginFrame(args);
-    // args might be an alias for skipped_begin_frame_args_.
-    // Do not reset it before calling BeginFrame!
-    skipped_begin_frame_args_ = BeginFrameArgs();
+    client_ready_for_begin_impl_frame_ = false;
+    client_->BeginImplFrame(args);
+    // args might be an alias for skipped_begin_impl_frame_args_.
+    // Do not reset it before calling BeginImplFrame!
+    skipped_begin_impl_frame_args_ = BeginFrameArgs();
   }
 }
 
-base::TimeTicks OutputSurface::RetroactiveBeginFrameDeadline() {
+base::TimeTicks OutputSurface::RetroactiveBeginImplFrameDeadline() {
   // TODO(brianderson): Remove the alternative deadline once we have better
   // deadline estimations.
   base::TimeTicks alternative_deadline =
-      skipped_begin_frame_args_.frame_time +
+      skipped_begin_impl_frame_args_.frame_time +
       BeginFrameArgs::DefaultRetroactiveBeginFramePeriod();
-  return std::max(skipped_begin_frame_args_.deadline, alternative_deadline);
+  return std::max(skipped_begin_impl_frame_args_.deadline,
+                  alternative_deadline);
 }
 
-void OutputSurface::PostCheckForRetroactiveBeginFrame() {
-  if (!skipped_begin_frame_args_.IsValid() ||
-      check_for_retroactive_begin_frame_pending_)
+void OutputSurface::PostCheckForRetroactiveBeginImplFrame() {
+  if (!skipped_begin_impl_frame_args_.IsValid() ||
+      check_for_retroactive_begin_impl_frame_pending_)
     return;
 
   base::MessageLoop::current()->PostTask(
      FROM_HERE,
-     base::Bind(&OutputSurface::CheckForRetroactiveBeginFrame,
+     base::Bind(&OutputSurface::CheckForRetroactiveBeginImplFrame,
                 weak_ptr_factory_.GetWeakPtr()));
-  check_for_retroactive_begin_frame_pending_ = true;
+  check_for_retroactive_begin_impl_frame_pending_ = true;
 }
 
-void OutputSurface::CheckForRetroactiveBeginFrame() {
-  TRACE_EVENT0("cc", "OutputSurface::CheckForRetroactiveBeginFrame");
-  check_for_retroactive_begin_frame_pending_ = false;
-  if (base::TimeTicks::Now() < RetroactiveBeginFrameDeadline())
-    BeginFrame(skipped_begin_frame_args_);
+void OutputSurface::CheckForRetroactiveBeginImplFrame() {
+  TRACE_EVENT0("cc", "OutputSurface::CheckForRetroactiveBeginImplFrame");
+  check_for_retroactive_begin_impl_frame_pending_ = false;
+  if (gfx::FrameTime::Now() < RetroactiveBeginImplFrameDeadline())
+    BeginImplFrame(skipped_begin_impl_frame_args_);
 }
 
 void OutputSurface::DidSwapBuffers() {
   pending_swap_buffers_++;
   TRACE_EVENT1("cc", "OutputSurface::DidSwapBuffers",
                "pending_swap_buffers_", pending_swap_buffers_);
+  client_->DidSwapBuffers();
   if (frame_rate_controller_)
     frame_rate_controller_->DidSwapBuffers();
-  PostCheckForRetroactiveBeginFrame();
+  PostCheckForRetroactiveBeginImplFrame();
 }
 
 void OutputSurface::OnSwapBuffersComplete() {
@@ -206,7 +219,7 @@ void OutputSurface::OnSwapBuffersComplete() {
   client_->OnSwapBuffersComplete();
   if (frame_rate_controller_)
     frame_rate_controller_->DidSwapBuffersComplete();
-  PostCheckForRetroactiveBeginFrame();
+  PostCheckForRetroactiveBeginImplFrame();
 }
 
 void OutputSurface::ReclaimResources(const CompositorFrameAck* ack) {
@@ -215,11 +228,13 @@ void OutputSurface::ReclaimResources(const CompositorFrameAck* ack) {
 
 void OutputSurface::DidLoseOutputSurface() {
   TRACE_EVENT0("cc", "OutputSurface::DidLoseOutputSurface");
-  client_ready_for_begin_frame_ = true;
+  client_ready_for_begin_impl_frame_ = true;
   pending_swap_buffers_ = 0;
-  skipped_begin_frame_args_ = BeginFrameArgs();
+  skipped_begin_impl_frame_args_ = BeginFrameArgs();
   if (frame_rate_controller_)
     frame_rate_controller_->SetActive(false);
+  pending_gpu_latency_query_ids_.clear();
+  available_gpu_latency_query_ids_.clear();
   client_->DidLoseOutputSurface();
 }
 
@@ -247,7 +262,7 @@ bool OutputSurface::HasExternalStencilTest() const {
 
 bool OutputSurface::ForcedDrawToSoftwareDevice() const { return false; }
 
-bool OutputSurface::BindToClient(cc::OutputSurfaceClient* client) {
+bool OutputSurface::BindToClient(OutputSurfaceClient* client) {
   DCHECK(client);
   client_ = client;
   bool success = true;
@@ -296,17 +311,12 @@ void OutputSurface::SetUpContext3d() {
   DCHECK(context_provider_);
   DCHECK(client_);
 
-  const ContextProvider::Capabilities& caps =
-      context_provider_->ContextCapabilities();
-
-  has_gl_discard_backbuffer_ = caps.discard_backbuffer;
-  has_swap_buffers_complete_callback_ = caps.swapbuffers_complete_callback;
-
   context_provider_->SetLostContextCallback(
       base::Bind(&OutputSurface::DidLoseOutputSurface,
                  base::Unretained(this)));
-  context_provider_->SetSwapBuffersCompleteCallback(base::Bind(
-      &OutputSurface::OnSwapBuffersComplete, base::Unretained(this)));
+  context_provider_->ContextSupport()->SetSwapBuffersCompleteCallback(
+      base::Bind(&OutputSurface::OnSwapBuffersComplete,
+                 base::Unretained(this)));
   context_provider_->SetMemoryPolicyChangedCallback(
       base::Bind(&OutputSurface::SetMemoryPolicy,
                  base::Unretained(this)));
@@ -314,26 +324,34 @@ void OutputSurface::SetUpContext3d() {
 
 void OutputSurface::ResetContext3d() {
   if (context_provider_.get()) {
+    while (!pending_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = pending_gpu_latency_query_ids_.front();
+      pending_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
+    while (!available_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = available_gpu_latency_query_ids_.front();
+      available_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
     context_provider_->SetLostContextCallback(
         ContextProvider::LostContextCallback());
-    context_provider_->SetSwapBuffersCompleteCallback(
-        ContextProvider::SwapBuffersCompleteCallback());
     context_provider_->SetMemoryPolicyChangedCallback(
         ContextProvider::MemoryPolicyChangedCallback());
+    if (gpu::ContextSupport* support = context_provider_->ContextSupport())
+      support->SetSwapBuffersCompleteCallback(base::Closure());
   }
   context_provider_ = NULL;
 }
 
 void OutputSurface::EnsureBackbuffer() {
-  if (context_provider_ && has_gl_discard_backbuffer_)
-    context_provider_->Context3d()->ensureBackbufferCHROMIUM();
   if (software_device_)
     software_device_->EnsureBackbuffer();
 }
 
 void OutputSurface::DiscardBackbuffer() {
-  if (context_provider_ && has_gl_discard_backbuffer_)
-    context_provider_->Context3d()->discardBackbufferCHROMIUM();
+  if (context_provider_)
+    context_provider_->ContextGL()->DiscardBackbufferCHROMIUM();
   if (software_device_)
     software_device_->DiscardBackbuffer();
 }
@@ -361,7 +379,7 @@ void OutputSurface::BindFramebuffer() {
   context_provider_->Context3d()->bindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void OutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
+void OutputSurface::SwapBuffers(CompositorFrame* frame) {
   if (frame->software_frame_data) {
     PostSwapBuffersComplete();
     DidSwapBuffers();
@@ -371,24 +389,88 @@ void OutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
   DCHECK(context_provider_);
   DCHECK(frame->gl_frame_data);
 
+  UpdateAndMeasureGpuLatency();
   if (frame->gl_frame_data->sub_buffer_rect ==
       gfx::Rect(frame->gl_frame_data->size)) {
-    // Note that currently this has the same effect as SwapBuffers; we should
-    // consider exposing a different entry point on WebGraphicsContext3D.
-    context_provider_->Context3d()->prepareTexture();
+    context_provider_->ContextSupport()->Swap();
   } else {
-    gfx::Rect sub_buffer_rect = frame->gl_frame_data->sub_buffer_rect;
-    context_provider_->Context3d()->postSubBufferCHROMIUM(
-        sub_buffer_rect.x(),
-        sub_buffer_rect.y(),
-        sub_buffer_rect.width(),
-        sub_buffer_rect.height());
+    context_provider_->ContextSupport()->PartialSwapBuffers(
+        frame->gl_frame_data->sub_buffer_rect);
   }
 
-  if (!has_swap_buffers_complete_callback_)
-    PostSwapBuffersComplete();
-
   DidSwapBuffers();
+}
+
+base::TimeDelta OutputSurface::GpuLatencyEstimate() {
+  if (context_provider_ && !capabilities_.adjust_deadline_for_parent)
+    return gpu_latency_history_.Percentile(kGpuLatencyEstimationPercentile);
+  else
+    return base::TimeDelta();
+}
+
+void OutputSurface::UpdateAndMeasureGpuLatency() {
+  return;  // http://crbug.com/306690  tracks re-enabling latency queries.
+
+  // We only care about GPU latency for surfaces that do not have a parent
+  // compositor, since surfaces that do have a parent compositor can use
+  // mailboxes or delegated rendering to send frames to their parent without
+  // incurring GPU latency.
+  if (capabilities_.adjust_deadline_for_parent)
+    return;
+
+  while (pending_gpu_latency_query_ids_.size()) {
+    unsigned query_id = pending_gpu_latency_query_ids_.front();
+    unsigned query_complete = 1;
+    context_provider_->Context3d()->getQueryObjectuivEXT(
+        query_id, GL_QUERY_RESULT_AVAILABLE_EXT, &query_complete);
+    if (!query_complete)
+      break;
+
+    unsigned value = 0;
+    context_provider_->Context3d()->getQueryObjectuivEXT(
+        query_id, GL_QUERY_RESULT_EXT, &value);
+    pending_gpu_latency_query_ids_.pop_front();
+    available_gpu_latency_query_ids_.push_back(query_id);
+
+    base::TimeDelta latency = base::TimeDelta::FromMicroseconds(value);
+    base::TimeDelta latency_estimate = GpuLatencyEstimate();
+    gpu_latency_history_.InsertSample(latency);
+
+    base::TimeDelta latency_overestimate;
+    base::TimeDelta latency_underestimate;
+    if (latency > latency_estimate)
+      latency_underestimate = latency - latency_estimate;
+    else
+      latency_overestimate = latency_estimate - latency;
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.GpuLatency",
+                               latency,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.GpuLatencyUnderestimate",
+                               latency_underestimate,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.GpuLatencyOverestimate",
+                               latency_overestimate,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+  }
+
+  unsigned gpu_latency_query_id;
+  if (available_gpu_latency_query_ids_.size()) {
+    gpu_latency_query_id = available_gpu_latency_query_ids_.front();
+    available_gpu_latency_query_ids_.pop_front();
+  } else {
+    gpu_latency_query_id = context_provider_->Context3d()->createQueryEXT();
+  }
+
+  context_provider_->Context3d()->beginQueryEXT(GL_LATENCY_QUERY_CHROMIUM,
+                                                gpu_latency_query_id);
+  context_provider_->Context3d()->endQueryEXT(GL_LATENCY_QUERY_CHROMIUM);
+  pending_gpu_latency_query_ids_.push_back(gpu_latency_query_id);
 }
 
 void OutputSurface::PostSwapBuffersComplete() {
@@ -398,17 +480,14 @@ void OutputSurface::PostSwapBuffersComplete() {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-void OutputSurface::SetMemoryPolicy(const ManagedMemoryPolicy& policy,
-                                    bool discard_backbuffer) {
-  TRACE_EVENT2("cc", "OutputSurface::SetMemoryPolicy",
-               "bytes_limit_when_visible", policy.bytes_limit_when_visible,
-               "discard_backbuffer", discard_backbuffer);
+void OutputSurface::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
+  TRACE_EVENT1("cc", "OutputSurface::SetMemoryPolicy",
+               "bytes_limit_when_visible", policy.bytes_limit_when_visible);
   // Just ignore the memory manager when it says to set the limit to zero
   // bytes. This will happen when the memory manager thinks that the renderer
   // is not visible (which the renderer knows better).
   if (policy.bytes_limit_when_visible)
     client_->SetMemoryPolicy(policy);
-  client_->SetDiscardBackBufferWhenNotVisible(discard_backbuffer);
 }
 
 }  // namespace cc

@@ -60,7 +60,7 @@ $methodInCode
 
 $errorCook${responseCook}
     }
-    sendResponse(callId, result, commandNames[$commandNameIndex], protocolErrors, error, resultErrorData);
+    sendResponse(callId, result, commandName($commandNameIndex), protocolErrors, error, resultErrorData);
 }
 """)
 
@@ -101,7 +101,7 @@ frontend_h = (
 #define InspectorFrontend_h
 
 #include "InspectorTypeBuilder.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -196,7 +196,11 @@ $methodNamesEnumContent
         kMethodNamesEnumSize
     };
 
-    static const char* commandNames[];
+    static const char* commandName(MethodNames);
+
+private:
+    static const char commandNames[];
+    static const size_t commandNamesIndex[];
 };
 
 } // namespace WebCore
@@ -214,16 +218,24 @@ backend_cpp = (
 #include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "core/inspector/JSONParser.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-const char* InspectorBackendDispatcher::commandNames[] = {
+const char InspectorBackendDispatcher::commandNames[] = {
 $methodNameDeclarations
 };
 
+const size_t InspectorBackendDispatcher::commandNamesIndex[] = {
+$methodNameDeclarationsIndex
+};
+
+const char* InspectorBackendDispatcher::commandName(MethodNames index) {
+    COMPILE_ASSERT(static_cast<int>(kMethodNamesEnumSize) == WTF_ARRAY_LENGTH(commandNamesIndex), command_name_array_problem);
+    return commandNames + commandNamesIndex[index];
+}
 
 class InspectorBackendDispatcherImpl : public InspectorBackendDispatcher {
 public:
@@ -281,9 +293,8 @@ void InspectorBackendDispatcherImpl::dispatch(const String& message)
         static CallHandler handlers[] = {
 $messageHandlers
         };
-        size_t length = WTF_ARRAY_LENGTH(commandNames);
-        for (size_t i = 0; i < length; ++i)
-            dispatchMap.add(commandNames[i], handlers[i]);
+        for (size_t i = 0; i < kMethodNamesEnumSize; ++i)
+            dispatchMap.add(commandName(static_cast<MethodNames>(i)), handlers[i]);
     }
 
     RefPtr<JSONValue> parsedMessage = parseJSON(message);
@@ -503,8 +514,6 @@ void InspectorBackendDispatcher::CallbackBase::sendIfActive(PassRefPtr<JSONObjec
     m_alreadySent = true;
 }
 
-COMPILE_ASSERT(static_cast<int>(InspectorBackendDispatcher::kMethodNamesEnumSize) == WTF_ARRAY_LENGTH(InspectorBackendDispatcher::commandNames), command_name_array_problem);
-
 } // namespace WebCore
 
 """)
@@ -516,7 +525,7 @@ frontend_cpp = (
 #include "InspectorFrontend.h"
 
 #include "core/inspector/InspectorFrontendChannel.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
@@ -537,7 +546,7 @@ typebuilder_h = (
 #ifndef InspectorTypeBuilder_h
 #define InspectorTypeBuilder_h
 
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 

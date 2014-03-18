@@ -61,24 +61,26 @@ class MockLevelDBFactory : public LevelDBFactory {
 };
 
 TEST(IndexedDBIOErrorTest, CleanUpTest) {
-  std::string origin_identifier("http_localhost_81");
+  const GURL origin("http://localhost:81");
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   const base::FilePath path = temp_directory.path();
-  std::string dummy_file_identifier;
   MockLevelDBFactory mock_leveldb_factory;
-  WebKit::WebIDBCallbacks::DataLoss data_loss =
-      WebKit::WebIDBCallbacks::DataLossNone;
+  blink::WebIDBDataLoss data_loss =
+      blink::WebIDBDataLossNone;
+  std::string data_loss_message;
   bool disk_full = false;
   scoped_refptr<IndexedDBBackingStore> backing_store =
-      IndexedDBBackingStore::Open(origin_identifier,
+      IndexedDBBackingStore::Open(origin,
                                   path,
-                                  dummy_file_identifier,
                                   &data_loss,
+                                  &data_loss_message,
                                   &disk_full,
                                   &mock_leveldb_factory);
 }
 
+// TODO(dgrogan): Remove expect_destroy if we end up not using it again. It is
+// currently set to false in all 4 calls below.
 template <class T>
 class MockErrorLevelDBFactory : public LevelDBFactory {
  public:
@@ -110,50 +112,50 @@ class MockErrorLevelDBFactory : public LevelDBFactory {
 };
 
 TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
-  std::string origin_identifier("http_localhost_81");
+  const GURL origin("http://localhost:81");
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   const base::FilePath path = temp_directory.path();
-  std::string dummy_file_identifier;
-  WebKit::WebIDBCallbacks::DataLoss data_loss =
-      WebKit::WebIDBCallbacks::DataLossNone;
+  blink::WebIDBDataLoss data_loss =
+      blink::WebIDBDataLossNone;
+  std::string data_loss_reason;
   bool disk_full = false;
 
   MockErrorLevelDBFactory<int> mock_leveldb_factory(ENOSPC, false);
   scoped_refptr<IndexedDBBackingStore> backing_store =
-      IndexedDBBackingStore::Open(origin_identifier,
+      IndexedDBBackingStore::Open(origin,
                                   path,
-                                  dummy_file_identifier,
                                   &data_loss,
+                                  &data_loss_reason,
                                   &disk_full,
                                   &mock_leveldb_factory);
 
   MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory2(
       base::PLATFORM_FILE_ERROR_NO_MEMORY, false);
   scoped_refptr<IndexedDBBackingStore> backing_store2 =
-      IndexedDBBackingStore::Open(origin_identifier,
+      IndexedDBBackingStore::Open(origin,
                                   path,
-                                  dummy_file_identifier,
                                   &data_loss,
+                                  &data_loss_reason,
                                   &disk_full,
                                   &mock_leveldb_factory2);
 
-  MockErrorLevelDBFactory<int> mock_leveldb_factory3(EIO, true);
+  MockErrorLevelDBFactory<int> mock_leveldb_factory3(EIO, false);
   scoped_refptr<IndexedDBBackingStore> backing_store3 =
-      IndexedDBBackingStore::Open(origin_identifier,
+      IndexedDBBackingStore::Open(origin,
                                   path,
-                                  dummy_file_identifier,
                                   &data_loss,
+                                  &data_loss_reason,
                                   &disk_full,
                                   &mock_leveldb_factory3);
 
   MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory4(
-      base::PLATFORM_FILE_ERROR_FAILED, true);
+      base::PLATFORM_FILE_ERROR_FAILED, false);
   scoped_refptr<IndexedDBBackingStore> backing_store4 =
-      IndexedDBBackingStore::Open(origin_identifier,
+      IndexedDBBackingStore::Open(origin,
                                   path,
-                                  dummy_file_identifier,
                                   &data_loss,
+                                  &data_loss_reason,
                                   &disk_full,
                                   &mock_leveldb_factory4);
 }

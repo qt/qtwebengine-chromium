@@ -54,9 +54,11 @@ using cricket::TransportInfo;
 
 namespace webrtc {
 
-const char kInternalConstraintPrefix[] = "internal";
+const char MediaConstraintsInterface::kInternalConstraintPrefix[] = "internal";
 
 // Supported MediaConstraints.
+// DSCP constraints.
+const char MediaConstraintsInterface::kEnableDscp[] = "googDscp";
 // DTLS-SRTP pseudo-constraints.
 const char MediaConstraintsInterface::kEnableDtlsSrtp[] =
     "DtlsSrtpKeyAgreement";
@@ -67,7 +69,7 @@ const char MediaConstraintsInterface::kEnableRtpDataChannels[] =
 // line flag. So it is prefixed with kInternalConstraintPrefix so JS values
 // will be removed.
 const char MediaConstraintsInterface::kEnableSctpDataChannels[] =
-    "internalSctpDataChannels";
+    "deprecatedSctpDataChannels";
 
 // Error messages
 const char kSetLocalSdpFailed[] = "SetLocalDescription failed: ";
@@ -81,6 +83,10 @@ const char kMlineMismatch[] =
     "Offer and answer descriptions m-lines are not matching. "
     "Rejecting answer.";
 const char kSdpWithoutCrypto[] = "Called with a SDP without crypto enabled.";
+const char kSdpWithoutSdesAndDtlsDisabled[] =
+    "Called with an SDP without SDES crypto and DTLS disabled locally.";
+const char kSdpWithoutIceUfragPwd[] =
+    "Called with an SDP without ice-ufrag and ice-pwd.";
 const char kSessionError[] = "Session error code: ";
 const char kUpdateStateFailed[] = "Failed to update session state: ";
 const char kPushDownOfferTDFailed[] =
@@ -110,10 +116,9 @@ static bool VerifyMediaDescriptions(
 // fingerprint. Mismatches, such as replying with a DTLS fingerprint to SDES
 // keys, will be caught in Transport negotiation, and backstopped by Channel's
 // |secure_required| check.
-static bool VerifyCrypto(const SessionDescription* desc) {
-  if (!desc) {
-    return false;
-  }
+static bool VerifyCrypto(const SessionDescription* desc,
+                         bool dtls_enabled,
+                         std::string* error) {
   const ContentInfos& contents = desc->contents();
   for (size_t index = 0; index < contents.size(); ++index) {
     const ContentInfo* cinfo = &contents[index];
@@ -128,16 +133,50 @@ static bool VerifyCrypto(const SessionDescription* desc) {
     if (!media || !tinfo) {
       // Something is not right.
       LOG(LS_ERROR) << kInvalidSdp;
+      *error = kInvalidSdp;
       return false;
     }
-    if (media->cryptos().empty() &&
-        !tinfo->description.identity_fingerprint) {
-      // Crypto must be supplied.
-      LOG(LS_WARNING) << "Session description must have SDES or DTLS-SRTP.";
-      return false;
+    if (media->cryptos().empty()) {
+      if (!tinfo->description.identity_fingerprint) {
+        // Crypto must be supplied.
+        LOG(LS_WARNING) << "Session description must have SDES or DTLS-SRTP.";
+        *error = kSdpWithoutCrypto;
+        return false;
+      }
+      if (!dtls_enabled) {
+        LOG(LS_WARNING) <<
+            "Session description must have SDES when DTLS disabled.";
+        *error = kSdpWithoutSdesAndDtlsDisabled;
+        return false;
+      }
     }
   }
 
+  return true;
+}
+
+// Checks that each non-rejected content has ice-ufrag and ice-pwd set.
+static bool VerifyIceUfragPwdPresent(const SessionDescription* desc) {
+  const ContentInfos& contents = desc->contents();
+  for (size_t index = 0; index < contents.size(); ++index) {
+    const ContentInfo* cinfo = &contents[index];
+    if (cinfo->rejected) {
+      continue;
+    }
+
+    // If the content isn't rejected, ice-ufrag and ice-pwd must be present.
+    const TransportInfo* tinfo = desc->GetTransportInfoByName(cinfo->name);
+    if (!tinfo) {
+      // Something is not right.
+      LOG(LS_ERROR) << kInvalidSdp;
+      return false;
+    }
+    if (tinfo->description.ice_ufrag.empty() ||
+        tinfo->description.ice_pwd.empty()) {
+      LOG(LS_ERROR) << "Session description must have ice ufrag and pwd.";
+      return false;
+    }
+  }
   return true;
 }
 
@@ -392,6 +431,8 @@ WebRtcSession::WebRtcSession(
       ice_observer_(NULL),
       ice_connection_state_(PeerConnectionInterface::kIceConnectionNew),
       older_version_remote_peer_(false),
+      dtls_enabled_(false),
+      dscp_enabled_(false),
       data_channel_type_(cricket::DCT_NONE),
       ice_restart_latch_(new IceRestartAnswerLatch) {
 }
@@ -416,6 +457,7 @@ WebRtcSession::~WebRtcSession() {
 }
 
 bool WebRtcSession::Initialize(
+    const PeerConnectionFactoryInterface::Options& options,
     const MediaConstraintsInterface* constraints,
     DTLSIdentityServiceInterface* dtls_identity_service) {
   // TODO(perkj): Take |constraints| into consideration. Return false if not all
@@ -424,35 +466,40 @@ bool WebRtcSession::Initialize(
   bool value;
 
   // Enable DTLS by default if |dtls_identity_service| is valid.
-  bool dtls_enabled = (dtls_identity_service != NULL);
-  // |constraints| can override the default |dtls_enabled| value.
+  dtls_enabled_ = (dtls_identity_service != NULL);
+  // |constraints| can override the default |dtls_enabled_| value.
   if (FindConstraint(
         constraints,
         MediaConstraintsInterface::kEnableDtlsSrtp,
         &value, NULL)) {
-    dtls_enabled = value;
+    dtls_enabled_ = value;
   }
 
   // Enable creation of RTP data channels if the kEnableRtpDataChannels is set.
-  // It takes precendence over the kEnableSctpDataChannels constraint.
+  // It takes precendence over the disable_sctp_data_channels
+  // PeerConnectionFactoryInterface::Options.
   if (FindConstraint(
       constraints, MediaConstraintsInterface::kEnableRtpDataChannels,
       &value, NULL) && value) {
     LOG(LS_INFO) << "Allowing RTP data engine.";
     data_channel_type_ = cricket::DCT_RTP;
   } else {
-    bool sctp_enabled = FindConstraint(
-        constraints,
-        MediaConstraintsInterface::kEnableSctpDataChannels,
-        &value, NULL) && value;
     // DTLS has to be enabled to use SCTP.
-    if (sctp_enabled && dtls_enabled) {
+    if (!options.disable_sctp_data_channels && dtls_enabled_) {
       LOG(LS_INFO) << "Allowing SCTP data engine.";
       data_channel_type_ = cricket::DCT_SCTP;
     }
   }
   if (data_channel_type_ != cricket::DCT_NONE) {
     mediastream_signaling_->SetDataChannelFactory(this);
+  }
+
+  // Find DSCP constraint.
+  if (FindConstraint(
+        constraints,
+        MediaConstraintsInterface::kEnableDscp,
+        &value, NULL)) {
+    dscp_enabled_ = value;
   }
 
   const cricket::VideoCodec default_codec(
@@ -473,10 +520,15 @@ bool WebRtcSession::Initialize(
       this,
       id(),
       data_channel_type_,
-      dtls_enabled));
+      dtls_enabled_));
 
   webrtc_session_desc_factory_->SignalIdentityReady.connect(
       this, &WebRtcSession::OnIdentityReady);
+
+  if (options.disable_encryption) {
+    webrtc_session_desc_factory_->SetSecure(cricket::SEC_DISABLED);
+  }
+
   return true;
 }
 
@@ -502,13 +554,13 @@ bool WebRtcSession::StartCandidatesAllocation() {
   return true;
 }
 
-void WebRtcSession::set_secure_policy(
+void WebRtcSession::SetSecurePolicy(
     cricket::SecureMediaPolicy secure_policy) {
-  webrtc_session_desc_factory_->set_secure(secure_policy);
+  webrtc_session_desc_factory_->SetSecure(secure_policy);
 }
 
-cricket::SecureMediaPolicy WebRtcSession::secure_policy() const {
-  return webrtc_session_desc_factory_->secure();
+cricket::SecureMediaPolicy WebRtcSession::SecurePolicy() const {
+  return webrtc_session_desc_factory_->Secure();
 }
 
 bool WebRtcSession::GetSslRole(talk_base::SSLRole* role) {
@@ -558,7 +610,7 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
   }
 
   cricket::SecureMediaPolicy secure_policy =
-      webrtc_session_desc_factory_->secure();
+      webrtc_session_desc_factory_->Secure();
   // Update the MediaContentDescription crypto settings as per the policy set.
   UpdateSessionDescriptionSecurePolicy(secure_policy, desc->description());
 
@@ -587,6 +639,10 @@ bool WebRtcSession::SetLocalDescription(SessionDescriptionInterface* desc,
   // local session description.
   mediastream_signaling_->OnLocalDescriptionChanged(local_desc_.get());
 
+  talk_base::SSLRole role;
+  if (data_channel_type_ == cricket::DCT_SCTP && GetSslRole(&role)) {
+    mediastream_signaling_->OnDtlsRoleReadyForSctp(role);
+  }
   if (error() != cricket::BaseSession::ERROR_NONE) {
     return BadLocalSdp(SessionErrorMsg(error()), err_desc);
   }
@@ -639,6 +695,12 @@ bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
   ice_restart_latch_->CheckForRemoteIceRestart(remote_desc_.get(),
                                                desc);
   remote_desc_.reset(desc_temp.release());
+
+  talk_base::SSLRole role;
+  if (data_channel_type_ == cricket::DCT_SCTP && GetSslRole(&role)) {
+    mediastream_signaling_->OnDtlsRoleReadyForSctp(role);
+  }
+
   if (error() != cricket::BaseSession::ERROR_NONE) {
     return BadRemoteSdp(SessionErrorMsg(error()), err_desc);
   }
@@ -904,9 +966,63 @@ sigslot::signal0<>* WebRtcSession::GetOnDestroyedSignal() {
   return &SignalVoiceChannelDestroyed;
 }
 
+bool WebRtcSession::SendData(const cricket::SendDataParams& params,
+                             const talk_base::Buffer& payload,
+                             cricket::SendDataResult* result) {
+  if (!data_channel_.get()) {
+    LOG(LS_ERROR) << "SendData called when data_channel_ is NULL.";
+    return false;
+  }
+  return data_channel_->SendData(params, payload, result);
+}
+
+bool WebRtcSession::ConnectDataChannel(DataChannel* webrtc_data_channel) {
+  if (!data_channel_.get()) {
+    LOG(LS_ERROR) << "ConnectDataChannel called when data_channel_ is NULL.";
+    return false;
+  }
+  data_channel_->SignalReadyToSendData.connect(webrtc_data_channel,
+                                               &DataChannel::OnChannelReady);
+  data_channel_->SignalDataReceived.connect(webrtc_data_channel,
+                                            &DataChannel::OnDataReceived);
+  return true;
+}
+
+void WebRtcSession::DisconnectDataChannel(DataChannel* webrtc_data_channel) {
+  if (!data_channel_.get()) {
+    LOG(LS_ERROR) << "DisconnectDataChannel called when data_channel_ is NULL.";
+    return;
+  }
+  data_channel_->SignalReadyToSendData.disconnect(webrtc_data_channel);
+  data_channel_->SignalDataReceived.disconnect(webrtc_data_channel);
+}
+
+void WebRtcSession::AddSctpDataStream(uint32 sid) {
+  if (!data_channel_.get()) {
+    LOG(LS_ERROR) << "AddDataChannelStreams called when data_channel_ is NULL.";
+    return;
+  }
+  data_channel_->AddRecvStream(cricket::StreamParams::CreateLegacy(sid));
+  data_channel_->AddSendStream(cricket::StreamParams::CreateLegacy(sid));
+}
+
+void WebRtcSession::RemoveSctpDataStream(uint32 sid) {
+  if (!data_channel_.get()) {
+    LOG(LS_ERROR) << "RemoveDataChannelStreams called when data_channel_ is "
+                  << "NULL.";
+    return;
+  }
+  data_channel_->RemoveRecvStream(sid);
+  data_channel_->RemoveSendStream(sid);
+}
+
+bool WebRtcSession::ReadyToSendData() const {
+  return data_channel_.get() && data_channel_->ready_to_send_data();
+}
+
 talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
-      const std::string& label,
-      const DataChannelInit* config) {
+    const std::string& label,
+    const DataChannelInit* config) {
   if (state() == STATE_RECEIVEDTERMINATE) {
     return NULL;
   }
@@ -918,11 +1034,13 @@ talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
 
   if (data_channel_type_ == cricket::DCT_SCTP) {
     if (new_config.id < 0) {
-      if (!mediastream_signaling_->AllocateSctpId(&new_config.id)) {
+      talk_base::SSLRole role;
+      if (GetSslRole(&role) &&
+          !mediastream_signaling_->AllocateSctpSid(role, &new_config.id)) {
         LOG(LS_ERROR) << "No id can be allocated for the SCTP data channel.";
         return NULL;
       }
-    } else if (!mediastream_signaling_->IsSctpIdAvailable(new_config.id)) {
+    } else if (!mediastream_signaling_->IsSctpSidAvailable(new_config.id)) {
       LOG(LS_ERROR) << "Failed to create a SCTP data channel "
                     << "because the id is already in use or out of range.";
       return NULL;
@@ -930,32 +1048,10 @@ talk_base::scoped_refptr<DataChannel> WebRtcSession::CreateDataChannel(
   }
 
   talk_base::scoped_refptr<DataChannel> channel(
-      DataChannel::Create(this, label, &new_config));
-  if (channel == NULL)
+      DataChannel::Create(this, data_channel_type_, label, &new_config));
+  if (channel && !mediastream_signaling_->AddDataChannel(channel))
     return NULL;
-  if (!mediastream_signaling_->AddDataChannel(channel))
-    return NULL;
-  if (data_channel_type_ == cricket::DCT_SCTP) {
-    if (config == NULL) {
-      LOG(LS_WARNING) << "Could not send data channel OPEN message"
-                      << " because of NULL config.";
-      return NULL;
-    }
-    if (data_channel_.get()) {
-      channel->SetReceiveSsrc(new_config.id);
-      channel->SetSendSsrc(new_config.id);
-    }
-    if (!config->negotiated) {
-      talk_base::Buffer *payload = new talk_base::Buffer;
-      if (!mediastream_signaling_->WriteDataChannelOpenMessage(
-              label, *config, payload)) {
-        LOG(LS_WARNING) << "Could not write data channel OPEN message";
-      }
-      // SendControl may queue the message until the data channel's set up,
-      // or congestion clears.
-      channel->SendControl(payload);
-    }
-  }
+
   return channel;
 }
 
@@ -1268,24 +1364,43 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
 bool WebRtcSession::CreateVoiceChannel(const cricket::ContentInfo* content) {
   voice_channel_.reset(channel_manager_->CreateVoiceChannel(
       this, content->name, true));
-  return (voice_channel_ != NULL);
+  if (!voice_channel_.get())
+    return false;
+
+  if (dscp_enabled_) {
+    cricket::AudioOptions options;
+    options.dscp.Set(true);
+    voice_channel_->SetChannelOptions(options);
+  }
+  return true;
 }
 
 bool WebRtcSession::CreateVideoChannel(const cricket::ContentInfo* content) {
   video_channel_.reset(channel_manager_->CreateVideoChannel(
       this, content->name, true, voice_channel_.get()));
-  return (video_channel_ != NULL);
+  if (!video_channel_.get())
+    return false;
+
+  if (dscp_enabled_) {
+    cricket::VideoOptions options;
+    options.dscp.Set(true);
+    video_channel_->SetChannelOptions(options);
+  }
+  return true;
 }
 
 bool WebRtcSession::CreateDataChannel(const cricket::ContentInfo* content) {
-  bool rtcp = (data_channel_type_ == cricket::DCT_RTP);
+  bool sctp = (data_channel_type_ == cricket::DCT_SCTP);
   data_channel_.reset(channel_manager_->CreateDataChannel(
-      this, content->name, rtcp, data_channel_type_));
+      this, content->name, !sctp, data_channel_type_));
   if (!data_channel_.get()) {
     return false;
   }
-  data_channel_->SignalDataReceived.connect(
-      this, &WebRtcSession::OnDataReceived);
+  if (sctp) {
+    mediastream_signaling_->OnDataTransportCreatedForSctp();
+    data_channel_->SignalNewStreamReceived.connect(
+        this, &WebRtcSession::OnNewDataChannelReceived);
+  }
   return true;
 }
 
@@ -1302,27 +1417,11 @@ void WebRtcSession::CopySavedCandidates(
   saved_candidates_.clear();
 }
 
-// Look for OPEN messages and set up data channels in response.
-void WebRtcSession::OnDataReceived(
-    cricket::DataChannel* channel,
-    const cricket::ReceiveDataParams& params,
-    const talk_base::Buffer& payload) {
-  if (params.type != cricket::DMT_CONTROL) {
-    return;
-  }
-
-  std::string label;
-  DataChannelInit config;
-  if (!mediastream_signaling_->ParseDataChannelOpenMessage(
-          payload, &label, &config)) {
-    LOG(LS_WARNING) << "Failed to parse data channel OPEN message.";
-    return;
-  }
-
-  config.negotiated = true;  // This is the negotiation.
-
+void WebRtcSession::OnNewDataChannelReceived(
+    const std::string& label, const DataChannelInit& init) {
+  ASSERT(data_channel_type_ == cricket::DCT_SCTP);
   if (!mediastream_signaling_->AddDataChannelFromOpenMessage(
-          label, config)) {
+          label, init)) {
     LOG(LS_WARNING) << "Failed to create data channel from OPEN message.";
     return;
   }
@@ -1383,9 +1482,15 @@ bool WebRtcSession::ValidateSessionDescription(
   }
 
   // Verify crypto settings.
-  if (webrtc_session_desc_factory_->secure() == cricket::SEC_REQUIRED &&
-      !VerifyCrypto(sdesc->description())) {
-    return BadSdp(source, kSdpWithoutCrypto, error_desc);
+  std::string crypto_error;
+  if (webrtc_session_desc_factory_->Secure() == cricket::SEC_REQUIRED &&
+      !VerifyCrypto(sdesc->description(), dtls_enabled_, &crypto_error)) {
+    return BadSdp(source, crypto_error, error_desc);
+  }
+
+  // Verify ice-ufrag and ice-pwd.
+  if (!VerifyIceUfragPwdPresent(sdesc->description())) {
+    return BadSdp(source, kSdpWithoutIceUfragPwd, error_desc);
   }
 
   if (!ValidateBundleSettings(sdesc->description())) {

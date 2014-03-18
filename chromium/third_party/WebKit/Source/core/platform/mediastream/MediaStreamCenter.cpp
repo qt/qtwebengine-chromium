@@ -53,7 +53,7 @@ MediaStreamCenter& MediaStreamCenter::instance()
 }
 
 MediaStreamCenter::MediaStreamCenter()
-    : m_private(adoptPtr(WebKit::Platform::current()->createMediaStreamCenter(this)))
+    : m_private(adoptPtr(blink::Platform::current()->createMediaStreamCenter(this)))
 {
 }
 
@@ -69,10 +69,13 @@ bool MediaStreamCenter::getMediaStreamTrackSources(PassRefPtr<MediaStreamTrackSo
 void MediaStreamCenter::didSetMediaStreamTrackEnabled(MediaStreamDescriptor* stream,  MediaStreamComponent* component)
 {
     if (m_private) {
-        if (component->enabled())
+        if (component->enabled()) {
             m_private->didEnableMediaStreamTrack(stream, component);
-        else
+            m_private->didEnableMediaStreamTrack(component);
+        } else {
             m_private->didDisableMediaStreamTrack(stream, component);
+            m_private->didDisableMediaStreamTrack(component);
+        }
     }
 }
 
@@ -88,24 +91,30 @@ bool MediaStreamCenter::didRemoveMediaStreamTrack(MediaStreamDescriptor* stream,
 
 void MediaStreamCenter::didStopLocalMediaStream(MediaStreamDescriptor* stream)
 {
-    if (m_private) {
+    if (m_private)
         m_private->didStopLocalMediaStream(stream);
-        for (unsigned i = 0; i < stream->numberOfAudioComponents(); i++)
-            stream->audioComponent(i)->source()->setReadyState(MediaStreamSource::ReadyStateEnded);
-        for (unsigned i = 0; i < stream->numberOfVideoComponents(); i++)
-            stream->videoComponent(i)->source()->setReadyState(MediaStreamSource::ReadyStateEnded);
-    }
+}
+
+bool MediaStreamCenter::didStopMediaStreamTrack(MediaStreamComponent* track)
+{
+    return m_private && m_private->didStopMediaStreamTrack(track);
 }
 
 void MediaStreamCenter::didCreateMediaStream(MediaStreamDescriptor* stream)
 {
     if (m_private) {
-        WebKit::WebMediaStream webStream(stream);
+        blink::WebMediaStream webStream(stream);
         m_private->didCreateMediaStream(webStream);
     }
 }
 
-void MediaStreamCenter::stopLocalMediaStream(const WebKit::WebMediaStream& webStream)
+void MediaStreamCenter::didCreateMediaStreamTrack(MediaStreamComponent* track)
+{
+    if (m_private)
+        m_private->didCreateMediaStreamTrack(track);
+}
+
+void MediaStreamCenter::stopLocalMediaStream(const blink::WebMediaStream& webStream)
 {
     MediaStreamDescriptor* stream = webStream;
     MediaStreamDescriptorClient* client = stream->client();

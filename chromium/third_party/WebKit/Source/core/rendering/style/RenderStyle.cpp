@@ -24,21 +24,19 @@
 #include "core/rendering/style/RenderStyle.h"
 
 #include <algorithm>
-#include "CSSPropertyNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontSelector.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/rendering/style/ContentData.h"
 #include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/QuotesData.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/fonts/Font.h"
+#include "platform/fonts/FontSelector.h"
 #include "wtf/MathExtras.h"
-#include "wtf/StdLibExtras.h"
 
 using namespace std;
 
@@ -69,7 +67,7 @@ COMPILE_ASSERT(sizeof(RenderStyle) == sizeof(SameSizeAsRenderStyle), RenderStyle
 
 inline RenderStyle* defaultStyle()
 {
-    static RenderStyle* s_defaultStyle = RenderStyle::createDefaultStyle().leakRef();
+    DEFINE_STATIC_REF(RenderStyle, s_defaultStyle, (RenderStyle::createDefaultStyle()));
     return s_defaultStyle;
 }
 
@@ -258,30 +256,6 @@ bool RenderStyle::operator==(const RenderStyle& o) const
 bool RenderStyle::isStyleAvailable() const
 {
     return this != StyleResolver::styleNotYetAvailable();
-}
-
-static inline int pseudoBit(PseudoId pseudo)
-{
-    return 1 << (pseudo - 1);
-}
-
-bool RenderStyle::hasAnyPublicPseudoStyles() const
-{
-    return PUBLIC_PSEUDOID_MASK & noninherited_flags._pseudoBits;
-}
-
-bool RenderStyle::hasPseudoStyle(PseudoId pseudo) const
-{
-    ASSERT(pseudo > NOPSEUDO);
-    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    return pseudoBit(pseudo) & noninherited_flags._pseudoBits;
-}
-
-void RenderStyle::setHasPseudoStyle(PseudoId pseudo)
-{
-    ASSERT(pseudo > NOPSEUDO);
-    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    noninherited_flags._pseudoBits |= pseudoBit(pseudo);
 }
 
 bool RenderStyle::hasUniquePseudoStyle() const
@@ -480,6 +454,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
     if (rareInheritedData.get() != other->rareInheritedData.get()) {
         if (rareInheritedData->highlight != other->rareInheritedData->highlight
             || rareInheritedData->indent != other->rareInheritedData->indent
+            || rareInheritedData->m_textAlignLast != other->rareInheritedData->m_textAlignLast
             || rareInheritedData->m_textIndentLine != other->rareInheritedData->m_textIndentLine
             || rareInheritedData->m_effectiveZoom != other->rareInheritedData->m_effectiveZoom
             || rareInheritedData->wordBreak != other->rareInheritedData->wordBreak
@@ -496,6 +471,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
             || rareInheritedData->textEmphasisPosition != other->rareInheritedData->textEmphasisPosition
             || rareInheritedData->textEmphasisCustomMark != other->rareInheritedData->textEmphasisCustomMark
             || rareInheritedData->m_textAlignLast != other->rareInheritedData->m_textAlignLast
+            || rareInheritedData->m_textJustify != other->rareInheritedData->m_textJustify
             || rareInheritedData->m_textOrientation != other->rareInheritedData->m_textOrientation
             || rareInheritedData->m_tabSize != other->rareInheritedData->m_tabSize
             || rareInheritedData->m_lineBoxContain != other->rareInheritedData->m_lineBoxContain
@@ -616,25 +592,27 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
 
     // Make sure these left/top/right/bottom checks stay below all layout checks and above
     // all visible checks.
-    if (position() != StaticPosition) {
-        if (surround->offset != other->surround->offset) {
-             // Optimize for the case where a positioned layer is moving but not changing size.
-            if (position() == AbsolutePosition && positionedObjectMoved(surround->offset, other->surround->offset, m_box->width()))
+    if (position() != StaticPosition && surround->offset != other->surround->offset) {
+        // Optimize for the case where a positioned layer is moving but not changing size.
+        if (position() == AbsolutePosition && positionedObjectMoved(surround->offset, other->surround->offset, m_box->width()) && repaintOnlyDiff(other, changedContextSensitiveProperties) == StyleDifferenceEqual)
+            return StyleDifferenceLayoutPositionedMovementOnly;
 
-                return StyleDifferenceLayoutPositionedMovementOnly;
-
-            // FIXME: We would like to use SimplifiedLayout for relative positioning, but we can't quite do that yet.
-            // We need to make sure SimplifiedLayout can operate correctly on RenderInlines (we will need
-            // to add a selfNeedsSimplifiedLayout bit in order to not get confused and taint every line).
-            return StyleDifferenceLayout;
-        } else if (m_box->zIndex() != other->m_box->zIndex() || m_box->hasAutoZIndex() != other->m_box->hasAutoZIndex()
-                 || visual->clip != other->visual->clip || visual->hasClip != other->visual->hasClip)
-            return StyleDifferenceRepaintLayer;
+        // FIXME: We would like to use SimplifiedLayout for relative positioning, but we can't quite do that yet.
+        // We need to make sure SimplifiedLayout can operate correctly on RenderInlines (we will need
+        // to add a selfNeedsSimplifiedLayout bit in order to not get confused and taint every line).
+        return StyleDifferenceLayout;
     }
+    return repaintOnlyDiff(other, changedContextSensitiveProperties);
+}
 
-    if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        if (rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
-            return StyleDifferenceRepaintLayer;
+StyleDifference RenderStyle::repaintOnlyDiff(const RenderStyle* other, unsigned& changedContextSensitiveProperties) const
+{
+    if (position() != StaticPosition && (m_box->zIndex() != other->m_box->zIndex() || m_box->hasAutoZIndex() != other->m_box->hasAutoZIndex()
+        || visual->clip != other->visual->clip || visual->hasClip != other->visual->hasClip))
+        return StyleDifferenceRepaintLayer;
+
+    if (RuntimeEnabledFeatures::cssCompositingEnabled() && rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
+        return StyleDifferenceRepaintLayer;
 
     if (rareNonInheritedData->opacity != other->rareNonInheritedData->opacity) {
         // Don't return early here; instead take note of the type of change,
@@ -696,7 +674,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         || rareInheritedData->textStrokeColor != other->rareInheritedData->textStrokeColor
         || rareInheritedData->textEmphasisColor != other->rareInheritedData->textEmphasisColor
         || rareInheritedData->textEmphasisFill != other->rareInheritedData->textEmphasisFill)
-        return StyleDifferenceRepaintIfText;
+        return StyleDifferenceRepaintIfTextOrColorChange;
 
     // Cursors are not checked, since they will be set appropriately in response to mouse events,
     // so they don't need to cause any repaint or layout.
@@ -738,6 +716,12 @@ void RenderStyle::clearCursorList()
 {
     if (rareInheritedData->cursorData)
         rareInheritedData.access()->cursorData = 0;
+}
+
+void RenderStyle::addCallbackSelector(const String& selector)
+{
+    if (!rareNonInheritedData->m_callbackSelectors.contains(selector))
+        rareNonInheritedData.access()->m_callbackSelectors.append(selector);
 }
 
 void RenderStyle::clearContent()
@@ -818,14 +802,14 @@ void RenderStyle::setContent(QuoteType quote, bool add)
     rareNonInheritedData.access()->m_content = ContentData::create(quote);
 }
 
-BlendMode RenderStyle::blendMode() const
+blink::WebBlendMode RenderStyle::blendMode() const
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode);
-    return BlendModeNormal;
+        return static_cast<blink::WebBlendMode>(rareNonInheritedData->m_effectiveBlendMode);
+    return blink::WebBlendModeNormal;
 }
 
-void RenderStyle::setBlendMode(BlendMode v)
+void RenderStyle::setBlendMode(blink::WebBlendMode v)
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
         rareNonInheritedData.access()->m_effectiveBlendMode = v;
@@ -834,7 +818,7 @@ void RenderStyle::setBlendMode(BlendMode v)
 bool RenderStyle::hasBlendMode() const
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode) != BlendModeNormal;
+        return static_cast<blink::WebBlendMode>(rareNonInheritedData->m_effectiveBlendMode) != blink::WebBlendModeNormal;
     return false;
 }
 
@@ -851,6 +835,13 @@ void RenderStyle::setIsolation(EIsolation v)
         rareNonInheritedData.access()->m_isolation = v;
 }
 
+bool RenderStyle::hasIsolation() const
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        return rareNonInheritedData->m_isolation != IsolationAuto;
+    return false;
+}
+
 inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& transformOperations, RenderStyle::ApplyTransformOrigin applyOrigin)
 {
     // transform-origin brackets the transform with translate operations.
@@ -861,7 +852,7 @@ inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& tr
 
     unsigned size = transformOperations.size();
     for (unsigned i = 0; i < size; ++i) {
-        TransformOperation::OperationType type = transformOperations[i]->getOperationType();
+        TransformOperation::OperationType type = transformOperations[i]->type();
         if (type != TransformOperation::TranslateX
             && type != TransformOperation::TranslateY
             && type != TransformOperation::Translate
@@ -887,9 +878,9 @@ void RenderStyle::applyTransform(TransformationMatrix& transform, const FloatRec
     float offsetY = transformOriginY().type() == Percent ? boundingBox.y() : 0;
 
     if (applyTransformOrigin) {
-        transform.translate3d(floatValueForLength(transformOriginX(), boundingBox.width()) + offsetX,
-                              floatValueForLength(transformOriginY(), boundingBox.height()) + offsetY,
-                              transformOriginZ());
+        transform.translate3d(floatValueForLength(transformOriginX(), boundingBox.width(), 0) + offsetX,
+            floatValueForLength(transformOriginY(), boundingBox.height(), 0) + offsetY,
+            transformOriginZ());
     }
 
     unsigned size = transformOperations.size();
@@ -897,36 +888,20 @@ void RenderStyle::applyTransform(TransformationMatrix& transform, const FloatRec
         transformOperations[i]->apply(transform, boundingBox.size());
 
     if (applyTransformOrigin) {
-        transform.translate3d(-floatValueForLength(transformOriginX(), boundingBox.width()) - offsetX,
-                              -floatValueForLength(transformOriginY(), boundingBox.height()) - offsetY,
-                              -transformOriginZ());
+        transform.translate3d(-floatValueForLength(transformOriginX(), boundingBox.width(), 0) - offsetX,
+            -floatValueForLength(transformOriginY(), boundingBox.height(), 0) - offsetY,
+            -transformOriginZ());
     }
 }
 
-void RenderStyle::setTextShadow(PassOwnPtr<ShadowData> shadowData, bool add)
+void RenderStyle::setTextShadow(PassRefPtr<ShadowList> s)
 {
-    ASSERT(!shadowData || (!shadowData->spread() && shadowData->style() == Normal));
-
-    StyleRareInheritedData* rareData = rareInheritedData.access();
-    if (!add) {
-        rareData->textShadow = shadowData;
-        return;
-    }
-
-    shadowData->setNext(rareData->textShadow.release());
-    rareData->textShadow = shadowData;
+    rareInheritedData.access()->textShadow = s;
 }
 
-void RenderStyle::setBoxShadow(PassOwnPtr<ShadowData> shadowData, bool add)
+void RenderStyle::setBoxShadow(PassRefPtr<ShadowList> s)
 {
-    StyleRareNonInheritedData* rareData = rareNonInheritedData.access();
-    if (!add) {
-        rareData->m_boxShadow = shadowData;
-        return;
-    }
-
-    shadowData->setNext(rareData->m_boxShadow.release());
-    rareData->m_boxShadow = shadowData;
+    rareNonInheritedData.access()->m_boxShadow = s;
 }
 
 static RoundedRect::Radii calcRadiiFor(const BorderData& border, IntSize size, RenderView* renderView)
@@ -1287,72 +1262,80 @@ void RenderStyle::setFontSize(float size)
     font().update(currentFontSelector);
 }
 
-void RenderStyle::getShadowExtent(const ShadowData* shadow, LayoutUnit &top, LayoutUnit &right, LayoutUnit &bottom, LayoutUnit &left) const
+void RenderStyle::getShadowExtent(const ShadowList* shadowList, LayoutUnit &top, LayoutUnit &right, LayoutUnit &bottom, LayoutUnit &left) const
 {
     top = 0;
     right = 0;
     bottom = 0;
     left = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        top = min<LayoutUnit>(top, shadow->y() - blurAndSpread);
-        right = max<LayoutUnit>(right, shadow->x() + blurAndSpread);
-        bottom = max<LayoutUnit>(bottom, shadow->y() + blurAndSpread);
-        left = min<LayoutUnit>(left, shadow->x() - blurAndSpread);
+        top = min<LayoutUnit>(top, shadow.y() - blurAndSpread);
+        right = max<LayoutUnit>(right, shadow.x() + blurAndSpread);
+        bottom = max<LayoutUnit>(bottom, shadow.y() + blurAndSpread);
+        left = min<LayoutUnit>(left, shadow.x() - blurAndSpread);
     }
 }
 
-LayoutBoxExtent RenderStyle::getShadowInsetExtent(const ShadowData* shadow) const
+LayoutBoxExtent RenderStyle::getShadowInsetExtent(const ShadowList* shadowList) const
 {
     LayoutUnit top = 0;
     LayoutUnit right = 0;
     LayoutUnit bottom = 0;
     LayoutUnit left = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Normal)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Normal)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
-        top = max<LayoutUnit>(top, shadow->y() + blurAndSpread);
-        right = min<LayoutUnit>(right, shadow->x() - blurAndSpread);
-        bottom = min<LayoutUnit>(bottom, shadow->y() - blurAndSpread);
-        left = max<LayoutUnit>(left, shadow->x() + blurAndSpread);
+        int blurAndSpread = shadow.blur() + shadow.spread();
+        top = max<LayoutUnit>(top, shadow.y() + blurAndSpread);
+        right = min<LayoutUnit>(right, shadow.x() - blurAndSpread);
+        bottom = min<LayoutUnit>(bottom, shadow.y() - blurAndSpread);
+        left = max<LayoutUnit>(left, shadow.x() + blurAndSpread);
     }
 
     return LayoutBoxExtent(top, right, bottom, left);
 }
 
-void RenderStyle::getShadowHorizontalExtent(const ShadowData* shadow, LayoutUnit &left, LayoutUnit &right) const
+void RenderStyle::getShadowHorizontalExtent(const ShadowList* shadowList, LayoutUnit &left, LayoutUnit &right) const
 {
     left = 0;
     right = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        left = min<LayoutUnit>(left, shadow->x() - blurAndSpread);
-        right = max<LayoutUnit>(right, shadow->x() + blurAndSpread);
+        left = min<LayoutUnit>(left, shadow.x() - blurAndSpread);
+        right = max<LayoutUnit>(right, shadow.x() + blurAndSpread);
     }
 }
 
-void RenderStyle::getShadowVerticalExtent(const ShadowData* shadow, LayoutUnit &top, LayoutUnit &bottom) const
+void RenderStyle::getShadowVerticalExtent(const ShadowList* shadowList, LayoutUnit &top, LayoutUnit &bottom) const
 {
     top = 0;
     bottom = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        top = min<LayoutUnit>(top, shadow->y() - blurAndSpread);
-        bottom = max<LayoutUnit>(bottom, shadow->y() + blurAndSpread);
+        top = min<LayoutUnit>(top, shadow.y() - blurAndSpread);
+        bottom = max<LayoutUnit>(bottom, shadow.y() + blurAndSpread);
     }
 }
 
@@ -1611,24 +1594,18 @@ void RenderStyle::setBorderImageSlices(LengthBox slices)
     surround.access()->border.m_image.setImageSlices(slices);
 }
 
-void RenderStyle::setBorderImageWidth(LengthBox slices)
+void RenderStyle::setBorderImageWidth(const BorderImageLengthBox& slices)
 {
     if (surround->border.m_image.borderSlices() == slices)
         return;
     surround.access()->border.m_image.setBorderSlices(slices);
 }
 
-void RenderStyle::setBorderImageOutset(LengthBox outset)
+void RenderStyle::setBorderImageOutset(const BorderImageLengthBox& outset)
 {
     if (surround->border.m_image.outset() == outset)
         return;
     surround.access()->border.m_image.setOutset(outset);
-}
-
-ShapeValue* RenderStyle::initialShapeInside()
-{
-    DEFINE_STATIC_LOCAL(RefPtr<ShapeValue>, sOutsideValue, (ShapeValue::createOutsideValue()));
-    return sOutsideValue.get();
 }
 
 } // namespace WebCore

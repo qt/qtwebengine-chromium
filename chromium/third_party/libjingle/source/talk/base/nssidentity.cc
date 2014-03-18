@@ -26,6 +26,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #if HAVE_CONFIG_H
 #include "config.h"
 #endif  // HAVE_CONFIG_H
@@ -33,8 +37,6 @@
 #if HAVE_NSS_SSL_H
 
 #include "talk/base/nssidentity.h"
-
-#include <string>
 
 #include "cert.h"
 #include "cryptohi.h"
@@ -90,6 +92,43 @@ NSSKeyPair *NSSKeyPair::GetReference() {
   return new NSSKeyPair(privkey, pubkey);
 }
 
+NSSCertificate::NSSCertificate(CERTCertificate* cert)
+    : certificate_(CERT_DupCertificate(cert)) {
+  ASSERT(certificate_ != NULL);
+}
+
+static void DeleteCert(SSLCertificate* cert) {
+  delete cert;
+}
+
+NSSCertificate::NSSCertificate(CERTCertList* cert_list) {
+  // Copy the first cert into certificate_.
+  CERTCertListNode* node = CERT_LIST_HEAD(cert_list);
+  certificate_ = CERT_DupCertificate(node->cert);
+
+  // Put any remaining certificates into the chain.
+  node = CERT_LIST_NEXT(node);
+  std::vector<SSLCertificate*> certs;
+  for (; !CERT_LIST_END(node, cert_list); node = CERT_LIST_NEXT(node)) {
+    certs.push_back(new NSSCertificate(node->cert));
+  }
+
+  if (!certs.empty())
+    chain_.reset(new SSLCertChain(certs));
+
+  // The SSLCertChain constructor copies its input, so now we have to delete
+  // the originals.
+  std::for_each(certs.begin(), certs.end(), DeleteCert);
+}
+
+NSSCertificate::NSSCertificate(CERTCertificate* cert, SSLCertChain* chain)
+    : certificate_(CERT_DupCertificate(cert)) {
+  ASSERT(certificate_ != NULL);
+  if (chain)
+    chain_.reset(chain->Copy());
+}
+
+
 NSSCertificate *NSSCertificate::FromPEMString(const std::string &pem_string) {
   std::string der;
   if (!SSLIdentity::PemToDer(kPemTypeCertificate, pem_string, &der))
@@ -105,21 +144,23 @@ NSSCertificate *NSSCertificate::FromPEMString(const std::string &pem_string) {
   if (!cert)
     return NULL;
 
-  return new NSSCertificate(cert);
+  NSSCertificate* ret = new NSSCertificate(cert);
+  CERT_DestroyCertificate(cert);
+  return ret;
 }
 
 NSSCertificate *NSSCertificate::GetReference() const {
-  CERTCertificate *certificate = CERT_DupCertificate(certificate_);
-  if (!certificate)
-    return NULL;
-
-  return new NSSCertificate(certificate);
+  return new NSSCertificate(certificate_, chain_.get());
 }
 
 std::string NSSCertificate::ToPEMString() const {
   return SSLIdentity::DerToPem(kPemTypeCertificate,
                                certificate_->derCert.data,
                                certificate_->derCert.len);
+}
+
+void NSSCertificate::ToDER(Buffer* der_buffer) const {
+  der_buffer->SetData(certificate_->derCert.data, certificate_->derCert.len);
 }
 
 bool NSSCertificate::GetDigestLength(const std::string &algorithm,
@@ -131,6 +172,54 @@ bool NSSCertificate::GetDigestLength(const std::string &algorithm,
 
   *length = ho->length;
 
+  return true;
+}
+
+bool NSSCertificate::GetSignatureDigestAlgorithm(std::string* algorithm) const {
+  // The function sec_DecodeSigAlg in NSS provides this mapping functionality.
+  // Unfortunately it is private, so the functionality must be duplicated here.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=925165 .
+  SECOidTag sig_alg = SECOID_GetAlgorithmTag(&certificate_->signature);
+  switch (sig_alg) {
+    case SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION:
+      *algorithm = DIGEST_MD5;
+      break;
+    case SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION:
+    case SEC_OID_ISO_SHA_WITH_RSA_SIGNATURE:
+    case SEC_OID_ISO_SHA1_WITH_RSA_SIGNATURE:
+    case SEC_OID_ANSIX9_DSA_SIGNATURE_WITH_SHA1_DIGEST:
+    case SEC_OID_BOGUS_DSA_SIGNATURE_WITH_SHA1_DIGEST:
+    case SEC_OID_ANSIX962_ECDSA_SHA1_SIGNATURE:
+    case SEC_OID_MISSI_DSS:
+    case SEC_OID_MISSI_KEA_DSS:
+    case SEC_OID_MISSI_KEA_DSS_OLD:
+    case SEC_OID_MISSI_DSS_OLD:
+      *algorithm = DIGEST_SHA_1;
+      break;
+    case SEC_OID_ANSIX962_ECDSA_SHA224_SIGNATURE:
+    case SEC_OID_PKCS1_SHA224_WITH_RSA_ENCRYPTION:
+    case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA224_DIGEST:
+      *algorithm = DIGEST_SHA_224;
+      break;
+    case SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE:
+    case SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION:
+    case SEC_OID_NIST_DSA_SIGNATURE_WITH_SHA256_DIGEST:
+      *algorithm = DIGEST_SHA_256;
+      break;
+    case SEC_OID_ANSIX962_ECDSA_SHA384_SIGNATURE:
+    case SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION:
+      *algorithm = DIGEST_SHA_384;
+      break;
+    case SEC_OID_ANSIX962_ECDSA_SHA512_SIGNATURE:
+    case SEC_OID_PKCS1_SHA512_WITH_RSA_ENCRYPTION:
+      *algorithm = DIGEST_SHA_512;
+      break;
+    default:
+      // Unknown algorithm.  There are several unhandled options that are less
+      // common and more complex.
+      algorithm->clear();
+      return false;
+  }
   return true;
 }
 
@@ -153,6 +242,14 @@ bool NSSCertificate::ComputeDigest(const std::string &algorithm,
 
   *length = ho->length;
 
+  return true;
+}
+
+bool NSSCertificate::GetChain(SSLCertChain** chain) const {
+  if (!chain_)
+    return false;
+
+  *chain = chain_->Copy();
   return true;
 }
 
@@ -301,9 +398,9 @@ NSSIdentity *NSSIdentity::Generate(const std::string &common_name) {
 
  fail:
   delete keypair;
-  CERT_DestroyCertificate(certificate);
 
  done:
+  if (certificate) CERT_DestroyCertificate(certificate);
   if (subject_name) CERT_DestroyName(subject_name);
   if (spki) SECKEY_DestroySubjectPublicKeyInfo(spki);
   if (certreq) CERT_DestroyCertificateRequest(certreq);

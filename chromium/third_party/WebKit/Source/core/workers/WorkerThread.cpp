@@ -30,15 +30,15 @@
 
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/ThreadGlobalData.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "platform/PlatformThreadData.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebWorkerRunLoop.h"
-#include "weborigin/KURL.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
@@ -119,7 +119,7 @@ void WorkerThread::workerThread()
     }
     // The corresponding call to didStopWorkerRunLoop is in
     // ~WorkerScriptController.
-    WebKit::Platform::current()->didStartWorkerRunLoop(WebKit::WebWorkerRunLoop(&m_runLoop));
+    blink::Platform::current()->didStartWorkerRunLoop(blink::WebWorkerRunLoop(&m_runLoop));
 
     WorkerScriptController* script = m_workerGlobalScope->script();
     InspectorInstrumentation::willEvaluateWorkerScript(workerGlobalScope(), startMode);
@@ -135,8 +135,8 @@ void WorkerThread::workerThread()
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
     m_workerGlobalScope = 0;
 
-    // Clean up WebCore::ThreadGlobalData before WTF::WTFThreadData goes away!
-    threadGlobalData().destroy();
+    // Clean up PlatformThreadData before WTF::WTFThreadData goes away!
+    PlatformThreadData::current().destroy();
 
     // The thread object may be already destroyed from notification now, don't try to access "this".
     detachThread(threadID);
@@ -148,14 +148,14 @@ void WorkerThread::runEventLoop()
     m_runLoop.run(m_workerGlobalScope.get());
 }
 
-class WorkerThreadShutdownFinishTask : public ScriptExecutionContext::Task {
+class WorkerThreadShutdownFinishTask : public ExecutionContextTask {
 public:
     static PassOwnPtr<WorkerThreadShutdownFinishTask> create()
     {
         return adoptPtr(new WorkerThreadShutdownFinishTask());
     }
 
-    virtual void performTask(ScriptExecutionContext *context)
+    virtual void performTask(ExecutionContext *context)
     {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
         workerGlobalScope->clearInspector();
@@ -166,14 +166,14 @@ public:
     virtual bool isCleanupTask() const { return true; }
 };
 
-class WorkerThreadShutdownStartTask : public ScriptExecutionContext::Task {
+class WorkerThreadShutdownStartTask : public ExecutionContextTask {
 public:
     static PassOwnPtr<WorkerThreadShutdownStartTask> create()
     {
         return adoptPtr(new WorkerThreadShutdownStartTask());
     }
 
-    virtual void performTask(ScriptExecutionContext *context)
+    virtual void performTask(ExecutionContext *context)
     {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
 
@@ -222,8 +222,8 @@ bool WorkerThread::isCurrentThread() const
     return m_threadID == currentThread();
 }
 
-class ReleaseFastMallocFreeMemoryTask : public ScriptExecutionContext::Task {
-    virtual void performTask(ScriptExecutionContext*) OVERRIDE { WTF::releaseFastMallocFreeMemory(); }
+class ReleaseFastMallocFreeMemoryTask : public ExecutionContextTask {
+    virtual void performTask(ExecutionContext*) OVERRIDE { WTF::releaseFastMallocFreeMemory(); }
 };
 
 void WorkerThread::releaseFastMallocFreeMemoryInAllThreads()

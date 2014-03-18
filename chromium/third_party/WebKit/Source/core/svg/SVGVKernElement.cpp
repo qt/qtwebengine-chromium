@@ -22,22 +22,19 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGVKernElement.h"
 
-#include "SVGNames.h"
-#include "core/svg/SVGFontElement.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
 
-inline SVGVKernElement::SVGVKernElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGVKernElement::SVGVKernElement(Document& document)
+    : SVGElement(SVGNames::vkernTag, document)
 {
-    ASSERT(hasTagName(SVGNames::vkernTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGVKernElement> SVGVKernElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGVKernElement> SVGVKernElement::create(Document& document)
 {
-    return adoptRef(new SVGVKernElement(tagName, document));
+    return adoptRef(new SVGVKernElement(document));
 }
 
 Node::InsertionNotificationRequest SVGVKernElement::insertedInto(ContainerNode* rootParent)

@@ -10,6 +10,10 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "ui/gfx/size.h"
 
+namespace blink {
+class WebGraphicsContext3D;
+}
+
 namespace content {
 
 // The proxy class for the gpu thread to notify the compositor thread
@@ -70,6 +74,8 @@ class StreamTextureFactory {
   // Set the streamTexture size for the given stream Id.
   virtual void SetStreamTextureSize(int32 texture_id,
                                     const gfx::Size& size) = 0;
+
+  virtual blink::WebGraphicsContext3D* Context3d() = 0;
 };
 
 }  // namespace content

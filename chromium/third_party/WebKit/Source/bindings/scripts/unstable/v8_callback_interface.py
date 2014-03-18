@@ -35,8 +35,9 @@ Until then, please work on the Perl IDL compiler.
 For details, see bug http://crbug.com/239771
 """
 
-from v8_types import cpp_type, cpp_value_to_v8_value, includes_for_type
-from v8_utilities import v8_class_name
+from v8_globals import includes
+import v8_types
+import v8_utilities
 
 CALLBACK_INTERFACE_H_INCLUDES = set([
     'bindings/v8/ActiveDOMCallback.h',
@@ -44,76 +45,95 @@ CALLBACK_INTERFACE_H_INCLUDES = set([
     'bindings/v8/ScopedPersistent.h',
 ])
 CALLBACK_INTERFACE_CPP_INCLUDES = set([
-    'core/dom/ScriptExecutionContext.h',
     'bindings/v8/V8Binding.h',
     'bindings/v8/V8Callback.h',
+    'core/dom/ExecutionContext.h',
     'wtf/Assertions.h',
 ])
-CPP_TO_V8_CONVERSION = 'v8::Handle<v8::Value> {name}Handle = {cpp_value_to_v8_value};'
 
 
 def cpp_to_v8_conversion(idl_type, name):
-    this_cpp_value_to_v8_value = cpp_value_to_v8_value(idl_type, name, 'isolate', creation_context='v8::Handle<v8::Object>()')
-    return CPP_TO_V8_CONVERSION.format(name=name, cpp_value_to_v8_value=this_cpp_value_to_v8_value)
+    # FIXME: setting creation_context=v8::Handle<v8::Object>() is wrong,
+    # as toV8 then implicitly uses the current context, which causes leaks
+    # between isolate worlds if a different context should be used.
+    cpp_value_to_v8_value = v8_types.cpp_value_to_v8_value(idl_type, name,
+        isolate='isolate', creation_context='v8::Handle<v8::Object>()')
+    return 'v8::Handle<v8::Value> {name}Handle = {cpp_to_v8};'.format(
+        name=name, cpp_to_v8=cpp_value_to_v8_value)
+
+
+def cpp_type(idl_type):
+    # FIXME: remove this function by making callback types consistent
+    # (always use usual v8_types.cpp_type)
+    if idl_type == 'DOMString':
+        return 'const String&'
+    if idl_type == 'void':
+        return 'void'
+    # Callbacks use raw pointers, so used_as_argument=True
+    usual_cpp_type = v8_types.cpp_type(idl_type, used_as_argument=True)
+    if usual_cpp_type.startswith('Vector'):
+        return 'const %s&' % usual_cpp_type
+    return usual_cpp_type
 
 
 def generate_callback_interface(callback_interface):
-    cpp_includes = CALLBACK_INTERFACE_CPP_INCLUDES
+    includes.clear()
+    includes.update(CALLBACK_INTERFACE_CPP_INCLUDES)
+    name = callback_interface.name
 
-    def generate_method(operation):
-        method_contents, method_cpp_includes = generate_method_and_includes(operation)
-        cpp_includes.update(method_cpp_includes)
-        return method_contents
-
-    methods = [generate_method(operation) for operation in callback_interface.operations]
+    methods = [generate_method(operation)
+               for operation in callback_interface.operations]
     template_contents = {
-        'cpp_class_name': callback_interface.name,
-        'v8_class_name': v8_class_name(callback_interface),
+        'conditional_string': v8_utilities.conditional_string(callback_interface),
+        'cpp_class': name,
+        'v8_class': v8_utilities.v8_class_name(callback_interface),
         'header_includes': CALLBACK_INTERFACE_H_INCLUDES,
-        'cpp_includes': cpp_includes,
         'methods': methods,
     }
     return template_contents
 
 
-def generate_method_and_includes(operation):
-    if 'Custom' in operation.extended_attributes:
-        return generate_method_contents(operation), []
-    if operation.data_type != 'boolean':
-        raise Exception("We don't yet support callbacks that return non-boolean values.")
-    cpp_includes = includes_for_operation(operation)
-    return generate_method_contents(operation), cpp_includes
-
-
-def includes_for_operation(operation):
-    includes = includes_for_type(operation.data_type)
+def add_includes_for_operation(operation):
+    v8_types.add_includes_for_type(operation.idl_type)
     for argument in operation.arguments:
-        includes.update(includes_for_type(argument.data_type))
-    return includes
+        v8_types.add_includes_for_type(argument.idl_type)
 
 
-def generate_method_contents(operation):
+def generate_method(operation):
+    extended_attributes = operation.extended_attributes
+    idl_type = operation.idl_type
+    if idl_type not in ['boolean', 'void']:
+        raise Exception('We only support callbacks that return boolean or void values.')
+    is_custom = 'Custom' in extended_attributes
+    if not is_custom:
+        add_includes_for_operation(operation)
+    call_with = extended_attributes.get('CallWith')
+    call_with_this_handle = v8_utilities.extended_attribute_value_contains(call_with, 'ThisValue')
     contents = {
+        'call_with_this_handle': call_with_this_handle,
+        'custom': is_custom,
         'name': operation.name,
-        'return_cpp_type': cpp_type(operation.data_type, 'RefPtr'),
-        'custom': 'Custom' in operation.extended_attributes,
+        'return_cpp_type': cpp_type(idl_type),
+        'return_idl_type': idl_type,
     }
-    contents.update(generate_arguments_contents(operation.arguments))
+    contents.update(generate_arguments_contents(operation.arguments, call_with_this_handle))
     return contents
 
 
-def generate_arguments_contents(arguments):
-    def argument_declaration(argument):
-        return '%s %s' % (cpp_type(argument.data_type), argument.name)
-
+def generate_arguments_contents(arguments, call_with_this_handle):
     def generate_argument(argument):
         return {
             'name': argument.name,
-            'cpp_to_v8_conversion': cpp_to_v8_conversion(argument.data_type, argument.name),
+            'cpp_to_v8_conversion': cpp_to_v8_conversion(argument.idl_type, argument.name),
         }
 
+    argument_declarations = [
+            '%s %s' % (cpp_type(argument.idl_type), argument.name)
+            for argument in arguments]
+    if call_with_this_handle:
+        argument_declarations.insert(0, 'ScriptValue thisValue')
     return  {
-        'argument_declarations': [argument_declaration(argument) for argument in arguments],
+        'argument_declarations': argument_declarations,
         'arguments': [generate_argument(argument) for argument in arguments],
         'handles': ['%sHandle' % argument.name for argument in arguments],
     }

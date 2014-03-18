@@ -39,10 +39,12 @@
       ],
       'include_dirs': [
         'interface',
+        '<(webrtc_root)',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
           'interface',
+          '<(webrtc_root)',
         ],
       },
       'sources': [
@@ -200,10 +202,10 @@
               'target_name': 'audio_decoder_unittests_run',
               'type': 'none',
               'dependencies': [
-                '<(import_isolate_path):import_isolate_gypi',
                 'audio_decoder_unittests',
               ],
               'includes': [
+                '../../../build/isolate.gypi',
                 'audio_decoder_unittests.isolate',
               ],
               'sources': [

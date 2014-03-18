@@ -47,9 +47,6 @@
   "webkit/glue/resources/webkit_resources.grd": {
     "structures": [4700],
   },
-  "webkit/tools/test_shell/test_shell_resources.grd": {
-    "includes": [5000],
-  },
   "ui/resources/ui_resources.grd": {
     "structures": [5500],
   },
@@ -120,7 +117,7 @@
     "messages": [17500],
   },
   "webkit/glue/webkit_strings.grd": {
-    "messages": [18000],
+    "messages": [18500],
   },
 
   "chrome_frame/resources/chrome_frame_resources.grd": {
@@ -128,18 +125,11 @@
     "structures": [19500],
   },
 
- "ui/base/native_theme/resources/native_theme_resources.grd": {
-    "includes": [20000],
-  },
-
-  "chrome/app/policy/policy_templates.grd": {
+  "components/policy/resources/policy_templates.grd": {
     "structures": [20500],
     "messages": [20510],
   },
 
-  "chrome/browser/autofill/autofill_resources.grd": {
-    "messages": [21000],
-  },
   "chrome/browser/resources/sync_internals_resources.grd": {
     "includes": [21500],
   },
@@ -147,15 +137,12 @@
     "includes": [21750],
   },
   # This file is generated during the build.
-  # devtools_resources.grd can be in two different places depending on whether
-  # we are in a chromium checkout or a webkit-only checkout.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
     "includes": [22000],
   },
   "devtools_resources.grd": {
     "includes": [22000],
   },
-  # This file is generated during the build.
   "chrome/browser/devtools/frontend/devtools_discovery_page_resources.grd": {
     "includes": [22500],
   },
@@ -171,8 +158,13 @@
   },
   "cloud_print/service/win/service_resources.grd": {
     "messages": [23600],
-    "includes": [23800],
-    "structures": [23900],
+    "includes": [23700],
+    "structures": [23750],
+  },
+  "cloud_print/gcp20/prototype/gcp20_device.grd": {
+    "messages": [23800],
+    "includes": [23830],
+    "structures": [23860],
   },
   "chrome/browser/resources/quota_internals_resources.grd": {
     "includes": [24000],
@@ -193,9 +185,6 @@
   "chrome/common/extensions_api_resources.grd": {
     "includes": [26500],
   },
-  "third_party/trace-viewer/src/tracing.grd": {
-    "includes": [27000],
-  },
   "chrome/browser/resources/memory_internals_resources.grd": {
     "includes": [27500],
   },
@@ -210,6 +199,9 @@
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
     "includes": [29000],
+  },
+  "third_party/libaddressinput/chromium/cpp/res/messages.grd": {
+    "messages": [29050],
   },
   "components/component_strings.grd": {
     "messages": [30000],

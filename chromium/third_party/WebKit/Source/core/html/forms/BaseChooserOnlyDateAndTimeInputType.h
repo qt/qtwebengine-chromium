@@ -29,14 +29,14 @@
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
 #include "core/html/forms/BaseDateAndTimeInputType.h"
-#include "core/platform/DateTimeChooser.h"
-#include "core/platform/DateTimeChooserClient.h"
+#include "platform/DateTimeChooser.h"
+#include "platform/DateTimeChooserClient.h"
 
 namespace WebCore {
 
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
 protected:
-    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement* element) : BaseDateAndTimeInputType(element) { }
+    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
     virtual ~BaseChooserOnlyDateAndTimeInputType();
 
 private:
@@ -45,7 +45,7 @@ private:
 
     // InputType functions:
     virtual void createShadowSubtree() OVERRIDE;
-    virtual void detach() OVERRIDE;
+    virtual void closePopupView() OVERRIDE;
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
@@ -55,6 +55,7 @@ private:
 
     // DateTimeChooserClient functions:
     virtual void didChooseValue(const String&) OVERRIDE;
+    virtual void didChooseValue(double) OVERRIDE;
     virtual void didEndChooser() OVERRIDE;
 
     RefPtr<DateTimeChooser> m_dateTimeChooser;

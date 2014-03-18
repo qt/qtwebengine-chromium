@@ -134,6 +134,7 @@
             'voe_audio_processing_unittest.cc',
             'voe_base_unittest.cc',
             'voe_codec_unittest.cc',
+            'voe_neteq_stats_unittest.cc',
           ],
           'conditions': [
             # TODO(henrike): remove build_with_chromium==1 when the bots are
@@ -227,6 +228,7 @@
           'dependencies': [
             'voice_engine',
             '<(DEPTH)/testing/gtest.gyp:gtest',
+            '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
@@ -302,10 +304,10 @@
               'target_name': 'voice_engine_unittests_run',
               'type': 'none',
               'dependencies': [
-                '<(import_isolate_path):import_isolate_gypi',
                 'voice_engine_unittests',
               ],
               'includes': [
+                '../build/isolate.gypi',
                 'voice_engine_unittests.isolate',
               ],
               'sources': [
@@ -316,10 +318,10 @@
               'target_name': 'voe_auto_test_run',
               'type': 'none',
               'dependencies': [
-                '<(import_isolate_path):import_isolate_gypi',
                 'voe_auto_test',
               ],
               'includes': [
+                '../build/isolate.gypi',
                 'voe_auto_test.isolate',
               ],
               'sources': [

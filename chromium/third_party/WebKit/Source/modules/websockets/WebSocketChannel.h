@@ -31,7 +31,7 @@
 #ifndef WebSocketChannel_h
 #define WebSocketChannel_h
 
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
@@ -39,16 +39,16 @@
 
 namespace WebCore {
 
-class Blob;
+class BlobDataHandle;
 class KURL;
-class ScriptExecutionContext;
+class ExecutionContext;
 class WebSocketChannelClient;
 
 class WebSocketChannel {
     WTF_MAKE_NONCOPYABLE(WebSocketChannel);
 public:
     WebSocketChannel() { }
-    static PassRefPtr<WebSocketChannel> create(ScriptExecutionContext*, WebSocketChannelClient*);
+    static PassRefPtr<WebSocketChannel> create(ExecutionContext*, WebSocketChannelClient*);
 
     enum SendResult {
         SendSuccess,
@@ -80,7 +80,7 @@ public:
     virtual String extensions() = 0; // Will be available after didConnect() callback is invoked.
     virtual SendResult send(const String& message) = 0;
     virtual SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) = 0;
-    virtual SendResult send(const Blob&) = 0;
+    virtual SendResult send(PassRefPtr<BlobDataHandle>) = 0;
     virtual unsigned long bufferedAmount() const = 0;
     virtual void close(int code, const String& reason) = 0;
 

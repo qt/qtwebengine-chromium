@@ -715,7 +715,7 @@ HttpAuth::AuthorizationResult HttpAuthGSSAPI::ParseChallenge(
 }
 
 int HttpAuthGSSAPI::GenerateAuthToken(const AuthCredentials* credentials,
-                                      const std::wstring& spn,
+                                      const std::string& spn,
                                       std::string* auth_token) {
   DCHECK(auth_token);
 
@@ -734,11 +734,7 @@ int HttpAuthGSSAPI::GenerateAuthToken(const AuthCredentials* credentials,
   std::string encode_input(static_cast<char*>(output_token.value),
                            output_token.length);
   std::string encode_output;
-  bool base64_rv = base::Base64Encode(encode_input, &encode_output);
-  if (!base64_rv) {
-    LOG(ERROR) << "Base64 encoding of auth token failed.";
-    return ERR_ENCODING_CONVERSION_FAILED;
-  }
+  base::Base64Encode(encode_input, &encode_output);
   *auth_token = scheme_ + " " + encode_output;
   return OK;
 }
@@ -837,12 +833,12 @@ int MapInitSecContextStatusToError(OM_uint32 major_status) {
 
 }
 
-int HttpAuthGSSAPI::GetNextSecurityToken(const std::wstring& spn,
+int HttpAuthGSSAPI::GetNextSecurityToken(const std::string& spn,
                                          gss_buffer_t in_token,
                                          gss_buffer_t out_token) {
   // Create a name for the principal
   // TODO(cbentzel): Just do this on the first pass?
-  std::string spn_principal = WideToASCII(spn);
+  std::string spn_principal = spn;
   gss_buffer_desc spn_buffer = GSS_C_EMPTY_BUFFER;
   spn_buffer.value = const_cast<char*>(spn_principal.c_str());
   spn_buffer.length = spn_principal.size() + 1;
