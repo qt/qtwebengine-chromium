@@ -19,13 +19,15 @@
 #include "base/path_service.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/posix/global_descriptors.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
-#include "components/nacl/common/nacl_helper_linux.h"
 #include "components/nacl/common/nacl_paths.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/nacl/loader/nacl_helper_linux.h"
+#include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 
 namespace {
@@ -110,14 +112,17 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   VLOG(1) << "NaClForkDelegate::Init()";
   int fds[2];
 
+  // For communications between the NaCl loader process and
+  // the SUID sandbox.
+  int nacl_sandbox_descriptor =
+      base::GlobalDescriptors::kBaseDescriptor + kSandboxIPCChannel;
   // Confirm a hard-wired assumption.
-  // The NaCl constant is from chrome/nacl/nacl_linux_helper.h
-  DCHECK(kNaClSandboxDescriptor == sandboxdesc);
+  DCHECK_EQ(sandboxdesc, nacl_sandbox_descriptor);
 
   CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
-  fds_to_map.push_back(std::make_pair(sandboxdesc, kNaClSandboxDescriptor));
+  fds_to_map.push_back(std::make_pair(sandboxdesc, nacl_sandbox_descriptor));
 
   // Using nacl_helper_bootstrap is not necessary on x86-64 because
   // NaCl's x86-64 sandbox is not zero-address-based.  Starting
@@ -201,7 +206,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
       status_ = kNaClHelperLaunchFailed;
     // parent and error cases are handled below
   }
-  if (HANDLE_EINTR(close(fds[1])) != 0)
+  if (IGNORE_EINTR(close(fds[1])) != 0)
     LOG(ERROR) << "close(fds[1]) failed";
   if (status_ == kNaClHelperUnused) {
     const ssize_t kExpectedLength = strlen(kNaClHelperStartupAck);
@@ -223,7 +228,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   // TODO(bradchen): Make this LOG(ERROR) when the NaCl helper
   // becomes the default.
   fd_ = -1;
-  if (HANDLE_EINTR(close(fds[0])) != 0)
+  if (IGNORE_EINTR(close(fds[0])) != 0)
     LOG(ERROR) << "close(fds[0]) failed";
 }
 
@@ -238,7 +243,7 @@ void NaClForkDelegate::InitialUMA(std::string* uma_name,
 NaClForkDelegate::~NaClForkDelegate() {
   // side effect of close: delegate process will terminate
   if (status_ == kNaClHelperSuccess) {
-    if (HANDLE_EINTR(close(fd_)) != 0)
+    if (IGNORE_EINTR(close(fd_)) != 0)
       LOG(ERROR) << "close(fd_) failed";
   }
 }
@@ -252,17 +257,22 @@ bool NaClForkDelegate::CanHelp(const std::string& process_type,
   *uma_name = "NaCl.Client.Helper.StateOnFork";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
-  return status_ == kNaClHelperSuccess;
+  return true;
 }
 
 pid_t NaClForkDelegate::Fork(const std::vector<int>& fds) {
   VLOG(1) << "NaClForkDelegate::Fork";
 
-  DCHECK(fds.size() == kNaClParentFDIndex + 1);
+  DCHECK(fds.size() == kNumPassedFDs);
+
+  if (status_ != kNaClHelperSuccess) {
+    LOG(ERROR) << "Cannot launch NaCl process: nacl_helper failed to start";
+    return -1;
+  }
 
   // First, send a remote fork request.
   Pickle write_pickle;
-  write_pickle.WriteInt(kNaClForkRequest);
+  write_pickle.WriteInt(nacl::kNaClForkRequest);
 
   char reply_buf[kNaClMaxIPCMessageLength];
   ssize_t reply_size = 0;
@@ -304,7 +314,7 @@ bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,
   DCHECK(exit_code);
 
   Pickle write_pickle;
-  write_pickle.WriteInt(kNaClGetTerminationStatusRequest);
+  write_pickle.WriteInt(nacl::kNaClGetTerminationStatusRequest);
   write_pickle.WriteInt(pid);
   write_pickle.WriteBool(known_dead);
 

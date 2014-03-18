@@ -57,11 +57,12 @@ public:
     virtual void collectGarbage(ErrorString*);
     virtual void clearProfiles(ErrorString*);
 
-    virtual void getProfileHeaders(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::HeapProfiler::ProfileHeader> >&);
+    virtual void enable(ErrorString*);
+    virtual void disable(ErrorString*);
     virtual void getHeapSnapshot(ErrorString*, int uid);
     virtual void removeProfile(ErrorString*, int uid);
     virtual void startTrackingHeapObjects(ErrorString*);
-    virtual void stopTrackingHeapObjects(ErrorString*);
+    virtual void stopTrackingHeapObjects(ErrorString*, const bool* reportProgress);
 
     virtual void setFrontend(InspectorFrontend*);
     virtual void clearFrontend();
@@ -85,6 +86,7 @@ private:
     void pushHeapStatsUpdate(const uint32_t* const data, const int size);
 
     PassRefPtr<TypeBuilder::HeapProfiler::ProfileHeader> createSnapshotHeader(const ScriptHeapSnapshot&);
+    void stopTrackingHeapObjectsInternal();
 
     InjectedScriptManager* m_injectedScriptManager;
     InspectorFrontend::HeapProfiler* m_frontend;

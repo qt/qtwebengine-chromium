@@ -25,7 +25,7 @@
 
 #include "CSSValueKeywords.h"
 
-#include "core/platform/graphics/FontDescription.h"
+#include "platform/fonts/FontDescription.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -43,7 +43,6 @@ public:
 
     // FIXME: The name is probably wrong, but matches StyleResolverState callsite for consistency.
     void initForStyleResolve(const Document&, RenderStyle*, bool useSVGZoomRules);
-    void clear();
 
     void setInitial(float effectiveZoom);
 

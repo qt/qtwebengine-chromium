@@ -54,6 +54,7 @@ class StaticVisitorBase : public AllStatic {
   V(FreeSpace)                \
   V(FixedArray)               \
   V(FixedDoubleArray)         \
+  V(ConstantPoolArray)        \
   V(NativeContext)            \
   V(AllocationSite)           \
   V(DataObject2)              \
@@ -398,6 +399,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   }
 
   INLINE(static void VisitPropertyCell(Map* map, HeapObject* object));
+  INLINE(static void VisitAllocationSite(Map* map, HeapObject* object));
   INLINE(static void VisitCodeEntry(Heap* heap, Address entry_address));
   INLINE(static void VisitEmbeddedPointer(Heap* heap, RelocInfo* rinfo));
   INLINE(static void VisitCell(Heap* heap, RelocInfo* rinfo));
@@ -416,6 +418,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   INLINE(static void VisitMap(Map* map, HeapObject* object));
   INLINE(static void VisitCode(Map* map, HeapObject* object));
   INLINE(static void VisitSharedFunctionInfo(Map* map, HeapObject* object));
+  INLINE(static void VisitConstantPoolArray(Map* map, HeapObject* object));
   INLINE(static void VisitJSFunction(Map* map, HeapObject* object));
   INLINE(static void VisitJSRegExp(Map* map, HeapObject* object));
   INLINE(static void VisitJSArrayBuffer(Map* map, HeapObject* object));

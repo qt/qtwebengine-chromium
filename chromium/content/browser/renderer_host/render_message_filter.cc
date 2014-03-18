@@ -33,6 +33,8 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
+#include "content/common/frame_messages.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -68,7 +70,9 @@
 #include "ui/gfx/color_profile.h"
 
 #if defined(OS_MACOSX)
+#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #include "content/common/mac/font_descriptor.h"
+#include "ui/gl/io_surface_support_mac.h"
 #else
 #include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -90,17 +94,21 @@ using net::CookieStore;
 namespace content {
 namespace {
 
+#if defined(ENABLE_PLUGINS)
 const int kPluginsRefreshThresholdInSeconds = 3;
+#endif
 
 // When two CPU usage queries arrive within this interval, we sample the CPU
 // usage only once and send it as a response for both queries.
 static const int64 kCPUUsageSampleIntervalMs = 900;
 
+#if defined(OS_WIN)
 // On Windows, |g_color_profile| can run on an arbitrary background thread.
 // We avoid races by using LazyInstance's constructor lock to initialize the
 // object.
 base::LazyInstance<gfx::ColorProfile>::Leaky g_color_profile =
     LAZY_INSTANCE_INITIALIZER;
+#endif
 
 // Common functionality for converting a sync renderer message to a callback
 // function in the browser. Derive from this, create it on the heap when
@@ -202,6 +210,23 @@ class OpenChannelToPpapiBrokerCallback
   int routing_id_;
 };
 
+#if defined(OS_MACOSX)
+void AddBooleanValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     bool value) {
+  CFDictionaryAddValue(
+      dictionary, key, value ? kCFBooleanTrue : kCFBooleanFalse);
+}
+
+void AddIntegerValue(CFMutableDictionaryRef dictionary,
+                     const CFStringRef key,
+                     int32 value) {
+  base::ScopedCFTypeRef<CFNumberRef> number(
+      CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
+  CFDictionaryAddValue(dictionary, key, number.get());
+}
+#endif
+
 }  // namespace
 
 class RenderMessageFilter::OpenChannelToNpapiPluginCallback
@@ -274,8 +299,8 @@ class RenderMessageFilter::OpenChannelToNpapiPluginCallback
 
  private:
   void WriteReplyAndDeleteThis(const IPC::ChannelHandle& handle) {
-    ViewHostMsg_OpenChannelToPlugin::WriteReplyParams(reply_msg(),
-                                                      handle, info_);
+    FrameHostMsg_OpenChannelToPlugin::WriteReplyParams(reply_msg(),
+                                                       handle, info_);
     filter()->OnCompletedOpenChannelToNpapiPlugin(this);
     SendReplyAndDeleteThis();
   }
@@ -321,7 +346,6 @@ RenderMessageFilter::~RenderMessageFilter() {
 }
 
 void RenderMessageFilter::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
 #if defined(ENABLE_PLUGINS)
   for (std::set<OpenChannelToNpapiPluginCallback*>::iterator it =
        plugin_host_clients_.begin(); it != plugin_host_clients_.end(); ++it) {
@@ -342,7 +366,6 @@ void RenderMessageFilter::OnChannelClosing() {
 }
 
 void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
-  BrowserMessageFilter::OnChannelConnected(peer_id);
   base::ProcessHandle handle = PeerHandle();
 #if defined(OS_MACOSX)
   process_metrics_.reset(base::ProcessMetrics::CreateProcessMetrics(handle,
@@ -380,8 +403,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_DownloadUrl, OnDownloadUrl)
 #if defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_GetPlugins, OnGetPlugins)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetPluginInfo, OnGetPluginInfo)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPlugin,
+    IPC_MESSAGE_HANDLER(FrameHostMsg_GetPluginInfo, OnGetPluginInfo)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_OpenChannelToPlugin,
                                     OnOpenChannelToPlugin)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPepperPlugin,
                                     OnOpenChannelToPepperPlugin)
@@ -391,7 +414,6 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnDidDeleteOutOfProcessPepperInstance)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_AsyncOpenPepperFile, OnAsyncOpenPepperFile)
 #endif
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
@@ -400,6 +422,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
+    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
+                        OnAllocateGpuMemoryBuffer)
 #if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AllocTransportDIB, OnAllocTransportDIB)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FreeTransportDIB, OnFreeTransportDIB)
@@ -410,8 +434,10 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetCPUUsage, OnGetCPUUsage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetAudioHardwareConfig,
                         OnGetAudioHardwareConfig)
+#if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
+#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
@@ -440,8 +466,6 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
   if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
     return audio_manager_->GetMessageLoop().get();
 #endif
-  if (message.type() == ViewHostMsg_AsyncOpenPepperFile::ID)
-    return BrowserThread::GetBlockingPool();
   return NULL;
 }
 
@@ -456,6 +480,18 @@ void RenderMessageFilter::OnCreateWindow(
     int* surface_id,
     int64* cloned_session_storage_namespace_id) {
   bool no_javascript_access;
+
+  // Merge the additional features into the WebWindowFeatures struct before we
+  // pass it on.
+  blink::WebVector<blink::WebString> additional_features(
+      params.additional_features.size());
+
+  for (size_t i = 0; i < params.additional_features.size(); ++i)
+    additional_features[i] = blink::WebString(params.additional_features[i]);
+
+  blink::WebWindowFeatures features = params.features;
+  features.additionalFeatures.swap(additional_features);
+
   bool can_create_window =
       GetContentClient()->browser()->CanCreateWindow(
           params.opener_url,
@@ -465,7 +501,7 @@ void RenderMessageFilter::OnCreateWindow(
           params.target_url,
           params.referrer,
           params.disposition,
-          params.features,
+          features,
           params.user_gesture,
           params.opener_suppressed,
           resource_context_,
@@ -497,7 +533,7 @@ void RenderMessageFilter::OnCreateWindow(
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
-                                         WebKit::WebPopupType popup_type,
+                                         blink::WebPopupType popup_type,
                                          int* route_id,
                                          int* surface_id) {
   render_widget_helper_->CreateNewWidget(
@@ -651,6 +687,7 @@ void RenderMessageFilter::SendLoadFontReply(IPC::Message* reply,
 }
 #endif  // OS_MACOSX
 
+#if defined(ENABLE_PLUGINS)
 void RenderMessageFilter::OnGetPlugins(
     bool refresh,
     IPC::Message* reply_msg) {
@@ -702,7 +739,7 @@ void RenderMessageFilter::GetPluginsCallback(
 }
 
 void RenderMessageFilter::OnGetPluginInfo(
-    int routing_id,
+    int render_frame_id,
     const GURL& url,
     const GURL& page_url,
     const std::string& mime_type,
@@ -711,12 +748,12 @@ void RenderMessageFilter::OnGetPluginInfo(
     std::string* actual_mime_type) {
   bool allow_wildcard = true;
   *found = plugin_service_->GetPluginInfo(
-      render_process_id_, routing_id, resource_context_,
+      render_process_id_, render_frame_id, resource_context_,
       url, page_url, mime_type, allow_wildcard,
       NULL, info, actual_mime_type);
 }
 
-void RenderMessageFilter::OnOpenChannelToPlugin(int routing_id,
+void RenderMessageFilter::OnOpenChannelToPlugin(int render_frame_id,
                                                 const GURL& url,
                                                 const GURL& policy_url,
                                                 const std::string& mime_type,
@@ -726,7 +763,7 @@ void RenderMessageFilter::OnOpenChannelToPlugin(int routing_id,
   DCHECK(!ContainsKey(plugin_host_clients_, client));
   plugin_host_clients_.insert(client);
   plugin_service_->OpenChannelToNpapiPlugin(
-      render_process_id_, routing_id,
+      render_process_id_, render_frame_id,
       url, policy_url, mime_type, client);
 }
 
@@ -791,6 +828,7 @@ void RenderMessageFilter::OnOpenChannelToPpapiBroker(
       path,
       new OpenChannelToPpapiBrokerCallback(this, routing_id));
 }
+#endif  // defined(ENABLE_PLUGINS)
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
   *route_id = render_widget_helper_->GetNextRoutingID();
@@ -818,23 +856,24 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
       media::AudioManagerBase::kDefaultDeviceId);
 }
 
-void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 #if defined(OS_WIN)
+void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (BackingStoreWin::ColorManagementEnabled())
     return;
-#endif
   *profile = g_color_profile.Get().profile();
 }
+#endif
 
 void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
                                         const GURL& url,
                                         const Referrer& referrer,
-                                        const string16& suggested_name) {
+                                        const base::string16& suggested_name) {
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
   scoped_ptr<net::URLRequest> request(
-      resource_context_->GetRequestContext()->CreateRequest(url, NULL));
+      resource_context_->GetRequestContext()->CreateRequest(
+          url, net::DEFAULT_PRIORITY, NULL));
   RecordDownloadSource(INITIATED_BY_RENDERER);
   resource_dispatcher_host_->BeginDownload(
       request.Pass(),
@@ -856,7 +895,7 @@ void RenderMessageFilter::OnCheckNotificationPermission(
       CheckDesktopNotificationPermission(source_origin, resource_context_,
                                          render_process_id_);
 #else
-  *result = WebKit::WebNotificationPresenter::PermissionAllowed;
+  *result = blink::WebNotificationPresenter::PermissionAllowed;
 #endif
 }
 
@@ -950,69 +989,42 @@ void RenderMessageFilter::OnKeygen(uint32 key_size_index,
       return;
   }
 
+  resource_context_->CreateKeygenHandler(
+      key_size_in_bits,
+      challenge_string,
+      url,
+      base::Bind(
+          &RenderMessageFilter::PostKeygenToWorkerThread, this, reply_msg));
+}
+
+void RenderMessageFilter::PostKeygenToWorkerThread(
+    IPC::Message* reply_msg,
+    scoped_ptr<net::KeygenHandler> keygen_handler) {
   VLOG(1) << "Dispatching keygen task to worker pool.";
   // Dispatch to worker pool, so we do not block the IO thread.
   if (!base::WorkerPool::PostTask(
            FROM_HERE,
-           base::Bind(
-               &RenderMessageFilter::OnKeygenOnWorkerThread, this,
-               key_size_in_bits, challenge_string, url, reply_msg),
+           base::Bind(&RenderMessageFilter::OnKeygenOnWorkerThread,
+                      this,
+                      base::Passed(&keygen_handler),
+                      reply_msg),
            true)) {
     NOTREACHED() << "Failed to dispatch keygen task to worker pool";
     ViewHostMsg_Keygen::WriteReplyParams(reply_msg, std::string());
     Send(reply_msg);
-    return;
   }
 }
 
 void RenderMessageFilter::OnKeygenOnWorkerThread(
-    int key_size_in_bits,
-    const std::string& challenge_string,
-    const GURL& url,
+    scoped_ptr<net::KeygenHandler> keygen_handler,
     IPC::Message* reply_msg) {
   DCHECK(reply_msg);
 
   // Generate a signed public key and challenge, then send it back.
-  net::KeygenHandler keygen_handler(key_size_in_bits, challenge_string, url);
-
-#if defined(USE_NSS)
-  // Attach a password delegate so we can authenticate.
-  keygen_handler.set_crypto_module_password_delegate(
-      GetContentClient()->browser()->GetCryptoPasswordDelegate(url));
-#endif  // defined(USE_NSS)
-
   ViewHostMsg_Keygen::WriteReplyParams(
       reply_msg,
-      keygen_handler.GenKeyAndSignChallenge());
+      keygen_handler->GenKeyAndSignChallenge());
   Send(reply_msg);
-}
-
-void RenderMessageFilter::OnAsyncOpenPepperFile(int routing_id,
-                                                const base::FilePath& path,
-                                                int pp_open_flags,
-                                                int message_id) {
-  int platform_file_flags = 0;
-  if (!CanOpenWithPepperFlags(pp_open_flags, render_process_id_, path) ||
-      !ppapi::PepperFileOpenFlagsToPlatformFileFlags(
-          pp_open_flags, &platform_file_flags)) {
-    DLOG(ERROR) <<
-        "Bad pp_open_flags in ViewMsgHost_AsyncOpenPepperFile message: " <<
-        pp_open_flags;
-    RecordAction(UserMetricsAction("BadMessageTerminate_AOF"));
-    BadMessageReceived();
-    return;
-  }
-
-  base::PlatformFileError error_code = base::PLATFORM_FILE_OK;
-  base::PlatformFile file = base::CreatePlatformFile(
-      path, platform_file_flags, NULL, &error_code);
-  IPC::PlatformFileForTransit file_for_transit =
-      file != base::kInvalidPlatformFileValue ?
-          IPC::GetFileHandleForProcess(file, PeerHandle(), true) :
-          IPC::InvalidPlatformFileForTransit();
-
-  Send(new ViewMsg_AsyncOpenPepperFile_ACK(
-      routing_id, error_code, file_for_transit, message_id));
 }
 
 void RenderMessageFilter::OnMediaLogEvents(
@@ -1126,7 +1138,7 @@ void RenderMessageFilter::OnDidLose3DContext(
 
 #if defined(OS_WIN)
 void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
-                                                   const string16& str) {
+                                                   const base::string16& str) {
   // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
   // Except that for True Type fonts,
   // GetTextMetrics will not load the font in memory.
@@ -1168,4 +1180,80 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
       true);
 }
 #endif
+
+void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
+    uint32 width,
+    uint32 height,
+    uint32 internalformat,
+    gfx::GpuMemoryBufferHandle* handle) {
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat)) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+#if defined(OS_MACOSX)
+  if (GpuMemoryBufferImplIOSurface::IsFormatSupported(internalformat)) {
+    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
+    if (io_surface_support) {
+      base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
+      properties.reset(
+          CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                    0,
+                                    &kCFTypeDictionaryKeyCallBacks,
+                                    &kCFTypeDictionaryValueCallBacks));
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceWidth(),
+                      width);
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceHeight(),
+                      height);
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfaceBytesPerElement(),
+                      GpuMemoryBufferImpl::BytesPerPixel(internalformat));
+      AddIntegerValue(properties,
+                      io_surface_support->GetKIOSurfacePixelFormat(),
+                      GpuMemoryBufferImplIOSurface::PixelFormat(
+                          internalformat));
+      // TODO(reveman): Remove this when using a mach_port_t to transfer
+      // IOSurface to renderer process. crbug.com/323304
+      AddBooleanValue(properties,
+                      io_surface_support->GetKIOSurfaceIsGlobal(),
+                      true);
+
+      base::ScopedCFTypeRef<CFTypeRef> io_surface(
+          io_surface_support->IOSurfaceCreate(properties));
+      if (io_surface) {
+        handle->type = gfx::IO_SURFACE_BUFFER;
+        handle->io_surface_id = io_surface_support->IOSurfaceGetID(io_surface);
+
+        // TODO(reveman): This makes the assumption that the renderer will
+        // grab a reference to the surface before sending another message.
+        // crbug.com/325045
+        last_io_surface_ = io_surface;
+        return;
+      }
+    }
+  }
+#endif
+
+  uint64 stride = static_cast<uint64>(width) *
+      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
+  if (stride > std::numeric_limits<uint32>::max()) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+  uint64 buffer_size = stride * static_cast<uint64>(height);
+  if (buffer_size > std::numeric_limits<size_t>::max()) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+
+  // Fallback to fake GpuMemoryBuffer that is backed by shared memory and
+  // requires an upload before it can be used as a texture.
+  handle->type = gfx::SHARED_MEMORY_BUFFER;
+  ChildProcessHostImpl::AllocateSharedMemory(
+      static_cast<size_t>(buffer_size), PeerHandle(), &handle->handle);
+}
+
 }  // namespace content

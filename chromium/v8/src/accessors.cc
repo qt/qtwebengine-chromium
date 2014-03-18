@@ -78,6 +78,61 @@ MaybeObject* Accessors::ReadOnlySetAccessor(Isolate* isolate,
 }
 
 
+static V8_INLINE bool CheckForName(Handle<String> name,
+                                   String* property_name,
+                                   int offset,
+                                   int* object_offset) {
+  if (name->Equals(property_name)) {
+    *object_offset = offset;
+    return true;
+  }
+  return false;
+}
+
+
+bool Accessors::IsJSObjectFieldAccessor(
+      Handle<Map> map, Handle<String> name,
+      int* object_offset) {
+  Isolate* isolate = map->GetIsolate();
+  switch (map->instance_type()) {
+    case JS_ARRAY_TYPE:
+      return
+        CheckForName(name, isolate->heap()->length_string(),
+                     JSArray::kLengthOffset, object_offset);
+    case JS_TYPED_ARRAY_TYPE:
+      return
+        CheckForName(name, isolate->heap()->length_string(),
+                     JSTypedArray::kLengthOffset, object_offset) ||
+        CheckForName(name, isolate->heap()->byte_length_string(),
+                     JSTypedArray::kByteLengthOffset, object_offset) ||
+        CheckForName(name, isolate->heap()->byte_offset_string(),
+                     JSTypedArray::kByteOffsetOffset, object_offset) ||
+        CheckForName(name, isolate->heap()->buffer_string(),
+                     JSTypedArray::kBufferOffset, object_offset);
+    case JS_ARRAY_BUFFER_TYPE:
+      return
+        CheckForName(name, isolate->heap()->byte_length_string(),
+                     JSArrayBuffer::kByteLengthOffset, object_offset);
+    case JS_DATA_VIEW_TYPE:
+      return
+        CheckForName(name, isolate->heap()->byte_length_string(),
+                     JSDataView::kByteLengthOffset, object_offset) ||
+        CheckForName(name, isolate->heap()->byte_offset_string(),
+                     JSDataView::kByteOffsetOffset, object_offset) ||
+        CheckForName(name, isolate->heap()->buffer_string(),
+                     JSDataView::kBufferOffset, object_offset);
+    default: {
+      if (map->instance_type() < FIRST_NONSTRING_TYPE) {
+        return
+          CheckForName(name, isolate->heap()->length_string(),
+                       String::kLengthOffset, object_offset);
+      }
+      return false;
+    }
+  }
+}
+
+
 //
 // Accessors::ArrayLength
 //
@@ -93,45 +148,49 @@ MaybeObject* Accessors::ArrayGetLength(Isolate* isolate,
 
 
 // The helper function will 'flatten' Number objects.
-Object* Accessors::FlattenNumber(Isolate* isolate, Object* value) {
+Handle<Object> Accessors::FlattenNumber(Isolate* isolate,
+                                        Handle<Object> value) {
   if (value->IsNumber() || !value->IsJSValue()) return value;
-  JSValue* wrapper = JSValue::cast(value);
+  Handle<JSValue> wrapper = Handle<JSValue>::cast(value);
   ASSERT(wrapper->GetIsolate()->context()->native_context()->number_function()->
       has_initial_map());
-  Map* number_map = isolate->context()->native_context()->
-      number_function()->initial_map();
-  if (wrapper->map() == number_map) return wrapper->value();
+  if (wrapper->map() ==
+      isolate->context()->native_context()->number_function()->initial_map()) {
+    return handle(wrapper->value(), isolate);
+  }
+
   return value;
 }
 
 
 MaybeObject* Accessors::ArraySetLength(Isolate* isolate,
-                                       JSObject* object,
-                                       Object* value,
+                                       JSObject* object_raw,
+                                       Object* value_raw,
                                        void*) {
+  HandleScope scope(isolate);
+  Handle<JSObject> object(object_raw, isolate);
+  Handle<Object> value(value_raw, isolate);
+
   // This means one of the object's prototypes is a JSArray and the
   // object does not have a 'length' property.  Calling SetProperty
   // causes an infinite loop.
   if (!object->IsJSArray()) {
-    return object->SetLocalPropertyIgnoreAttributesTrampoline(
-        isolate->heap()->length_string(), value, NONE);
+    Handle<Object> result = JSObject::SetLocalPropertyIgnoreAttributes(object,
+        isolate->factory()->length_string(), value, NONE);
+    RETURN_IF_EMPTY_HANDLE(isolate, result);
+    return *result;
   }
 
   value = FlattenNumber(isolate, value);
 
-  // Need to call methods that may trigger GC.
-  HandleScope scope(isolate);
-
-  // Protect raw pointers.
-  Handle<JSArray> array_handle(JSArray::cast(object), isolate);
-  Handle<Object> value_handle(value, isolate);
+  Handle<JSArray> array_handle = Handle<JSArray>::cast(object);
 
   bool has_exception;
   Handle<Object> uint32_v =
-      Execution::ToUint32(isolate, value_handle, &has_exception);
+      Execution::ToUint32(isolate, value, &has_exception);
   if (has_exception) return Failure::Exception();
   Handle<Object> number_v =
-      Execution::ToNumber(isolate, value_handle, &has_exception);
+      Execution::ToNumber(isolate, value, &has_exception);
   if (has_exception) return Failure::Exception();
 
   if (uint32_v->Number() == number_v->Number()) {
@@ -523,26 +582,28 @@ MaybeObject* Accessors::FunctionGetPrototype(Isolate* isolate,
 
 
 MaybeObject* Accessors::FunctionSetPrototype(Isolate* isolate,
-                                             JSObject* object,
+                                             JSObject* object_raw,
                                              Object* value_raw,
                                              void*) {
-  Heap* heap = isolate->heap();
-  JSFunction* function_raw = FindInstanceOf<JSFunction>(isolate, object);
-  if (function_raw == NULL) return heap->undefined_value();
-  if (!function_raw->should_have_prototype()) {
-    // Since we hit this accessor, object will have no prototype property.
-    return object->SetLocalPropertyIgnoreAttributesTrampoline(
-        heap->prototype_string(), value_raw, NONE);
-  }
+  JSFunction* function_raw = FindInstanceOf<JSFunction>(isolate, object_raw);
+  if (function_raw == NULL) return isolate->heap()->undefined_value();
 
   HandleScope scope(isolate);
   Handle<JSFunction> function(function_raw, isolate);
+  Handle<JSObject> object(object_raw, isolate);
   Handle<Object> value(value_raw, isolate);
+  if (!function->should_have_prototype()) {
+    // Since we hit this accessor, object will have no prototype property.
+    Handle<Object> result = JSObject::SetLocalPropertyIgnoreAttributes(object,
+        isolate->factory()->prototype_string(), value, NONE);
+    RETURN_IF_EMPTY_HANDLE(isolate, result);
+    return *result;
+  }
 
   Handle<Object> old_value;
   bool is_observed =
       FLAG_harmony_observation &&
-      *function == object &&
+      *function == *object &&
       function->map()->is_observed();
   if (is_observed) {
     if (function->has_prototype())
@@ -556,7 +617,7 @@ MaybeObject* Accessors::FunctionSetPrototype(Isolate* isolate,
 
   if (is_observed && !old_value->SameValue(*value)) {
     JSObject::EnqueueChangeRecord(
-        function, "updated", isolate->factory()->prototype_string(), old_value);
+        function, "update", isolate->factory()->prototype_string(), old_value);
   }
 
   return *function;

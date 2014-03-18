@@ -44,6 +44,13 @@
 #pragma warning(disable: 4244)
 #pragma warning(disable: 4245)
 #pragma warning(disable: 4554)
+
+#if _MSC_VER == 1800
+// TODO(scottmg): VS2013 currently ICEs on a bunch of functions in this file.
+// Upstream bug fixed in next release. See http://crbug.com/288498.
+#pragma optimize("", off)
+#endif
+
 #endif
 
 namespace WTF {
@@ -63,23 +70,6 @@ typedef union {
 #define word1(x) (x)->L[0]
 #endif
 #define dval(x) (x)->d
-
-/* The following definition of Storeinc is appropriate for MIPS processors.
- * An alternative that might be better on some machines is
- *  *p++ = high << 16 | low & 0xffff;
- */
-static ALWAYS_INLINE uint32_t* storeInc(uint32_t* p, uint16_t high, uint16_t low)
-{
-    uint16_t* p16 = reinterpret_cast<uint16_t*>(p);
-#if CPU(BIG_ENDIAN)
-    p16[0] = high;
-    p16[1] = low;
-#else
-    p16[1] = high;
-    p16[0] = low;
-#endif
-    return p + 1;
-}
 
 #define Exp_shift  20
 #define Exp_shift1 20
@@ -116,6 +106,25 @@ static ALWAYS_INLINE uint32_t* storeInc(uint32_t* p, uint16_t high, uint16_t low
 // FIXME: should we enable this on all 64-bit CPUs?
 // 64-bit emulation provided by the compiler is likely to be slower than dtoa own code on 32-bit hardware.
 #define USE_LONG_LONG
+#endif
+
+#ifndef USE_LONG_LONG
+/* The following definition of Storeinc is appropriate for MIPS processors.
+ * An alternative that might be better on some machines is
+ *  *p++ = high << 16 | low & 0xffff;
+ */
+static ALWAYS_INLINE uint32_t* storeInc(uint32_t* p, uint16_t high, uint16_t low)
+{
+    uint16_t* p16 = reinterpret_cast<uint16_t*>(p);
+#if CPU(BIG_ENDIAN)
+    p16[0] = high;
+    p16[1] = low;
+#else
+    p16[1] = high;
+    p16[0] = low;
+#endif
+    return p + 1;
+}
 #endif
 
 struct BigInt {
@@ -596,13 +605,7 @@ static const double tens[] = {
 };
 
 static const double bigtens[] = { 1e16, 1e32, 1e64, 1e128, 1e256 };
-static const double tinytens[] = { 1e-16, 1e-32, 1e-64, 1e-128,
-    9007199254740992. * 9007199254740992.e-256
-    /* = 2^106 * 1e-256 */
-};
 
-/* The factor of 2^53 in tinytens[4] helps us avoid setting the underflow */
-/* flag unnecessarily.  It leads to a song and dance at the end of strtod. */
 #define Scale_Bit 0x10
 #define n_bigtens 5
 

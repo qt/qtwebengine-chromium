@@ -19,7 +19,7 @@
 
 #if defined(CLEAR_KEY_CDM_USE_FAKE_AUDIO_DECODER)
 #include "base/basictypes.h"
-static const int64 kNoTimestamp = kint64min;
+const int64 kNoTimestamp = kint64min;
 #endif  // CLEAR_KEY_CDM_USE_FAKE_AUDIO_DECODER
 
 #if defined(CLEAR_KEY_CDM_USE_FFMPEG_DECODER)
@@ -59,22 +59,24 @@ static bool InitializeFFmpegLibraries() {
 static bool g_ffmpeg_lib_initialized = InitializeFFmpegLibraries();
 #endif  // CLEAR_KEY_CDM_USE_FFMPEG_DECODER
 
-static const char kClearKeyCdmVersion[] = "0.1.0.1";
-static const char kExternalClearKey[] = "org.chromium.externalclearkey";
-static const int64 kSecondsPerMinute = 60;
-static const int64 kMsPerSecond = 1000;
-static const int64 kInitialTimerDelayMs = 200;
-static const int64 kMaxTimerDelayMs = 1 * kSecondsPerMinute * kMsPerSecond;
+const char kClearKeyCdmVersion[] = "0.1.0.1";
+const char kExternalClearKeyKeySystem[] = "org.chromium.externalclearkey";
+const char kExternalClearKeyDecryptOnlyKeySystem[] =
+    "org.chromium.externalclearkey.decryptonly";
+const int64 kSecondsPerMinute = 60;
+const int64 kMsPerSecond = 1000;
+const int64 kInitialTimerDelayMs = 200;
+const int64 kMaxTimerDelayMs = 1 * kSecondsPerMinute * kMsPerSecond;
 // Heart beat message header. If a key message starts with |kHeartBeatHeader|,
 // it's a heart beat message. Otherwise, it's a key request.
-static const char kHeartBeatHeader[] = "HEARTBEAT";
+const char kHeartBeatHeader[] = "HEARTBEAT";
 
 // Copies |input_buffer| into a media::DecoderBuffer. If the |input_buffer| is
 // empty, an empty (end-of-stream) media::DecoderBuffer is returned.
 static scoped_refptr<media::DecoderBuffer> CopyDecoderBufferFrom(
     const cdm::InputBuffer& input_buffer) {
   if (!input_buffer.data) {
-    DCHECK_EQ(input_buffer.data_size, 0);
+    DCHECK(!input_buffer.data_size);
     return media::DecoderBuffer::CreateEOSBuffer();
   }
 
@@ -83,7 +85,7 @@ static scoped_refptr<media::DecoderBuffer> CopyDecoderBufferFrom(
       media::DecoderBuffer::CopyFrom(input_buffer.data, input_buffer.data_size);
 
   std::vector<media::SubsampleEntry> subsamples;
-  for (int32_t i = 0; i < input_buffer.num_subsamples; ++i) {
+  for (uint32_t i = 0; i < input_buffer.num_subsamples; ++i) {
     media::SubsampleEntry subsample;
     subsample.clear_bytes = input_buffer.subsamples[i].clear_bytes;
     subsample.cypher_bytes = input_buffer.subsamples[i].cipher_bytes;
@@ -125,22 +127,29 @@ void INITIALIZE_CDM_MODULE() {
 void DeinitializeCdmModule() {
 }
 
-void* CreateCdmInstance(
-    int cdm_interface_version,
-    const char* key_system, int key_system_size,
-    GetCdmHostFunc get_cdm_host_func, void* user_data) {
+void* CreateCdmInstance(int cdm_interface_version,
+                        const char* key_system, uint32_t key_system_size,
+                        GetCdmHostFunc get_cdm_host_func,
+                        void* user_data) {
   DVLOG(1) << "CreateCdmInstance()";
 
-  if (cdm_interface_version != cdm::kCdmInterfaceVersion)
+  std::string key_system_string(key_system, key_system_size);
+  if (key_system_string != kExternalClearKeyKeySystem &&
+      key_system_string != kExternalClearKeyDecryptOnlyKeySystem) {
+    DVLOG(1) << "Unsupported key system:" << key_system_string;
+    return NULL;
+  }
+
+  if (cdm_interface_version != media::ClearKeyCdmInterface::kVersion)
     return NULL;
 
-  cdm::Host* host = static_cast<cdm::Host*>(
-      get_cdm_host_func(cdm::kHostInterfaceVersion, user_data));
+  media::ClearKeyCdmHost* host = static_cast<media::ClearKeyCdmHost*>(
+      get_cdm_host_func(media::ClearKeyCdmHost::kVersion, user_data));
   if (!host)
     return NULL;
 
-  return static_cast<cdm::ContentDecryptionModule*>(
-      new media::ClearKeyCdm(host));
+  return new media::ClearKeyCdm(
+      host, key_system_string == kExternalClearKeyDecryptOnlyKeySystem);
 }
 
 const char* GetCdmVersion() {
@@ -149,43 +158,64 @@ const char* GetCdmVersion() {
 
 namespace media {
 
-ClearKeyCdm::Client::Client() : status_(kKeyError) {}
+// Since all the calls to AesDecryptor are synchronous, pass a dummy value for
+// session_id that is never exposed outside this class.
+// TODO(jrummell): Remove usage of this when the CDM interface is updated
+// to use session_id.
+
+ClearKeyCdm::Client::Client()
+    : status_(kNone), error_code_(MediaKeys::kUnknownError), system_code_(0) {}
 
 ClearKeyCdm::Client::~Client() {}
 
 void ClearKeyCdm::Client::Reset() {
-  status_ = kKeyError;
-  session_id_.clear();
-  key_message_.clear();
-  default_url_.clear();
+  status_ = kNone;
+  web_session_id_.clear();
+  message_.clear();
+  destination_url_.clear();
+  error_code_ = MediaKeys::kUnknownError;
+  system_code_ = 0;
 }
 
-void ClearKeyCdm::Client::KeyAdded(const std::string& session_id) {
-  status_ = kKeyAdded;
-  session_id_ = session_id;
+void ClearKeyCdm::Client::OnSessionCreated(uint32 session_id,
+                                           const std::string& web_session_id) {
+  status_ = static_cast<Status>(status_ | kCreated);
+  web_session_id_ = web_session_id;
 }
 
-void ClearKeyCdm::Client::KeyError(const std::string& session_id,
-                                   media::MediaKeys::KeyError error_code,
-                                   int system_code) {
-  status_ = kKeyError;
-  session_id_ = session_id;
+void ClearKeyCdm::Client::OnSessionMessage(uint32 session_id,
+                                           const std::vector<uint8>& message,
+                                           const std::string& destination_url) {
+  status_ = static_cast<Status>(status_ | kMessage);
+  message_ = message;
+  destination_url_ = destination_url;
 }
 
-void ClearKeyCdm::Client::KeyMessage(const std::string& session_id,
-                                     const std::vector<uint8>& message,
-                                     const std::string& default_url) {
-  status_ = kKeyMessage;
-  session_id_ = session_id;
-  key_message_ = message;
-  default_url_ = default_url;
+void ClearKeyCdm::Client::OnSessionReady(uint32 session_id) {
+  status_ = static_cast<Status>(status_ | kReady);
 }
 
-ClearKeyCdm::ClearKeyCdm(cdm::Host* host)
-    : decryptor_(base::Bind(&Client::KeyAdded, base::Unretained(&client_)),
-                 base::Bind(&Client::KeyError, base::Unretained(&client_)),
-                 base::Bind(&Client::KeyMessage, base::Unretained(&client_))),
+void ClearKeyCdm::Client::OnSessionClosed(uint32 session_id) {
+  status_ = static_cast<Status>(status_ | kClosed);
+}
+
+void ClearKeyCdm::Client::OnSessionError(uint32 session_id,
+                                         media::MediaKeys::KeyError error_code,
+                                         int system_code) {
+  status_ = static_cast<Status>(status_ | kError);
+  error_code_ = error_code;
+  system_code_ = system_code;
+}
+
+ClearKeyCdm::ClearKeyCdm(ClearKeyCdmHost* host, bool is_decrypt_only)
+    : decryptor_(
+          base::Bind(&Client::OnSessionCreated, base::Unretained(&client_)),
+          base::Bind(&Client::OnSessionMessage, base::Unretained(&client_)),
+          base::Bind(&Client::OnSessionReady, base::Unretained(&client_)),
+          base::Bind(&Client::OnSessionClosed, base::Unretained(&client_)),
+          base::Bind(&Client::OnSessionError, base::Unretained(&client_))),
       host_(host),
+      is_decrypt_only_(is_decrypt_only),
       timer_delay_ms_(kInitialTimerDelayMs),
       timer_set_(false) {
 #if defined(CLEAR_KEY_CDM_USE_FAKE_AUDIO_DECODER)
@@ -199,46 +229,56 @@ ClearKeyCdm::ClearKeyCdm(cdm::Host* host)
 
 ClearKeyCdm::~ClearKeyCdm() {}
 
-cdm::Status ClearKeyCdm::GenerateKeyRequest(const char* type, int type_size,
+cdm::Status ClearKeyCdm::GenerateKeyRequest(const char* type,
+                                            uint32_t type_size,
                                             const uint8_t* init_data,
-                                            int init_data_size) {
+                                            uint32_t init_data_size) {
   DVLOG(1) << "GenerateKeyRequest()";
   base::AutoLock auto_lock(client_lock_);
   ScopedResetter<Client> auto_resetter(&client_);
-  decryptor_.GenerateKeyRequest(std::string(type, type_size),
-                                init_data, init_data_size);
+  decryptor_.CreateSession(MediaKeys::kInvalidSessionId,
+                           std::string(type, type_size),
+                           init_data, init_data_size);
 
-  if (client_.status() != Client::kKeyMessage) {
-    host_->SendKeyError(NULL, 0, cdm::kUnknownError, 0);
+  if (client_.status() != (Client::kMessage | Client::kCreated)) {
+    // Use values returned to client if possible.
+    host_->SendKeyError(client_.web_session_id().data(),
+                        client_.web_session_id().size(),
+                        static_cast<cdm::MediaKeyError>(client_.error_code()),
+                        client_.system_code());
     return cdm::kSessionError;
   }
 
   host_->SendKeyMessage(
-      client_.session_id().data(), client_.session_id().size(),
-      reinterpret_cast<const char*>(&client_.key_message()[0]),
-      client_.key_message().size(),
-      client_.default_url().data(), client_.default_url().size());
+      client_.web_session_id().data(), client_.web_session_id().size(),
+      reinterpret_cast<const char*>(&client_.message()[0]),
+      client_.message().size(),
+      client_.destination_url().data(), client_.destination_url().size());
 
   // Only save the latest session ID for heartbeat messages.
-  heartbeat_session_id_ = client_.session_id();
+  heartbeat_session_id_ = client_.web_session_id();
 
   return cdm::kSuccess;
 }
 
 cdm::Status ClearKeyCdm::AddKey(const char* session_id,
-                                int session_id_size,
+                                uint32_t session_id_size,
                                 const uint8_t* key,
-                                int key_size,
+                                uint32_t key_size,
                                 const uint8_t* key_id,
-                                int key_id_size) {
+                                uint32_t key_id_size) {
   DVLOG(1) << "AddKey()";
+  DCHECK(!key_id && !key_id_size);
   base::AutoLock auto_lock(client_lock_);
   ScopedResetter<Client> auto_resetter(&client_);
-  decryptor_.AddKey(key, key_size, key_id, key_id_size,
-                    std::string(session_id, session_id_size));
+  decryptor_.UpdateSession(MediaKeys::kInvalidSessionId, key, key_size);
 
-  if (client_.status() != Client::kKeyAdded)
+  if (client_.status() != Client::kReady) {
+    host_->SendKeyError(session_id, session_id_size,
+                        static_cast<cdm::MediaKeyError>(client_.error_code()),
+                        client_.system_code());
     return cdm::kSessionError;
+  }
 
   if (!timer_set_) {
     ScheduleNextHeartBeat();
@@ -249,11 +289,21 @@ cdm::Status ClearKeyCdm::AddKey(const char* session_id,
 }
 
 cdm::Status ClearKeyCdm::CancelKeyRequest(const char* session_id,
-                                          int session_id_size) {
+                                          uint32_t session_id_size) {
   DVLOG(1) << "CancelKeyRequest()";
   base::AutoLock auto_lock(client_lock_);
   ScopedResetter<Client> auto_resetter(&client_);
-  decryptor_.CancelKeyRequest(std::string(session_id, session_id_size));
+  decryptor_.ReleaseSession(MediaKeys::kInvalidSessionId);
+
+  // No message normally sent by Release(), but if an error occurred,
+  // report it as a failure.
+  if (client_.status() == Client::kError) {
+    host_->SendKeyError(session_id, session_id_size,
+                        static_cast<cdm::MediaKeyError>(client_.error_code()),
+                        client_.system_code());
+    return cdm::kSessionError;
+  }
+
   return cdm::kSuccess;
 }
 
@@ -313,6 +363,9 @@ cdm::Status ClearKeyCdm::Decrypt(
 
 cdm::Status ClearKeyCdm::InitializeAudioDecoder(
     const cdm::AudioDecoderConfig& audio_decoder_config) {
+  if (is_decrypt_only_)
+    return cdm::kSessionError;
+
 #if defined(CLEAR_KEY_CDM_USE_FFMPEG_DECODER)
   if (!audio_decoder_)
     audio_decoder_.reset(new media::FFmpegCdmAudioDecoder(host_));
@@ -334,6 +387,9 @@ cdm::Status ClearKeyCdm::InitializeAudioDecoder(
 
 cdm::Status ClearKeyCdm::InitializeVideoDecoder(
     const cdm::VideoDecoderConfig& video_decoder_config) {
+  if (is_decrypt_only_)
+    return cdm::kSessionError;
+
   if (video_decoder_ && video_decoder_->is_initialized()) {
     DCHECK(!video_decoder_->is_initialized());
     return cdm::kSessionError;
@@ -391,7 +447,7 @@ cdm::Status ClearKeyCdm::DecryptAndDecodeFrame(
     const cdm::InputBuffer& encrypted_buffer,
     cdm::VideoFrame* decoded_frame) {
   DVLOG(1) << "DecryptAndDecodeFrame()";
-  TRACE_EVENT0("eme", "ClearKeyCdm::DecryptAndDecodeFrame");
+  TRACE_EVENT0("media", "ClearKeyCdm::DecryptAndDecodeFrame");
 
   scoped_refptr<media::DecoderBuffer> buffer;
   cdm::Status status = DecryptToMediaDecoderBuffer(encrypted_buffer, &buffer);
@@ -495,6 +551,16 @@ cdm::Status ClearKeyCdm::DecryptToMediaDecoderBuffer(
   DCHECK_EQ(status, media::Decryptor::kSuccess);
   return cdm::kSuccess;
 }
+
+void ClearKeyCdm::OnPlatformChallengeResponse(
+    const cdm::PlatformChallengeResponse& response) {
+  NOTIMPLEMENTED();
+}
+
+void ClearKeyCdm::OnQueryOutputProtectionStatus(
+    uint32_t link_mask, uint32_t output_protection_mask) {
+  NOTIMPLEMENTED();
+};
 
 #if defined(CLEAR_KEY_CDM_USE_FAKE_AUDIO_DECODER)
 int64 ClearKeyCdm::CurrentTimeStampInMicroseconds() const {

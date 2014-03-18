@@ -19,14 +19,8 @@ namespace {
 
 const char16 kPhoneNumberSeparators[] = { ' ', '.', '(', ')', '-', 0 };
 
-// The number of digits in a phone number.
-const size_t kPhoneNumberLength = 7;
-
-// The number of digits in an area code.
-const size_t kPhoneCityCodeLength = 3;
-
 void StripPunctuation(base::string16* number) {
-  RemoveChars(*number, kPhoneNumberSeparators, number);
+  base::RemoveChars(*number, kPhoneNumberSeparators, number);
 }
 
 // Returns the region code for this phone number, which is an ISO 3166 2-letter

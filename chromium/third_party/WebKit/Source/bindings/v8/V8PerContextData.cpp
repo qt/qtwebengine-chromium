@@ -35,6 +35,8 @@
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "wtf/StringExtras.h"
 
+#include <stdlib.h>
+
 namespace WebCore {
 
 template<typename Map>
@@ -49,19 +51,19 @@ static void disposeMapWithUnsafePersistentValues(Map* map)
 void V8PerContextData::dispose()
 {
     v8::HandleScope handleScope(m_isolate);
-    v8::Local<v8::Context>::New(m_isolate, m_context)->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, 0);
+    V8PerContextDataHolder::from(v8::Local<v8::Context>::New(m_isolate, m_context))->setPerContextData(0);
 
     disposeMapWithUnsafePersistentValues(&m_wrapperBoilerplates);
     disposeMapWithUnsafePersistentValues(&m_constructorMap);
     m_customElementBindings.clear();
 
-    m_context.Dispose();
+    m_context.Reset();
 }
 
 #define V8_STORE_PRIMORDIAL(name, Name) \
 { \
     ASSERT(m_##name##Prototype.isEmpty()); \
-    v8::Handle<v8::String> symbol = v8::String::NewSymbol(#Name); \
+    v8::Handle<v8::String> symbol = v8::String::NewFromUtf8(m_isolate, #Name, v8::String::kInternalizedString); \
     if (symbol.IsEmpty()) \
         return false; \
     v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(v8::Local<v8::Context>::New(m_isolate, m_context)->Global()->Get(symbol)); \
@@ -76,9 +78,9 @@ void V8PerContextData::dispose()
 bool V8PerContextData::init()
 {
     v8::Handle<v8::Context> context = v8::Local<v8::Context>::New(m_isolate, m_context);
-    context->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, this);
+    V8PerContextDataHolder::from(context)->setPerContextData(this);
 
-    v8::Handle<v8::String> prototypeString = v8::String::NewSymbol("prototype");
+    v8::Handle<v8::String> prototypeString = v8AtomicString(m_isolate, "prototype");
     if (prototypeString.IsEmpty())
         return false;
 
@@ -89,26 +91,26 @@ bool V8PerContextData::init()
 
 #undef V8_STORE_PRIMORDIAL
 
-v8::Local<v8::Object> V8PerContextData::createWrapperFromCacheSlowCase(WrapperTypeInfo* type)
+v8::Local<v8::Object> V8PerContextData::createWrapperFromCacheSlowCase(const WrapperTypeInfo* type)
 {
     ASSERT(!m_errorPrototype.isEmpty());
 
     v8::Context::Scope scope(v8::Local<v8::Context>::New(m_isolate, m_context));
     v8::Local<v8::Function> function = constructorForType(type);
-    v8::Local<v8::Object> instance = V8ObjectConstructor::newInstance(function);
-    if (!instance.IsEmpty()) {
-        m_wrapperBoilerplates.set(type, UnsafePersistent<v8::Object>(m_isolate, instance));
-        return instance->Clone();
+    v8::Local<v8::Object> instanceTemplate = V8ObjectConstructor::newInstance(function);
+    if (!instanceTemplate.IsEmpty()) {
+        m_wrapperBoilerplates.set(type, UnsafePersistent<v8::Object>(m_isolate, instanceTemplate));
+        return instanceTemplate->Clone();
     }
     return v8::Local<v8::Object>();
 }
 
-v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperTypeInfo* type)
+v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(const WrapperTypeInfo* type)
 {
     ASSERT(!m_errorPrototype.isEmpty());
 
     v8::Context::Scope scope(v8::Local<v8::Context>::New(m_isolate, m_context));
-    v8::Handle<v8::FunctionTemplate> functionTemplate = type->getTemplate(m_isolate, worldType(m_isolate));
+    v8::Handle<v8::FunctionTemplate> functionTemplate = type->domTemplate(m_isolate, worldType(m_isolate));
     // Getting the function might fail if we're running out of stack or memory.
     v8::TryCatch tryCatch;
     v8::Local<v8::Function> function = functionTemplate->GetFunction();
@@ -116,19 +118,19 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperType
         return v8::Local<v8::Function>();
 
     if (type->parentClass) {
-        v8::Local<v8::Object> proto = constructorForType(const_cast<WrapperTypeInfo*>(type->parentClass));
-        if (proto.IsEmpty())
+        v8::Local<v8::Object> prototypeTemplate = constructorForType(type->parentClass);
+        if (prototypeTemplate.IsEmpty())
             return v8::Local<v8::Function>();
-        function->SetPrototype(proto);
+        function->SetPrototype(prototypeTemplate);
     }
 
-    v8::Local<v8::Value> prototypeValue = function->Get(v8::String::NewSymbol("prototype"));
+    v8::Local<v8::Value> prototypeValue = function->Get(v8AtomicString(m_isolate, "prototype"));
     if (!prototypeValue.IsEmpty() && prototypeValue->IsObject()) {
         v8::Local<v8::Object> prototypeObject = v8::Local<v8::Object>::Cast(prototypeValue);
         if (prototypeObject->InternalFieldCount() == v8PrototypeInternalFieldcount
             && type->wrapperTypePrototype == WrapperTypeObjectPrototype)
-            prototypeObject->SetAlignedPointerInInternalField(v8PrototypeTypeIndex, type);
-        type->installPerContextPrototypeProperties(prototypeObject, m_isolate);
+            prototypeObject->SetAlignedPointerInInternalField(v8PrototypeTypeIndex, const_cast<WrapperTypeInfo*>(type));
+        type->installPerContextEnabledMethods(prototypeObject, m_isolate);
         if (type->wrapperTypePrototype == WrapperTypeErrorPrototype)
             prototypeObject->SetPrototype(m_errorPrototype.newLocal(m_isolate));
     }
@@ -138,12 +140,12 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperType
     return function;
 }
 
-v8::Local<v8::Object> V8PerContextData::prototypeForType(WrapperTypeInfo* type)
+v8::Local<v8::Object> V8PerContextData::prototypeForType(const WrapperTypeInfo* type)
 {
     v8::Local<v8::Object> constructor = constructorForType(type);
     if (constructor.IsEmpty())
         return v8::Local<v8::Object>();
-    return constructor->Get(v8String("prototype", m_isolate)).As<v8::Object>();
+    return constructor->Get(v8String(m_isolate, "prototype")).As<v8::Object>();
 }
 
 void V8PerContextData::addCustomElementBinding(CustomElementDefinition* definition, PassOwnPtr<CustomElementBinding> binding)
@@ -155,14 +157,14 @@ void V8PerContextData::addCustomElementBinding(CustomElementDefinition* definiti
 void V8PerContextData::clearCustomElementBinding(CustomElementDefinition* definition)
 {
     CustomElementBindingMap::iterator it = m_customElementBindings->find(definition);
-    ASSERT(it != m_customElementBindings->end());
+    ASSERT_WITH_SECURITY_IMPLICATION(it != m_customElementBindings->end());
     m_customElementBindings->remove(it);
 }
 
 CustomElementBinding* V8PerContextData::customElementBinding(CustomElementDefinition* definition)
 {
     CustomElementBindingMap::const_iterator it = m_customElementBindings->find(definition);
-    ASSERT(it != m_customElementBindings->end());
+    ASSERT_WITH_SECURITY_IMPLICATION(it != m_customElementBindings->end());
     return it->value.get();
 }
 
@@ -177,7 +179,7 @@ static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId,
         wanted = snprintf(buffer, sizeof(buffer), "%s,%d", worldName, debugId);
 
     if (wanted < sizeof(buffer))
-        return v8::String::NewSymbol(buffer);
+        return v8AtomicString(isolate, buffer);
 
     return v8::Undefined(isolate);
 }
@@ -211,8 +213,8 @@ int V8PerContextDebugData::contextDebugId(v8::Handle<v8::Context> context)
 
     if (!data->IsString())
         return -1;
-    v8::String::AsciiValue ascii(data);
-    char* comma = strnstr(*ascii, ",", ascii.length());
+    v8::String::Utf8Value utf8(data);
+    char* comma = strnstr(*utf8, ",", utf8.length());
     if (!comma)
         return -1;
     return atoi(comma + 1);

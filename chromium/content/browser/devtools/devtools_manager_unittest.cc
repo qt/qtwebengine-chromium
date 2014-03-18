@@ -7,7 +7,6 @@
 #include "base/time/time.h"
 #include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/render_view_devtools_agent_host.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -16,6 +15,7 @@
 #include "content/public/browser/devtools_external_agent_proxy_delegate.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/test/test_content_browser_client.h"
+#include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -87,41 +87,14 @@ class TestWebContentsDelegate : public WebContentsDelegate {
   bool renderer_unresponsive_received_;
 };
 
-class DevToolsManagerTestBrowserClient : public TestContentBrowserClient {
- public:
-  DevToolsManagerTestBrowserClient() {
-  }
-
-  virtual bool ShouldSwapProcessesForNavigation(
-      SiteInstance* site_instance,
-      const GURL& current_url,
-      const GURL& new_url) OVERRIDE {
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DevToolsManagerTestBrowserClient);
-};
-
 }  // namespace
 
 class DevToolsManagerTest : public RenderViewHostImplTestHarness {
  protected:
   virtual void SetUp() OVERRIDE {
-    original_browser_client_ = SetBrowserClientForTesting(&browser_client_);
-
     RenderViewHostImplTestHarness::SetUp();
     TestDevToolsClientHost::ResetCounters();
   }
-
-  virtual void TearDown() OVERRIDE {
-    RenderViewHostImplTestHarness::TearDown();
-    SetBrowserClientForTesting(original_browser_client_);
-  }
-
- private:
-  ContentBrowserClient* original_browser_client_;
-  DevToolsManagerTestBrowserClient browser_client_;
 };
 
 TEST_F(DevToolsManagerTest, OpenAndManuallyCloseDevToolsClientHost) {
@@ -200,7 +173,6 @@ TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedContents) {
 }
 
 TEST_F(DevToolsManagerTest, ReattachOnCancelPendingNavigation) {
-  contents()->transition_cross_site = true;
   // Navigate to URL.  First URL should use first RenderViewHost.
   const GURL url("http://www.google.com");
   controller().LoadURL(

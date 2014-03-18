@@ -13,31 +13,30 @@ namespace corewm {
 ////////////////////////////////////////////////////////////////////////////////
 // CaptureController, public:
 
-void CaptureController::Attach(aura::RootWindow* root) {
+void CaptureController::Attach(aura::Window* root) {
   DCHECK_EQ(0u, root_windows_.count(root));
   root_windows_.insert(root);
   aura::client::SetCaptureClient(root, this);
 }
 
-void CaptureController::Detach(aura::RootWindow* root) {
-  CHECK(!root->Contains(capture_window_));
+void CaptureController::Detach(aura::Window* root) {
   root_windows_.erase(root);
   aura::client::SetCaptureClient(root, NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// CaptureController, client::CaptureClient implementation:
+// CaptureController, aura::client::CaptureClient implementation:
 
 void CaptureController::SetCapture(aura::Window* new_capture_window) {
   if (capture_window_ == new_capture_window)
     return;
 
   // Make sure window has a root window.
-  CHECK(!new_capture_window || new_capture_window->GetRootWindow());
-  CHECK(!capture_window_ || capture_window_->GetRootWindow());
+  DCHECK(!new_capture_window || new_capture_window->GetRootWindow());
+  DCHECK(!capture_window_ || capture_window_->GetRootWindow());
 
   aura::Window* old_capture_window = capture_window_;
-  aura::RootWindow* old_capture_root = old_capture_window ?
+  aura::Window* old_capture_root = old_capture_window ?
       old_capture_window->GetRootWindow() : NULL;
 
   // Copy the list in case it's modified out from under us.
@@ -50,27 +49,30 @@ void CaptureController::SetCapture(aura::Window* new_capture_window) {
   // along (and so shouldn't be canceled) and those that got moved, so
   // just leave them all where they are.
   if (new_capture_window) {
-    for (RootWindows::const_iterator i = root_windows.begin();
-         i != root_windows.end(); ++i) {
-      (*i)->gesture_recognizer()->TransferEventsTo(
-          old_capture_window, new_capture_window);
-    }
+    ui::GestureRecognizer::Get()->TransferEventsTo(old_capture_window,
+        new_capture_window);
   }
 
   capture_window_ = new_capture_window;
 
   for (RootWindows::const_iterator i = root_windows.begin();
        i != root_windows.end(); ++i) {
-    (*i)->UpdateCapture(old_capture_window, new_capture_window);
+    aura::client::CaptureDelegate* delegate = (*i)->GetDispatcher();
+    delegate->UpdateCapture(old_capture_window, new_capture_window);
   }
 
-  aura::RootWindow* capture_root =
+  aura::Window* capture_root =
       capture_window_ ? capture_window_->GetRootWindow() : NULL;
   if (capture_root != old_capture_root) {
-    if (old_capture_root)
-      old_capture_root->ReleaseNativeCapture();
-    if (capture_root)
-      capture_root->SetNativeCapture();
+    if (old_capture_root) {
+      aura::client::CaptureDelegate* delegate =
+          old_capture_root->GetDispatcher();
+      delegate->ReleaseNativeCapture();
+    }
+    if (capture_root) {
+      aura::client::CaptureDelegate* delegate = capture_root->GetDispatcher();
+      delegate->SetNativeCapture();
+    }
   }
 }
 
@@ -81,6 +83,10 @@ void CaptureController::ReleaseCapture(aura::Window* window) {
 }
 
 aura::Window* CaptureController::GetCaptureWindow() {
+  return capture_window_;
+}
+
+aura::Window* CaptureController::GetGlobalCaptureWindow() {
   return capture_window_;
 }
 
@@ -100,7 +106,7 @@ CaptureController::~CaptureController() {
 // static
 CaptureController* ScopedCaptureClient::capture_controller_ = NULL;
 
-ScopedCaptureClient::ScopedCaptureClient(aura::RootWindow* root)
+ScopedCaptureClient::ScopedCaptureClient(aura::Window* root)
     : root_window_(root) {
   root->AddObserver(this);
   if (!capture_controller_)

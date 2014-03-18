@@ -30,9 +30,12 @@
 #include "CSSValueKeywords.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSParser.h"
+#include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/TransformBuilder.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/rendering/style/RenderStyle.h"
+#include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -43,23 +46,19 @@ CSSMatrix::CSSMatrix(const TransformationMatrix& m)
     ScriptWrappable::init(this);
 }
 
-CSSMatrix::CSSMatrix(const String& s, ExceptionState& es)
+CSSMatrix::CSSMatrix(const String& s, ExceptionState& exceptionState)
 {
     ScriptWrappable::init(this);
-    setMatrixValue(s, es);
+    setMatrixValue(s, exceptionState);
 }
 
-CSSMatrix::~CSSMatrix()
-{
-}
-
-void CSSMatrix::setMatrixValue(const String& string, ExceptionState& es)
+void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionState)
 {
     if (string.isEmpty())
         return;
 
     RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create();
-    if (CSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, CSSStrictMode, 0)) {
+    if (CSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, HTMLStandardMode, 0)) {
         // Convert to TransformOperations. This can fail if a property
         // requires style (i.e., param uses 'ems' or 'exs')
         RefPtr<CSSValue> value = styleDeclaration->getPropertyCSSValue(CSSPropertyWebkitTransform);
@@ -68,26 +67,24 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& es)
         if (!value || (value->isPrimitiveValue() && (toCSSPrimitiveValue(value.get()))->getValueID() == CSSValueNone))
             return;
 
+        DEFINE_STATIC_REF(RenderStyle, defaultStyle, RenderStyle::createDefaultStyle());
         TransformOperations operations;
-        if (!TransformBuilder::createTransformOperations(value.get(), 0, 0, operations)) {
-            es.throwDOMException(SyntaxError);
+        if (!TransformBuilder::createTransformOperations(value.get(), CSSToLengthConversionData(defaultStyle, defaultStyle), operations)) {
+            exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
             return;
         }
 
         // Convert transform operations to a TransformationMatrix. This can fail
         // if a param has a percentage ('%')
+        if (operations.dependsOnBoxSize())
+            exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
         TransformationMatrix t;
-        for (unsigned i = 0; i < operations.operations().size(); ++i) {
-            if (operations.operations()[i].get()->apply(t, IntSize(0, 0))) {
-                es.throwDOMException(SyntaxError);
-                return;
-            }
-        }
+        operations.apply(FloatSize(0, 0), t);
 
         // set the matrix
         m_matrix = t;
     } else { // There is something there but parsing failed.
-        es.throwDOMException(SyntaxError);
+        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
     }
 }
 
@@ -100,10 +97,10 @@ PassRefPtr<CSSMatrix> CSSMatrix::multiply(CSSMatrix* secondMatrix) const
     return CSSMatrix::create(TransformationMatrix(m_matrix).multiply(secondMatrix->m_matrix));
 }
 
-PassRefPtr<CSSMatrix> CSSMatrix::inverse(ExceptionState& es) const
+PassRefPtr<CSSMatrix> CSSMatrix::inverse(ExceptionState& exceptionState) const
 {
     if (!m_matrix.isInvertible()) {
-        es.throwDOMException(NotSupportedError);
+        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 

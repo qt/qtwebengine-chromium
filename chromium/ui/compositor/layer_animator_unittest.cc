@@ -20,6 +20,7 @@
 #include "ui/compositor/test/test_layer_animation_delegate.h"
 #include "ui/compositor/test/test_layer_animation_observer.h"
 #include "ui/compositor/test/test_utils.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
 
@@ -168,7 +169,7 @@ TEST(LayerAnimatorTest, ImplicitAnimation) {
   animator->set_disable_timer_for_test(true);
   TestLayerAnimationDelegate delegate;
   animator->SetDelegate(&delegate);
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks now = gfx::FrameTime::Now();
   animator->SetBrightness(0.5);
   EXPECT_TRUE(animator->is_animating());
   element->Step(now + base::TimeDelta::FromSeconds(1));
@@ -1035,7 +1036,7 @@ TEST(LayerAnimatorTest, StartTogetherSetsLastStepTime) {
   // miniscule (fractions of a millisecond). If set correctly, then the delta
   // should be enormous. Arbitrarily choosing 1 minute as the threshold,
   // though a much smaller value would probably have sufficed.
-  delta = base::TimeTicks::Now() - animator->last_step_time();
+  delta = gfx::FrameTime::Now() - animator->last_step_time();
   EXPECT_GT(60.0, delta.InSecondsF());
 }
 
@@ -1899,6 +1900,68 @@ TEST(LayerAnimatorTest, ObserverDeletesAnimationsOnEnd) {
   animator->RemoveObserver(observer.get());
 }
 
+// Ensure that stopping animation in a bounds change does not crash and that
+// animation gets stopped correctly.
+// This scenario is possible when animation is restarted from inside a
+// callback triggered by the animation progress.
+TEST(LayerAnimatorTest, CallbackDeletesAnimationInProgress) {
+
+  class TestLayerAnimationDeletingDelegate : public TestLayerAnimationDelegate {
+   public:
+    TestLayerAnimationDeletingDelegate(LayerAnimator* animator, int max_width)
+      : animator_(animator),
+        max_width_(max_width) {
+    }
+
+    virtual void SetBoundsFromAnimation(const gfx::Rect& bounds) OVERRIDE {
+      TestLayerAnimationDelegate::SetBoundsFromAnimation(bounds);
+      if (bounds.width() > max_width_)
+        animator_->StopAnimating();
+    }
+   private:
+    LayerAnimator* animator_;
+    int max_width_;
+    // Allow copy and assign.
+  };
+
+  ScopedAnimationDurationScaleMode normal_duration_mode(
+      ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  scoped_refptr<LayerAnimator> animator(new TestLayerAnimator());
+  AnimationContainerElement* element = animator.get();
+  animator->set_disable_timer_for_test(true);
+  TestLayerAnimationDeletingDelegate delegate(animator.get(), 30);
+  animator->SetDelegate(&delegate);
+
+  gfx::Rect start_bounds(0, 0, 0, 0);
+  gfx::Rect target_bounds(5, 5, 50, 50);
+
+  delegate.SetBoundsFromAnimation(start_bounds);
+
+  base::TimeDelta bounds_delta1 = base::TimeDelta::FromMilliseconds(333);
+  base::TimeDelta bounds_delta2 = base::TimeDelta::FromMilliseconds(666);
+  base::TimeDelta bounds_delta = base::TimeDelta::FromMilliseconds(1000);
+  base::TimeDelta final_delta = base::TimeDelta::FromMilliseconds(1500);
+
+  animator->StartAnimation(new LayerAnimationSequence(
+      LayerAnimationElement::CreateBoundsElement(
+          target_bounds, bounds_delta)));
+  ASSERT_TRUE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+
+  base::TimeTicks start_time = animator->last_step_time();
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + bounds_delta1));
+  ASSERT_TRUE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+
+  // The next step should change the animated bounds past the threshold and
+  // cause the animaton to stop.
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + bounds_delta2));
+  ASSERT_FALSE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + final_delta));
+
+  // Completing the animation should have stopped the bounds
+  // animation.
+  ASSERT_FALSE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+}
+
 // Similar to the ObserverDeletesAnimationsOnEnd test above except that it
 // tests the behavior when the OnLayerAnimationAborted() callback causes
 // all of the animator's other animations to be deleted.
@@ -2087,9 +2150,9 @@ TEST(LayerAnimatorTest, Color) {
   TestLayerAnimationDelegate delegate;
   animator->SetDelegate(&delegate);
 
-  SkColor start_color  = SkColorSetARGB(  0, 20, 40,  60);
-  SkColor middle_color = SkColorSetARGB(127, 30, 60, 100);
-  SkColor target_color = SkColorSetARGB(254, 40, 80, 140);
+  SkColor start_color  = SkColorSetARGB( 64, 20, 40,  60);
+  SkColor middle_color = SkColorSetARGB(128, 35, 70, 120);
+  SkColor target_color = SkColorSetARGB(192, 40, 80, 140);
 
   base::TimeDelta delta = base::TimeDelta::FromSeconds(1);
 

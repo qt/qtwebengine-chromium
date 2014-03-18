@@ -74,10 +74,8 @@ DownloadResourceHandler::DownloadResourceHandler(
     net::URLRequest* request,
     const DownloadUrlParameters::OnStartedCallback& started_cb,
     scoped_ptr<DownloadSaveInfo> save_info)
-    : download_id_(id),
-      render_view_id_(0),               // Actually initialized below.
-      content_length_(0),
-      request_(request),
+    : ResourceHandler(request),
+      download_id_(id),
       started_cb_(started_cb),
       save_info_(save_info.Pass()),
       last_buffer_size_(0),
@@ -85,10 +83,6 @@ DownloadResourceHandler::DownloadResourceHandler(
       pause_count_(0),
       was_deferred_(false),
       on_response_started_called_(false) {
-  ResourceRequestInfoImpl* info(ResourceRequestInfoImpl::ForRequest(request));
-  global_id_ = info->GetGlobalRequestID();
-  render_view_id_ = info->GetRouteID();
-
   RecordDownloadCount(UNTHROTTLED_COUNT);
 }
 
@@ -105,7 +99,7 @@ bool DownloadResourceHandler::OnRequestRedirected(
     bool* defer) {
   // We treat a download as a main frame load, and thus update the policy URL
   // on redirects.
-  request_->set_first_party_for_cookies(url);
+  request()->set_first_party_for_cookies(url);
   return true;
 }
 
@@ -124,26 +118,28 @@ bool DownloadResourceHandler::OnResponseStarted(
   download_start_time_ = base::TimeTicks::Now();
 
   // If it's a download, we don't want to poison the cache with it.
-  request_->StopCaching();
+  request()->StopCaching();
 
   // Lower priority as well, so downloads don't contend for resources
   // with main frames.
-  request_->SetPriority(net::IDLE);
+  request()->SetPriority(net::IDLE);
 
-  std::string content_disposition;
-  request_->GetResponseHeaderByName("content-disposition",
-                                    &content_disposition);
-  SetContentDisposition(content_disposition);
-  SetContentLength(response->head.content_length);
+  // If the content-length header is not present (or contains something other
+  // than numbers), the incoming content_length is -1 (unknown size).
+  // Set the content length to 0 to indicate unknown size to DownloadManager.
+  int64 content_length =
+      response->head.content_length > 0 ? response->head.content_length : 0;
 
-  const ResourceRequestInfoImpl* request_info =
-      ResourceRequestInfoImpl::ForRequest(request_);
+  const ResourceRequestInfoImpl* request_info = GetRequestInfo();
 
   // Deleted in DownloadManager.
-  scoped_ptr<DownloadCreateInfo> info(new DownloadCreateInfo(
-      base::Time::Now(), content_length_,
-      request_->net_log(), request_info->HasUserGesture(),
-      request_info->GetPageTransition()));
+  scoped_ptr<DownloadCreateInfo> info(
+      new DownloadCreateInfo(base::Time::Now(),
+                             content_length,
+                             request()->net_log(),
+                             request_info->HasUserGesture(),
+                             request_info->GetPageTransition(),
+                             save_info_.Pass()));
 
   // Create the ByteStream for sending data to the download sink.
   scoped_ptr<ByteStreamReader> stream_reader;
@@ -155,52 +151,44 @@ bool DownloadResourceHandler::OnResponseStarted(
       base::Bind(&DownloadResourceHandler::ResumeRequest, AsWeakPtr()));
 
   info->download_id = download_id_;
-  info->url_chain = request_->url_chain();
-  info->referrer_url = GURL(request_->referrer());
-  info->start_time = base::Time::Now();
-  info->total_bytes = content_length_;
-  info->has_user_gesture = request_info->HasUserGesture();
-  info->content_disposition = content_disposition_;
+  info->url_chain = request()->url_chain();
+  info->referrer_url = GURL(request()->referrer());
   info->mime_type = response->head.mime_type;
-  info->remote_address = request_->GetSocketAddress().host();
+  info->remote_address = request()->GetSocketAddress().host();
+  request()->GetResponseHeaderByName("content-disposition",
+                                     &info->content_disposition);
   RecordDownloadMimeType(info->mime_type);
   RecordDownloadContentDisposition(info->content_disposition);
 
   info->request_handle =
-      DownloadRequestHandle(AsWeakPtr(), global_id_.child_id,
-                            render_view_id_, global_id_.request_id);
+      DownloadRequestHandle(AsWeakPtr(), request_info->GetChildID(),
+                            request_info->GetRouteID(),
+                            request_info->GetRequestID());
 
   // Get the last modified time and etag.
-  const net::HttpResponseHeaders* headers = request_->response_headers();
+  const net::HttpResponseHeaders* headers = request()->response_headers();
   if (headers) {
-    std::string last_modified_hdr;
-    if (headers->EnumerateHeader(NULL, "Last-Modified", &last_modified_hdr))
-      info->last_modified = last_modified_hdr;
-    if (headers->EnumerateHeader(NULL, "ETag", &etag_))
-      info->etag = etag_;
+    if (headers->HasStrongValidators()) {
+      // If we don't have strong validators as per RFC 2616 section 13.3.3, then
+      // we neither store nor use them for range requests.
+      if (!headers->EnumerateHeader(NULL, "Last-Modified",
+                                    &info->last_modified))
+        info->last_modified.clear();
+      if (!headers->EnumerateHeader(NULL, "ETag", &info->etag))
+        info->etag.clear();
+    }
 
     int status = headers->response_code();
     if (2 == status / 100  && status != net::HTTP_PARTIAL_CONTENT) {
       // Success & not range response; if we asked for a range, we didn't
       // get it--reset the file pointers to reflect that.
-      save_info_->offset = 0;
-      save_info_->hash_state = "";
+      info->save_info->offset = 0;
+      info->save_info->hash_state = "";
     }
+
+    if (!headers->GetMimeType(&info->original_mime_type))
+      info->original_mime_type.clear();
   }
-
-  std::string content_type_header;
-  if (!response->head.headers.get() ||
-      !response->head.headers->GetMimeType(&content_type_header))
-    content_type_header = "";
-  info->original_mime_type = content_type_header;
-
-  if (!response->head.headers.get() ||
-      !response->head.headers->EnumerateHeader(
-          NULL, "Accept-Ranges", &accept_ranges_)) {
-    accept_ranges_ = "";
-  }
-
-  info->save_info = save_info_.Pass();
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -236,8 +224,10 @@ bool DownloadResourceHandler::OnWillStart(int request_id,
 
 // Create a new buffer, which will be handed to the download thread for file
 // writing and deletion.
-bool DownloadResourceHandler::OnWillRead(int request_id, net::IOBuffer** buf,
-                                         int* buf_size, int min_size) {
+bool DownloadResourceHandler::OnWillRead(int request_id,
+                                         scoped_refptr<net::IOBuffer>* buf,
+                                         int* buf_size,
+                                         int min_size) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(buf && buf_size);
   DCHECK(!read_buffer_.get());
@@ -290,12 +280,13 @@ bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
   return true;
 }
 
-bool DownloadResourceHandler::OnResponseCompleted(
+void DownloadResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& status,
-    const std::string& security_info) {
+    const std::string& security_info,
+    bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  int response_code = status.is_success() ? request_->GetResponseCode() : 0;
+  int response_code = status.is_success() ? request()->GetResponseCode() : 0;
   VLOG(20) << __FUNCTION__ << "()" << DebugString()
            << " request_id = " << request_id
            << " status.status() = " << status.status()
@@ -339,7 +330,7 @@ bool DownloadResourceHandler::OnResponseCompleted(
 
   if (status.is_success() &&
       reason == DOWNLOAD_INTERRUPT_REASON_NONE &&
-      request_->response_headers()) {
+      request()->response_headers()) {
     // Handle server's response codes.
     switch(response_code) {
       case -1:                          // Non-HTTP request.
@@ -375,9 +366,17 @@ bool DownloadResourceHandler::OnResponseCompleted(
     }
   }
 
-  RecordAcceptsRanges(accept_ranges_, bytes_read_, etag_);
-  RecordNetworkBlockage(
-      base::TimeTicks::Now() - download_start_time_, total_pause_time_);
+  std::string accept_ranges;
+  bool has_strong_validators = false;
+  if (request()->response_headers()) {
+    request()->response_headers()->EnumerateHeader(
+        NULL, "Accept-Ranges", &accept_ranges);
+    has_strong_validators =
+        request()->response_headers()->HasStrongValidators();
+  }
+  RecordAcceptsRanges(accept_ranges, bytes_read_, has_strong_validators);
+  RecordNetworkBlockage(base::TimeTicks::Now() - download_start_time_,
+                        total_pause_time_);
 
   CallStartedCB(NULL, error_code);
 
@@ -396,30 +395,12 @@ bool DownloadResourceHandler::OnResponseCompleted(
 
   stream_writer_.reset();  // We no longer need the stream.
   read_buffer_ = NULL;
-
-  return true;
 }
 
 void DownloadResourceHandler::OnDataDownloaded(
     int request_id,
     int bytes_downloaded) {
   NOTREACHED();
-}
-
-// If the content-length header is not present (or contains something other
-// than numbers), the incoming content_length is -1 (unknown size).
-// Set the content length to 0 to indicate unknown size to DownloadManager.
-void DownloadResourceHandler::SetContentLength(const int64& content_length) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  content_length_ = 0;
-  if (content_length > 0)
-    content_length_ = content_length;
-}
-
-void DownloadResourceHandler::SetContentDisposition(
-    const std::string& content_disposition) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  content_disposition_ = content_disposition;
 }
 
 void DownloadResourceHandler::PauseRequest() {
@@ -451,27 +432,29 @@ void DownloadResourceHandler::ResumeRequest() {
 void DownloadResourceHandler::CancelRequest() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
+  const ResourceRequestInfo* info = GetRequestInfo();
   ResourceDispatcherHostImpl::Get()->CancelRequest(
-      global_id_.child_id,
-      global_id_.request_id,
+      info->GetChildID(),
+      info->GetRequestID(),
       false);
 }
 
 std::string DownloadResourceHandler::DebugString() const {
+  const ResourceRequestInfo* info = GetRequestInfo();
   return base::StringPrintf("{"
                             " url_ = " "\"%s\""
-                            " global_id_ = {"
+                            " info = {"
                             " child_id = " "%d"
                             " request_id = " "%d"
+                            " route_id = " "%d"
                             " }"
-                            " render_view_id_ = " "%d"
                             " }",
-                            request_ ?
-                                request_->url().spec().c_str() :
+                            request() ?
+                                request()->url().spec().c_str() :
                                 "<NULL request>",
-                            global_id_.child_id,
-                            global_id_.request_id,
-                            render_view_id_);
+                            info->GetChildID(),
+                            info->GetRequestID(),
+                            info->GetRouteID());
 }
 
 DownloadResourceHandler::~DownloadResourceHandler() {

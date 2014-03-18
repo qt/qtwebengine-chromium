@@ -14,37 +14,29 @@
 #include "cc/resources/resource_format.h"
 
 namespace cc {
+class ScopedResource;
 
 class CC_EXPORT ResourcePool {
  public:
-  class CC_EXPORT Resource : public cc::Resource {
-   public:
-    Resource(ResourceProvider* resource_provider,
-             gfx::Size size,
-             ResourceFormat format);
-    ~Resource();
-
-   private:
-    ResourceProvider* resource_provider_;
-
-    DISALLOW_COPY_AND_ASSIGN(Resource);
-  };
-
-  static scoped_ptr<ResourcePool> Create(ResourceProvider* resource_provider) {
-    return make_scoped_ptr(new ResourcePool(resource_provider));
+  static scoped_ptr<ResourcePool> Create(ResourceProvider* resource_provider,
+                                         GLenum target,
+                                         ResourceFormat format) {
+    return make_scoped_ptr(new ResourcePool(resource_provider,
+                                            target,
+                                            format));
   }
 
   virtual ~ResourcePool();
 
-  scoped_ptr<ResourcePool::Resource> AcquireResource(
-      gfx::Size size, ResourceFormat format);
-  void ReleaseResource(scoped_ptr<ResourcePool::Resource>);
+  scoped_ptr<ScopedResource> AcquireResource(gfx::Size size);
+  void ReleaseResource(scoped_ptr<ScopedResource>);
 
   void SetResourceUsageLimits(size_t max_memory_usage_bytes,
                               size_t max_unused_memory_usage_bytes,
                               size_t max_resource_count);
 
   void ReduceResourceUsage();
+  void CheckBusyResources();
 
   size_t total_memory_usage_bytes() const {
     return memory_usage_bytes_;
@@ -57,12 +49,18 @@ class CC_EXPORT ResourcePool {
   }
 
  protected:
-  explicit ResourcePool(ResourceProvider* resource_provider);
+  ResourcePool(ResourceProvider* resource_provider,
+               GLenum target,
+               ResourceFormat format);
 
   bool ResourceUsageTooHigh();
 
  private:
+  void DidFinishUsingResource(ScopedResource* resource);
+
   ResourceProvider* resource_provider_;
+  const GLenum target_;
+  const ResourceFormat format_;
   size_t max_memory_usage_bytes_;
   size_t max_unused_memory_usage_bytes_;
   size_t max_resource_count_;
@@ -70,8 +68,9 @@ class CC_EXPORT ResourcePool {
   size_t unused_memory_usage_bytes_;
   size_t resource_count_;
 
-  typedef std::list<Resource*> ResourceList;
+  typedef std::list<ScopedResource*> ResourceList;
   ResourceList unused_resources_;
+  ResourceList busy_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourcePool);
 };

@@ -29,17 +29,14 @@
 #include "config.h"
 #include "core/inspector/InspectorDatabaseAgent.h"
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorDatabaseResource.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
+#include "core/html/VoidCallback.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/sql/SQLValue.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
@@ -49,6 +46,8 @@
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
+#include "platform/JSONValues.h"
 #include "wtf/Vector.h"
 
 typedef WebCore::InspectorBackendDispatcher::DatabaseCommandHandler::ExecuteSQLCallback ExecuteSQLCallback;
@@ -71,9 +70,9 @@ void reportTransactionFailed(ExecuteSQLCallback* requestCallback, SQLError* erro
 
 class StatementCallback : public SQLStatementCallback {
 public:
-    static PassRefPtr<StatementCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static PassOwnPtr<StatementCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptRef(new StatementCallback(requestCallback));
+        return adoptPtr(new StatementCallback(requestCallback));
     }
 
     virtual ~StatementCallback() { }
@@ -109,9 +108,9 @@ private:
 
 class StatementErrorCallback : public SQLStatementErrorCallback {
 public:
-    static PassRefPtr<StatementErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static PassOwnPtr<StatementErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptRef(new StatementErrorCallback(requestCallback));
+        return adoptPtr(new StatementErrorCallback(requestCallback));
     }
 
     virtual ~StatementErrorCallback() { }
@@ -130,9 +129,9 @@ private:
 
 class TransactionCallback : public SQLTransactionCallback {
 public:
-    static PassRefPtr<TransactionCallback> create(const String& sqlStatement, PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static PassOwnPtr<TransactionCallback> create(const String& sqlStatement, PassRefPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptRef(new TransactionCallback(sqlStatement, requestCallback));
+        return adoptPtr(new TransactionCallback(sqlStatement, requestCallback));
     }
 
     virtual ~TransactionCallback() { }
@@ -143,8 +142,8 @@ public:
             return true;
 
         Vector<SQLValue> sqlValues;
-        RefPtr<SQLStatementCallback> callback(StatementCallback::create(m_requestCallback.get()));
-        RefPtr<SQLStatementErrorCallback> errorCallback(StatementErrorCallback::create(m_requestCallback.get()));
+        OwnPtr<SQLStatementCallback> callback(StatementCallback::create(m_requestCallback.get()));
+        OwnPtr<SQLStatementErrorCallback> errorCallback(StatementErrorCallback::create(m_requestCallback.get()));
         transaction->executeSQL(m_sqlStatement, sqlValues, callback.release(), errorCallback.release(), IGNORE_EXCEPTION);
         return true;
     }
@@ -158,9 +157,9 @@ private:
 
 class TransactionErrorCallback : public SQLTransactionErrorCallback {
 public:
-    static PassRefPtr<TransactionErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static PassOwnPtr<TransactionErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptRef(new TransactionErrorCallback(requestCallback));
+        return adoptPtr(new TransactionErrorCallback(requestCallback));
     }
 
     virtual ~TransactionErrorCallback() { }
@@ -178,14 +177,14 @@ private:
 
 class TransactionSuccessCallback : public VoidCallback {
 public:
-    static PassRefPtr<TransactionSuccessCallback> create()
+    static PassOwnPtr<TransactionSuccessCallback> create()
     {
-        return adoptRef(new TransactionSuccessCallback());
+        return adoptPtr(new TransactionSuccessCallback());
     }
 
     virtual ~TransactionSuccessCallback() { }
 
-    virtual bool handleEvent() { return false; }
+    virtual void handleEvent() { }
 
 private:
     TransactionSuccessCallback() { }
@@ -209,6 +208,9 @@ void InspectorDatabaseAgent::didOpenDatabase(PassRefPtr<Database> database, cons
 
 void InspectorDatabaseAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
 {
+    // FIXME: If "frame" is always guarenteed to be in the same Page as loader->frame()
+    // then all we need to check here is loader->frame()->isMainFrame()
+    // and we don't need "frame" at all.
     if (loader->frame() != frame->page()->mainFrame())
         return;
 
@@ -297,9 +299,9 @@ void InspectorDatabaseAgent::executeSQL(ErrorString*, const String& databaseId, 
         return;
     }
 
-    RefPtr<SQLTransactionCallback> callback(TransactionCallback::create(query, requestCallback.get()));
-    RefPtr<SQLTransactionErrorCallback> errorCallback(TransactionErrorCallback::create(requestCallback.get()));
-    RefPtr<VoidCallback> successCallback(TransactionSuccessCallback::create());
+    OwnPtr<SQLTransactionCallback> callback(TransactionCallback::create(query, requestCallback.get()));
+    OwnPtr<SQLTransactionErrorCallback> errorCallback(TransactionErrorCallback::create(requestCallback.get()));
+    OwnPtr<VoidCallback> successCallback(TransactionSuccessCallback::create());
     database->transaction(callback.release(), errorCallback.release(), successCallback.release());
 }
 

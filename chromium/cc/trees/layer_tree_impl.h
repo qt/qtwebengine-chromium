@@ -11,10 +11,11 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/values.h"
+#include "cc/base/scoped_ptr_vector.h"
+#include "cc/base/swap_promise.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/events/latency_info.h"
 
 #if defined(COMPILER_GCC)
 namespace BASE_HASH_NAMESPACE {
@@ -81,6 +82,7 @@ class CC_EXPORT LayerTreeImpl {
   void SetNeedsCommit();
   gfx::Size DrawViewportSize() const;
   void StartScrollbarAnimation();
+  void DidAnimateScrollOffset();
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -124,7 +126,7 @@ class CC_EXPORT LayerTreeImpl {
                                 int outer_viewport_scroll_layer_id);
   void ClearViewportLayers();
   void ApplySentScrollAndScaleDeltasFromAbortedCommit();
-  void ApplyScrollDeltasSinceBeginFrame();
+  void ApplyScrollDeltasSinceBeginMainFrame();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -165,6 +167,8 @@ class CC_EXPORT LayerTreeImpl {
   void set_needs_full_tree_sync(bool needs) { needs_full_tree_sync_ = needs; }
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
 
+  void ForceRedrawNextActivation() { next_activation_forces_redraw_ = true; }
+
   void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
   const LayerImplList& RenderSurfaceLayerList() const;
@@ -173,6 +177,8 @@ class CC_EXPORT LayerTreeImpl {
   // the user-visible scrolling viewport, in CSS layout coordinates.
   gfx::Size ScrollableSize() const;
   gfx::SizeF ScrollableViewportSize() const;
+
+  gfx::Rect RootScrollLayerDeviceViewportBounds() const;
 
   LayerImpl* LayerById(int id);
 
@@ -202,18 +208,25 @@ class CC_EXPORT LayerTreeImpl {
   void SetRootLayerScrollOffsetDelegate(
       LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate);
 
-  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
-  const ui::LatencyInfo& GetLatencyInfo();
-  void ClearLatencyInfo();
+  // Call this function when you expect there to be a swap buffer.
+  // See swap_promise.h for how to use SwapPromise.
+  void QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise);
+
+  // Take the |new_swap_promise| and append it to |swap_promise_list_|.
+  void PassSwapPromises(ScopedPtrVector<SwapPromise>* new_swap_promise);
+  void FinishSwapPromises(CompositorFrameMetadata* metadata);
+  void BreakSwapPromises(SwapPromise::DidNotSwapReason reason);
 
   void DidModifyTilePriorities();
 
   ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
   void ProcessUIResourceRequestQueue();
 
+  bool IsUIResourceOpaque(UIResourceId uid) const;
+
   void AddLayerWithCopyOutputRequest(LayerImpl* layer);
   void RemoveLayerWithCopyOutputRequest(LayerImpl* layer);
-  const std::vector<LayerImpl*> LayersWithCopyOutputRequest() const;
+  const std::vector<LayerImpl*>& LayersWithCopyOutputRequest() const;
 
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
@@ -250,8 +263,8 @@ class CC_EXPORT LayerTreeImpl {
   // Persisted state for non-impl-side-painting.
   int scrolling_layer_id_from_previous_tree_;
 
-  // List of visible layers for the most recently prepared frame. Used for
-  // rendering and input event hit testing.
+  // List of visible or hit-testable layers for the most recently prepared
+  // frame. Used for rendering and input event hit testing.
   LayerImplList render_surface_layer_list_;
 
   bool contents_textures_purged_;
@@ -262,7 +275,9 @@ class CC_EXPORT LayerTreeImpl {
   // structural differences relative to the active tree.
   bool needs_full_tree_sync_;
 
-  ui::LatencyInfo latency_info_;
+  bool next_activation_forces_redraw_;
+
+  ScopedPtrVector<SwapPromise> swap_promise_list_;
 
   UIResourceRequestQueue ui_resource_request_queue_;
 

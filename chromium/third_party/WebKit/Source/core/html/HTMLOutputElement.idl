@@ -23,13 +23,13 @@
  */
 
 interface HTMLOutputElement : HTMLElement {
-    readonly attribute DOMSettableTokenList htmlFor;
-    readonly attribute HTMLFormElement form;
+    [PutForwards=value] readonly attribute DOMSettableTokenList htmlFor;
+    [ImplementedAs=formOwner] readonly attribute HTMLFormElement form;
     [Reflect] attribute DOMString name;
 
     readonly attribute DOMString type;
-    [TreatNullAs=NullString] attribute DOMString defaultValue;
-    [TreatNullAs=NullString] attribute DOMString value;
+    attribute DOMString defaultValue;
+    attribute DOMString value;
 
     readonly attribute boolean willValidate;
     readonly attribute ValidityState validity;

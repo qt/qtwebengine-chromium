@@ -5,7 +5,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "components/navigation_interception/intercept_navigation_resource_throttle.h"
@@ -23,6 +22,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_renderer_host.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request.h"
@@ -57,7 +57,7 @@ MATCHER(NavigationParamsUrlIsSafe, "") {
   return arg.url() != GURL(kUnsafeTestUrl);
 }
 
-} // namespace
+}  // namespace
 
 
 // MockInterceptCallbackReceiver ----------------------------------------------
@@ -119,30 +119,34 @@ class TestIOThreadState {
                     RedirectMode redirect_mode,
                     MockInterceptCallbackReceiver* callback_receiver)
       : resource_context_(&test_url_request_context_),
-        request_(url, NULL, resource_context_.GetRequestContext()) {
+        request_(url,
+                 net::DEFAULT_PRIORITY,
+                 NULL,
+                 resource_context_.GetRequestContext()) {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-      if (render_process_id != MSG_ROUTING_NONE &&
-          render_view_id != MSG_ROUTING_NONE) {
-        content::ResourceRequestInfo::AllocateForTesting(
-            &request_,
-            ResourceType::MAIN_FRAME,
-            &resource_context_,
-            render_process_id,
-            render_view_id);
-      }
-      throttle_.reset(new InterceptNavigationResourceThrottle(
+    if (render_process_id != MSG_ROUTING_NONE &&
+        render_view_id != MSG_ROUTING_NONE) {
+      content::ResourceRequestInfo::AllocateForTesting(
           &request_,
-          base::Bind(&MockInterceptCallbackReceiver::ShouldIgnoreNavigation,
-                     base::Unretained(callback_receiver))));
-      throttle_->set_controller_for_testing(&throttle_controller_);
-      request_.set_method(request_method);
+          ResourceType::MAIN_FRAME,
+          &resource_context_,
+          render_process_id,
+          render_view_id,
+          false);
+    }
+    throttle_.reset(new InterceptNavigationResourceThrottle(
+        &request_,
+        base::Bind(&MockInterceptCallbackReceiver::ShouldIgnoreNavigation,
+                   base::Unretained(callback_receiver))));
+    throttle_->set_controller_for_testing(&throttle_controller_);
+    request_.set_method(request_method);
 
-      if (redirect_mode == REDIRECT_MODE_302) {
-        net::HttpResponseInfo& response_info =
-            const_cast<net::HttpResponseInfo&>(request_.response_info());
-        response_info.headers = new net::HttpResponseHeaders(
-            "Status: 302 Found\0\0");
-      }
+    if (redirect_mode == REDIRECT_MODE_302) {
+      net::HttpResponseInfo& response_info =
+          const_cast<net::HttpResponseInfo&>(request_.response_info());
+      response_info.headers = new net::HttpResponseHeaders(
+          "Status: 302 Found\0\0");
+    }
   }
 
   void ThrottleWillStartRequest(bool* defer) {
@@ -191,10 +195,8 @@ class InterceptNavigationResourceThrottleTest
     if (web_contents())
       web_contents()->SetDelegate(NULL);
 
-    content::BrowserThread::PostTask(
-        content::BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&base::DeletePointer<TestIOThreadState>, io_thread_state_));
+    content::BrowserThread::DeleteSoon(
+        content::BrowserThread::IO, FROM_HERE, io_thread_state_);
 
     RenderViewHostTestHarness::TearDown();
   }
@@ -233,7 +235,6 @@ class InterceptNavigationResourceThrottleTest
   void SetUpWebContentsDelegateAndDrainRunLoop(
       ShouldIgnoreNavigationCallbackAction callback_action,
       bool* defer) {
-
     ON_CALL(*mock_callback_receiver_, ShouldIgnoreNavigation(_, _))
       .WillByDefault(Return(callback_action == IgnoreNavigation));
     EXPECT_CALL(*mock_callback_receiver_,
@@ -279,7 +280,7 @@ TEST_F(InterceptNavigationResourceThrottleTest,
   SetUpWebContentsDelegateAndDrainRunLoop(DontIgnoreNavigation, &defer);
 
   EXPECT_TRUE(defer);
-  EXPECT_TRUE(io_thread_state_);
+  ASSERT_TRUE(io_thread_state_);
   EXPECT_TRUE(io_thread_state_->request_resumed());
 }
 
@@ -289,7 +290,7 @@ TEST_F(InterceptNavigationResourceThrottleTest,
   SetUpWebContentsDelegateAndDrainRunLoop(IgnoreNavigation, &defer);
 
   EXPECT_TRUE(defer);
-  EXPECT_TRUE(io_thread_state_);
+  ASSERT_TRUE(io_thread_state_);
   EXPECT_TRUE(io_thread_state_->request_cancelled());
 }
 
@@ -331,7 +332,7 @@ TEST_F(InterceptNavigationResourceThrottleTest,
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(defer);
-  EXPECT_TRUE(io_thread_state_);
+  ASSERT_TRUE(io_thread_state_);
   EXPECT_TRUE(io_thread_state_->request_resumed());
 }
 

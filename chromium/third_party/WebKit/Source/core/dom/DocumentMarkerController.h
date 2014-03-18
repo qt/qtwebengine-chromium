@@ -28,12 +28,13 @@
 #define DocumentMarkerController_h
 
 #include "core/dom/DocumentMarker.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ContainerNode;
 class LayoutPoint;
 class LayoutRect;
 class Node;
@@ -47,7 +48,7 @@ public:
     DocumentMarkerController();
     ~DocumentMarkerController();
 
-    void detach();
+    void clear();
     void addMarker(Range*, DocumentMarker::MarkerType);
     void addMarker(Range*, DocumentMarker::MarkerType, const String& description);
     void addMarker(Range*, DocumentMarker::MarkerType, const String& description, uint32_t hash);
@@ -58,6 +59,7 @@ public:
     void copyMarkers(Node* srcNode, unsigned startOffset, int length, Node* dstNode, int delta);
     bool hasMarkers(Range*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
 
+    void prepareForDestruction();
     // When a marker partially overlaps with range, if removePartiallyOverlappingMarkers is true, we completely
     // remove the marker. If the argument is false, we will adjust the span of the marker so that it retains
     // the portion that is outside of the range.
@@ -87,7 +89,9 @@ private:
     void addMarker(Node*, const DocumentMarker&);
 
     typedef Vector<RenderedDocumentMarker> MarkerList;
-    typedef HashMap<RefPtr<Node>, OwnPtr<MarkerList> > MarkerMap;
+    typedef Vector<OwnPtr<MarkerList>, DocumentMarker::MarkerTypeIndexesCount> MarkerLists;
+    typedef HashMap<const Node*, OwnPtr<MarkerLists> > MarkerMap;
+    void mergeOverlapping(MarkerList*, DocumentMarker&);
     bool possiblyHasMarkers(DocumentMarker::MarkerTypes);
     void removeMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
 

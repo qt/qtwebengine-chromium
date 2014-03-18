@@ -35,7 +35,7 @@
 #include "../platform/WebURL.h"
 #include "WebInputElement.h"
 
-namespace WebKit {
+namespace blink {
 class WebFormElement;
 
 // SearchableFormData encapsulates a URL and encoding of an INPUT field that
@@ -44,7 +44,7 @@ class WebSearchableFormData {
 public:
     // If the provided form is suitable for automated searching, isValid()
     // will return false.
-    WEBKIT_EXPORT WebSearchableFormData(const WebFormElement&, const WebInputElement& selectedInputElement = WebInputElement());
+    BLINK_EXPORT WebSearchableFormData(const WebFormElement&, const WebInputElement& selectedInputElement = WebInputElement());
 
     bool isValid() { return m_url.isValid(); }
 
@@ -65,6 +65,6 @@ private:
     WebString m_encoding;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

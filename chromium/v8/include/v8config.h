@@ -187,6 +187,7 @@
 //                                        supported
 //  V8_HAS_ATTRIBUTE_DEPRECATED         - __attribute__((deprecated)) supported
 //  V8_HAS_ATTRIBUTE_NOINLINE           - __attribute__((noinline)) supported
+//  V8_HAS_ATTRIBUTE_UNUSED             - __attribute__((unused)) supported
 //  V8_HAS_ATTRIBUTE_VISIBILITY         - __attribute__((visibility)) supported
 //  V8_HAS_ATTRIBUTE_WARN_UNUSED_RESULT - __attribute__((warn_unused_result))
 //                                        supported
@@ -216,6 +217,7 @@
 # define V8_HAS_ATTRIBUTE_ALWAYS_INLINE (__has_attribute(always_inline))
 # define V8_HAS_ATTRIBUTE_DEPRECATED (__has_attribute(deprecated))
 # define V8_HAS_ATTRIBUTE_NOINLINE (__has_attribute(noinline))
+# define V8_HAS_ATTRIBUTE_UNUSED (__has_attribute(unused))
 # define V8_HAS_ATTRIBUTE_VISIBILITY (__has_attribute(visibility))
 # define V8_HAS_ATTRIBUTE_WARN_UNUSED_RESULT \
     (__has_attribute(warn_unused_result))
@@ -245,7 +247,9 @@
 // older compilers.
 # define V8_HAS_ATTRIBUTE_ALWAYS_INLINE (V8_GNUC_PREREQ(4, 4, 0))
 # define V8_HAS_ATTRIBUTE_DEPRECATED (V8_GNUC_PREREQ(3, 4, 0))
+# define V8_HAS_ATTRIBUTE_DEPRECATED_MESSAGE (V8_GNUC_PREREQ(4, 5, 0))
 # define V8_HAS_ATTRIBUTE_NOINLINE (V8_GNUC_PREREQ(3, 4, 0))
+# define V8_HAS_ATTRIBUTE_UNUSED (V8_GNUC_PREREQ(2, 95, 0))
 # define V8_HAS_ATTRIBUTE_VISIBILITY (V8_GNUC_PREREQ(4, 3, 0))
 # define V8_HAS_ATTRIBUTE_WARN_UNUSED_RESULT \
     (!V8_CC_INTEL && V8_GNUC_PREREQ(4, 1, 0))
@@ -320,12 +324,24 @@
 
 
 // A macro to mark classes or functions as deprecated.
-#if !V8_DISABLE_DEPRECATIONS && V8_HAS_ATTRIBUTE_DEPRECATED
-# define V8_DEPRECATED(declarator) declarator __attribute__((deprecated))
-#elif !V8_DISABLE_DEPRECATIONS && V8_HAS_DECLSPEC_DEPRECATED
-# define V8_DEPRECATED(declarator) __declspec(deprecated) declarator
+#if defined(V8_DEPRECATION_WARNINGS) && V8_HAS_ATTRIBUTE_DEPRECATED_MESSAGE
+# define V8_DEPRECATED(message, declarator) \
+declarator __attribute__((deprecated(message)))
+#elif defined(V8_DEPRECATION_WARNINGS) && V8_HAS_ATTRIBUTE_DEPRECATED
+# define V8_DEPRECATED(message, declarator) \
+declarator __attribute__((deprecated))
+#elif defined(V8_DEPRECATION_WARNINGS) && V8_HAS_DECLSPEC_DEPRECATED
+# define V8_DEPRECATED(message, declarator) __declspec(deprecated) declarator
 #else
-# define V8_DEPRECATED(declarator) declarator
+# define V8_DEPRECATED(message, declarator) declarator
+#endif
+
+
+// A macro to mark variables or types as unused, avoiding compiler warnings.
+#if V8_HAS_ATTRIBUTE_UNUSED
+# define V8_UNUSED __attribute__((unused))
+#else
+# define V8_UNUSED
 #endif
 
 

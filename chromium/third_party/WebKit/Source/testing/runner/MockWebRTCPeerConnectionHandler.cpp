@@ -39,16 +39,13 @@
 #include "public/platform/WebMediaStreamTrack.h"
 #include "public/platform/WebRTCDataChannelInit.h"
 #include "public/platform/WebRTCPeerConnectionHandlerClient.h"
-#include "public/platform/WebRTCSessionDescription.h"
-#include "public/platform/WebRTCSessionDescriptionRequest.h"
-#include "public/platform/WebRTCStatsRequest.h"
 #include "public/platform/WebRTCStatsResponse.h"
 #include "public/platform/WebRTCVoidRequest.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 #include "public/testing/WebTestDelegate.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebTestRunner {
 
@@ -90,7 +87,7 @@ private:
 
 class RTCStatsRequestSucceededTask : public WebMethodTask<MockWebRTCPeerConnectionHandler> {
 public:
-    RTCStatsRequestSucceededTask(MockWebRTCPeerConnectionHandler* object, const WebKit::WebRTCStatsRequest& request, const WebKit::WebRTCStatsResponse& response)
+    RTCStatsRequestSucceededTask(MockWebRTCPeerConnectionHandler* object, const blink::WebRTCStatsRequest& request, const blink::WebRTCStatsResponse& response)
         : WebMethodTask<MockWebRTCPeerConnectionHandler>(object)
         , m_request(request)
         , m_response(response)
@@ -103,8 +100,8 @@ public:
     }
 
 private:
-    WebKit::WebRTCStatsRequest m_request;
-    WebKit::WebRTCStatsResponse m_response;
+    blink::WebRTCStatsRequest m_request;
+    blink::WebRTCStatsResponse m_response;
 };
 
 class RTCVoidRequestTask : public WebMethodTask<MockWebRTCPeerConnectionHandler> {
@@ -276,7 +273,6 @@ void MockWebRTCPeerConnectionHandler::getStats(const WebRTCStatsRequest& request
     WebRTCStatsResponse response = request.createResponse();
     double currentDate = m_interfaces->delegate()->getCurrentTimeInMillisecond();
     if (request.hasSelector()) {
-        WebMediaStream stream = request.stream();
         // FIXME: There is no check that the fetched values are valid.
         size_t reportIndex = response.addReport("Mock video", "ssrc", currentDate);
         response.addStatistic(reportIndex, "type", "video");
@@ -291,7 +287,7 @@ void MockWebRTCPeerConnectionHandler::getStats(const WebRTCStatsRequest& request
     m_interfaces->delegate()->postTask(new RTCStatsRequestSucceededTask(this, request, response));
 }
 
-WebRTCDataChannelHandler* MockWebRTCPeerConnectionHandler::createDataChannel(const WebString& label, const WebKit::WebRTCDataChannelInit& init)
+WebRTCDataChannelHandler* MockWebRTCPeerConnectionHandler::createDataChannel(const WebString& label, const blink::WebRTCDataChannelInit& init)
 {
     m_interfaces->delegate()->postTask(new RemoteDataChannelTask(this, m_client, m_interfaces->delegate()));
 

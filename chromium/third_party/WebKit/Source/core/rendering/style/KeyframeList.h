@@ -58,7 +58,7 @@ public:
     const RenderStyle* style() const { return m_style.get(); }
     void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
 
-    static TimingFunction* timingFunction(const RenderStyle*, const AtomicString& name);
+    static TimingFunction* timingFunction(const RenderStyle& keyframeStyle);
 
 private:
     double m_key;
@@ -68,16 +68,13 @@ private:
 
 class KeyframeList {
 public:
-    KeyframeList(RenderObject*, const AtomicString& animationName)
+    KeyframeList(RenderObject&, const AtomicString& animationName)
         : m_animationName(animationName)
     {
         insert(KeyframeValue(0, 0));
         insert(KeyframeValue(1, 0));
     }
     ~KeyframeList();
-
-    bool operator==(const KeyframeList& o) const;
-    bool operator!=(const KeyframeList& o) const { return !(*this == o); }
 
     const AtomicString& animationName() const { return m_animationName; }
 

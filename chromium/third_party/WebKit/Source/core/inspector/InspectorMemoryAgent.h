@@ -44,8 +44,6 @@ typedef String ErrorString;
 class InspectorMemoryAgent : public InspectorBaseAgent<InspectorMemoryAgent>, public InspectorBackendDispatcher::MemoryCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorMemoryAgent);
 public:
-    typedef Vector<OwnPtr<InspectorBaseAgentInterface> > InspectorAgents;
-
     static PassOwnPtr<InspectorMemoryAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state)
     {
         return adoptPtr(new InspectorMemoryAgent(instrumentingAgents, state));
@@ -59,8 +57,6 @@ public:
 
 private:
     InspectorMemoryAgent(InstrumentingAgents*, InspectorCompositeState*);
-
-    PassRefPtr<JSONObject> getProcessMemoryDistributionImpl(bool reportGraph, HashMap<String, size_t>* memoryInfo);
 
     InspectorFrontend::Memory* m_frontend;
 };

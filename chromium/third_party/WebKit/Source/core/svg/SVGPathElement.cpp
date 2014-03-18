@@ -22,7 +22,6 @@
 
 #include "core/svg/SVGPathElement.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -44,7 +43,6 @@
 #include "core/svg/SVGPathSegLinetoRel.h"
 #include "core/svg/SVGPathSegLinetoVerticalAbs.h"
 #include "core/svg/SVGPathSegLinetoVerticalRel.h"
-#include "core/svg/SVGPathSegList.h"
 #include "core/svg/SVGPathSegMovetoAbs.h"
 #include "core/svg/SVGPathSegMovetoRel.h"
 #include "core/svg/SVGPathUtilities.h"
@@ -78,20 +76,19 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGPathElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGPathElement::SVGPathElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+inline SVGPathElement::SVGPathElement(Document& document)
+    : SVGGeometryElement(SVGNames::pathTag, document)
     , m_pathByteStream(SVGPathByteStream::create())
     , m_pathSegList(PathSegUnalteredRole)
     , m_isAnimValObserved(false)
 {
-    ASSERT(hasTagName(SVGNames::pathTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGPathElement();
 }
 
-PassRefPtr<SVGPathElement> SVGPathElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGPathElement> SVGPathElement::create(Document& document)
 {
-    return adoptRef(new SVGPathElement(tagName, document));
+    return adoptRef(new SVGPathElement(document));
 }
 
 float SVGPathElement::getTotalLength()
@@ -224,7 +221,7 @@ bool SVGPathElement::isSupportedAttribute(const QualifiedName& attrName)
 void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
+        SVGGeometryElement::parseAttribute(name, value);
         return;
     }
 
@@ -250,7 +247,7 @@ void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
+        SVGGeometryElement::svgAttributeChanged(attrName);
         return;
     }
 
@@ -290,14 +287,14 @@ void SVGPathElement::invalidateMPathDependencies()
 
 Node::InsertionNotificationRequest SVGPathElement::insertedInto(ContainerNode* rootParent)
 {
-    SVGGraphicsElement::insertedInto(rootParent);
+    SVGGeometryElement::insertedInto(rootParent);
     invalidateMPathDependencies();
     return InsertionDone;
 }
 
 void SVGPathElement::removedFrom(ContainerNode* rootParent)
 {
-    SVGGraphicsElement::removedFrom(rootParent);
+    SVGGeometryElement::removedFrom(rootParent);
     invalidateMPathDependencies();
 }
 
@@ -385,17 +382,18 @@ void SVGPathElement::pathSegListChanged(SVGPathSegRole role, ListModification li
     RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
 }
 
-FloatRect SVGPathElement::getBBox(StyleUpdateStrategy styleUpdateStrategy)
+SVGRect SVGPathElement::getBBox()
 {
-    if (styleUpdateStrategy == AllowStyleUpdate)
-        this->document().updateLayoutIgnorePendingStylesheets();
+    // By default, getBBox() returns objectBoundingBox but that will include
+    // markers so we override it to return just the path's bounding rect.
 
-    RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
+    document().updateLayoutIgnorePendingStylesheets();
 
     // FIXME: Eventually we should support getBBox for detached elements.
-    if (!renderer)
-        return FloatRect();
+    if (!renderer())
+        return SVGRect();
 
+    RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
     return renderer->path().boundingRect();
 }
 

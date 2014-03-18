@@ -46,6 +46,10 @@ class NET_EXPORT_PRIVATE QuicUtils {
   // SerializeUint128 writes |v| in little-endian form to |out|.
   static void SerializeUint128(uint128 v, uint8* out);
 
+  // SerializeUint128 writes the first 96 bits of |v| in little-endian form
+  // to |out|.
+  static void SerializeUint128Short(uint128 v, uint8* out);
+
   // Returns the name of the QuicRstStreamErrorCode as a char*
   static const char* StreamErrorToString(QuicRstStreamErrorCode error);
 
@@ -71,7 +75,18 @@ class NET_EXPORT_PRIVATE QuicUtils {
   static char* AsChars(unsigned char* data) {
     return reinterpret_cast<char*>(data);
   }
+
+  static QuicPriority LowestPriority();
+
+  static QuicPriority HighestPriority();
 };
+
+// Utility function that returns an IOVector object wrapped around |str|.
+inline IOVector MakeIOVector(base::StringPiece str) {
+  IOVector iov;
+  iov.Append(const_cast<char*>(str.data()), str.size());
+  return iov;
+}
 
 }  // namespace net
 

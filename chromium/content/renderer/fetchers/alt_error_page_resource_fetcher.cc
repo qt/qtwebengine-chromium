@@ -6,12 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "content/renderer/fetchers/resource_fetcher.h"
+#include "base/time/time.h"
+#include "content/public/renderer/resource_fetcher.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 
-using WebKit::WebFrame;
-using WebKit::WebURLError;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebFrame;
+using blink::WebURLError;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 namespace content {
 
@@ -29,17 +31,14 @@ AltErrorPageResourceFetcher::AltErrorPageResourceFetcher(
       callback_(callback),
       original_request_(original_request),
       original_error_(original_error) {
-  fetcher_.reset(new ResourceFetcherWithTimeout(
-      url, frame, WebURLRequest::TargetIsMainFrame, kDownloadTimeoutSec,
+  fetcher_.reset(ResourceFetcher::Create(
+      url, frame, WebURLRequest::TargetIsMainFrame,
       base::Bind(&AltErrorPageResourceFetcher::OnURLFetchComplete,
                  base::Unretained(this))));
+  fetcher_->SetTimeout(base::TimeDelta::FromSeconds(kDownloadTimeoutSec));
 }
 
 AltErrorPageResourceFetcher::~AltErrorPageResourceFetcher() {
-}
-
-void AltErrorPageResourceFetcher::Cancel() {
-  fetcher_->Cancel();
 }
 
 void AltErrorPageResourceFetcher::OnURLFetchComplete(

@@ -25,6 +25,7 @@
 #include "config.h"
 #include "V8Crypto.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
@@ -38,29 +39,29 @@ namespace WebCore {
 // This custom binding is shared by V8WorkerCrypto. As such:
 //   * Do not call V8Crypto::toNative()
 //   * Must be threadsafe
-void V8Crypto::getRandomValuesMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8Crypto::getRandomValuesMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (args.Length() < 1) {
-        throwNotEnoughArgumentsError(args.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "getRandomValues", "Crypto", info.Holder(), info.GetIsolate());
+    if (info.Length() < 1) {
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(1, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    v8::Handle<v8::Value> buffer = args[0];
-    if (!V8ArrayBufferView::HasInstance(buffer, args.GetIsolate(), worldType(args.GetIsolate()))) {
-        throwTypeError("First argument is not an ArrayBufferView", args.GetIsolate());
-        return;
+    v8::Handle<v8::Value> buffer = info[0];
+    if (!V8ArrayBufferView::hasInstance(buffer, info.GetIsolate(), worldType(info.GetIsolate()))) {
+        exceptionState.throwTypeError("First argument is not an ArrayBufferView");
+    } else {
+        ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));
+        ASSERT(arrayBufferView);
+
+        Crypto::getRandomValues(arrayBufferView, exceptionState);
     }
 
-    ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));
-    ASSERT(arrayBufferView);
-
-    ExceptionState es(args.GetIsolate());
-    Crypto::getRandomValues(arrayBufferView, es);
-
-    if (es.throwIfNeeded())
+    if (exceptionState.throwIfNeeded())
         return;
 
-    v8SetReturnValue(args, buffer);
+    v8SetReturnValue(info, buffer);
 }
 
 } // namespace WebCore

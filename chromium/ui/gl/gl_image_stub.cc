@@ -6,6 +6,13 @@
 
 namespace gfx {
 
+GLImageStub::GLImageStub() {
+}
+
+GLImageStub::~GLImageStub() {
+  Destroy();
+}
+
 void GLImageStub::Destroy() {
 }
 
@@ -13,13 +20,17 @@ gfx::Size GLImageStub::GetSize() {
   return gfx::Size(1, 1);
 }
 
-bool GLImageStub::BindTexImage() {
+bool GLImageStub::BindTexImage(unsigned target) {
   return true;
 }
 
-void GLImageStub::ReleaseTexImage() {
+void GLImageStub::ReleaseTexImage(unsigned target) {
 }
 
-GLImageStub::~GLImageStub() {}
+void GLImageStub::WillUseTexImage() {
+}
+
+void GLImageStub::DidUseTexImage() {
+}
 
 }  // namespace gfx

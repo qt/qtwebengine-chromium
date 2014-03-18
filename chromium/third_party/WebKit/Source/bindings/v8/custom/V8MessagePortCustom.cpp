@@ -31,6 +31,7 @@
 #include "config.h"
 #include "V8MessagePort.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
@@ -40,27 +41,29 @@
 
 namespace WebCore {
 
-void V8MessagePort::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8MessagePort::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    MessagePort* messagePort = V8MessagePort::toNative(args.Holder());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "postMessage", "MessagePort", info.Holder(), info.GetIsolate());
+    MessagePort* messagePort = V8MessagePort::toNative(info.Holder());
     MessagePortArray portArray;
     ArrayBufferArray arrayBufferArray;
-    if (args.Length() > 1) {
-        if (!extractTransferables(args[1], portArray, arrayBufferArray, args.GetIsolate()))
+    if (info.Length() > 1) {
+        bool notASequence = false;
+        const int transferablesArgIndex = 1;
+        if (!extractTransferables(info[transferablesArgIndex], portArray, arrayBufferArray, notASequence, info.GetIsolate())) {
+            if (notASequence) {
+                exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(transferablesArgIndex + 1));
+                exceptionState.throwIfNeeded();
+            }
             return;
+        }
     }
     bool didThrow = false;
-    RefPtr<SerializedScriptValue> message =
-        SerializedScriptValue::create(args[0],
-                                      &portArray,
-                                      &arrayBufferArray,
-                                      didThrow,
-                                      args.GetIsolate());
+    RefPtr<SerializedScriptValue> message = SerializedScriptValue::create(info[0], &portArray, &arrayBufferArray, didThrow, info.GetIsolate());
     if (didThrow)
         return;
-    ExceptionState es(args.GetIsolate());
-    messagePort->postMessage(message.release(), &portArray, es);
-    es.throwIfNeeded();
+    messagePort->postMessage(message.release(), &portArray, exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 } // namespace WebCore

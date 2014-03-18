@@ -31,7 +31,7 @@
 /**
  * @constructor
  * @extends {WebInspector.View}
- * @param {WebInspector.LayerTreeModel} model
+ * @param {!WebInspector.LayerTreeModel} model
  */
 WebInspector.Layers3DView = function(model)
 {
@@ -41,12 +41,14 @@ WebInspector.Layers3DView = function(model)
     this._emptyView = new WebInspector.EmptyView(WebInspector.UIString("Not in the composited mode.\nConsider forcing composited mode in Settings."));
     this._model = model;
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerTreeChanged, this._update, this);
+    this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerPainted, this._onLayerPainted, this);
     this._rotatingContainerElement = this.element.createChild("div", "fill rotating-container");
     this.element.addEventListener("mousemove", this._onMouseMove.bind(this), false);
     this.element.addEventListener("mouseout", this._onMouseMove.bind(this), false);
     this.element.addEventListener("mousedown", this._onMouseDown.bind(this), false);
     this.element.addEventListener("mouseup", this._onMouseUp.bind(this), false);
     this.element.addEventListener("contextmenu", this._onContextMenu.bind(this), false);
+    this.element.addEventListener("dblclick", this._onDoubleClick.bind(this), false);
     this.element.addEventListener("click", this._onClick.bind(this), false);
     this._elementsByLayerId = {};
     this._rotateX = 0;
@@ -54,6 +56,8 @@ WebInspector.Layers3DView = function(model)
     this._scaleAdjustmentStylesheet = this.element.ownerDocument.head.createChild("style");
     this._scaleAdjustmentStylesheet.disabled = true;
     this._lastOutlinedElement = {};
+    this._layerImage = document.createElement("img");
+    WebInspector.settings.showPaintRects.addChangeListener(this._update, this);
 }
 
 /**
@@ -69,8 +73,15 @@ WebInspector.Layers3DView.OutlineType = {
  */
 WebInspector.Layers3DView.Events = {
     LayerHovered: "LayerHovered",
-    LayerSelected: "LayerSelected"
+    LayerSelected: "LayerSelected",
+    LayerSnapshotRequested: "LayerSnapshotRequested"
 }
+
+WebInspector.Layers3DView.PaintRectColors = [
+    WebInspector.Color.fromRGBA([0xFF, 0, 0]),
+    WebInspector.Color.fromRGBA([0xFF, 0, 0xFF]),
+    WebInspector.Color.fromRGBA([0, 0, 0xFF])
+]
 
 WebInspector.Layers3DView.prototype = {
     onResize: function()
@@ -91,8 +102,8 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {WebInspector.Layers3DView.OutlineType} type
-     * @param {WebInspector.Layer?} layer
+     * @param {!WebInspector.Layers3DView.OutlineType} type
+     * @param {?WebInspector.Layer} layer
      */
     _setOutline: function(type, layer)
     {
@@ -102,17 +113,17 @@ WebInspector.Layers3DView.prototype = {
             return;
         this._lastOutlinedElement[type] = element;
         if (previousElement) {
-            previousElement.removeStyleClass(type);
+            previousElement.classList.remove(type);
             this._updateElementColor(previousElement);
         }
         if (element) {
-            element.addStyleClass(type);
+            element.classList.add(type);
             this._updateElementColor(element);
         }
     },
 
     /**
-     * @param {WebInspector.Layer} layer
+     * @param {!WebInspector.Layer} layer
      */
     hoverLayer: function(layer)
     {
@@ -120,12 +131,25 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {WebInspector.Layer} layer
+     * @param {!WebInspector.Layer} layer
      */
     selectLayer: function(layer)
     {
         this._setOutline(WebInspector.Layers3DView.OutlineType.Hovered, null);
         this._setOutline(WebInspector.Layers3DView.OutlineType.Selected, layer);
+    },
+
+    /**
+     * @param {!WebInspector.Layer} layer
+     * @param {string=} imageURL
+     */
+    showImageForLayer: function(layer, imageURL)
+    {
+        var element = this._elementForLayer(layer);
+        this._layerImage.removeAttribute("src");
+        if (imageURL)
+            this._layerImage.src = imageURL;
+        element.appendChild(this._layerImage);
     },
 
     _scaleToFit: function()
@@ -153,6 +177,7 @@ WebInspector.Layers3DView.prototype = {
             stylesheetTextNode.nodeValue = stylesheetContent;
         var element = this._elementForLayer(root);
         element.style.webkitTransform = "scale3d(" + this._scale + "," + this._scale + "," + this._scale + ")";
+        element.style.webkitTransformOrigin = "";
         element.style.left = ((this._clientWidth - root.width() * this._scale) >> 1) + "px";
         element.style.top = ((this._clientHeight - root.height() * this._scale) >> 1) + "px";
     },
@@ -169,6 +194,10 @@ WebInspector.Layers3DView.prototype = {
             return;
         }
         this._emptyView.detach();
+
+        /**
+         * @this {WebInspector.Layers3DView}
+         */
         function updateLayer(layer)
         {
             this._updateLayerElement(this._elementForLayer(layer));
@@ -187,8 +216,17 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {WebInspector.Layer} layer
-     * @return {Element}
+     * @param {!WebInspector.Event} event
+     */
+    _onLayerPainted: function(event)
+    {
+        var layer = /** @type {!WebInspector.Layer} */ (event.data);
+        this._updatePaintRect(this._elementForLayer(layer));
+    },
+
+    /**
+     * @param {!WebInspector.Layer} layer
+     * @return {!Element}
      */
     _elementForLayer: function(layer)
     {
@@ -196,27 +234,27 @@ WebInspector.Layers3DView.prototype = {
         if (element) {
             // We might have missed an update were a layer with given id was gone and re-created,
             // so update reference to point to proper layer object.
-            element.__layer = layer;
+            element.__layerDetails.layer = layer;
             return element;
         }
         element = document.createElement("div");
         element.className = "layer-container";
-        element.__layer = layer;
         ["fill back-wall", "side-wall top", "side-wall right", "side-wall bottom", "side-wall left"].forEach(element.createChild.bind(element, "div"));
+        element.__layerDetails = new WebInspector.LayerDetails(layer, element.createChild("div", "paint-rect"));
         this._elementsByLayerId[layer.id()] = element;
         return element;
     },
 
     /**
-     * @param {Element} element
+     * @param {!Element} element
      */
     _updateLayerElement: function(element)
     {
-        var layer = element.__layer;
+        var layer = element.__layerDetails.layer;
         var style = element.style;
         var isContentRoot = layer === this._model.contentRoot();
         var parentElement = isContentRoot ? this._rotatingContainerElement : this._elementForLayer(layer.parent());
-        element.__depth = (parentElement.__depth || 0) + 1;
+        element.__layerDetails.depth = parentElement.__layerDetails ? parentElement.__layerDetails.depth + 1 : 0;
         element.enableStyleClass("invisible", layer.invisible());
         this._updateElementColor(element);
         if (parentElement !== element.parentElement)
@@ -224,6 +262,7 @@ WebInspector.Layers3DView.prototype = {
 
         style.width  = layer.width() + "px";
         style.height  = layer.height() + "px";
+        this._updatePaintRect(element);
         if (isContentRoot)
             return;
 
@@ -231,10 +270,6 @@ WebInspector.Layers3DView.prototype = {
         style.top  = layer.offsetY() + "px";
         var transform = layer.transform();
         if (transform) {
-            function toFixed5(x)
-            {
-                return x.toFixed(5);
-            }
             // Avoid exponential notation in CSS.
             style.webkitTransform = "matrix3d(" + transform.map(toFixed5).join(",") + ") translateZ(" + this._layerSpacing + ")";
             var anchor = layer.anchorPoint();
@@ -243,10 +278,38 @@ WebInspector.Layers3DView.prototype = {
             style.webkitTransform = "";
             style.webkitTransformOrigin = "";
         }
+
+        function toFixed5(x)
+        {
+            return x.toFixed(5);
+        }
+    },
+
+    _updatePaintRect: function(element)
+    {
+        var details = element.__layerDetails;
+        var paintRect = details.layer.lastPaintRect();
+        var paintRectElement = details.paintRectElement;
+        if (!paintRect || !WebInspector.settings.showPaintRects.get()) {
+            paintRectElement.classList.add("hidden");
+            return;
+        }
+        paintRectElement.classList.remove("hidden");
+        if (details.paintCount === details.layer.paintCount())
+            return;
+        details.paintCount = details.layer.paintCount();
+        var style = paintRectElement.style;
+        style.left = paintRect.x + "px";
+        style.top = paintRect.y + "px";
+        style.width = paintRect.width + "px";
+        style.height = paintRect.height + "px";
+        var color = WebInspector.Layers3DView.PaintRectColors[details.paintCount % WebInspector.Layers3DView.PaintRectColors.length];
+        style.borderWidth = Math.ceil(1 / this._scale) + "px";
+        style.borderColor = color.toString(WebInspector.Color.Format.RGBA);
     },
 
     /**
-     * @param {Element} element
+     * @param {!Element} element
      */
     _updateElementColor: function(element)
     {
@@ -255,14 +318,14 @@ WebInspector.Layers3DView.prototype = {
             color = WebInspector.Color.PageHighlight.Content.toString(WebInspector.Color.Format.RGBA) || "";
         else {
             const base = 144;
-            var component = base + 20 * ((element.__depth - 1) % 5);
+            var component = base + 20 * ((element.__layerDetails.depth - 1) % 5);
             color = "rgba(" + component + "," + component + "," + component + ", 0.8)";
         }
         element.style.backgroundColor = color;
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _onMouseDown: function(event)
     {
@@ -272,7 +335,7 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _setReferencePoint: function(event)
     {
@@ -291,7 +354,7 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _onMouseUp: function(event)
     {
@@ -301,8 +364,8 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {Event} event
-     * @return {WebInspector.Layer?}
+     * @param {?Event} event
+     * @return {?WebInspector.Layer}
      */
     _layerFromEventPoint: function(event)
     {
@@ -310,11 +373,11 @@ WebInspector.Layers3DView.prototype = {
         if (!element)
             return null;
         element = element.enclosingNodeOrSelfWithClass("layer-container");
-        return element && element.__layer;
+        return element && element.__layerDetails && element.__layerDetails.layer;
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _onMouseMove: function(event)
     {
@@ -335,7 +398,7 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {Event} event
+     * @param {?Event} event
      */
     _onContextMenu: function(event)
     {
@@ -346,15 +409,42 @@ WebInspector.Layers3DView.prototype = {
         var domNode = WebInspector.domAgent.nodeForId(nodeId);
         if (!domNode)
             return;
-        var contextMenu = new WebInspector.ContextMenu(event);
+         var contextMenu = new WebInspector.ContextMenu(event);
         contextMenu.appendApplicableItems(domNode);
         contextMenu.show();
     },
 
+    /**
+     * @param {?Event} event
+     */
     _onClick: function(event)
     {
         this.dispatchEventToListeners(WebInspector.Layers3DView.Events.LayerSelected, this._layerFromEventPoint(event));
     },
 
+    /**
+     * @param {?Event} event
+     */
+    _onDoubleClick: function(event)
+    {
+        var layer = this._layerFromEventPoint(event);
+        if (layer)
+            this.dispatchEventToListeners(WebInspector.Layers3DView.Events.LayerSnapshotRequested, layer);
+        event.stopPropagation();
+    },
+
     __proto__: WebInspector.View.prototype
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.Layer} layer
+ * @param {!Element} paintRectElement
+ */
+WebInspector.LayerDetails = function(layer, paintRectElement)
+{
+    this.layer = layer;
+    this.depth = 0;
+    this.paintRectElement = paintRectElement;
+    this.paintCount = 0;
 }

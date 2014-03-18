@@ -31,9 +31,8 @@
 callback PromiseInit = void (any resolve, any reject);
 callback AnyCallback = any (optional any value);
 [
-   GlobalContext=Window&WorkerGlobalScope,
    CustomConstructor(PromiseInit init),
-   EnabledAtRuntime=Promise
+   GlobalContext=Window&WorkerGlobalScope,
 ] interface Promise {
    [Custom] Promise then(optional AnyCallback fulfillCallback, optional AnyCallback rejectCallback);
    [Custom] Promise catch(optional AnyCallback rejectCallback);
@@ -41,6 +40,7 @@ callback AnyCallback = any (optional any value);
    [Custom] static Promise resolve(any value);
    [Custom] static Promise reject(any value);
 
-   [Custom] static Promise _any(any... values);
-   [Custom] static Promise every(any... values);
+   [Custom] static Promise cast(any value);
+   [Custom] static Promise race(any iterable);
+   [Custom] static Promise all(any iterable);
 };

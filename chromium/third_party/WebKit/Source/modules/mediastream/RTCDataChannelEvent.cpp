@@ -25,8 +25,7 @@
 #include "config.h"
 #include "modules/mediastream/RTCDataChannelEvent.h"
 
-#include "core/dom/EventNames.h"
-#include "modules/mediastream/RTCDataChannel.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -64,7 +63,7 @@ RTCDataChannel* RTCDataChannelEvent::channel() const
 
 const AtomicString& RTCDataChannelEvent::interfaceName() const
 {
-    return eventNames().interfaceForRTCDataChannelEvent;
+    return EventNames::RTCDataChannelEvent;
 }
 
 } // namespace WebCore

@@ -24,29 +24,29 @@
  */
 
 [
-    EnabledAtRuntime=Media
+    RuntimeEnabled=Media
 ] interface HTMLVideoElement : HTMLMediaElement {
     [Reflect] attribute unsigned long width;
     [Reflect] attribute unsigned long height;
     readonly attribute unsigned long videoWidth;
     readonly attribute unsigned long videoHeight;
-    [Reflect, URL] attribute DOMString poster;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString poster;
 
-    readonly attribute boolean webkitSupportsFullscreen;
-    readonly attribute boolean webkitDisplayingFullscreen;
+    [MeasureAs=PrefixedVideoSupportsFullscreen] readonly attribute boolean webkitSupportsFullscreen;
+    [MeasureAs=PrefixedVideoDisplayingFullscreen] readonly attribute boolean webkitDisplayingFullscreen;
 
-    [RaisesException, PerWorldBindings, ActivityLog=Access] void webkitEnterFullscreen();
-    void webkitExitFullscreen();
+    [MeasureAs=PrefixedVideoEnterFullscreen, RaisesException, PerWorldBindings, ActivityLogging=ForAllWorlds] void webkitEnterFullscreen();
+    [MeasureAs=PrefixedVideoExitFullscreen] void webkitExitFullscreen();
 
     // Note the different capitalization of the "S" in FullScreen.
-    [RaisesException, PerWorldBindings, ActivityLog=Access] void webkitEnterFullScreen();
-    void webkitExitFullScreen();
+    [MeasureAs=PrefixedVideoEnterFullScreen, ImplementedAs=webkitEnterFullscreen, RaisesException, PerWorldBindings, ActivityLogging=ForAllWorlds] void webkitEnterFullScreen();
+    [MeasureAs=PrefixedVideoExitFullScreen, ImplementedAs=webkitExitFullscreen] void webkitExitFullScreen();
 
     // The number of frames that have been decoded and made available for
     // playback.
-    readonly attribute unsigned long webkitDecodedFrameCount;
+    [MeasureAs=PrefixedVideoDecodedFrameCount] readonly attribute unsigned long webkitDecodedFrameCount;
 
     // The number of decoded frames that have been dropped by the player
     // for performance reasons during playback.
-    readonly attribute unsigned long webkitDroppedFrameCount;
+    [MeasureAs=PrefixedVideoDroppedFrameCount] readonly attribute unsigned long webkitDroppedFrameCount;
 };

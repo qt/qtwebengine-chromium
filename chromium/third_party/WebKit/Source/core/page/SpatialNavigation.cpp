@@ -30,16 +30,15 @@
 #include "core/page/SpatialNavigation.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Node.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/FrameTree.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/graphics/IntRect.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderLayer.h"
+#include "platform/geometry/IntRect.h"
 
 namespace WebCore {
 
@@ -396,7 +395,7 @@ bool scrollInDirection(Node* container, FocusDirection direction)
             return false;
         }
 
-        container->renderBox()->enclosingLayer()->scrollByRecursively(IntSize(dx, dy));
+        container->renderBox()->scrollByRecursively(IntSize(dx, dy));
         return true;
     }
 
@@ -502,7 +501,7 @@ bool canScrollInDirection(const Frame* frame, FocusDirection direction)
 static LayoutRect rectToAbsoluteCoordinates(Frame* initialFrame, const LayoutRect& initialRect)
 {
     LayoutRect rect = initialRect;
-    for (Frame* frame = initialFrame; frame; frame = frame->tree()->parent()) {
+    for (Frame* frame = initialFrame; frame; frame = frame->tree().parent()) {
         if (Element* element = frame->ownerElement()) {
             do {
                 rect.move(element->offsetLeft(), element->offsetTop());

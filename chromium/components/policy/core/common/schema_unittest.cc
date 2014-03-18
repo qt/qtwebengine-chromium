@@ -11,30 +11,60 @@ namespace policy {
 
 namespace {
 
-#define OBJECT_TYPE "\"type\":\"object\""
-
-const internal::SchemaNode kTypeBoolean = { base::Value::TYPE_BOOLEAN, NULL, };
-const internal::SchemaNode kTypeInteger = { base::Value::TYPE_INTEGER, NULL, };
-const internal::SchemaNode kTypeNumber = { base::Value::TYPE_DOUBLE, NULL, };
-const internal::SchemaNode kTypeString = { base::Value::TYPE_STRING, NULL, };
+const char kTestSchema[] =
+    "{"
+    "  \"type\": \"object\","
+    "  \"properties\": {"
+    "    \"Boolean\": { \"type\": \"boolean\" },"
+    "    \"Integer\": { \"type\": \"integer\" },"
+    "    \"Null\": { \"type\": \"null\" },"
+    "    \"Number\": { \"type\": \"number\" },"
+    "    \"String\": { \"type\": \"string\" },"
+    "    \"Array\": {"
+    "      \"type\": \"array\","
+    "      \"items\": { \"type\": \"string\" }"
+    "    },"
+    "    \"ArrayOfObjects\": {"
+    "      \"type\": \"array\","
+    "      \"items\": {"
+    "        \"type\": \"object\","
+    "        \"properties\": {"
+    "          \"one\": { \"type\": \"string\" },"
+    "          \"two\": { \"type\": \"integer\" }"
+    "        }"
+    "      }"
+    "    },"
+    "    \"ArrayOfArray\": {"
+    "      \"type\": \"array\","
+    "      \"items\": {"
+    "        \"type\": \"array\","
+    "        \"items\": { \"type\": \"string\" }"
+    "      }"
+    "    },"
+    "    \"Object\": {"
+    "      \"type\": \"object\","
+    "      \"properties\": {"
+    "        \"one\": { \"type\": \"boolean\" },"
+    "        \"two\": { \"type\": \"integer\" }"
+    "      },"
+    "      \"additionalProperties\": { \"type\": \"string\" }"
+    "    }"
+    "  }"
+    "}";
 
 bool ParseFails(const std::string& content) {
   std::string error;
-  scoped_ptr<SchemaOwner> schema = SchemaOwner::Parse(content, &error);
-  if (schema)
-    EXPECT_TRUE(schema->schema().valid());
-  else
-    EXPECT_FALSE(error.empty());
-  return !schema;
+  Schema schema = Schema::Parse(content, &error);
+  if (schema.valid())
+    return false;
+  EXPECT_FALSE(error.empty());
+  return true;
 }
 
 }  // namespace
 
 TEST(SchemaTest, MinimalSchema) {
-  EXPECT_FALSE(ParseFails(
-      "{"
-        OBJECT_TYPE
-      "}"));
+  EXPECT_FALSE(ParseFails("{ \"type\": \"object\" }"));
 }
 
 TEST(SchemaTest, InvalidSchemas) {
@@ -48,81 +78,89 @@ TEST(SchemaTest, InvalidSchemas) {
 
   EXPECT_TRUE(ParseFails(
       "{"
-        OBJECT_TYPE ","
+      "  \"type\": \"object\","
         "\"additionalProperties\": { \"type\":\"object\" }"
       "}"));
 
   EXPECT_TRUE(ParseFails(
       "{"
-        OBJECT_TYPE ","
-        "\"patternProperties\": { \"a+b*\": { \"type\": \"object\" } }"
+      "  \"type\": \"object\","
+      "  \"patternProperties\": { \"a+b*\": { \"type\": \"object\" } }"
       "}"));
 
   EXPECT_TRUE(ParseFails(
       "{"
-        OBJECT_TYPE ","
-        "\"properties\": { \"Policy\": { \"type\": \"bogus\" } }"
+      "  \"type\": \"object\","
+      "  \"properties\": { \"Policy\": { \"type\": \"bogus\" } }"
       "}"));
 
   EXPECT_TRUE(ParseFails(
       "{"
-        OBJECT_TYPE ","
-        "\"properties\": { \"Policy\": { \"type\": [\"string\", \"number\"] } }"
+      "  \"type\": \"object\","
+      "  \"properties\": { \"Policy\": { \"type\": [\"string\", \"number\"] } }"
       "}"));
 
   EXPECT_TRUE(ParseFails(
       "{"
-        OBJECT_TYPE ","
-        "\"properties\": { \"Policy\": { \"type\": \"any\" } }"
+      "  \"type\": \"object\","
+      "  \"properties\": { \"Policy\": { \"type\": \"any\" } }"
       "}"));
+
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": { \"Policy\": 123 }"
+      "}"));
+
+  EXPECT_FALSE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"unknown attribute\": \"is ignored\""
+      "}"));
+}
+
+TEST(SchemaTest, Ownership) {
+  std::string error;
+  Schema schema = Schema::Parse(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"sub\": {"
+      "      \"type\": \"object\","
+      "      \"properties\": {"
+      "        \"subsub\": { \"type\": \"string\" }"
+      "      }"
+      "    }"
+      "  }"
+      "}", &error);
+  ASSERT_TRUE(schema.valid()) << error;
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  schema = schema.GetKnownProperty("sub");
+  ASSERT_TRUE(schema.valid());
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  {
+    Schema::Iterator it = schema.GetPropertiesIterator();
+    ASSERT_FALSE(it.IsAtEnd());
+    EXPECT_STREQ("subsub", it.key());
+
+    schema = it.schema();
+    it.Advance();
+    EXPECT_TRUE(it.IsAtEnd());
+  }
+
+  ASSERT_TRUE(schema.valid());
+  EXPECT_EQ(base::Value::TYPE_STRING, schema.type());
+
+  // This test shouldn't leak nor use invalid memory.
 }
 
 TEST(SchemaTest, ValidSchema) {
   std::string error;
-  scoped_ptr<SchemaOwner> policy_schema = SchemaOwner::Parse(
-      "{"
-        OBJECT_TYPE ","
-        "\"properties\": {"
-        "  \"Boolean\": { \"type\": \"boolean\" },"
-        "  \"Integer\": { \"type\": \"integer\" },"
-        "  \"Null\": { \"type\": \"null\" },"
-        "  \"Number\": { \"type\": \"number\" },"
-        "  \"String\": { \"type\": \"string\" },"
-        "  \"Array\": {"
-        "    \"type\": \"array\","
-        "    \"items\": { \"type\": \"string\" }"
-        "  },"
-        "  \"ArrayOfObjects\": {"
-        "    \"type\": \"array\","
-        "    \"items\": {"
-        "      \"type\": \"object\","
-        "      \"properties\": {"
-        "        \"one\": { \"type\": \"string\" },"
-        "        \"two\": { \"type\": \"integer\" }"
-        "      }"
-        "    }"
-        "  },"
-        "  \"ArrayOfArray\": {"
-        "    \"type\": \"array\","
-        "    \"items\": {"
-        "      \"type\": \"array\","
-        "      \"items\": { \"type\": \"string\" }"
-        "    }"
-        "  },"
-        "  \"Object\": {"
-        "    \"type\": \"object\","
-        "    \"properties\": {"
-        "      \"one\": { \"type\": \"boolean\" },"
-        "      \"two\": { \"type\": \"integer\" }"
-        "    },"
-        "    \"additionalProperties\": { \"type\": \"string\" }"
-        "  }"
-        "}"
-      "}", &error);
-  ASSERT_TRUE(policy_schema) << error;
-  ASSERT_TRUE(policy_schema->schema().valid());
+  Schema schema = Schema::Parse(kTestSchema, &error);
+  ASSERT_TRUE(schema.valid()) << error;
 
-  Schema schema = policy_schema->schema();
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
   EXPECT_FALSE(schema.GetProperty("invalid").valid());
 
@@ -218,13 +256,9 @@ TEST(SchemaTest, ValidSchema) {
 
 TEST(SchemaTest, Lookups) {
   std::string error;
-  scoped_ptr<SchemaOwner> policy_schema = SchemaOwner::Parse(
-      "{"
-        OBJECT_TYPE
-      "}", &error);
-  ASSERT_TRUE(policy_schema) << error;
-  Schema schema = policy_schema->schema();
-  ASSERT_TRUE(schema.valid());
+
+  Schema schema = Schema::Parse("{ \"type\": \"object\" }", &error);
+  ASSERT_TRUE(schema.valid()) << error;
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
 
   // This empty schema should never find named properties.
@@ -232,36 +266,32 @@ TEST(SchemaTest, Lookups) {
   EXPECT_FALSE(schema.GetKnownProperty("xyz").valid());
   EXPECT_TRUE(schema.GetPropertiesIterator().IsAtEnd());
 
-  policy_schema = SchemaOwner::Parse(
+  schema = Schema::Parse(
       "{"
-        OBJECT_TYPE ","
-        "\"properties\": {"
-        "  \"Boolean\": { \"type\": \"boolean\" }"
-        "}"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"Boolean\": { \"type\": \"boolean\" }"
+      "  }"
       "}", &error);
-  ASSERT_TRUE(policy_schema) << error;
-  schema = policy_schema->schema();
-  ASSERT_TRUE(schema.valid());
+  ASSERT_TRUE(schema.valid()) << error;
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
 
   EXPECT_FALSE(schema.GetKnownProperty("").valid());
   EXPECT_FALSE(schema.GetKnownProperty("xyz").valid());
   EXPECT_TRUE(schema.GetKnownProperty("Boolean").valid());
 
-  policy_schema = SchemaOwner::Parse(
+  schema = Schema::Parse(
       "{"
-        OBJECT_TYPE ","
-        "\"properties\": {"
-          "  \"bb\" : { \"type\": \"null\" },"
-          "  \"aa\" : { \"type\": \"boolean\" },"
-          "  \"abab\" : { \"type\": \"string\" },"
-          "  \"ab\" : { \"type\": \"number\" },"
-          "  \"aba\" : { \"type\": \"integer\" }"
-        "}"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"bb\" : { \"type\": \"null\" },"
+      "    \"aa\" : { \"type\": \"boolean\" },"
+      "    \"abab\" : { \"type\": \"string\" },"
+      "    \"ab\" : { \"type\": \"number\" },"
+      "    \"aba\" : { \"type\": \"integer\" }"
+      "  }"
       "}", &error);
-  ASSERT_TRUE(policy_schema) << error;
-  schema = policy_schema->schema();
-  ASSERT_TRUE(schema.valid());
+  ASSERT_TRUE(schema.valid()) << error;
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
 
   EXPECT_FALSE(schema.GetKnownProperty("").valid());
@@ -284,55 +314,373 @@ TEST(SchemaTest, Lookups) {
   }
 }
 
-TEST(SchemaTest, WrapSimpleNode) {
-  scoped_ptr<SchemaOwner> policy_schema = SchemaOwner::Wrap(&kTypeString);
-  ASSERT_TRUE(policy_schema);
-  Schema schema = policy_schema->schema();
-  ASSERT_TRUE(schema.valid());
-  EXPECT_EQ(base::Value::TYPE_STRING, schema.type());
-}
-
-TEST(SchemaTest, WrapDictionary) {
-  const internal::SchemaNode kList = {
-    base::Value::TYPE_LIST,
-    &kTypeString,
+TEST(SchemaTest, Wrap) {
+  const internal::SchemaNode kSchemas[] = {
+    { base::Value::TYPE_DICTIONARY,   0 },    // 0: root node
+    { base::Value::TYPE_BOOLEAN,      -1 },   // 1
+    { base::Value::TYPE_INTEGER,      -1 },   // 2
+    { base::Value::TYPE_DOUBLE,       -1 },   // 3
+    { base::Value::TYPE_STRING,       -1 },   // 4
+    { base::Value::TYPE_LIST,         4 },    // 5: list of strings.
+    { base::Value::TYPE_LIST,         5 },    // 6: list of lists of strings.
   };
 
   const internal::PropertyNode kPropertyNodes[] = {
-    { "Boolean",  &kTypeBoolean },
-    { "Integer",  &kTypeInteger },
-    { "List",     &kList },
-    { "Number",   &kTypeNumber },
-    { "String",   &kTypeString },
+    { "Boolean",  1 },
+    { "Integer",  2 },
+    { "Number",   3 },
+    { "String",   4 },
+    { "List",     5 },
   };
 
-  const internal::PropertiesNode kProperties = {
+  const internal::PropertiesNode kProperties[] = {
+    // Properties 0 to 5 (exclusive) are known, from kPropertyNodes.
+    // SchemaNode offset 6 is for additionalProperties (list of lists).
+    { 0, 5, 6 },
+  };
+
+  const internal::SchemaData kData = {
+    kSchemas,
     kPropertyNodes,
-    kPropertyNodes + arraysize(kPropertyNodes),
-    NULL,
+    kProperties,
   };
 
-  const internal::SchemaNode root = {
-    base::Value::TYPE_DICTIONARY,
-    &kProperties,
-  };
-
-  scoped_ptr<SchemaOwner> policy_schema = SchemaOwner::Wrap(&root);
-  ASSERT_TRUE(policy_schema);
-  Schema schema = policy_schema->schema();
+  Schema schema = Schema::Wrap(&kData);
   ASSERT_TRUE(schema.valid());
   EXPECT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
 
+  struct {
+    const char* key;
+    base::Value::Type type;
+  } kExpectedProperties[] = {
+    { "Boolean", base::Value::TYPE_BOOLEAN },
+    { "Integer", base::Value::TYPE_INTEGER },
+    { "Number", base::Value::TYPE_DOUBLE },
+    { "String", base::Value::TYPE_STRING },
+    { "List", base::Value::TYPE_LIST },
+  };
+
   Schema::Iterator it = schema.GetPropertiesIterator();
-  for (size_t i = 0; i < arraysize(kPropertyNodes); ++i) {
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kExpectedProperties); ++i) {
     ASSERT_FALSE(it.IsAtEnd());
-    EXPECT_STREQ(kPropertyNodes[i].key, it.key());
+    EXPECT_STREQ(kExpectedProperties[i].key, it.key());
     Schema sub = it.schema();
     ASSERT_TRUE(sub.valid());
-    EXPECT_EQ(kPropertyNodes[i].schema->type, sub.type());
+    EXPECT_EQ(kExpectedProperties[i].type, sub.type());
+
+    if (sub.type() == base::Value::TYPE_LIST) {
+      ASSERT_EQ(base::Value::TYPE_LIST, sub.type());
+      Schema items = sub.GetItems();
+      ASSERT_TRUE(items.valid());
+      EXPECT_EQ(base::Value::TYPE_STRING, items.type());
+    }
+
     it.Advance();
   }
   EXPECT_TRUE(it.IsAtEnd());
+
+  Schema sub = schema.GetAdditionalProperties();
+  ASSERT_TRUE(sub.valid());
+  ASSERT_EQ(base::Value::TYPE_LIST, sub.type());
+  Schema subsub = sub.GetItems();
+  ASSERT_TRUE(subsub.valid());
+  ASSERT_EQ(base::Value::TYPE_LIST, subsub.type());
+  Schema subsubsub = subsub.GetItems();
+  ASSERT_TRUE(subsubsub.valid());
+  ASSERT_EQ(base::Value::TYPE_STRING, subsubsub.type());
 }
+
+TEST(SchemaTest, Validate) {
+  std::string error;
+  Schema schema = Schema::Parse(kTestSchema, &error);
+  ASSERT_TRUE(schema.valid()) << error;
+
+  base::DictionaryValue bundle;
+  EXPECT_TRUE(schema.Validate(bundle));
+
+  // Wrong type, expected integer.
+  bundle.SetBoolean("Integer", true);
+  EXPECT_FALSE(schema.Validate(bundle));
+
+  // Wrong type, expected list of strings.
+  {
+    bundle.Clear();
+    base::ListValue list;
+    list.AppendInteger(1);
+    bundle.Set("Array", list.DeepCopy());
+    EXPECT_FALSE(schema.Validate(bundle));
+  }
+
+  // Wrong type in a sub-object.
+  {
+    bundle.Clear();
+    base::DictionaryValue dict;
+    dict.SetString("one", "one");
+    bundle.Set("Object", dict.DeepCopy());
+    EXPECT_FALSE(schema.Validate(bundle));
+  }
+
+  // Unknown name.
+  bundle.Clear();
+  bundle.SetBoolean("Unknown", true);
+  EXPECT_FALSE(schema.Validate(bundle));
+
+  // All of these will be valid.
+  bundle.Clear();
+  bundle.SetBoolean("Boolean", true);
+  bundle.SetInteger("Integer", 123);
+  bundle.Set("Null", base::Value::CreateNullValue());
+  bundle.Set("Number", base::Value::CreateDoubleValue(3.14));
+  bundle.SetString("String", "omg");
+
+  {
+    base::ListValue list;
+    list.AppendString("a string");
+    list.AppendString("another string");
+    bundle.Set("Array", list.DeepCopy());
+  }
+
+  {
+    base::DictionaryValue dict;
+    dict.SetString("one", "string");
+    dict.SetInteger("two", 2);
+    base::ListValue list;
+    list.Append(dict.DeepCopy());
+    list.Append(dict.DeepCopy());
+    bundle.Set("ArrayOfObjects", list.DeepCopy());
+  }
+
+  {
+    base::ListValue list;
+    list.AppendString("a string");
+    list.AppendString("another string");
+    base::ListValue listlist;
+    listlist.Append(list.DeepCopy());
+    listlist.Append(list.DeepCopy());
+    bundle.Set("ArrayOfArray", listlist.DeepCopy());
+  }
+
+  {
+    base::DictionaryValue dict;
+    dict.SetBoolean("one", true);
+    dict.SetInteger("two", 2);
+    dict.SetString("additionally", "a string");
+    dict.SetString("and also", "another string");
+    bundle.Set("Object", dict.DeepCopy());
+  }
+
+  EXPECT_TRUE(schema.Validate(bundle));
+
+  bundle.SetString("boom", "bang");
+  EXPECT_FALSE(schema.Validate(bundle));
+
+}
+TEST(SchemaTest, InvalidReferences) {
+  // References to undeclared schemas fail.
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"name\": { \"$ref\": \"undeclared\" }"
+      "  }"
+      "}"));
+
+  // Can't refer to self.
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"name\": {"
+      "      \"id\": \"self\","
+      "      \"$ref\": \"self\""
+      "    }"
+      "  }"
+      "}"));
+
+  // Duplicated IDs are invalid.
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"name\": {"
+      "      \"id\": \"x\","
+      "      \"type\": \"string\""
+      "    },"
+      "    \"another\": {"
+      "      \"id\": \"x\","
+      "      \"type\": \"string\""
+      "    }"
+      "  }"
+      "}"));
+
+  // Main object can't be a reference.
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"id\": \"main\","
+      "  \"$ref\": \"main\""
+      "}"));
+
+  EXPECT_TRUE(ParseFails(
+      "{"
+      "  \"type\": \"object\","
+      "  \"$ref\": \"main\""
+      "}"));
+}
+
+TEST(SchemaTest, RecursiveReferences) {
+  // Verifies that references can go to a parent schema, to define a
+  // recursive type.
+  std::string error;
+  Schema schema = Schema::Parse(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"bookmarks\": {"
+      "      \"type\": \"array\","
+      "      \"id\": \"ListOfBookmarks\","
+      "      \"items\": {"
+      "        \"type\": \"object\","
+      "        \"properties\": {"
+      "          \"name\": { \"type\": \"string\" },"
+      "          \"url\": { \"type\": \"string\" },"
+      "          \"children\": { \"$ref\": \"ListOfBookmarks\" }"
+      "        }"
+      "      }"
+      "    }"
+      "  }"
+      "}", &error);
+  ASSERT_TRUE(schema.valid()) << error;
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  Schema parent = schema.GetKnownProperty("bookmarks");
+  ASSERT_TRUE(parent.valid());
+  ASSERT_EQ(base::Value::TYPE_LIST, parent.type());
+
+  // Check the recursive type a number of times.
+  for (int i = 0; i < 10; ++i) {
+    Schema items = parent.GetItems();
+    ASSERT_TRUE(items.valid());
+    ASSERT_EQ(base::Value::TYPE_DICTIONARY, items.type());
+
+    Schema prop = items.GetKnownProperty("name");
+    ASSERT_TRUE(prop.valid());
+    ASSERT_EQ(base::Value::TYPE_STRING, prop.type());
+
+    prop = items.GetKnownProperty("url");
+    ASSERT_TRUE(prop.valid());
+    ASSERT_EQ(base::Value::TYPE_STRING, prop.type());
+
+    prop = items.GetKnownProperty("children");
+    ASSERT_TRUE(prop.valid());
+    ASSERT_EQ(base::Value::TYPE_LIST, prop.type());
+
+    parent = prop;
+  }
+}
+
+TEST(SchemaTest, UnorderedReferences) {
+  // Verifies that references and IDs can come in any order.
+  std::string error;
+  Schema schema = Schema::Parse(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"a\": { \"$ref\": \"shared\" },"
+      "    \"b\": { \"$ref\": \"shared\" },"
+      "    \"c\": { \"$ref\": \"shared\" },"
+      "    \"d\": { \"$ref\": \"shared\" },"
+      "    \"e\": {"
+      "      \"type\": \"boolean\","
+      "      \"id\": \"shared\""
+      "    },"
+      "    \"f\": { \"$ref\": \"shared\" },"
+      "    \"g\": { \"$ref\": \"shared\" },"
+      "    \"h\": { \"$ref\": \"shared\" },"
+      "    \"i\": { \"$ref\": \"shared\" }"
+      "  }"
+      "}", &error);
+  ASSERT_TRUE(schema.valid()) << error;
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  for (char c = 'a'; c <= 'i'; ++c) {
+    Schema sub = schema.GetKnownProperty(std::string(1, c));
+    ASSERT_TRUE(sub.valid()) << c;
+    ASSERT_EQ(base::Value::TYPE_BOOLEAN, sub.type()) << c;
+  }
+}
+
+TEST(SchemaTest, AdditionalPropertiesReference) {
+  // Verifies that "additionalProperties" can be a reference.
+  std::string error;
+  Schema schema = Schema::Parse(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"policy\": {"
+      "      \"type\": \"object\","
+      "      \"properties\": {"
+      "        \"foo\": {"
+      "          \"type\": \"boolean\","
+      "          \"id\": \"FooId\""
+      "        }"
+      "      },"
+      "      \"additionalProperties\": { \"$ref\": \"FooId\" }"
+      "    }"
+      "  }"
+      "}", &error);
+  ASSERT_TRUE(schema.valid()) << error;
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  Schema policy = schema.GetKnownProperty("policy");
+  ASSERT_TRUE(policy.valid());
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, policy.type());
+
+  Schema foo = policy.GetKnownProperty("foo");
+  ASSERT_TRUE(foo.valid());
+  EXPECT_EQ(base::Value::TYPE_BOOLEAN, foo.type());
+
+  Schema additional = policy.GetAdditionalProperties();
+  ASSERT_TRUE(additional.valid());
+  EXPECT_EQ(base::Value::TYPE_BOOLEAN, additional.type());
+
+  Schema x = policy.GetProperty("x");
+  ASSERT_TRUE(x.valid());
+  EXPECT_EQ(base::Value::TYPE_BOOLEAN, x.type());
+}
+
+TEST(SchemaTest, ItemsReference) {
+  // Verifies that "items" can be a reference.
+  std::string error;
+  Schema schema = Schema::Parse(
+      "{"
+      "  \"type\": \"object\","
+      "  \"properties\": {"
+      "    \"foo\": {"
+      "      \"type\": \"boolean\","
+      "      \"id\": \"FooId\""
+      "    },"
+      "    \"list\": {"
+      "      \"type\": \"array\","
+      "      \"items\": { \"$ref\": \"FooId\" }"
+      "    }"
+      "  }"
+      "}", &error);
+  ASSERT_TRUE(schema.valid()) << error;
+  ASSERT_EQ(base::Value::TYPE_DICTIONARY, schema.type());
+
+  Schema foo = schema.GetKnownProperty("foo");
+  ASSERT_TRUE(foo.valid());
+  EXPECT_EQ(base::Value::TYPE_BOOLEAN, foo.type());
+
+  Schema list = schema.GetKnownProperty("list");
+  ASSERT_TRUE(list.valid());
+  ASSERT_EQ(base::Value::TYPE_LIST, list.type());
+
+  Schema items = list.GetItems();
+  ASSERT_TRUE(items.valid());
+  ASSERT_EQ(base::Value::TYPE_BOOLEAN, items.type());
+}
+
 
 }  // namespace policy

@@ -39,8 +39,8 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLTemplateElement::HTMLTemplateElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+inline HTMLTemplateElement::HTMLTemplateElement(Document& document)
+    : HTMLElement(templateTag, document)
 {
     ScriptWrappable::init(this);
 }
@@ -51,15 +51,15 @@ HTMLTemplateElement::~HTMLTemplateElement()
         m_content->clearHost();
 }
 
-PassRefPtr<HTMLTemplateElement> HTMLTemplateElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLTemplateElement> HTMLTemplateElement::create(Document& document)
 {
-    return adoptRef(new HTMLTemplateElement(tagName, document));
+    return adoptRef(new HTMLTemplateElement(document));
 }
 
 DocumentFragment* HTMLTemplateElement::content() const
 {
     if (!m_content)
-        m_content = TemplateContentDocumentFragment::create(document().ensureTemplateDocument(), this);
+        m_content = TemplateContentDocumentFragment::create(document().ensureTemplateDocument(), const_cast<HTMLTemplateElement*>(this));
 
     return m_content.get();
 }
@@ -75,12 +75,12 @@ PassRefPtr<Node> HTMLTemplateElement::cloneNode(bool deep)
     return clone.release();
 }
 
-void HTMLTemplateElement::didMoveToNewDocument(Document* oldDocument)
+void HTMLTemplateElement::didMoveToNewDocument(Document& oldDocument)
 {
     HTMLElement::didMoveToNewDocument(oldDocument);
     if (!m_content)
         return;
-    document().ensureTemplateDocument().adoptIfNeeded(m_content.get());
+    document().ensureTemplateDocument().adoptIfNeeded(*m_content);
 }
 
 } // namespace WebCore

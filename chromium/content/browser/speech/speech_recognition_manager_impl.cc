@@ -51,7 +51,7 @@ SpeechRecognitionManager* SpeechRecognitionManager::GetInstance() {
   return SpeechRecognitionManagerImpl::GetInstance();
 }
 
-void SpeechRecognitionManager::SetManagerForTests(
+void SpeechRecognitionManager::SetManagerForTesting(
     SpeechRecognitionManager* manager) {
   manager_for_tests_ = manager;
 }
@@ -184,15 +184,20 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
   if (!SessionExists(session_id))
     return;
 
+  SessionsTable::iterator iter = sessions_.find(session_id);
+  DCHECK(iter != sessions_.end());
+  Session* session = iter->second;
+
+  if (session->abort_requested)
+    return;
+
   if (ask_user) {
-    SessionsTable::iterator iter = sessions_.find(session_id);
-    DCHECK(iter != sessions_.end());
-    SpeechRecognitionSessionContext& context = iter->second->context;
+    SpeechRecognitionSessionContext& context = session->context;
     context.label = media_stream_manager_->MakeMediaAccessRequest(
         context.render_process_id,
         context.render_view_id,
         context.request_id,
-        StreamOptions(MEDIA_DEVICE_AUDIO_CAPTURE, MEDIA_NO_SERVICE),
+        StreamOptions(true, false),
         GURL(context.context_name),
         base::Bind(
             &SpeechRecognitionManagerImpl::MediaRequestPermissionCallback,
@@ -252,6 +257,11 @@ void SpeechRecognitionManagerImpl::AbortSession(int session_id) {
 
   SessionsTable::iterator iter = sessions_.find(session_id);
   iter->second->ui.reset();
+
+  if (iter->second->abort_requested)
+    return;
+
+  iter->second->abort_requested = true;
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -439,8 +449,8 @@ SpeechRecognitionManagerImpl::GetSessionContext(int session_id) const {
   return GetSession(session_id)->context;
 }
 
-void SpeechRecognitionManagerImpl::AbortAllSessionsForListener(
-    SpeechRecognitionEventListener* listener) {
+void SpeechRecognitionManagerImpl::AbortAllSessionsForRenderProcess(
+    int render_process_id) {
   // This method gracefully destroys sessions for the listener. However, since
   // the listener itself is likely to be destroyed after this call, we avoid
   // dispatching further events to it, marking the |listener_is_active| flag.
@@ -448,7 +458,7 @@ void SpeechRecognitionManagerImpl::AbortAllSessionsForListener(
   for (SessionsTable::iterator it = sessions_.begin(); it != sessions_.end();
        ++it) {
     Session* session = it->second;
-    if (session->config.event_listener == listener) {
+    if (session->context.render_process_id == render_process_id) {
       AbortSession(session->id);
       session->listener_is_active = false;
     }
@@ -609,6 +619,8 @@ void SpeechRecognitionManagerImpl::SessionDelete(Session* session) {
   DCHECK(session->recognizer.get() == NULL || !session->recognizer->IsActive());
   if (primary_session_id_ == session->id)
     primary_session_id_ = kSessionIDInvalid;
+  if (!session->context.label.empty())
+    media_stream_manager_->CancelRequest(session->context.label);
   sessions_.erase(session->id);
   delete session;
 }
@@ -643,7 +655,9 @@ SpeechRecognitionManagerImpl::GetSession(int session_id) const {
 SpeechRecognitionEventListener* SpeechRecognitionManagerImpl::GetListener(
     int session_id) const {
   Session* session = GetSession(session_id);
-  return session->listener_is_active ? session->config.event_listener : NULL;
+  if (session->listener_is_active && session->config.event_listener)
+    return session->config.event_listener.get();
+  return NULL;
 }
 
 SpeechRecognitionEventListener*
@@ -660,7 +674,7 @@ bool SpeechRecognitionManagerImpl::HasAudioInputDevices() {
   return audio_manager_->HasAudioInputDevices();
 }
 
-string16 SpeechRecognitionManagerImpl::GetAudioInputDeviceModel() {
+base::string16 SpeechRecognitionManagerImpl::GetAudioInputDeviceModel() {
   return audio_manager_->GetAudioInputDeviceModel();
 }
 
@@ -674,6 +688,7 @@ void SpeechRecognitionManagerImpl::ShowAudioInputSettings() {
 
 SpeechRecognitionManagerImpl::Session::Session()
   : id(kSessionIDInvalid),
+    abort_requested(false),
     listener_is_active(true) {
 }
 

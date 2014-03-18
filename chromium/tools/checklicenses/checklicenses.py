@@ -66,6 +66,7 @@ WHITELISTED_LICENSES = [
     'LGPL (v2.1 or later)',
     'LGPL (v3 or later)',
     'MIT/X11 (BSD like)',
+    'MIT/X11 (BSD like) LGPL (v2.1 or later)',
     'MPL (v1.0) LGPL (v2 or later)',
     'MPL (v1.1)',
     'MPL (v1.1) BSD (3 clause) GPL (v2) LGPL (v2.1 or later)',
@@ -112,18 +113,8 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'chrome/test/data/gpu/vt': [
         'UNKNOWN',
     ],
-    'chrome/test/data/layout_tests/LayoutTests': [
-        'UNKNOWN',
-    ],
     'courgette/third_party/bsdiff_create.cc': [  # http://crbug.com/98095
         'UNKNOWN',
-    ],
-    'data/mozilla_js_tests': [
-        'UNKNOWN',
-    ],
-    'data/page_cycler': [
-        'UNKNOWN',
-        'GPL (v2 or later)',
     ],
     'data/tab_switching': [
         'UNKNOWN',
@@ -151,15 +142,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/WebKit': [
         'UNKNOWN',
     ],
-    'third_party/WebKit/Websites/webkit.org/blog/wp-content/plugins/'
-        'akismet/akismet.php': [
-        'GPL (v2 or later)'
-    ],
-    'third_party/WebKit/Source/JavaScriptCore/tests/mozilla': [
-        'GPL',
-        'GPL (v2 or later)',
-        'GPL (unversioned/unknown version)',
-    ],
     'third_party/active_doc': [  # http://crbug.com/98113
         'UNKNOWN',
     ],
@@ -169,16 +151,15 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',
     ],
 
-    'third_party/bsdiff/mbsdiff.cc': [
-        'UNKNOWN',
-    ],
-    'third_party/bzip2': [
-        'UNKNOWN',
-    ],
-
     # http://crbug.com/222828
     # http://bugs.python.org/issue17514
     'third_party/chromite/third_party/argparse.py': [
+        'UNKNOWN',
+    ],
+
+    # http://crbug.com/326117
+    # https://bitbucket.org/chrisatlee/poster/issue/21
+    'third_party/chromite/third_party/poster': [
         'UNKNOWN',
     ],
 
@@ -203,25 +184,13 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'GPL (v2 or later)',
         'UNKNOWN',  # http://crbug.com/98123
     ],
-    'third_party/findbugs/doc': [ # http://crbug.com/157206
-        'UNKNOWN',
-    ],
     'third_party/freetype2': [ # http://crbug.com/177319
-        'UNKNOWN',
-    ],
-    'third_party/gles2_book': [  # http://crbug.com/98130
         'UNKNOWN',
     ],
     'third_party/gles2_conform/GTF_ES': [  # http://crbug.com/98131
         'UNKNOWN',
     ],
-    'third_party/harfbuzz': [  # http://crbug.com/98133
-        'UNKNOWN',
-    ],
     'third_party/hunspell': [  # http://crbug.com/98134
-        'UNKNOWN',
-    ],
-    'third_party/hyphen/hyphen.tex': [ # http://crbug.com/157375
         'UNKNOWN',
     ],
     'third_party/iccjpeg': [  # http://crbug.com/98137
@@ -250,9 +219,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/libjingle/source/talk': [  # http://crbug.com/98310
         'UNKNOWN',
     ],
-    'third_party/libjingle/source_internal/talk': [  # http://crbug.com/98310
-        'UNKNOWN',
-    ],
     'third_party/libjpeg': [  # http://crbug.com/98313
         'UNKNOWN',
     ],
@@ -265,18 +231,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
 
     # The following files lack license headers, but are trivial.
     'third_party/libusb/src/libusb/os/poll_posix.h': [
-        'UNKNOWN',
-    ],
-    'third_party/libusb/src/libusb/version.h': [
-        'UNKNOWN',
-    ],
-    'third_party/libusb/src/autogen.sh': [
-        'UNKNOWN',
-    ],
-    'third_party/libusb/src/config.h': [
-        'UNKNOWN',
-    ],
-    'third_party/libusb/src/msvc/config.h': [
         'UNKNOWN',
     ],
 
@@ -303,9 +257,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     ],
     'third_party/modp_b64': [
         'UNKNOWN',
-    ],
-    'third_party/npapi/npspy/extern/java': [
-        'GPL (unversioned/unknown version)',
     ],
     'third_party/openmax_dl/dl' : [
         'Khronos Group',
@@ -338,9 +289,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',
     ],
 
-    'third_party/pylib': [
-        'UNKNOWN',
-    ],
     'third_party/scons-2.0.1/engine/SCons': [  # http://crbug.com/98462
         'UNKNOWN',
     ],
@@ -364,12 +312,12 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     ],
 
     # https://code.google.com/p/colorama/issues/detail?id=44
-    'tools/swarm_client/third_party/colorama': [
+    'tools/swarming_client/third_party/colorama': [
         'UNKNOWN',
     ],
 
     # https://github.com/kennethreitz/requests/issues/1610
-    'tools/swarm_client/third_party/requests': [
+    'tools/swarming_client/third_party/requests': [
         'UNKNOWN',
     ],
 
@@ -389,6 +337,13 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/webdriver': [  # http://crbug.com/98590
         'UNKNOWN',
     ],
+
+    # https://github.com/html5lib/html5lib-python/issues/125
+    # https://github.com/KhronosGroup/WebGL/issues/435
+    'third_party/webgl/src': [
+        'UNKNOWN',
+    ],
+
     'third_party/webrtc': [  # http://crbug.com/98592
         'UNKNOWN',
     ],
@@ -404,13 +359,7 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/zlib/trees.h': [
         'UNKNOWN',
     ],
-    'tools/dromaeo_benchmark_runner/dromaeo_benchmark_runner.py': [
-        'UNKNOWN',
-    ],
     'tools/emacs': [  # http://crbug.com/98595
-        'UNKNOWN',
-    ],
-    'tools/grit/grit/node/custom/__init__.py': [
         'UNKNOWN',
     ],
     'tools/gyp/test': [
@@ -419,16 +368,7 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'tools/histograms': [
         'UNKNOWN',
     ],
-    'tools/memory_watcher': [
-        'UNKNOWN',
-    ],
-    'tools/playback_benchmark': [
-        'UNKNOWN',
-    ],
     'tools/python/google/__init__.py': [
-        'UNKNOWN',
-    ],
-    'tools/site_compare': [
         'UNKNOWN',
     ],
     'tools/stats_viewer/Properties/AssemblyInfo.cs': [
@@ -438,9 +378,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',
     ],
     'v8/test/cctest': [  # http://crbug.com/98597
-        'UNKNOWN',
-    ],
-    'webkit/data/ico_decoder': [
         'UNKNOWN',
     ],
 }
@@ -486,6 +423,8 @@ def check_licenses(options, args):
     print "\nFAILED\n"
     return 1
 
+  used_suppressions = set()
+
   success = True
   for line in stdout.splitlines():
     filename, license = line.split(':', 1)
@@ -493,7 +432,7 @@ def check_licenses(options, args):
 
     # All files in the build output directory are generated one way or another.
     # There's no need to check them.
-    if filename.startswith('out/') or filename.startswith('sconsbuild/'):
+    if filename.startswith('out/'):
       continue
 
     # For now we're just interested in the license.
@@ -507,13 +446,12 @@ def check_licenses(options, args):
       continue
 
     if not options.ignore_suppressions:
-      found_path_specific = False
-      for prefix in PATH_SPECIFIC_WHITELISTED_LICENSES:
-        if (filename.startswith(prefix) and
-            license in PATH_SPECIFIC_WHITELISTED_LICENSES[prefix]):
-          found_path_specific = True
-          break
-      if found_path_specific:
+      matched_prefixes = [
+          prefix for prefix in PATH_SPECIFIC_WHITELISTED_LICENSES
+          if filename.startswith(prefix) and
+          license in PATH_SPECIFIC_WHITELISTED_LICENSES[prefix]]
+      if matched_prefixes:
+        used_suppressions.update(set(matched_prefixes))
         continue
 
     print "'%s' has non-whitelisted license '%s'" % (filename, license)
@@ -521,6 +459,13 @@ def check_licenses(options, args):
 
   if success:
     print "\nSUCCESS\n"
+
+    unused_suppressions = set(
+      PATH_SPECIFIC_WHITELISTED_LICENSES.keys()).difference(used_suppressions)
+    if unused_suppressions:
+      print "\nNOTE: unused suppressions detected:\n"
+      print '\n'.join(unused_suppressions)
+
     return 0
   else:
     print "\nFAILED\n"
@@ -530,6 +475,11 @@ def check_licenses(options, args):
     print
     print "Please respect OWNERS of checklicenses.py. Changes violating"
     print "this requirement may be reverted."
+
+    # Do not print unused suppressions so that above message is clearly
+    # visible and gets proper attention. Too much unrelated output
+    # would be distracting and make the important points easier to miss.
+
     return 1
 
 

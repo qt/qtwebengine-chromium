@@ -4,8 +4,6 @@
 
 #include "cc/layers/picture_layer.h"
 
-#include "cc/debug/benchmark_instrumentation.h"
-#include "cc/debug/devtools_instrumentation.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -21,7 +19,8 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
   : client_(client),
     pile_(make_scoped_refptr(new PicturePile())),
     instrumentation_object_tracker_(id()),
-    is_mask_(false) {
+    is_mask_(false),
+    update_source_frame_number_(-1) {
 }
 
 PictureLayer::~PictureLayer() {
@@ -43,12 +42,12 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
     // Update may not get called for an empty layer, so resize here instead.
     // Using layer_impl because either bounds() or paint_properties().bounds
     // may disagree and either one could have been pushed to layer_impl.
-    pile_->Resize(layer_impl->bounds());
+    pile_->Resize(gfx::Size());
     pile_->UpdateRecordedRegion();
-  }
-
-  if (DrawsContent()) {
-    DCHECK(paint_properties().bounds == pile_->size());
+  } else if (update_source_frame_number_ ==
+             layer_tree_host()->source_frame_number()) {
+    // If update called, then pile size must match bounds pushed to impl layer.
+    DCHECK_EQ(layer_impl->bounds().ToString(), pile_->size().ToString());
   }
 
   layer_impl->SetIsMask(is_mask_);
@@ -84,15 +83,19 @@ void PictureLayer::SetNeedsDisplayRect(const gfx::RectF& layer_rect) {
 
 bool PictureLayer::Update(ResourceUpdateQueue* queue,
                           const OcclusionTracker* occlusion) {
-  // Do not early-out of this function so that PicturePile::Update has a chance
-  // to record pictures due to changing visibility of this layer.
-
-  TRACE_EVENT1(benchmark_instrumentation::kCategory,
-               benchmark_instrumentation::kPictureLayerUpdate,
-               benchmark_instrumentation::kSourceFrameNumber,
-               layer_tree_host()->source_frame_number());
-
+  update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
+
+  if (last_updated_visible_content_rect_ == visible_content_rect() &&
+      pile_->size() == paint_properties().bounds &&
+      pending_invalidation_.IsEmpty()) {
+    // Only early out if the visible content rect of this layer hasn't changed.
+    return updated;
+  }
+
+  TRACE_EVENT1("cc", "PictureLayer::Update",
+               "source_frame_number",
+               layer_tree_host()->source_frame_number());
 
   pile_->Resize(paint_properties().bounds);
 
@@ -108,14 +111,15 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
     // the full page content must always be provided in the picture layer.
     visible_layer_rect = gfx::Rect(bounds());
   }
-  devtools_instrumentation::ScopedLayerTask paint_layer(
-      devtools_instrumentation::kPaintLayer, id());
   updated |= pile_->Update(client_,
                            SafeOpaqueBackgroundColor(),
                            contents_opaque(),
                            pile_invalidation_,
                            visible_layer_rect,
+                           update_source_frame_number_,
                            rendering_stats_instrumentation());
+  last_updated_visible_content_rect_ = visible_content_rect();
+
   if (updated) {
     SetNeedsPushProperties();
   } else {
@@ -151,6 +155,10 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
   client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
   picture->endRecording();
   return picture;
+}
+
+void PictureLayer::RunMicroBenchmark(MicroBenchmark* benchmark) {
+  benchmark->RunOnLayer(this);
 }
 
 }  // namespace cc

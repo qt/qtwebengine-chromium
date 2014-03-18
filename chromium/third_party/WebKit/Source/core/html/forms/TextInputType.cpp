@@ -31,31 +31,34 @@
 #include "config.h"
 #include "core/html/forms/TextInputType.h"
 
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<InputType> TextInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> TextInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new TextInputType(element));
 }
 
 void TextInputType::countUsage()
 {
-    const AtomicString& type = element()->fastGetAttribute(typeAttr);
-    if (equalIgnoringCase(type, InputTypeNames::datetime()))
-        observeFeatureIfVisible(UseCounter::InputTypeDateTimeFallback);
-    else if (equalIgnoringCase(type, InputTypeNames::week()))
-        observeFeatureIfVisible(UseCounter::InputTypeWeekFallback);
+    countUsageIfVisible(UseCounter::InputTypeText);
+    if (element().fastHasAttribute(maxlengthAttr))
+        countUsageIfVisible(UseCounter::InputTypeTextMaxLength);
+    const AtomicString& type = element().fastGetAttribute(typeAttr);
+    if (equalIgnoringCase(type, InputTypeNames::datetime))
+        countUsageIfVisible(UseCounter::InputTypeDateTimeFallback);
+    else if (equalIgnoringCase(type, InputTypeNames::week))
+        countUsageIfVisible(UseCounter::InputTypeWeekFallback);
 }
 
 const AtomicString& TextInputType::formControlType() const
 {
-    return InputTypeNames::text();
+    return InputTypeNames::text;
 }
 
 bool TextInputType::shouldRespectSpeechAttribute()

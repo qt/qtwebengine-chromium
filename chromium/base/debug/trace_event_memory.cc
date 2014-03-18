@@ -31,7 +31,6 @@ class MemoryDumpHolder : public base::debug::ConvertableToTraceFormat {
   // Takes ownership of dump, which must be a JSON string, allocated with
   // malloc() and NULL terminated.
   explicit MemoryDumpHolder(char* dump) : dump_(dump) {}
-  virtual ~MemoryDumpHolder() { free(dump_); }
 
   // base::debug::ConvertableToTraceFormat overrides:
   virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
@@ -39,6 +38,8 @@ class MemoryDumpHolder : public base::debug::ConvertableToTraceFormat {
   }
 
  private:
+  virtual ~MemoryDumpHolder() { free(dump_); }
+
   char* dump_;
 
   DISALLOW_COPY_AND_ASSIGN(MemoryDumpHolder);
@@ -216,13 +217,12 @@ void TraceMemoryController::DumpMemoryProfile() {
   // MemoryDumpHolder takes ownership of this string. See GetHeapProfile() in
   // tcmalloc for details.
   char* dump = get_heap_profile_function_();
-  scoped_ptr<MemoryDumpHolder> dump_holder(new MemoryDumpHolder(dump));
   const int kSnapshotId = 1;
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("memory"),
       "memory::Heap",
       kSnapshotId,
-      dump_holder.PassAs<base::debug::ConvertableToTraceFormat>());
+      scoped_refptr<ConvertableToTraceFormat>(new MemoryDumpHolder(dump)));
 }
 
 void TraceMemoryController::StopProfiling() {
@@ -246,11 +246,8 @@ bool TraceMemoryController::IsTimerRunningForTest() const {
 // static
 bool ScopedTraceMemory::enabled_ = false;
 
-ScopedTraceMemory::ScopedTraceMemory(const char* category, const char* name) {
-  // Not enabled indicates that the trace system isn't running, so don't
-  // record anything.
-  if (!enabled_)
-    return;
+void ScopedTraceMemory::Initialize(const char* category, const char* name) {
+  DCHECK(enabled_);
   // Get our thread's copy of the stack.
   TraceMemoryStack* trace_memory_stack = GetTraceMemoryStack();
   const size_t index = trace_memory_stack->scope_depth;
@@ -264,11 +261,8 @@ ScopedTraceMemory::ScopedTraceMemory(const char* category, const char* name) {
   trace_memory_stack->scope_depth++;
 }
 
-ScopedTraceMemory::~ScopedTraceMemory() {
-  // Not enabled indicates that the trace system isn't running, so don't
-  // record anything.
-  if (!enabled_)
-    return;
+void ScopedTraceMemory::Destroy() {
+  DCHECK(enabled_);
   // Get our thread's copy of the stack.
   TraceMemoryStack* trace_memory_stack = GetTraceMemoryStack();
   // The tracing system can be turned on with ScopedTraceMemory objects

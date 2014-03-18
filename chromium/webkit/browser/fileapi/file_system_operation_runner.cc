@@ -86,6 +86,7 @@ OperationID FileSystemOperationRunner::CreateDirectory(
 OperationID FileSystemOperationRunner::Copy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyProgressCallback& progress_callback,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
@@ -100,7 +101,7 @@ OperationID FileSystemOperationRunner::Copy(
   PrepareForWrite(handle.id, dest_url);
   PrepareForRead(handle.id, src_url);
   operation->Copy(
-      src_url, dest_url,
+      src_url, dest_url, option,
       progress_callback.is_null() ?
           CopyProgressCallback() :
           base::Bind(&FileSystemOperationRunner::OnCopyProgress, AsWeakPtr(),
@@ -113,6 +114,7 @@ OperationID FileSystemOperationRunner::Copy(
 OperationID FileSystemOperationRunner::Move(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
@@ -126,7 +128,7 @@ OperationID FileSystemOperationRunner::Move(
   PrepareForWrite(handle.id, dest_url);
   PrepareForWrite(handle.id, src_url);
   operation->Move(
-      src_url, dest_url,
+      src_url, dest_url, option,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
                  handle, callback));
   return handle.id;
@@ -337,7 +339,6 @@ OperationID FileSystemOperationRunner::TouchFile(
 OperationID FileSystemOperationRunner::OpenFile(
     const FileSystemURL& url,
     int file_flags,
-    base::ProcessHandle peer_handle,
     const OpenFileCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
@@ -346,7 +347,7 @@ OperationID FileSystemOperationRunner::OpenFile(
   OperationHandle handle = BeginOperation(operation, scope.AsWeakPtr());
   if (!operation) {
     DidOpenFile(handle, callback, error, base::kInvalidPlatformFileValue,
-                base::Closure(), base::ProcessHandle());
+                base::Closure());
     return handle.id;
   }
   if (file_flags &
@@ -360,7 +361,7 @@ OperationID FileSystemOperationRunner::OpenFile(
     PrepareForRead(handle.id, url);
   }
   operation->OpenFile(
-      url, file_flags, peer_handle,
+      url, file_flags,
       base::Bind(&FileSystemOperationRunner::DidOpenFile, AsWeakPtr(),
                  handle, callback));
   return handle.id;
@@ -448,6 +449,7 @@ OperationID FileSystemOperationRunner::RemoveDirectory(
 OperationID FileSystemOperationRunner::CopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
@@ -460,7 +462,7 @@ OperationID FileSystemOperationRunner::CopyFileLocal(
     return handle.id;
   }
   operation->CopyFileLocal(
-      src_url, dest_url, progress_callback,
+      src_url, dest_url, option, progress_callback,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
                  handle, callback));
   return handle.id;
@@ -469,6 +471,7 @@ OperationID FileSystemOperationRunner::CopyFileLocal(
 OperationID FileSystemOperationRunner::MoveFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
@@ -480,7 +483,7 @@ OperationID FileSystemOperationRunner::MoveFileLocal(
     return handle.id;
   }
   operation->MoveFileLocal(
-      src_url, dest_url,
+      src_url, dest_url, option,
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
                  handle, callback));
   return handle.id;
@@ -490,9 +493,9 @@ base::PlatformFileError FileSystemOperationRunner::SyncGetPlatformPath(
     const FileSystemURL& url,
     base::FilePath* platform_path) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation =
-      file_system_context_->CreateFileSystemOperation(url, &error);
-  if (!operation)
+  scoped_ptr<FileSystemOperation> operation(
+      file_system_context_->CreateFileSystemOperation(url, &error));
+  if (!operation.get())
     return error;
   return operation->SyncGetPlatformPath(url, platform_path);
 }
@@ -574,17 +577,16 @@ void FileSystemOperationRunner::DidOpenFile(
     const OpenFileCallback& callback,
     base::PlatformFileError rv,
     base::PlatformFile file,
-    const base::Closure& on_close_callback,
-    base::ProcessHandle peer_handle) {
+    const base::Closure& on_close_callback) {
   if (handle.scope) {
     finished_operations_.insert(handle.id);
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE, base::Bind(&FileSystemOperationRunner::DidOpenFile,
                               AsWeakPtr(), handle, callback, rv, file,
-                              on_close_callback, peer_handle));
+                              on_close_callback));
     return;
   }
-  callback.Run(rv, file, on_close_callback, peer_handle);
+  callback.Run(rv, file, on_close_callback);
   FinishOperation(handle.id);
 }
 

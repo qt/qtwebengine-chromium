@@ -48,7 +48,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   ~ContextMenuParams();
 
   // This is the type of Context Node that the context menu was invoked on.
-  WebKit::WebContextMenuData::MediaType media_type;
+  blink::WebContextMenuData::MediaType media_type;
 
   // These values represent the coordinates of the mouse when the context menu
   // was invoked.  Coords are relative to the associated RenderView's origin.
@@ -62,7 +62,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   // The text associated with the link. May be an empty string if the contents
   // of the link are an image.
   // Will be empty if link_url is empty.
-  string16 link_text;
+  base::string16 link_text;
 
   // The link URL to be used ONLY for "copy link address". We don't validate
   // this field in the frontend process.
@@ -99,11 +99,11 @@ struct CONTENT_EXPORT ContextMenuParams {
   int media_flags;
 
   // This is the text of the selection that the context menu was invoked on.
-  string16 selection_text;
+  base::string16 selection_text;
 
   // The misspelled word under the cursor, if any. Used to generate the
   // |dictionary_suggestions| list.
-  string16 misspelled_word;
+  base::string16 misspelled_word;
 
   // The identifier of the misspelling under the cursor, if any.
   uint32 misspelling_hash;
@@ -113,7 +113,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   // by intercepting ViewHostMsg_ContextMenu in ResourceMessageFilter
   // and populating dictionary_suggestions if the type is EDITABLE
   // and the misspelled_word is not empty.
-  std::vector<string16> dictionary_suggestions;
+  std::vector<base::string16> dictionary_suggestions;
 
   // If editable, flag for whether node is speech-input enabled.
   bool speech_input_enabled;
@@ -124,13 +124,10 @@ struct CONTENT_EXPORT ContextMenuParams {
   // Whether context is editable.
   bool is_editable;
 
-#if defined(OS_MACOSX)
   // Writing direction menu items.
-  // Currently only used on OS X.
   int writing_direction_default;
   int writing_direction_left_to_right;
   int writing_direction_right_to_left;
-#endif  // OS_MACOSX
 
   // These flags indicate to the browser whether the renderer believes it is
   // able to perform the corresponding action.
@@ -143,7 +140,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   std::string frame_charset;
 
   // The referrer policy of the frame on which the menu is invoked.
-  WebKit::WebReferrerPolicy referrer_policy;
+  blink::WebReferrerPolicy referrer_policy;
 
   CustomContextMenuContext custom_context;
   std::vector<MenuItem> custom_items;

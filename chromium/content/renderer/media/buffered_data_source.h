@@ -39,7 +39,7 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // |downloading_cb| will be called whenever the downloading/paused state of
   // the source changes.
   BufferedDataSource(const scoped_refptr<base::MessageLoopProxy>& render_loop,
-                     WebKit::WebFrame* frame,
+                     blink::WebFrame* frame,
                      media::MediaLog* media_log,
                      const DownloadingCB& downloading_cb);
   virtual ~BufferedDataSource();
@@ -73,11 +73,16 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // Method called on the render thread.
   void Abort();
 
+  // Notifies changes in playback state for controlling media buffering
+  // behavior.
+  void MediaPlaybackRateChanged(float playback_rate);
+  void MediaIsPlaying();
+  void MediaIsPaused();
+
   // media::DataSource implementation.
   // Called from demuxer thread.
   virtual void set_host(media::DataSourceHost* host) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
-  virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
 
   virtual void Read(int64 position, int size, uint8* data,
                     const media::DataSource::ReadCB& read_cb) OVERRIDE;
@@ -105,11 +110,6 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // Stops |loader_| if present. Used by Abort() and Stop().
   void StopLoader();
 
-  // This task uses the current playback rate with the previous playback rate
-  // to determine whether we are going from pause to play and play to pause,
-  // and signals the buffered resource loader accordingly.
-  void SetPlaybackRateTask(float playback_rate);
-
   // Tells |loader_| the bitrate of the media.
   void SetBitrateTask(int bitrate);
 
@@ -135,7 +135,10 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
 
   void UpdateHostState_Locked();
 
-  base::WeakPtrFactory<BufferedDataSource> weak_factory_;
+  // Update |loader_|'s deferring strategy in response to a play/pause, or
+  // change in playback rate.
+  void UpdateDeferStrategy(bool paused);
+
   base::WeakPtr<BufferedDataSource> weak_this_;
 
   // URL of the resource requested.
@@ -157,7 +160,7 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   bool streaming_;
 
   // A webframe for loading.
-  WebKit::WebFrame* frame_;
+  blink::WebFrame* frame_;
 
   // A resource loader for the media resource.
   scoped_ptr<BufferedResourceLoader> loader_;
@@ -212,6 +215,8 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   scoped_refptr<media::MediaLog> media_log_;
 
   DownloadingCB downloading_cb_;
+
+  base::WeakPtrFactory<BufferedDataSource> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedDataSource);
 };

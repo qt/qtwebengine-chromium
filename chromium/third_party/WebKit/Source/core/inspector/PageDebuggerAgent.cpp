@@ -32,14 +32,13 @@
 #include "core/inspector/PageDebuggerAgent.h"
 
 #include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/PageScriptDebugServer.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
 
@@ -109,7 +108,7 @@ void PageDebuggerAgent::overlayResumed()
 void PageDebuggerAgent::overlaySteppedOver()
 {
     ErrorString error;
-    stepOver(&error);
+    stepOver(&error, 0);
 }
 
 InjectedScript PageDebuggerAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)

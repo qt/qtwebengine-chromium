@@ -44,6 +44,7 @@ extern "C" {
  typedef void OMXFFTSpec_C_SC16;
  typedef void OMXFFTSpec_C_SC32;
  typedef void OMXFFTSpec_R_S16S32;
+ typedef void OMXFFTSpec_R_S16;
  typedef void OMXFFTSpec_R_S32;
  typedef void OMXFFTSpec_R_F32;
  typedef void OMXFFTSpec_C_FC32;
@@ -1423,7 +1424,7 @@ OMXResult omxSP_FFTInit_C_SC32 (
  * Input Arguments:
  *   
  *   order - base-2 logarithm of the desired block length; valid in the range 
- *            [0,12] 
+ *            [1,15] 
  *
  * Output Arguments:
  *   
@@ -1436,7 +1437,7 @@ OMXResult omxSP_FFTInit_C_SC32 (
  *              following is true: 
  *    -   pFFTSpec is either NULL or violates the 8-byte alignment 
  *              restrictions 
- *    -   order < 0 or order > 12 
+ *    -   order < 1 or order > 15
  *
  */
 OMXResult omxSP_FFTInit_C_FC32(
@@ -1485,6 +1486,45 @@ OMXResult omxSP_FFTInit_R_S16S32(
 );
 
 
+
+/**
+ * Function:  omxSP_FFTInit_R_S16
+ *
+ * Description:
+ * These functions initialize specification structures required for the real 
+ * FFT and IFFT functions. The function <FFTInit_R_S16> is used 
+ * to initialize the specification structures for functions
+ * <FFTFwd_RToCCS_S16_Sfs> and <FFTInv_CCSToR_S16_Sfs>.
+ *
+ * Memory for *pFFTFwdSpec must be allocated before calling these functions
+ * and should be 8-byte aligned. 
+ *
+ * The number of bytes required for *pFFTFwdSpec can be 
+ * determined using <FFTGetBufSize_R_S16>. 
+ *
+ * Input Arguments:
+ *   
+ *   order - base-2 logarithm of the desired block length; valid in the range 
+ *            [1,12] 
+ *
+ * Output Arguments:
+ *   
+ *   pFFTFwdSpec - pointer to the initialized specification structure 
+ *
+ * Return Value:
+ *    
+ *    OMX_Sts_NoErr - no error 
+ *    OMX_Sts_BadArgErr - bad arguments; returned if one or more of the 
+ *              following is true: 
+ *    -   pFFTFwdSpec is either NULL or violates the 8-byte alignment 
+ *              restrictions 
+ *    -   order < 1 or order > 12 
+ *
+ */
+OMXResult omxSP_FFTInit_R_S16 (
+    OMXFFTSpec_R_S32*pFFTFwdSpec,
+    OMX_INT order
+);
 
 /**
  * Function:  omxSP_FFTInit_R_S32   (2.2.4.1.4)
@@ -1543,7 +1583,7 @@ OMXResult omxSP_FFTInit_R_S32 (
  * Input Arguments:
  *   
  *   order - base-2 logarithm of the desired block length; valid in the range 
- *            [0,12] 
+ *            [1,15] 
  *
  * Output Arguments:
  *   
@@ -1556,7 +1596,7 @@ OMXResult omxSP_FFTInit_R_S32 (
  *              following is true: 
  *    -   pFFTFwdSpec is either NULL or violates the 8-byte alignment 
  *              restrictions 
- *    -   order < 0 or order > 12 
+ *    -   order < 1 or order > 15
  *
  */
 OMXResult omxSP_FFTInit_R_F32(
@@ -1644,7 +1684,7 @@ OMXResult omxSP_FFTGetBufSize_C_SC32 (
  * Input Arguments:
  *   
  *   order - base-2 logarithm of the desired block length; valid in the range 
- *            [0,12] 
+ *            [1,15] 
  *
  * Output Arguments:
  *   
@@ -1657,7 +1697,7 @@ OMXResult omxSP_FFTGetBufSize_C_SC32 (
  *    OMX_Sts_BadArgErr - bad arguments; returned if one or more of the 
  *              following is true: 
  *    -    pSize is NULL 
- *    -    order < 0 or order > 12 
+ *    -    order < 1 or order > 15 
  *
  */
 OMXResult omxSP_FFTGetBufSize_C_FC32(
@@ -1699,6 +1739,38 @@ OMXResult omxSP_FFTGetBufSize_R_S16S32(
 );
 
 
+/**
+ * Function:  omxSP_FFTGetBufSize_R_S16
+ *
+ * Description:
+ * These functions compute the size of the specification structure 
+ * required for the length 2^order real FFT and IFFT functions.  The function 
+ * <FFTGetBufSize_R_S16> is used in conjunction with the 16-bit 
+ * functions <FFTFwd_RToCCS_S16_Sfs> and <FFTInv_CCSToR_S16_Sfs>. 
+ *
+ * Input Arguments:
+ *   
+ *   order - base-2 logarithm of the length; valid in the range
+ *   [1,12]
+ *
+ * Output Arguments:
+ *   
+ *   pSize - pointer to the number of bytes required for the specification 
+ *            structure 
+ *
+ * Return Value:
+ *    
+ *    OMX_Sts_NoErr - no error 
+ *    OMX_Sts_BadArgErr - bad arguments The function returns 
+ *              OMX_Sts_BadArgErr if one or more of the following is true: 
+ *    pSize is NULL 
+ *    order < 1 or order > 12 
+ *
+ */
+OMXResult omxSP_FFTGetBufSize_R_S16 (
+    OMX_INT order,
+    OMX_INT *pSize
+);
 
 /**
  * Function:  omxSP_FFTGetBufSize_R_S32   (2.2.4.1.8)
@@ -1743,7 +1815,7 @@ OMXResult omxSP_FFTGetBufSize_R_S32 (
  *
  * Input Arguments:
  *   
- *   order - base-2 logarithm of the length; valid in the range [0,12] 
+ *   order - base-2 logarithm of the length; valid in the range [1,15] 
  *
  * Output Arguments:
  *   
@@ -1756,7 +1828,7 @@ OMXResult omxSP_FFTGetBufSize_R_S32 (
  *    OMX_Sts_BadArgErr - bad arguments The function returns 
  *              OMX_Sts_BadArgErr if one or more of the following is true: 
  *    pSize is NULL 
- *    order < 0 or order > 12 
+ *    order < 1 or order > 15
  *
  */
 OMXResult omxSP_FFTGetBufSize_R_F32(
@@ -1886,8 +1958,7 @@ OMXResult omxSP_FFTFwd_CToC_SC32_Sfs (
  *          must be aligned on a 32-byte boundary. 
  *   pFFTSpec - pointer to the preallocated and initialized specification 
  *            structure 
- *   scaleFactor - scale factor of the output. Valid value is 0
- *          only.
+ *   scaleFactor - scale factor of the output. Valid range is [0,16].
  *
  * Output Arguments:
  *   order 
@@ -2024,6 +2095,59 @@ OMXResult omxSP_FFTFwd_RToCCS_S16S32_Sfs (
 );
 
 
+/**
+ * Function:  omxSP_FFTFwd_RToCCS_S16_Sfs
+ *
+ * Description:
+ * These functions compute an FFT for a real-valued signal of length of 2^order,
+ * where 0 < order <= 12. Transform length is determined by the
+ * specification structure, which must be initialized prior to calling the FFT
+ * function using the appropriate helper, i.e., <FFTInit_R_S16>.
+ * The relationship between the input and output sequences can
+ * be expressed in terms of the DFT, i.e.:
+ *
+ *     x[n] = (2^(-scalefactor)/N)  . SUM[k=0,...,N-1] X[k].e^(jnk.2.pi/N)
+ *     n=0,1,2,...N-1
+ *     N=2^order.
+ *
+ * The conjugate-symmetric output sequence is represented using a CCS vector,
+ * which is of length N+2, and is organized as follows:
+ *
+ *   Index:      0  1  2  3  4  5   . . .   N-2       N-1       N       N+1
+ *   Component:  R0 0  R1 I1 R2 I2  . . .   R[N/2-1]  I[N/2-1]  R[N/2]  0
+ *
+ * where R[n] and I[n], respectively, denote the real and imaginary components
+ * for FFT bin 'n'. Bins  are numbered from 0 to N/2, where N is the FFT length.
+ * Bin index 0 corresponds to the DC component, and bin index N/2 corresponds to
+ * the foldover frequency.
+ *
+ * Input Arguments:
+ *   pSrc - pointer to the real-valued input sequence, of length 2^order;
+ *          must be aligned on a 32-byte boundary.
+ *   pFFTSpec - pointer to the preallocated and initialized specification
+ *            structure
+ *   scaleFactor - output scale factor; valid range is [0, 16]
+ *
+ * Output Arguments:
+ *   pDst - pointer to output sequence, represented using CCS format, of
+ *            length (2^order)+2; must be aligned on a 32-byte boundary.
+ *
+ * Return Value:
+ *
+ *    OMX_Sts_NoErr - no error
+ *    OMX_Sts_BadArgErr - bad arguments, if one or more of followings is true:
+ *    -    one of the pointers pSrc, pDst, or pFFTSpec is NULL
+ *    -    pSrc or pDst is not aligned on a 32-byte boundary
+ *    -    scaleFactor<0 or scaleFactor >16
+ *
+ */
+OMXResult omxSP_FFTFwd_RToCCS_S16_Sfs (
+    const OMX_S16* pSrc,
+    OMX_S16* pDst,
+    const OMXFFTSpec_R_S16* pFFTSpec,
+    OMX_INT scaleFactor
+);
+
 
 /**
  * Function:  omxSP_FFTFwd_RToCCS_S32_Sfs   (2.2.4.4.2)
@@ -2129,7 +2253,29 @@ OMXResult omxSP_FFTFwd_RToCCS_F32_Sfs(
     const OMXFFTSpec_R_F32* pFFTSpec
 );
 
+#ifdef __arm__
+/*
+ * Non-NEON version of omxSP_FFTFwd_RToCCS_F32_Sfs
+ */    
+OMXResult omxSP_FFTFwd_RToCCS_F32_Sfs_vfp(
+    const OMX_F32* pSrc,
+    OMX_F32* pDst,
+    const OMXFFTSpec_R_F32* pFFTSpec
+);
 
+/*
+ * Just like omxSP_FFTFwd_RToCCS_F32_Sfs, but automatically detects
+ * whether NEON is available or not and chooses the appropriate
+ * routine.
+ */    
+extern OMXResult (*omxSP_FFTFwd_RToCCS_F32)(
+    const OMX_F32* pSrc,
+    OMX_F32* pDst,
+    const OMXFFTSpec_R_F32* pFFTSpec
+);
+#else
+#define omxSP_FFTFwd_RToCCS_F32 omxSP_FFTFwd_RToCCS_F32_Sfs
+#endif
 
 /**
  * Function:  omxSP_FFTInv_CCSToR_S32S16_Sfs   (2.2.4.4.4)
@@ -2179,6 +2325,53 @@ OMXResult omxSP_FFTInv_CCSToR_S32S16_Sfs (
 );
 
 
+/**
+ * Function:  omxSP_FFTInv_CCSToR_S16_Sfs
+ *
+ * Description:
+ * These functions compute the inverse FFT for a conjugate-symmetric input
+ * sequence.  Transform length is determined by the specification structure,
+ * which must be initialized prior to calling the FFT function using
+ * <FFTInit_R_S16>. For a transform of length M, the input
+ * sequence is represented using a packed CCS vector of length
+ * M+2, and is organized as follows:
+ *
+ *   Index:     0    1  2    3    4    5    . . .  M-2       M-1      M      M+1
+ *   Component  R[0] 0  R[1] I[1] R[2] I[2] . . .  R[M/2-1]  I[M/2-1] R[M/2] 0
+ *
+ * where R[n] and I[n], respectively, denote the real and imaginary components
+ * for FFT bin n.
+ * Bins are numbered from 0 to M/2, where M is the FFT length.  Bin index 0
+ * corresponds to the DC component, and bin index M/2 corresponds to the
+ * foldover frequency.
+ *
+ * Input Arguments:
+ *   pSrc - pointer to the complex-valued input sequence represented using
+ *            CCS format, of length (2^order) + 2; must be aligned on a 32-byte
+ *            boundary.
+ *   pFFTSpec - pointer to the preallocated and initialized specification
+ *            structure
+ *   scaleFactor - output scalefactor; range is [0,16]
+ *
+ * Output Arguments:
+ *   pDst - pointer to the real-valued output sequence, of length 2^order ; must
+ *            be aligned on a 32-byte boundary.
+ *
+ * Return Value:
+ *
+ *    OMX_Sts_NoErr - no error
+ *    OMX_Sts_BadArgErr - bad arguments if one or more of the following is true:
+ *    -    pSrc, pDst, or pFFTSpec is NULL
+ *    -    pSrc or pDst is not aligned on a 32-byte boundary
+ *    -    scaleFactor<0 or scaleFactor >16
+ *
+ */
+OMXResult omxSP_FFTInv_CCSToR_S16_Sfs (
+    const OMX_S16* pSrc,
+    OMX_S16* pDst,
+    const OMXFFTSpec_R_S16* pFFTSpec,
+    OMX_INT scaleFactor
+);
 
 /**
  * Function:  omxSP_FFTInv_CCSToR_S32_Sfs   (2.2.4.4.4)
@@ -2274,7 +2467,28 @@ OMXResult omxSP_FFTInv_CCSToR_F32_Sfs(
     const OMXFFTSpec_R_F32* pFFTSpec
 );
 
+#ifdef __arm__
+/*
+ * Non-NEON version of omxSP_FFTInv_CCSToR_F32_Sfs
+ */    
+OMXResult omxSP_FFTInv_CCSToR_F32_Sfs_vfp(
+    const OMX_F32* pSrc,
+    OMX_F32* pDst,
+    const OMXFFTSpec_R_F32* pFFTSpec
+);
 
+/*
+ * Just like omxSP_FFTInv_CCSToR_F32_Sfs, but automatically detects
+ * whether NEON is available or not and chooses the appropriate
+ * routine.
+ */    
+extern OMXResult (*omxSP_FFTInv_CCSToR_F32)(
+    const OMX_F32* pSrc,
+    OMX_F32* pDst,
+    const OMXFFTSpec_R_F32* pFFTSpec);
+#else
+#define omxSP_FFTInv_CCSToR_F32 omxSP_FFTInv_CCSToR_F32_Sfs    
+#endif
 
 #ifdef __cplusplus
 }

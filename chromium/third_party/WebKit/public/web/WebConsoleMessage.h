@@ -33,12 +33,13 @@
 
 #include "../platform/WebString.h"
 
-namespace WebKit {
+namespace blink {
 
 struct WebConsoleMessage {
     enum Level {
         LevelDebug = 4,
         LevelLog = 1,
+        LevelInfo = 5,
         LevelWarning = 2,
         LevelError = 3,
     };
@@ -53,6 +54,6 @@ struct WebConsoleMessage {
         , text(text) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

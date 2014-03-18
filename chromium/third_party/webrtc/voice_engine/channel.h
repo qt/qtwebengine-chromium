@@ -201,6 +201,7 @@ public:
 
     // VoENetEqStats
     int GetNetworkStatistics(NetworkStatistics& stats);
+    void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const;
 
     // VoEVideoSync
     bool GetDelayEstimate(int* jitter_buffer_delay_ms,
@@ -431,7 +432,7 @@ private:
                              int packet_length,
                              const RTPHeader& header);
     bool IsPacketInOrder(const RTPHeader& header) const;
-    bool IsPacketRetransmitted(const RTPHeader& header) const;
+    bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
     int ResendPackets(const uint16_t* sequence_numbers, int length);
     int InsertInbandDtmfTone();
     int32_t MixOrReplaceAudioWithFile(int mixingFrequency);
@@ -447,6 +448,7 @@ private:
 
     CriticalSectionWrapper& _fileCritSect;
     CriticalSectionWrapper& _callbackCritSect;
+    CriticalSectionWrapper& volume_settings_critsect_;
     uint32_t _instanceId;
     int32_t _channelId;
 
@@ -487,6 +489,9 @@ private:
     uint8_t* _decryptionRTCPBufferPtr;
     uint32_t _timeStamp;
     uint8_t _sendTelephoneEventPayloadType;
+
+    // Timestamp of the audio pulled from NetEq.
+    uint32_t jitter_buffer_playout_timestamp_;
     uint32_t playout_timestamp_rtp_;
     uint32_t playout_timestamp_rtcp_;
     uint32_t playout_delay_ms_;

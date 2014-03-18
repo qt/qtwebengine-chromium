@@ -40,7 +40,7 @@ namespace WebCore {
 class RTCSessionDescriptionRequest;
 }
 
-namespace WebKit {
+namespace blink {
 class WebRTCSessionDescription;
 
 class WebRTCSessionDescriptionRequest {
@@ -60,22 +60,22 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebRTCSessionDescriptionRequest&);
+    BLINK_EXPORT void assign(const WebRTCSessionDescriptionRequest&);
 
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT void requestSucceeded(const WebRTCSessionDescription&) const;
-    WEBKIT_EXPORT void requestFailed(const WebString& error) const;
+    BLINK_EXPORT void requestSucceeded(const WebRTCSessionDescription&) const;
+    BLINK_EXPORT void requestFailed(const WebString& error) const;
 
     // Extra data associated with this object.
     // If non-null, the extra data pointer will be deleted when the object is destroyed.
     // Setting the extra data pointer will cause any existing non-null
     // extra data pointer to be deleted.
-    WEBKIT_EXPORT ExtraData* extraData() const;
-    WEBKIT_EXPORT void setExtraData(ExtraData*);
+    BLINK_EXPORT ExtraData* extraData() const;
+    BLINK_EXPORT void setExtraData(ExtraData*);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebRTCSessionDescriptionRequest(const WTF::PassRefPtr<WebCore::RTCSessionDescriptionRequest>&);
 #endif
 
@@ -83,6 +83,6 @@ private:
     WebPrivatePtr<WebCore::RTCSessionDescriptionRequest> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebRTCSessionDescriptionRequest_h

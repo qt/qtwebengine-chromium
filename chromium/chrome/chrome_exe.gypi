@@ -13,10 +13,6 @@
         'enable_wexit_time_destructors': 1,
       },
       'sources': [
-        'app/breakpad_field_trial_win.cc',
-        'app/breakpad_field_trial_win.h',
-        'app/breakpad_win.cc',
-        'app/breakpad_win.h',
         'app/chrome_exe_main_aura.cc',
         'app/chrome_exe_main_gtk.cc',
         'app/chrome_exe_main_mac.cc',
@@ -24,11 +20,12 @@
         'app/chrome_exe_resource.h',
         'app/client_util.cc',
         'app/client_util.h',
-        'app/hard_error_handler_win.cc',
-        'app/hard_error_handler_win.h',
         'app/metro_driver_win.cc',
         'app/metro_driver_win.h',
-        '../content/app/startup_helper_win.cc',
+        'app/signature_validator_win.cc',
+        'app/signature_validator_win.h',
+        '<(DEPTH)/content/app/startup_helper_win.cc',
+        '<(DEPTH)/content/public/common/content_switches.cc',
       ],
       'mac_bundle_resources': [
         'app/app-Info.plist',
@@ -256,10 +253,10 @@
             'CHROMIUM_SHORT_NAME': '<(branding)',
           },
           'dependencies': [
+            '../components/components.gyp:chrome_manifest_bundle',
             'helper_app',
             'infoplist_strings_tool',
             'interpose_dependency_shim',
-            'chrome_manifest_bundle',
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
@@ -424,6 +421,7 @@
             }], # internal_pdf
           ],
           'dependencies': [
+            '../components/components.gyp:startup_metric_utils',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
@@ -454,10 +452,10 @@
             }],
             # For now, do not build nacl_helper when disable_nacl=1
             # http://code.google.com/p/gyp/issues/detail?id=239
-            ['disable_nacl==0 and coverage==0', {
+            ['disable_nacl==0', {
               'dependencies': [
                 '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
-                'nacl_helper',
+                '../components/nacl.gyp:nacl_helper',
                 ],
             }],
           ],
@@ -476,9 +474,10 @@
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:breakpad_component',
+            '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'sources': [
             'app/chrome_breakpad_client.cc',
@@ -498,12 +497,14 @@
                 'ole32.dll',
                 'oleaut32.dll',
               ],
+              'AdditionalDependencies': [ 'wintrust.lib' ],
               # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
               'SubSystem': '2',
             },
             'VCManifestTool': {
               'AdditionalManifestFiles': [
                 '$(ProjectDir)\\app\\chrome.exe.manifest',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome_elf/version_assembly.manifest',
               ],
             },
           },
@@ -520,6 +521,18 @@
               'message': 'Copy first run complete sentinel file',
               'msvs_cygwin_shell': 1,
             },
+            {
+              'action_name': 'chrome_exe_manifest',
+              'includes': [
+                  '../chrome_elf/chrome_exe_manifest_action.gypi',
+              ],
+            },
+            {
+              'action_name': 'version_assembly_manifest',
+              'includes': [
+                  '../chrome_elf/version_assembly_manifest_action.gypi',
+              ],
+            },
           ],
         }, {  # 'OS!="win"
           'sources!': [
@@ -531,7 +544,7 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/metro_driver/metro_driver.gyp:*',
+            '../win8/metro_driver/metro_driver.gyp:metro_driver',
             '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
         }],
@@ -561,9 +574,7 @@
               'type': 'executable',
               'product_name': 'nacl64',
               'sources': [
-                'app/breakpad_win.cc',
                 'app/chrome_breakpad_client.cc',
-                'app/hard_error_handler_win.cc',
                 'common/crash_keys.cc',
                 'nacl/nacl_exe_win_64.cc',
                 '../content/app/startup_helper_win.cc',
@@ -573,17 +584,17 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
               ],
               'dependencies': [
-                'app/policy/cloud_policy_codegen.gyp:policy_win64',
                 'chrome_version_resources',
                 'installer_util_nacl_win64',
-                '../breakpad/breakpad.gyp:breakpad_handler_win64',
-                '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../base/base.gyp:base_i18n_nacl_win64',
                 '../base/base.gyp:base_nacl_win64',
                 '../base/base.gyp:base_static_win64',
                 '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+                '../breakpad/breakpad.gyp:breakpad_handler_win64',
+                '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../components/components.gyp:breakpad_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
+                '../components/components.gyp:policy_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',

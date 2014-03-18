@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2011, Google Inc.
+ * Copyright 2004 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -37,6 +37,9 @@
 #endif
 #endif
 #include "talk/base/gunit.h"
+#ifdef WIN32
+#include "talk/base/logging.h"  // For LOG_GLE
+#endif
 
 namespace talk_base {
 
@@ -54,8 +57,9 @@ class NetworkTest : public testing::Test, public sigslot::has_slots<>  {
     network_manager.MergeNetworkList(list, changed);
   }
 
-  bool IsIgnoredNetwork(const Network& network) {
-    return BasicNetworkManager::IsIgnoredNetwork(network);
+  bool IsIgnoredNetwork(BasicNetworkManager& network_manager,
+                        const Network& network) {
+    return network_manager.IsIgnoredNetwork(network);
   }
 
   NetworkManager::NetworkList GetNetworks(
@@ -96,11 +100,28 @@ TEST_F(NetworkTest, TestNetworkIgnore) {
                         IPAddress(0x12345600U), 24);
   Network ipv4_network2("test_eth1", "Test Network Adapter 2",
                         IPAddress(0x00010000U), 16);
-  EXPECT_FALSE(IsIgnoredNetwork(ipv4_network1));
-  EXPECT_TRUE(IsIgnoredNetwork(ipv4_network2));
+  BasicNetworkManager network_manager;
+  EXPECT_FALSE(IsIgnoredNetwork(network_manager, ipv4_network1));
+  EXPECT_TRUE(IsIgnoredNetwork(network_manager, ipv4_network2));
 }
 
-TEST_F(NetworkTest, TestCreateNetworks) {
+TEST_F(NetworkTest, TestIgnoreList) {
+  Network ignore_me("ignore_me", "Ignore me please!",
+                    IPAddress(0x12345600U), 24);
+  Network include_me("include_me", "Include me please!",
+                     IPAddress(0x12345600U), 24);
+  BasicNetworkManager network_manager;
+  EXPECT_FALSE(IsIgnoredNetwork(network_manager, ignore_me));
+  EXPECT_FALSE(IsIgnoredNetwork(network_manager, include_me));
+  std::vector<std::string> ignore_list;
+  ignore_list.push_back("ignore_me");
+  network_manager.set_network_ignore_list(ignore_list);
+  EXPECT_TRUE(IsIgnoredNetwork(network_manager, ignore_me));
+  EXPECT_FALSE(IsIgnoredNetwork(network_manager, include_me));
+}
+
+// Test is failing on Windows opt: b/11288214
+TEST_F(NetworkTest, DISABLED_TestCreateNetworks) {
   BasicNetworkManager manager;
   NetworkManager::NetworkList result = GetNetworks(manager, true);
   // We should be able to bind to any addresses we find.
@@ -113,7 +134,7 @@ TEST_F(NetworkTest, TestCreateNetworks) {
     IPAddress ip = (*it)->ip();
     SocketAddress bindaddress(ip, 0);
     bindaddress.SetScopeID((*it)->scope_id());
-    // TODO: Make this use talk_base::AsyncSocket once it supports IPv6.
+    // TODO(thaloun): Use talk_base::AsyncSocket once it supports IPv6.
     int fd = static_cast<int>(socket(ip.family(), SOCK_STREAM, IPPROTO_TCP));
     if (fd > 0) {
       size_t ipsize = bindaddress.ToSockAddrStorage(&storage);
@@ -121,6 +142,9 @@ TEST_F(NetworkTest, TestCreateNetworks) {
       int success = ::bind(fd,
                            reinterpret_cast<sockaddr*>(&storage),
                            static_cast<int>(ipsize));
+#ifdef WIN32
+      if (success) LOG_GLE(LS_ERROR) << "Socket bind failed.";
+#endif
       EXPECT_EQ(0, success);
 #ifdef WIN32
       closesocket(fd);
@@ -469,7 +493,7 @@ TEST_F(NetworkTest, TestIPv6Toggle) {
   NetworkManager::NetworkList list;
 #ifndef WIN32
   // There should be at least one IPv6 network (fe80::/64 should be in there).
-  // TODO: Disabling this test on windows for the moment as the test
+  // TODO(thaloun): Disabling this test on windows for the moment as the test
   // machines don't seem to have IPv6 installed on them at all.
   manager.set_ipv6_enabled(true);
   list = GetNetworks(manager, true);
@@ -517,5 +541,49 @@ TEST_F(NetworkTest, TestConvertIfAddrsNoAddress) {
 }
 #endif  // defined(POSIX)
 
+#if defined(LINUX)
+// If you want to test non-default routes, you can do the following on a linux
+// machine:
+// 1) Load the dummy network driver:
+// sudo modprobe dummy
+// sudo ifconfig dummy0 127.0.0.1
+// 2) Run this test and confirm the output says it found a dummy route (and
+// passes).
+// 3) When done:
+// sudo rmmmod dummy
+TEST_F(NetworkTest, TestIgnoreNonDefaultRoutes) {
+  BasicNetworkManager manager;
+  NetworkManager::NetworkList list;
+  list = GetNetworks(manager, false);
+  bool found_dummy = false;
+  LOG(LS_INFO) << "Looking for dummy network: ";
+  for (NetworkManager::NetworkList::iterator it = list.begin();
+       it != list.end(); ++it) {
+    LOG(LS_INFO) << "  Network name: " << (*it)->name();
+    found_dummy |= (*it)->name().find("dummy0") != std::string::npos;
+  }
+  for (NetworkManager::NetworkList::iterator it = list.begin();
+       it != list.end(); ++it) {
+    delete (*it);
+  }
+  if (!found_dummy) {
+    LOG(LS_INFO) << "No dummy found, quitting.";
+    return;
+  }
+  LOG(LS_INFO) << "Found dummy, running again while ignoring non-default "
+               << "routes.";
+  manager.set_ignore_non_default_routes(true);
+  list = GetNetworks(manager, false);
+  for (NetworkManager::NetworkList::iterator it = list.begin();
+       it != list.end(); ++it) {
+    LOG(LS_INFO) << "  Network name: " << (*it)->name();
+    EXPECT_TRUE((*it)->name().find("dummy0") == std::string::npos);
+  }
+  for (NetworkManager::NetworkList::iterator it = list.begin();
+       it != list.end(); ++it) {
+    delete (*it);
+  }
+}
+#endif
 
 }  // namespace talk_base

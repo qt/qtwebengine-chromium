@@ -32,11 +32,40 @@
 #include "WebUserGestureIndicator.h"
 
 #include "WebUserGestureToken.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "platform/UserGestureIndicator.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
+
+class WebUserGestureHandlerHolder : public UserGestureHandler {
+public:
+    WebUserGestureHandlerHolder()
+        : m_handler(0)
+    {
+        UserGestureIndicator::setHandler(this);
+    }
+
+    virtual void onGesture()
+    {
+        if (m_handler)
+            m_handler->onGesture();
+    }
+
+    void setHandler(WebUserGestureHandler* handler)
+    {
+        m_handler = handler;
+    }
+
+private:
+    WebUserGestureHandler* m_handler;
+};
+
+WebUserGestureHandlerHolder* gestureHandler()
+{
+    DEFINE_STATIC_LOCAL(WebUserGestureHandlerHolder, handler, ());
+    return &handler;
+}
 
 bool WebUserGestureIndicator::isProcessingUserGesture()
 {
@@ -53,4 +82,9 @@ WebUserGestureToken WebUserGestureIndicator::currentUserGestureToken()
     return WebUserGestureToken(UserGestureIndicator::currentToken());
 }
 
-} // namespace WebKit
+void WebUserGestureIndicator::setHandler(WebUserGestureHandler* handler)
+{
+    gestureHandler()->setHandler(handler);
+}
+
+} // namespace blink

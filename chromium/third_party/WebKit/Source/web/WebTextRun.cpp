@@ -31,15 +31,15 @@
 #include "config.h"
 #include "WebTextRun.h"
 
-#include "core/platform/graphics/TextRun.h"
+#include "platform/text/TextRun.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebTextRun::operator WebCore::TextRun() const
 {
     return TextRun(text, 0, 0, TextRun::AllowTrailingExpansion, rtl ? RTL : LTR, directionalOverride);
 }
 
-} // namespace WebKit
+} // namespace blink

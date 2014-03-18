@@ -27,11 +27,10 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 
 #include "core/fetch/ImageResource.h"
-#include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/canvas/CanvasPattern.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "sync/internal_api/public/base/model_type_test_util.h"
+#include "sync/internal_api/public/base/ack_handle.h"
 
 namespace syncer {
 
@@ -12,16 +13,9 @@ ObjectIdInvalidationMap BuildInvalidationMap(
     const std::string& payload) {
   ObjectIdInvalidationMap map;
   invalidation::ObjectId id;
-  Invalidation invalidation;
-
   bool result = RealModelTypeToObjectId(type, &id);
-  DCHECK(result)
-      << "Conversion of model type to object id failed: "
-      << ModelTypeToString(type);
-  invalidation.version = version;
-  invalidation.payload = payload;
-
-  map.insert(std::make_pair(id, invalidation));
+  DCHECK(result);
+  map.Insert(Invalidation::Init(id, version, payload));
   return map;
 }
 

@@ -32,82 +32,188 @@
 #include "core/animation/DocumentTimeline.h"
 
 #include "core/animation/Animation.h"
+#include "core/animation/AnimationClock.h"
 #include "core/animation/KeyframeAnimationEffect.h"
 #include "core/animation/TimedItem.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/QualifiedName.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
+
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+namespace WebCore {
 
-namespace {
+class MockPlatformTiming : public DocumentTimeline::PlatformTiming {
+public:
 
-class DocumentTimelineTest : public ::testing::Test {
+    MOCK_METHOD1(wakeAfter, void(double));
+    MOCK_METHOD0(cancelWake, void());
+    MOCK_METHOD0(serviceOnNextFrame, void());
+
+    /**
+     * DocumentTimelines should do one of the following things after servicing animations:
+     *  - cancel the timer and not request to be woken again (expectNoMoreActions)
+     *  - cancel the timer and request to be woken on the next frame (expectNextFrameAction)
+     *  - cancel the timer and request to be woken at some point in the future (expectDelayedAction)
+     */
+
+    void expectNoMoreActions()
+    {
+        EXPECT_CALL(*this, cancelWake());
+    }
+
+    void expectNextFrameAction()
+    {
+        ::testing::Sequence sequence;
+        EXPECT_CALL(*this, cancelWake()).InSequence(sequence);
+        EXPECT_CALL(*this, serviceOnNextFrame()).InSequence(sequence);
+    }
+
+    void expectDelayedAction(double when)
+    {
+        ::testing::Sequence sequence;
+        EXPECT_CALL(*this, cancelWake()).InSequence(sequence);
+        EXPECT_CALL(*this, wakeAfter(when)).InSequence(sequence);
+    }
+};
+
+class AnimationDocumentTimelineTest : public ::testing::Test {
 protected:
     virtual void SetUp()
     {
         document = Document::create();
+        document->animationClock().resetTimeForTesting();
         element = Element::create(nullQName() , document.get());
-        timeline = DocumentTimeline::create(document.get());
-        timeline->setZeroTimeAsPerfTime(0);
+        platformTiming = new MockPlatformTiming;
+        timeline = DocumentTimeline::create(document.get(), adoptPtr(platformTiming));
+        timeline->setZeroTime(0);
         ASSERT_EQ(0, timeline->currentTime());
+    }
+
+    virtual void TearDown()
+    {
+        timeline.release();
+        document.release();
+        element.release();
+    }
+
+    void updateClockAndService(double time)
+    {
+        document->animationClock().updateTime(time);
+        timeline->serviceAnimations();
     }
 
     RefPtr<Document> document;
     RefPtr<Element> element;
     RefPtr<DocumentTimeline> timeline;
     Timing timing;
+    MockPlatformTiming* platformTiming;
+
+    void wake()
+    {
+        timeline->wake();
+    }
+
+    double minimumDelay()
+    {
+        return DocumentTimeline::s_minimumDelay;
+    }
 };
 
-TEST_F(DocumentTimelineTest, EmptyKeyframeAnimation)
+TEST_F(AnimationDocumentTimelineTest, HasStarted)
+{
+    timeline = DocumentTimeline::create(document.get());
+    EXPECT_FALSE(timeline->hasStarted());
+    timeline->setZeroTime(0);
+    EXPECT_TRUE(timeline->hasStarted());
+}
+
+TEST_F(AnimationDocumentTimelineTest, EmptyKeyframeAnimation)
 {
     RefPtr<KeyframeAnimationEffect> effect = KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector());
     RefPtr<Animation> anim = Animation::create(element.get(), effect, timing);
 
     timeline->play(anim.get());
 
-    timeline->serviceAnimations(0);
+    platformTiming->expectNoMoreActions();
+    updateClockAndService(0);
     EXPECT_FLOAT_EQ(0, timeline->currentTime());
     EXPECT_TRUE(anim->compositableValues()->isEmpty());
 
-    timeline->serviceAnimations(100);
+    platformTiming->expectNoMoreActions();
+    updateClockAndService(100);
     EXPECT_FLOAT_EQ(100, timeline->currentTime());
 }
 
-TEST_F(DocumentTimelineTest, ZeroTimeAsPerfTime)
+TEST_F(AnimationDocumentTimelineTest, EmptyTimelineDoesNotTriggerStyleRecalc)
+{
+    document->animationClock().updateTime(100);
+    EXPECT_FALSE(timeline->serviceAnimations());
+}
+
+TEST_F(AnimationDocumentTimelineTest, EmptyPlayerDoesNotTriggerStyleRecalc)
+{
+    timeline->play(0);
+    document->animationClock().updateTime(100);
+    EXPECT_FALSE(timeline->serviceAnimations());
+}
+
+TEST_F(AnimationDocumentTimelineTest, EmptyTargetDoesNotTriggerStyleRecalc)
+{
+    timing.iterationDuration = 200;
+    timeline->play(Animation::create(0, KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timing).get());
+    document->animationClock().updateTime(100);
+    EXPECT_FALSE(timeline->serviceAnimations());
+}
+
+TEST_F(AnimationDocumentTimelineTest, EmptyEffectDoesNotTriggerStyleRecalc)
+{
+    timeline->play(Animation::create(element.get(), 0, timing).get());
+    document->animationClock().updateTime(100);
+    EXPECT_FALSE(timeline->serviceAnimations());
+}
+
+TEST_F(AnimationDocumentTimelineTest, TriggerStyleRecalc)
+{
+    timeline->play(Animation::create(element.get(), KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timing).get());
+    document->animationClock().updateTime(100);
+    EXPECT_TRUE(timeline->serviceAnimations());
+}
+
+TEST_F(AnimationDocumentTimelineTest, ZeroTime)
 {
     timeline = DocumentTimeline::create(document.get());
 
-    timeline->serviceAnimations(100);
+    document->animationClock().updateTime(100);
     EXPECT_TRUE(isNull(timeline->currentTime()));
 
-    timeline->serviceAnimations(200);
+    document->animationClock().updateTime(200);
     EXPECT_TRUE(isNull(timeline->currentTime()));
 
-    timeline->setZeroTimeAsPerfTime(300);
-    timeline->serviceAnimations(300);
+    timeline->setZeroTime(300);
+    document->animationClock().updateTime(300);
     EXPECT_EQ(0, timeline->currentTime());
 
-    timeline->serviceAnimations(400);
+    document->animationClock().updateTime(400);
     EXPECT_EQ(100, timeline->currentTime());
 }
 
-TEST_F(DocumentTimelineTest, PauseForTesting)
+TEST_F(AnimationDocumentTimelineTest, PauseForTesting)
 {
     float seekTime = 1;
     RefPtr<Animation> anim1 = Animation::create(element.get(), KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timing);
     RefPtr<Animation> anim2  = Animation::create(element.get(), KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timing);
-    RefPtr<Player> player1 = timeline->play(anim1.get());
-    RefPtr<Player> player2 = timeline->play(anim2.get());
+    Player* player1 = timeline->play(anim1.get());
+    Player* player2 = timeline->play(anim2.get());
     timeline->pauseAnimationsForTesting(seekTime);
 
     EXPECT_FLOAT_EQ(seekTime, player1->currentTime());
     EXPECT_FLOAT_EQ(seekTime, player2->currentTime());
 }
 
-TEST_F(DocumentTimelineTest, NumberOfActiveAnimations)
+TEST_F(AnimationDocumentTimelineTest, NumberOfActiveAnimations)
 {
     Timing timingForwardFill;
     timingForwardFill.hasIterationDuration = true;
@@ -135,19 +241,47 @@ TEST_F(DocumentTimelineTest, NumberOfActiveAnimations)
     RefPtr<Animation> anim3 = Animation::create(element.get(), KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timingBackwardFillDelay);
     RefPtr<Animation> anim4 = Animation::create(element.get(), KeyframeAnimationEffect::create(KeyframeAnimationEffect::KeyframeVector()), timingNoFillDelay);
 
-    RefPtr<Player> player1 = timeline->play(anim1.get());
-    RefPtr<Player> player2 = timeline->play(anim2.get());
-    RefPtr<Player> player3 = timeline->play(anim3.get());
-    RefPtr<Player> player4 = timeline->play(anim4.get());
+    timeline->play(anim1.get());
+    timeline->play(anim2.get());
+    timeline->play(anim3.get());
+    timeline->play(anim4.get());
 
-    timeline->serviceAnimations(0);
+    platformTiming->expectNextFrameAction();
+    updateClockAndService(0);
     EXPECT_EQ(4U, timeline->numberOfActiveAnimationsForTesting());
-    timeline->serviceAnimations(0.5);
+    platformTiming->expectNextFrameAction();
+    updateClockAndService(0.5);
     EXPECT_EQ(4U, timeline->numberOfActiveAnimationsForTesting());
-    timeline->serviceAnimations(1.5);
+    platformTiming->expectNextFrameAction();
+    updateClockAndService(1.5);
     EXPECT_EQ(4U, timeline->numberOfActiveAnimationsForTesting());
-    timeline->serviceAnimations(3);
+    platformTiming->expectNoMoreActions();
+    updateClockAndService(3);
     EXPECT_EQ(1U, timeline->numberOfActiveAnimationsForTesting());
+}
+
+TEST_F(AnimationDocumentTimelineTest, DelayBeforeAnimationStart)
+{
+    timing.hasIterationDuration = true;
+    timing.iterationDuration = 2;
+    timing.startDelay = 5;
+
+    RefPtr<Animation> anim = Animation::create(element.get(), 0, timing);
+
+    timeline->play(anim.get());
+
+    // TODO: Put the player startTime in the future when we add the capability to change player startTime
+    platformTiming->expectDelayedAction(timing.startDelay - minimumDelay());
+    updateClockAndService(0);
+
+    platformTiming->expectDelayedAction(timing.startDelay - minimumDelay() - 1.5);
+    updateClockAndService(1.5);
+
+    EXPECT_CALL(*platformTiming, serviceOnNextFrame());
+    wake();
+
+    platformTiming->expectNextFrameAction();
+    updateClockAndService(4.98);
 }
 
 }

@@ -34,7 +34,7 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), 0, false);
+        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
     renderer_ = SoftwareRenderer::Create(
         this, &settings_, output_surface_.get(), resource_provider());
   }
@@ -45,19 +45,8 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
 
   SoftwareRenderer* renderer() const { return renderer_.get(); }
 
-  void set_viewport(gfx::Rect viewport) {
-    viewport_ = viewport;
-  }
-
   // RendererClient implementation.
-  virtual gfx::Rect DeviceViewport() const OVERRIDE {
-    return viewport_;
-  }
-  virtual gfx::Rect DeviceClip() const OVERRIDE { return DeviceViewport(); }
   virtual void SetFullRootLayerDamage() OVERRIDE {}
-  virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
-    return CompositorFrameMetadata();
-  }
 
  protected:
   LayerTreeSettings settings_;
@@ -65,7 +54,6 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
   scoped_ptr<FakeOutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<SoftwareRenderer> renderer_;
-  gfx::Rect viewport_;
 };
 
 TEST_F(SoftwareRendererTest, SolidColorQuad) {
@@ -74,13 +62,17 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
   gfx::Rect outer_rect(outer_size);
   gfx::Rect inner_rect(gfx::Point(1, 1), inner_size);
   gfx::Rect visible_rect(gfx::Point(1, 2), gfx::Size(98, 97));
-  set_viewport(gfx::Rect(outer_size));
 
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
-  shared_quad_state->SetAll(
-      gfx::Transform(), outer_size, outer_rect, outer_rect, false, 1.0);
+  shared_quad_state->SetAll(gfx::Transform(),
+                            outer_size,
+                            outer_rect,
+                            outer_rect,
+                            false,
+                            1.0,
+                            SkXfermode::kSrcOver_Mode);
   RenderPass::Id root_render_pass_id = RenderPass::Id(1, 1);
   scoped_ptr<TestRenderPass> root_render_pass = TestRenderPass::Create();
   root_render_pass->SetNew(
@@ -98,12 +90,18 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
   list.push_back(root_render_pass.PassAs<RenderPass>());
 
   float device_scale_factor = 1.f;
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  gfx::Rect device_viewport_rect(outer_size);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        device_viewport_rect,
+                        device_viewport_rect,
+                        true,
+                        false);
 
   SkBitmap output;
-  output.setConfig(SkBitmap::kARGB_8888_Config,
-                   DeviceViewport().width(),
-                   DeviceViewport().height());
+  output.setConfig(
+      SkBitmap::kARGB_8888_Config, outer_rect.width(), outer_rect.height());
   output.allocPixels();
   renderer()->GetFramebufferPixels(output.getPixels(), outer_rect);
 
@@ -121,7 +119,6 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   gfx::Size inner_size(98, 98);
   gfx::Rect outer_rect(outer_size);
   gfx::Rect inner_rect(gfx::Point(1, 1), inner_size);
-  set_viewport(gfx::Rect(outer_size));
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   ResourceProvider::ResourceId resource_yellow =
@@ -159,11 +156,16 @@ TEST_F(SoftwareRendererTest, TileQuad) {
                                  gfx::Rect(inner_size),
                                  gfx::Vector2d());
 
-  gfx::Rect root_rect = DeviceViewport();
+  gfx::Rect root_rect = outer_rect;
 
   scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
-  shared_quad_state->SetAll(
-      gfx::Transform(), outer_size, outer_rect, outer_rect, false, 1.0);
+  shared_quad_state->SetAll(gfx::Transform(),
+                            outer_size,
+                            outer_rect,
+                            outer_rect,
+                            false,
+                            1.0,
+                            SkXfermode::kSrcOver_Mode);
   RenderPass::Id root_render_pass_id = RenderPass::Id(1, 1);
   scoped_ptr<TestRenderPass> root_render_pass = TestRenderPass::Create();
   root_render_pass->SetNew(
@@ -191,12 +193,18 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   list.push_back(root_render_pass.PassAs<RenderPass>());
 
   float device_scale_factor = 1.f;
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  gfx::Rect device_viewport_rect(outer_size);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        device_viewport_rect,
+                        device_viewport_rect,
+                        true,
+                        false);
 
   SkBitmap output;
-  output.setConfig(SkBitmap::kARGB_8888_Config,
-                   DeviceViewport().width(),
-                   DeviceViewport().height());
+  output.setConfig(
+      SkBitmap::kARGB_8888_Config, outer_size.width(), outer_size.height());
   output.allocPixels();
   renderer()->GetFramebufferPixels(output.getPixels(), outer_rect);
 
@@ -213,7 +221,6 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   gfx::Rect tile_rect(tile_size);
   gfx::Rect visible_rect = tile_rect;
   visible_rect.Inset(1, 2, 3, 4);
-  set_viewport(gfx::Rect(tile_size));
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   ResourceProvider::ResourceId resource_cyan =
@@ -238,11 +245,16 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
                                  gfx::Rect(tile_size),
                                  gfx::Vector2d());
 
-  gfx::Rect root_rect = DeviceViewport();
+  gfx::Rect root_rect(tile_size);
 
   scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
-  shared_quad_state->SetAll(
-      gfx::Transform(), tile_size, tile_rect, tile_rect, false, 1.0);
+  shared_quad_state->SetAll(gfx::Transform(),
+                            tile_size,
+                            tile_rect,
+                            tile_rect,
+                            false,
+                            1.0,
+                            SkXfermode::kSrcOver_Mode);
   RenderPass::Id root_render_pass_id = RenderPass::Id(1, 1);
   scoped_ptr<TestRenderPass> root_render_pass = TestRenderPass::Create();
   root_render_pass->SetNew(
@@ -262,12 +274,18 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   list.push_back(root_render_pass.PassAs<RenderPass>());
 
   float device_scale_factor = 1.f;
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  gfx::Rect device_viewport_rect(tile_size);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        device_viewport_rect,
+                        device_viewport_rect,
+                        true,
+                        false);
 
   SkBitmap output;
-  output.setConfig(SkBitmap::kARGB_8888_Config,
-                   DeviceViewport().width(),
-                   DeviceViewport().height());
+  output.setConfig(
+      SkBitmap::kARGB_8888_Config, tile_size.width(), tile_size.height());
   output.allocPixels();
   renderer()->GetFramebufferPixels(output.getPixels(), tile_rect);
 
@@ -294,7 +312,6 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
 TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   float device_scale_factor = 1.f;
   gfx::Rect viewport_rect(0, 0, 100, 100);
-  set_viewport(viewport_rect);
 
   settings_.should_clear_root_render_pass = false;
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
@@ -314,7 +331,13 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   AddQuad(root_clear_pass, viewport_rect, SK_ColorGREEN);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        viewport_rect,
+                        viewport_rect,
+                        true,
+                        false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   EXPECT_EQ(SK_ColorGREEN, output.getColor(0, 0));
@@ -333,7 +356,13 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   AddQuad(root_smaller_pass, smaller_rect, SK_ColorMAGENTA);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        viewport_rect,
+                        viewport_rect,
+                        true,
+                        false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   // If we didn't clear, the borders should still be green.
@@ -350,7 +379,6 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
 TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
   float device_scale_factor = 1.f;
   gfx::Rect viewport_rect(0, 0, 100, 100);
-  set_viewport(viewport_rect);
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   RenderPassList list;
@@ -380,7 +408,13 @@ TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
   root_clear_pass->quad_list[0]->visible_rect = interior_visible_rect;
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
+  renderer()->DrawFrame(&list,
+                        NULL,
+                        device_scale_factor,
+                        viewport_rect,
+                        viewport_rect,
+                        true,
+                        false);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   EXPECT_EQ(SK_ColorGREEN, output.getColor(0, 0));

@@ -27,13 +27,13 @@
 #include "core/css/resolver/ElementResolveContext.h"
 #include "core/css/resolver/MatchRequest.h"
 #include "core/css/resolver/MatchResult.h"
+#include "core/css/resolver/StyleResolverIncludes.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
 class CSSRuleList;
-class DocumentRuleSets;
 class RenderRegion;
 class RuleData;
 class RuleSet;
@@ -50,9 +50,11 @@ const CascadeOrder ignoreCascadeOrder = 0;
 class MatchedRule {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit MatchedRule(const RuleData* ruleData, CascadeScope cascadeScope, CascadeOrder cascadeOrder)
+    explicit MatchedRule(const RuleData* ruleData, unsigned specificity, CascadeScope cascadeScope, CascadeOrder cascadeOrder, unsigned styleSheetIndex)
         : m_ruleData(ruleData)
+        , m_specificity(specificity)
         , m_cascadeScope(cascadeScope)
+        , m_styleSheetIndex(styleSheetIndex)
     {
         ASSERT(m_ruleData);
         static const unsigned BitsForPositionInRuleData = 18;
@@ -62,11 +64,21 @@ public:
     const RuleData* ruleData() const { return m_ruleData; }
     uint32_t cascadeScope() const { return m_cascadeScope; }
     uint32_t position() const { return m_position; }
+    unsigned specificity() const { return ruleData()->specificity() + m_specificity; }
+    uint32_t styleSheetIndex() const { return m_styleSheetIndex; }
 
 private:
     const RuleData* m_ruleData;
+    unsigned m_specificity;
     CascadeScope m_cascadeScope;
     uint32_t m_position;
+    uint32_t m_styleSheetIndex;
+};
+
+class StyleRuleList : public RefCounted<StyleRuleList> {
+public:
+    static PassRefPtr<StyleRuleList> create() { return adoptRef(new StyleRuleList()); }
+    Vector<StyleRule*> m_list;
 };
 
 // ElementRuleCollector is designed to be used as a stack object.
@@ -76,12 +88,8 @@ private:
 class ElementRuleCollector {
     WTF_MAKE_NONCOPYABLE(ElementRuleCollector);
 public:
-    ElementRuleCollector(const ElementResolveContext&, const SelectorFilter&, RenderStyle*);
-
-    void setBehaviorAtBoundary(SelectorChecker::BehaviorAtBoundary boundary) { m_behaviorAtBoundary = boundary; }
-    SelectorChecker::BehaviorAtBoundary behaviorAtBoundary() const { return m_behaviorAtBoundary; }
-    void setCanUseFastReject(bool canUseFastReject) { m_canUseFastReject = canUseFastReject; }
-    bool canUseFastReject() const { return m_canUseFastReject; }
+    ElementRuleCollector(const ElementResolveContext&, const SelectorFilter&, RenderStyle* = 0, ShouldIncludeStyleSheetInCSSOMWrapper = IncludeStyleSheetInCSSOMWrapper);
+    ~ElementRuleCollector();
 
     void setMode(SelectorChecker::Mode mode) { m_mode = mode; }
     void setPseudoStyleRequest(const PseudoStyleRequest& request) { m_pseudoStyleRequest = request; }
@@ -92,10 +100,11 @@ public:
     bool hasAnyMatchingRules(RuleSet*);
 
     MatchResult& matchedResult();
-    PassRefPtr<CSSRuleList> matchedRuleList();
+    PassRefPtr<StyleRuleList> matchedStyleRuleList();
+    PassRefPtr<CSSRuleList> matchedCSSRuleList();
 
-    void collectMatchingRules(const MatchRequest&, RuleRange&, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
-    void collectMatchingRulesForRegion(const MatchRequest&, RuleRange&, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingRules(const MatchRequest&, RuleRange&, SelectorChecker::BehaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingRulesForRegion(const MatchRequest&, RuleRange&, SelectorChecker::BehaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
@@ -105,17 +114,19 @@ public:
     void sortAndTransferMatchedRulesWithOnlySortBySpecificity();
 
 private:
-    Document& document() { return m_context.document(); }
+    void collectRuleIfMatches(const RuleData&, SelectorChecker::BehaviorAtBoundary, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
+    void collectMatchingRulesForList(const Vector<RuleData>*, SelectorChecker::BehaviorAtBoundary, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
+    void collectMatchingRulesForList(const RuleData*, SelectorChecker::BehaviorAtBoundary, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
+    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::BehaviorAtBoundary, SelectorChecker::MatchResult*);
 
-    void collectRuleIfMatches(const RuleData&, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
-    void collectMatchingRulesForList(const Vector<RuleData>*, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
-    void collectMatchingRulesForList(const RuleData*, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
-    bool ruleMatches(const RuleData&, const ContainerNode* scope, PseudoId&);
+    void appendCSSOMWrapperForRule(StyleRule*);
 
     void sortMatchedRules();
-    void addMatchedRule(const RuleData*, CascadeScope, CascadeOrder);
+    void addMatchedRule(const RuleData*, unsigned specificity, CascadeScope, CascadeOrder);
+    void addMatchedRule(const RuleData*, unsigned specificity, CascadeScope, CascadeOrder, unsigned styleSheetIndex);
 
     StaticCSSRuleList* ensureRuleList();
+    StyleRuleList* ensureStyleRuleList();
 
 private:
     const ElementResolveContext& m_context;
@@ -125,15 +136,16 @@ private:
     const RenderRegion* m_regionForStyling;
     PseudoStyleRequest m_pseudoStyleRequest;
     SelectorChecker::Mode m_mode;
-    SelectorChecker::BehaviorAtBoundary m_behaviorAtBoundary;
     bool m_canUseFastReject;
     bool m_sameOriginOnly;
     bool m_matchingUARules;
+    bool m_includeStyleSheet;
 
     OwnPtr<Vector<MatchedRule, 32> > m_matchedRules;
 
     // Output.
-    RefPtr<StaticCSSRuleList> m_ruleList;
+    RefPtr<StaticCSSRuleList> m_cssRuleList;
+    RefPtr<StyleRuleList> m_styleRuleList;
     MatchResult m_result;
 };
 

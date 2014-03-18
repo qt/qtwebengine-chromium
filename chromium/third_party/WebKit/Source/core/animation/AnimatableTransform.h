@@ -32,7 +32,7 @@
 #define AnimatableTransform_h
 
 #include "core/animation/AnimatableValue.h"
-#include "core/platform/graphics/transforms/TransformOperations.h"
+#include "platform/transforms/TransformOperations.h"
 
 namespace WebCore {
 
@@ -51,18 +51,15 @@ protected:
 
 private:
     explicit AnimatableTransform(const TransformOperations& transform)
-        : AnimatableValue(TypeTransform)
-        , m_transform(transform)
+        : m_transform(transform)
     {
     }
+    virtual AnimatableType type() const OVERRIDE { return TypeTransform; }
+    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
     const TransformOperations m_transform;
 };
 
-inline const AnimatableTransform* toAnimatableTransform(const AnimatableValue* value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value && value->isTransform());
-    return static_cast<const AnimatableTransform*>(value);
-}
+DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableTransform, isTransform());
 
 } // namespace WebCore
 

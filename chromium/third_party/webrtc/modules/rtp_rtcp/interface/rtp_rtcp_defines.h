@@ -96,7 +96,9 @@ enum RTCPPacketType
     kRtcpSli            = 0x4000,
     kRtcpRpsi           = 0x8000,
     kRtcpRemb           = 0x10000,
-    kRtcpTransmissionTimeOffset = 0x20000
+    kRtcpTransmissionTimeOffset = 0x20000,
+    kRtcpXrReceiverReferenceTime = 0x40000,
+    kRtcpXrDlrrReportBlock = 0x80000
 };
 
 enum KeyFrameRequestMethod
@@ -127,9 +129,10 @@ enum RetransmissionMode {
 };
 
 enum RtxMode {
-  kRtxOff = 0,
-  kRtxRetransmitted = 1,  // Apply RTX only to retransmitted packets.
-  kRtxAll = 2  // Apply RTX to all packets (source + retransmissions).
+  kRtxOff                 = 0x0,
+  kRtxRetransmitted       = 0x1,  // Only send retransmissions over RTX.
+  kRtxRedundantPayloads   = 0x2   // Preventively send redundant payloads
+                                  // instead of padding.
 };
 
 const int kRtxHeaderSize = 2;
@@ -177,11 +180,20 @@ struct RTCPReportBlock {
   uint32_t delaySinceLastSR;
 };
 
+struct RtcpReceiveTimeInfo {
+  // Fields as described by RFC 3611 4.5.
+  uint32_t sourceSSRC;
+  uint32_t lastRR;
+  uint32_t delaySinceLastRR;
+};
+
 typedef std::list<RTCPReportBlock> ReportBlockList;
 
 class RtpData
 {
 public:
+    virtual ~RtpData() {}
+
     virtual int32_t OnReceivedPayloadData(
         const uint8_t* payloadData,
         const uint16_t payloadSize,
@@ -189,8 +201,6 @@ public:
 
     virtual bool OnRecoveredPacket(const uint8_t* packet,
                                    int packet_length) = 0;
-protected:
-    virtual ~RtpData() {}
 };
 
 class RtcpFeedback
@@ -216,6 +226,8 @@ protected:
 class RtpFeedback
 {
 public:
+    virtual ~RtpFeedback() {}
+
     // Receiving payload change or SSRC change. (return success!)
     /*
     *   channels    - number of channels in codec (1 = mono, 2 = stereo)
@@ -236,9 +248,6 @@ public:
                                         const bool added) = 0;
 
     virtual void ResetStatistics(uint32_t ssrc) = 0;
-
-protected:
-    virtual ~RtpFeedback() {}
 };
 
 class RtpAudioFeedback {
@@ -280,11 +289,13 @@ class RtcpBandwidthObserver {
   virtual ~RtcpBandwidthObserver() {}
 };
 
-class RtcpRttObserver {
+class RtcpRttStats {
  public:
   virtual void OnRttUpdate(uint32_t rtt) = 0;
 
-  virtual ~RtcpRttObserver() {};
+  virtual uint32_t LastProcessedRtt() const = 0;
+
+  virtual ~RtcpRttStats() {};
 };
 
 // Null object version of RtpFeedback.

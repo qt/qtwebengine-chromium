@@ -23,13 +23,11 @@
 #define SVGElement_h
 
 #include "core/dom/Element.h"
-#include "core/platform/Timer.h"
 #include "core/svg/SVGAnimatedString.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGLocatable.h"
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
+#include "platform/Timer.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -47,7 +45,7 @@ class SVGSVGElement;
 
 void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyNameToIdMap, const QualifiedName& attrName);
 
-class SVGElement : public Element, public SVGLangSpace {
+class SVGElement : public Element {
 public:
     virtual ~SVGElement();
 
@@ -57,16 +55,25 @@ public:
     bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
     virtual bool supportsMarkers() const { return false; }
     PassRefPtr<CSSValue> getPresentationAttribute(const String& name);
-    bool isKnownAttribute(const QualifiedName&);
     static bool isAnimatableCSSProperty(const QualifiedName&);
-    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const;
+    enum CTMScope {
+        NearestViewportScope, // Used by SVGGraphicsElement::getCTM()
+        ScreenScope // Used by SVGGraphicsElement::getScreenCTM()
+    };
+    virtual AffineTransform localCoordinateSpaceTransform(CTMScope) const;
     virtual bool needsPendingResourceHandling() const { return true; }
 
     bool instanceUpdatesBlocked() const;
     void setInstanceUpdatesBlocked(bool);
 
     String xmlbase() const;
-    void setXmlbase(const String&);
+    void setXMLbase(const String&);
+
+    String xmllang() const;
+    void setXMLlang(const String& xmlLang);
+
+    String xmlspace() const;
+    void setXMLspace(const String& xmlSpace);
 
     SVGSVGElement* ownerSVGElement() const;
     SVGElement* viewportElement() const;
@@ -97,7 +104,7 @@ public:
 
     const HashSet<SVGElementInstance*>& instancesForElement() const;
 
-    bool getBoundingBox(FloatRect&, SVGLocatable::StyleUpdateStrategy = SVGLocatable::AllowStyleUpdate);
+    bool getBoundingBox(FloatRect&);
 
     void setCursorElement(SVGCursorElement*);
     void cursorElementRemoved();
@@ -136,6 +143,9 @@ public:
 
     void invalidateRelativeLengthClients(SubtreeLayoutScope* = 0);
 
+    bool isContextElement() const { return m_isContextElement; }
+    void setContextElement() { m_isContextElement = true; }
+
 protected:
     SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 
@@ -165,6 +175,25 @@ protected:
     void reportAttributeParsingError(SVGParsingError, const QualifiedName&, const AtomicString&);
     bool hasFocusEventListeners() const;
 
+    class CleanUpAnimatedPropertiesCaller {
+    public:
+        CleanUpAnimatedPropertiesCaller()
+        :   m_owner(0)
+        {
+        }
+
+        ~CleanUpAnimatedPropertiesCaller()
+        {
+            ASSERT(m_owner);
+            m_owner->cleanupAnimatedProperties();
+        }
+
+        void setOwner(SVGElement* owner) { m_owner = owner; }
+
+    private:
+        SVGElement* m_owner;
+    };
+
 private:
     friend class SVGElementInstance;
 
@@ -179,10 +208,11 @@ private:
 
     void buildPendingResourcesIfNeeded();
 
-    virtual bool isSupported(StringImpl* feature, StringImpl* version) const;
-
     void mapInstanceToElement(SVGElementInstance*);
     void removeInstanceMapping(SVGElementInstance*);
+
+    void cleanupAnimatedProperties();
+    friend class CleanUpAnimatedPropertiesCaller;
 
     HashSet<SVGElement*> m_elementsWithRelativeLengths;
 
@@ -193,6 +223,8 @@ private:
 #if !ASSERT_DISABLED
     bool m_inRelativeLengthClientsInvalidation;
 #endif
+    bool m_animatedPropertiesDestructed;
+    bool m_isContextElement;
 };
 
 struct SVGAttributeHashTranslator {
@@ -207,17 +239,7 @@ struct SVGAttributeHashTranslator {
     static bool equal(const QualifiedName& a, const QualifiedName& b) { return a.matches(b); }
 };
 
-inline SVGElement* toSVGElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isSVGElement());
-    return static_cast<SVGElement*>(node);
-}
-
-inline const SVGElement* toSVGElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isSVGElement());
-    return static_cast<const SVGElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(SVGElement, isSVGElement());
 
 }
 

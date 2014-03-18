@@ -26,7 +26,6 @@
 #include "config.h"
 #include "SpeechRecognitionClientProxy.h"
 
-#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "WebSecurityOrigin.h"
 #include "WebSpeechGrammar.h"
@@ -34,17 +33,17 @@
 #include "WebSpeechRecognitionParams.h"
 #include "WebSpeechRecognitionResult.h"
 #include "WebSpeechRecognizer.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognition.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 SpeechRecognitionClientProxy::~SpeechRecognitionClientProxy()
 {
@@ -61,7 +60,7 @@ void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const S
     for (unsigned long i = 0; i < grammarList->length(); ++i)
         webSpeechGrammars[i] = grammarList->item(i);
 
-    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, interimResults, maxAlternatives, WebSecurityOrigin(recognition->scriptExecutionContext()->securityOrigin()));
+    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, interimResults, maxAlternatives, WebSecurityOrigin(recognition->executionContext()->securityOrigin()));
     m_recognizer->start(WebSpeechRecognitionHandle(recognition), params, this);
 }
 
@@ -146,4 +145,4 @@ SpeechRecognitionClientProxy::SpeechRecognitionClientProxy(WebSpeechRecognizer* 
 {
 }
 
-} // namespace WebKit
+} // namespace blink

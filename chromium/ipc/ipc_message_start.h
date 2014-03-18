@@ -11,6 +11,7 @@
 enum IPCMessageStart {
   AutomationMsgStart = 0,
   QtMsgStart,
+  FrameMsgStart,
   ViewMsgStart,
   InputMsgStart,
   PluginMsgStart,
@@ -91,6 +92,7 @@ enum IPCMessageStart {
   PowerMonitorMsgStart,
   EncryptedMediaMsgStart,
   ServiceWorkerMsgStart,
+  MessagePortMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

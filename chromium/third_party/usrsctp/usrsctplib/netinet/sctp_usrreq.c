@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_usrreq.c 253858 2013-08-01 12:05:23Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_usrreq.c 257555 2013-11-02 20:12:19Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -200,6 +200,7 @@ sctp_finish(void)
 	if (SCTP_BASE_VAR(userspace_rawsctp) != -1) {
 #if defined(__Userspace_os_Windows)
 		WaitForSingleObject(SCTP_BASE_VAR(recvthreadraw), INFINITE);
+		CloseHandle(SCTP_BASE_VAR(recvthreadraw));
 #else
 		pthread_join(SCTP_BASE_VAR(recvthreadraw), NULL);
 #endif
@@ -207,6 +208,7 @@ sctp_finish(void)
 	if (SCTP_BASE_VAR(userspace_udpsctp) != -1) {
 #if defined(__Userspace_os_Windows)
 		WaitForSingleObject(SCTP_BASE_VAR(recvthreadudp), INFINITE);
+		CloseHandle(SCTP_BASE_VAR(recvthreadudp));
 #else
 		pthread_join(SCTP_BASE_VAR(recvthreadudp), NULL);
 #endif
@@ -216,6 +218,7 @@ sctp_finish(void)
 	if (SCTP_BASE_VAR(userspace_rawsctp6) != -1) {
 #if defined(__Userspace_os_Windows)
 		WaitForSingleObject(SCTP_BASE_VAR(recvthreadraw6), INFINITE);
+		CloseHandle(SCTP_BASE_VAR(recvthreadraw6));
 #else
 		pthread_join(SCTP_BASE_VAR(recvthreadraw6), NULL);
 #endif
@@ -223,6 +226,7 @@ sctp_finish(void)
 	if (SCTP_BASE_VAR(userspace_udpsctp6) != -1) {
 #if defined(__Userspace_os_Windows)
 		WaitForSingleObject(SCTP_BASE_VAR(recvthreadudp6), INFINITE);
+		CloseHandle(SCTP_BASE_VAR(recvthreadudp6));
 #else
 		pthread_join(SCTP_BASE_VAR(recvthreadudp6), NULL);
 #endif
@@ -231,11 +235,21 @@ sctp_finish(void)
 	SCTP_BASE_VAR(timer_thread_should_exit) = 1;
 #if defined(__Userspace_os_Windows)
 	WaitForSingleObject(SCTP_BASE_VAR(timer_thread), INFINITE);
+	CloseHandle(SCTP_BASE_VAR(timer_thread));
 #else
 	pthread_join(SCTP_BASE_VAR(timer_thread), NULL);
 #endif
 #endif
 	sctp_pcb_finish();
+#if defined(__Userspace__)
+#if defined(__Userspace_os_Windows)
+	DeleteConditionVariable(&accept_cond);
+	DeleteCriticalSection(&accept_mtx);
+#else
+	pthread_cond_destroy(&accept_cond);
+	pthread_mutex_destroy(&accept_mtx);
+#endif
+#endif
 #if defined(__Windows__)
 	sctp_finish_sysctls();
 #if defined(INET) || defined(INET6)
@@ -1562,9 +1576,14 @@ sctp_fill_up_addresses_vrf(struct sctp_inpcb *inp,
 {
 	struct sctp_ifn *sctp_ifn;
 	struct sctp_ifa *sctp_ifa;
-	int loopback_scope, ipv4_local_scope, local_scope, site_scope;
 	size_t actual;
-	int ipv4_addr_legal, ipv6_addr_legal;
+	int loopback_scope;
+#if defined(INET)
+	int ipv4_local_scope, ipv4_addr_legal;
+#endif
+#if defined(INET6)
+	int local_scope, site_scope, ipv6_addr_legal;
+#endif
 #if defined(__Userspace__)
 	int conn_addr_legal;
 #endif
@@ -1577,42 +1596,62 @@ sctp_fill_up_addresses_vrf(struct sctp_inpcb *inp,
 	if (stcb) {
 		/* Turn on all the appropriate scope */
 		loopback_scope = stcb->asoc.scope.loopback_scope;
+#if defined(INET)
 		ipv4_local_scope = stcb->asoc.scope.ipv4_local_scope;
+		ipv4_addr_legal = stcb->asoc.scope.ipv4_addr_legal;
+#endif
+#if defined(INET6)
 		local_scope = stcb->asoc.scope.local_scope;
 		site_scope = stcb->asoc.scope.site_scope;
-		ipv4_addr_legal = stcb->asoc.scope.ipv4_addr_legal;
 		ipv6_addr_legal = stcb->asoc.scope.ipv6_addr_legal;
+#endif
 #if defined(__Userspace__)
 		conn_addr_legal = stcb->asoc.scope.conn_addr_legal;
 #endif
 	} else {
 		/* Use generic values for endpoints. */
 		loopback_scope = 1;
+#if defined(INET)
 		ipv4_local_scope = 1;
+#endif
+#if defined(INET6)
 		local_scope = 1;
 		site_scope = 1;
+#endif
 		if (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) {
+#if defined(INET6)
 			ipv6_addr_legal = 1;
+#endif
+#if defined(INET)
 			if (SCTP_IPV6_V6ONLY(inp)) {
 				ipv4_addr_legal = 0;
 			} else {
 				ipv4_addr_legal = 1;
 			}
+#endif
 #if defined(__Userspace__)
 			conn_addr_legal = 0;
 #endif
 		} else {
+#if defined(INET6)
 			ipv6_addr_legal = 0;
+#endif
 #if defined(__Userspace__)
 			if (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_CONN) {
 				conn_addr_legal = 1;
+#if defined(INET)
 				ipv4_addr_legal = 0;
+#endif
 			} else {
 				conn_addr_legal = 0;
+#if defined(INET)
 				ipv4_addr_legal = 1;
+#endif
 			}
 #else
+#if defined(INET)
 			ipv4_addr_legal = 1;
+#endif
 #endif
 		}
 	}
@@ -3958,7 +3997,7 @@ sctp_getopt(struct socket *so, int optname, void *optval, size_t *optsize,
 			}
 		}
 		if (error == 0) {
-			*optsize = sizeof(struct sctp_paddrparams);
+			*optsize = sizeof(struct sctp_udpencaps);
 		}
 		break;
 	}
@@ -5595,11 +5634,9 @@ sctp_setopt(struct socket *so, int optname, void *optval, size_t optsize,
 								SCTP_FROM_SCTP_USRREQ+SCTP_LOC_10);
 					}
 					net->dest_state |= SCTP_ADDR_NO_PMTUD;
-					if (paddrp->spp_pathmtu > SCTP_DEFAULT_MINSEGMENT) {
-						net->mtu = paddrp->spp_pathmtu + ovh;
-						if (net->mtu < stcb->asoc.smallest_mtu) {
-							sctp_pathmtu_adjustment(stcb, net->mtu);
-						}
+					net->mtu = paddrp->spp_pathmtu + ovh;
+					if (net->mtu < stcb->asoc.smallest_mtu) {
+						sctp_pathmtu_adjustment(stcb, net->mtu);
 					}
 				}
 				if (paddrp->spp_flags & SPP_PMTUD_ENABLE) {
@@ -5720,11 +5757,9 @@ sctp_setopt(struct socket *so, int optname, void *optval, size_t optsize,
 									SCTP_FROM_SCTP_USRREQ+SCTP_LOC_10);
 						}
 						net->dest_state |= SCTP_ADDR_NO_PMTUD;
-						if (paddrp->spp_pathmtu > SCTP_DEFAULT_MINSEGMENT) {
-							net->mtu = paddrp->spp_pathmtu + ovh;
-							if (net->mtu < stcb->asoc.smallest_mtu) {
-								sctp_pathmtu_adjustment(stcb, net->mtu);
-							}
+						net->mtu = paddrp->spp_pathmtu + ovh;
+						if (net->mtu < stcb->asoc.smallest_mtu) {
+							sctp_pathmtu_adjustment(stcb, net->mtu);
 						}
 					}
 					sctp_stcb_feature_on(inp, stcb, SCTP_PCB_FLAGS_DO_NOT_PMTUD);

@@ -33,16 +33,16 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebNetworkStateNotifier {
 public:
-    WEBKIT_EXPORT static void setOnLine(bool);
+    BLINK_EXPORT static void setOnLine(bool);
 
 private:
     WebNetworkStateNotifier();
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

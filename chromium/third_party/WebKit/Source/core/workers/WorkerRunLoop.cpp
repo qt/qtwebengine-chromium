@@ -31,16 +31,41 @@
 #include "config.h"
 #include "core/workers/WorkerRunLoop.h"
 
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/SharedTimer.h"
-#include "core/platform/ThreadGlobalData.h"
-#include "core/platform/ThreadTimers.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/PlatformThreadData.h"
+#include "platform/SharedTimer.h"
+#include "platform/ThreadTimers.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
+
+class WorkerRunLoop::Task {
+    WTF_MAKE_NONCOPYABLE(Task); WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassOwnPtr<Task> create(PassOwnPtr<ExecutionContextTask> task, const String& mode)
+    {
+        return adoptPtr(new Task(task, mode));
+    }
+    const String& mode() const { return m_mode; }
+    void performTask(const WorkerRunLoop& runLoop, ExecutionContext* context)
+    {
+        WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
+        if ((!workerGlobalScope->isClosing() && !runLoop.terminated()) || m_task->isCleanupTask())
+            m_task->performTask(context);
+    }
+
+private:
+    Task(PassOwnPtr<ExecutionContextTask> task, const String& mode)
+        : m_task(task)
+        , m_mode(mode.isolatedCopy())
+    {
+    }
+
+    OwnPtr<ExecutionContextTask> m_task;
+    String m_mode;
+};
 
 class WorkerSharedTimer : public SharedTimer {
 public:
@@ -112,7 +137,7 @@ public:
         , m_context(context)
     {
         if (!m_runLoop.m_nestedCount)
-            threadGlobalData().threadTimers().setSharedTimer(m_runLoop.m_sharedTimer.get());
+            PlatformThreadData::current().threadTimers().setSharedTimer(m_runLoop.m_sharedTimer.get());
         m_runLoop.m_nestedCount++;
         InspectorInstrumentation::willEnterNestedRunLoop(m_context);
     }
@@ -121,7 +146,7 @@ public:
     {
         m_runLoop.m_nestedCount--;
         if (!m_runLoop.m_nestedCount)
-            threadGlobalData().threadTimers().setSharedTimer(0);
+            PlatformThreadData::current().threadTimers().setSharedTimer(0);
         InspectorInstrumentation::didLeaveNestedRunLoop(m_context);
     }
 private:
@@ -224,37 +249,29 @@ void WorkerRunLoop::terminate()
     m_messageQueue.kill();
 }
 
-bool WorkerRunLoop::postTask(PassOwnPtr<ScriptExecutionContext::Task> task)
+bool WorkerRunLoop::postTask(PassOwnPtr<ExecutionContextTask> task)
 {
     return postTaskForMode(task, defaultMode());
 }
 
-void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task> task)
+bool WorkerRunLoop::postTask(const Closure& closure)
+{
+    return postTask(CallClosureTask::create(closure));
+}
+
+void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ExecutionContextTask> task)
 {
     m_messageQueue.appendAndKill(Task::create(task, defaultMode().isolatedCopy()));
 }
 
-bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ExecutionContextTask> task, const String& mode)
 {
     return m_messageQueue.append(Task::create(task, mode.isolatedCopy()));
 }
 
-PassOwnPtr<WorkerRunLoop::Task> WorkerRunLoop::Task::create(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+bool WorkerRunLoop::postTaskForMode(const Closure& closure, const String& mode)
 {
-    return adoptPtr(new Task(task, mode));
-}
-
-void WorkerRunLoop::Task::performTask(const WorkerRunLoop& runLoop, ScriptExecutionContext* context)
-{
-    WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-    if ((!workerGlobalScope->isClosing() && !runLoop.terminated()) || m_task->isCleanupTask())
-        m_task->performTask(context);
-}
-
-WorkerRunLoop::Task::Task(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
-    : m_task(task)
-    , m_mode(mode.isolatedCopy())
-{
+    return postTaskForMode(CallClosureTask::create(closure), mode);
 }
 
 } // namespace WebCore

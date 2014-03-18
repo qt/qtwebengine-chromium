@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/ScriptProfiler.h"
+#include "core/frame/Frame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -41,10 +41,9 @@
 #include "core/inspector/ScriptCallFrame.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -193,7 +192,7 @@ Vector<unsigned> InspectorConsoleAgent::consoleMessageArgumentCounts()
     return result;
 }
 
-void InspectorConsoleAgent::consoleTime(ScriptExecutionContext*, const String& title)
+void InspectorConsoleAgent::consoleTime(ExecutionContext*, const String& title)
 {
     // Follow Firebug's behavior of requiring a title that is not null or
     // undefined for timing functions
@@ -203,7 +202,7 @@ void InspectorConsoleAgent::consoleTime(ScriptExecutionContext*, const String& t
     m_times.add(title, monotonicallyIncreasingTime());
 }
 
-void InspectorConsoleAgent::consoleTimeEnd(ScriptExecutionContext*, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimeEnd(ExecutionContext*, const String& title, ScriptState* state)
 {
     // Follow Firebug's behavior of requiring a title that is not null or
     // undefined for timing functions
@@ -222,19 +221,19 @@ void InspectorConsoleAgent::consoleTimeEnd(ScriptExecutionContext*, const String
     addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, String(), 0, 0, state);
 }
 
-void InspectorConsoleAgent::consoleTimeline(ScriptExecutionContext* context, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimeline(ExecutionContext* context, const String& title, ScriptState* state)
 {
     m_timelineAgent->consoleTimeline(context, title, state);
 }
 
-void InspectorConsoleAgent::consoleTimelineEnd(ScriptExecutionContext* context, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimelineEnd(ExecutionContext* context, const String& title, ScriptState* state)
 {
     m_timelineAgent->consoleTimelineEnd(context, title, state);
 }
 
 void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(state));
+    RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole());
     const ScriptCallFrame& lastCaller = callStack->at(0);
     // Follow Firebug's behavior of counting with null and undefined title in
     // the same bucket as no argument
@@ -243,18 +242,8 @@ void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptAr
     String identifier = title.isEmpty() ? String(lastCaller.sourceURL() + ':' + String::number(lastCaller.lineNumber()))
                                         : String(title + '@');
 
-    HashMap<String, unsigned>::iterator it = m_counts.find(identifier);
-    int count;
-    if (it == m_counts.end())
-        count = 1;
-    else {
-        count = it->value + 1;
-        m_counts.remove(it);
-    }
-
-    m_counts.add(identifier, count);
-
-    String message = title + ": " + String::number(count);
+    HashCountedSet<String>::AddResult result = m_counts.add(identifier);
+    String message = title + ": " + String::number(result.iterator->value);
     addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack);
 }
 
@@ -273,7 +262,7 @@ void InspectorConsoleAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
     reset();
 }
 
-void InspectorConsoleAgent::didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber)
+void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber)
 {
     if (m_frontend && m_state->getBoolean(ConsoleAgentState::monitoringXHR)) {
         String message = "XHR finished loading: \"" + url + "\".";
@@ -281,7 +270,7 @@ void InspectorConsoleAgent::didFinishXHRLoading(ThreadableLoaderClient*, unsigne
     }
 }
 
-void InspectorConsoleAgent::didReceiveResourceResponse(unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorConsoleAgent::didReceiveResourceResponse(Frame*, unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
         return;

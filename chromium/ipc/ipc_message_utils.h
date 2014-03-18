@@ -216,8 +216,12 @@ struct ParamTraits<unsigned long long> {
 template <>
 struct IPC_EXPORT ParamTraits<float> {
   typedef float param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Write(Message* m, const param_type& p) {
+    m->WriteFloat(p);
+  }
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
+    return m->ReadFloat(iter, r);
+  }
   static void Log(const param_type& p, std::string* l);
 };
 
@@ -261,8 +265,8 @@ struct ParamTraits<std::wstring> {
 // need this trait.
 #if !defined(WCHAR_T_IS_UTF16)
 template <>
-struct ParamTraits<string16> {
-  typedef string16 param_type;
+struct ParamTraits<base::string16> {
+  typedef base::string16 param_type;
   static void Write(Message* m, const param_type& p) {
     m->WriteString16(p);
   }

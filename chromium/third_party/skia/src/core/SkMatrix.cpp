@@ -8,7 +8,7 @@
 #include "SkMatrix.h"
 #include "Sk64.h"
 #include "SkFloatBits.h"
-#include "SkScalarCompare.h"
+#include "SkOnce.h"
 #include "SkString.h"
 
 #ifdef SK_SCALAR_IS_FLOAT
@@ -47,11 +47,14 @@ enum {
 
 #ifdef SK_SCALAR_IS_FLOAT
     static const int32_t kScalar1Int = 0x3f800000;
-    static const int32_t kPersp1Int  = 0x3f800000;
 #else
     #define scalarAsInt(x)  (x)
     static const int32_t kScalar1Int = (1 << 16);
     static const int32_t kPersp1Int  = (1 << 30);
+#endif
+
+#ifdef SK_SCALAR_SLOW_COMPARES
+    static const int32_t kPersp1Int  = 0x3f800000;
 #endif
 
 uint8_t SkMatrix::computePerspectiveTypeMask() const {
@@ -247,7 +250,7 @@ bool SkMatrix::preservesRightAngles(SkScalar tol) const {
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkMatrix::setTranslate(SkScalar dx, SkScalar dy) {
-    if (SkScalarToCompareType(dx) || SkScalarToCompareType(dy)) {
+    if (dx || dy) {
         fMat[kMTransX] = dx;
         fMat[kMTransY] = dy;
 
@@ -269,7 +272,7 @@ bool SkMatrix::preTranslate(SkScalar dx, SkScalar dy) {
         return this->preConcat(m);
     }
 
-    if (SkScalarToCompareType(dx) || SkScalarToCompareType(dy)) {
+    if (dx || dy) {
         fMat[kMTransX] += SkScalarMul(fMat[kMScaleX], dx) +
                           SkScalarMul(fMat[kMSkewX], dy);
         fMat[kMTransY] += SkScalarMul(fMat[kMSkewY], dx) +
@@ -287,7 +290,7 @@ bool SkMatrix::postTranslate(SkScalar dx, SkScalar dy) {
         return this->postConcat(m);
     }
 
-    if (SkScalarToCompareType(dx) || SkScalarToCompareType(dy)) {
+    if (dx || dy) {
         fMat[kMTransX] += dx;
         fMat[kMTransY] += dy;
         this->setTypeMask(kUnknown_Mask | kOnlyPerspectiveValid_Mask);
@@ -1220,7 +1223,7 @@ const SkMatrix::MapPtsProc SkMatrix::gMapPtsProcs[] = {
 void SkMatrix::mapPoints(SkPoint dst[], const SkPoint src[], int count) const {
     SkASSERT((dst && src && count > 0) || 0 == count);
     // no partial overlap
-    SkASSERT(src == dst || SkAbs32((int32_t)(src - dst)) >= count);
+    SkASSERT(src == dst || &dst[count] <= &src[0] || &src[count] <= &dst[0]);
 
     this->getMapPtsProc()(*this, dst, src, count);
 }
@@ -1853,54 +1856,82 @@ bool SkMatrix::setPolyToPoly(const SkPoint src[], const SkPoint dst[],
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SkScalar SkMatrix::getMaxStretch() const {
-    TypeMask mask = this->getType();
+enum MinOrMax {
+    kMin_MinOrMax,
+    kMax_MinOrMax
+};
 
-    if (this->hasPerspective()) {
+template <MinOrMax MIN_OR_MAX> SkScalar get_stretch_factor(SkMatrix::TypeMask typeMask,
+                                                           const SkScalar m[9]) {
+    if (typeMask & SkMatrix::kPerspective_Mask) {
         return -SK_Scalar1;
     }
-    if (this->isIdentity()) {
+    if (SkMatrix::kIdentity_Mask == typeMask) {
         return SK_Scalar1;
     }
-    if (!(mask & kAffine_Mask)) {
-        return SkMaxScalar(SkScalarAbs(fMat[kMScaleX]),
-                           SkScalarAbs(fMat[kMScaleY]));
+    if (!(typeMask & SkMatrix::kAffine_Mask)) {
+        if (kMin_MinOrMax == MIN_OR_MAX) {
+             return SkMinScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
+                                SkScalarAbs(m[SkMatrix::kMScaleY]));
+        } else {
+             return SkMaxScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
+                                SkScalarAbs(m[SkMatrix::kMScaleY]));
+        }
     }
     // ignore the translation part of the matrix, just look at 2x2 portion.
-    // compute singular values, take largest abs value.
+    // compute singular values, take largest or smallest abs value.
     // [a b; b c] = A^T*A
-    SkScalar a = SkScalarMul(fMat[kMScaleX], fMat[kMScaleX]) +
-                 SkScalarMul(fMat[kMSkewY],  fMat[kMSkewY]);
-    SkScalar b = SkScalarMul(fMat[kMScaleX], fMat[kMSkewX]) +
-                 SkScalarMul(fMat[kMScaleY], fMat[kMSkewY]);
-    SkScalar c = SkScalarMul(fMat[kMSkewX],  fMat[kMSkewX]) +
-                 SkScalarMul(fMat[kMScaleY], fMat[kMScaleY]);
+    SkScalar a = SkScalarMul(m[SkMatrix::kMScaleX], m[SkMatrix::kMScaleX]) +
+                 SkScalarMul(m[SkMatrix::kMSkewY],  m[SkMatrix::kMSkewY]);
+    SkScalar b = SkScalarMul(m[SkMatrix::kMScaleX], m[SkMatrix::kMSkewX]) +
+                 SkScalarMul(m[SkMatrix::kMScaleY], m[SkMatrix::kMSkewY]);
+    SkScalar c = SkScalarMul(m[SkMatrix::kMSkewX],  m[SkMatrix::kMSkewX]) +
+                 SkScalarMul(m[SkMatrix::kMScaleY], m[SkMatrix::kMScaleY]);
     // eigenvalues of A^T*A are the squared singular values of A.
     // characteristic equation is det((A^T*A) - l*I) = 0
     // l^2 - (a + c)l + (ac-b^2)
     // solve using quadratic equation (divisor is non-zero since l^2 has 1 coeff
-    // and roots are guaraunteed to be pos and real).
-    SkScalar largerRoot;
+    // and roots are guaranteed to be pos and real).
+    SkScalar chosenRoot;
     SkScalar bSqd = SkScalarMul(b,b);
     // if upper left 2x2 is orthogonal save some math
     if (bSqd <= SK_ScalarNearlyZero*SK_ScalarNearlyZero) {
-        largerRoot = SkMaxScalar(a, c);
+        if (kMin_MinOrMax == MIN_OR_MAX) {
+            chosenRoot = SkMinScalar(a, c);
+        } else {
+            chosenRoot = SkMaxScalar(a, c);
+        }
     } else {
         SkScalar aminusc = a - c;
         SkScalar apluscdiv2 = SkScalarHalf(a + c);
         SkScalar x = SkScalarHalf(SkScalarSqrt(SkScalarMul(aminusc, aminusc) + 4 * bSqd));
-        largerRoot = apluscdiv2 + x;
+        if (kMin_MinOrMax == MIN_OR_MAX) {
+            chosenRoot = apluscdiv2 - x;
+        } else {
+            chosenRoot = apluscdiv2 + x;
+        }
     }
-    return SkScalarSqrt(largerRoot);
+    SkASSERT(chosenRoot >= 0);
+    return SkScalarSqrt(chosenRoot);
+}
+
+SkScalar SkMatrix::getMinStretch() const {
+    return get_stretch_factor<kMin_MinOrMax>(this->getType(), fMat);
+}
+
+SkScalar SkMatrix::getMaxStretch() const {
+    return get_stretch_factor<kMax_MinOrMax>(this->getType(), fMat);
+}
+
+static void reset_identity_matrix(SkMatrix* identity) {
+    identity->reset();
 }
 
 const SkMatrix& SkMatrix::I() {
+    // If you can use C++11 now, you might consider replacing this with a constexpr constructor.
     static SkMatrix gIdentity;
-    static bool gOnce;
-    if (!gOnce) {
-        gIdentity.reset();
-        gOnce = true;
-    }
+    SK_DECLARE_STATIC_ONCE(once);
+    SkOnce(&once, reset_identity_matrix, &gIdentity);
     return gIdentity;
 }
 
@@ -1919,20 +1950,25 @@ const SkMatrix& SkMatrix::InvalidMatrix() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint32_t SkMatrix::writeToMemory(void* buffer) const {
+size_t SkMatrix::writeToMemory(void* buffer) const {
     // TODO write less for simple matrices
+    static const size_t sizeInMemory = 9 * sizeof(SkScalar);
     if (buffer) {
-        memcpy(buffer, fMat, 9 * sizeof(SkScalar));
+        memcpy(buffer, fMat, sizeInMemory);
     }
-    return 9 * sizeof(SkScalar);
+    return sizeInMemory;
 }
 
-uint32_t SkMatrix::readFromMemory(const void* buffer) {
+size_t SkMatrix::readFromMemory(const void* buffer, size_t length) {
+    static const size_t sizeInMemory = 9 * sizeof(SkScalar);
+    if (length < sizeInMemory) {
+        return 0;
+    }
     if (buffer) {
-        memcpy(fMat, buffer, 9 * sizeof(SkScalar));
+        memcpy(fMat, buffer, sizeInMemory);
         this->setTypeMask(kUnknown_Mask);
     }
-    return 9 * sizeof(SkScalar);
+    return sizeInMemory;
 }
 
 #ifdef SK_DEVELOPER

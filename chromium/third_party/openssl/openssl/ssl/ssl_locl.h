@@ -328,6 +328,7 @@
 #define SSL_SEED		0x00000800L
 #define SSL_AES128GCM		0x00001000L
 #define SSL_AES256GCM		0x00002000L
+#define SSL_CHACHA20POLY1305	0x00004000L
 
 #define SSL_AES        		(SSL_AES128|SSL_AES256|SSL_AES128GCM|SSL_AES256GCM)
 #define SSL_CAMELLIA		(SSL_CAMELLIA128|SSL_CAMELLIA256)
@@ -380,6 +381,20 @@
 
 #define TLSEXT_CHANNEL_ID_SIZE 128
 
+/* SSL_CIPHER_ALGORITHM2_AEAD is a flag in SSL_CIPHER.algorithm2 which
+ * indicates that the cipher is implemented via an EVP_AEAD. */
+#define SSL_CIPHER_ALGORITHM2_AEAD (1<<23)
+
+/* SSL_CIPHER_AEAD_FIXED_NONCE_LEN returns the number of bytes of fixed nonce
+ * for an SSL_CIPHER* with the SSL_CIPHER_ALGORITHM2_AEAD flag. */
+#define SSL_CIPHER_AEAD_FIXED_NONCE_LEN(ssl_cipher) \
+	(((ssl_cipher->algorithm2 >> 24) & 0xf)*2)
+
+/* SSL_CIPHER_ALGORITHM2_VARIABLE_NONCE_INCLUDED_IN_RECORD is a flag in
+ * SSL_CIPHER.algorithm2 which indicates that the variable part of the nonce is
+ * included as a prefix of the record. (AES-GCM, for example, does with with an
+ * 8-byte variable nonce.) */
+#define SSL_CIPHER_ALGORITHM2_VARIABLE_NONCE_INCLUDED_IN_RECORD (1<<22)
 
 /*
  * Export and cipher strength information. For each cipher we have to decide
@@ -587,6 +602,20 @@ typedef struct ssl3_enc_method
 				      const unsigned char *, size_t,
 				      int use_context);
 	} SSL3_ENC_METHOD;
+
+/* ssl_aead_ctx_st contains information about an AEAD that is being used to
+ * encrypt an SSL connection. */
+struct ssl_aead_ctx_st
+	{
+	EVP_AEAD_CTX ctx;
+	/* fixed_nonce contains any bytes of the nonce that are fixed for all
+	 * records. */
+	unsigned char fixed_nonce[8];
+	unsigned char fixed_nonce_len, variable_nonce_len, tag_len;
+	/* variable_nonce_included_in_record is non-zero if the variable nonce
+	 * for a record is included as a prefix before the ciphertext. */
+	char variable_nonce_included_in_record;
+	};
 
 #ifndef OPENSSL_NO_COMP
 /* Used for holding the relevant compression methods loaded into SSL_CTX */
@@ -834,8 +863,10 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_list(const SSL_METHOD *meth,
 					     STACK_OF(SSL_CIPHER) **sorted,
 					     const char *rule_str);
 void ssl_update_cache(SSL *s, int mode);
+int ssl_cipher_get_comp(const SSL_SESSION *s, SSL_COMP **comp);
+int ssl_cipher_get_evp_aead(const SSL_SESSION *s, const EVP_AEAD **aead);
 int ssl_cipher_get_evp(const SSL_SESSION *s,const EVP_CIPHER **enc,
-		       const EVP_MD **md,int *mac_pkey_type,int *mac_secret_size, SSL_COMP **comp);
+		       const EVP_MD **md,int *mac_pkey_type,int *mac_secret_size);
 int ssl_get_handshake_digest(int i,long *mask,const EVP_MD **md);			   
 int ssl_verify_cert_chain(SSL *s,STACK_OF(X509) *sk);
 int ssl_undefined_function(SSL *s);

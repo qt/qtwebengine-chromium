@@ -39,7 +39,7 @@
 #include "core/editing/Editor.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTemplateElement.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
@@ -303,14 +303,16 @@ void MarkupAccumulator::appendNamespace(StringBuilder& result, const AtomicStrin
 
 EntityMask MarkupAccumulator::entityMaskForText(Text* text) const
 {
+    if (!text->document().isHTMLDocument())
+        return EntityMaskInPCDATA;
+
     const QualifiedName* parentName = 0;
     if (text->parentElement())
         parentName = &(text->parentElement())->tagQName();
 
     if (parentName && (*parentName == scriptTag || *parentName == styleTag || *parentName == xmpTag))
         return EntityMaskInCDATA;
-
-    return text->document().isHTMLDocument() ? EntityMaskInHTMLPCDATA : EntityMaskInPCDATA;
+    return EntityMaskInHTMLPCDATA;
 }
 
 void MarkupAccumulator::appendText(StringBuilder& result, Text* text)

@@ -34,15 +34,15 @@
 #include "../platform/WebCommon.h"
 #include "WebWidget.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebWidgetClient;
 
 class WebPagePopup : public WebWidget {
 public:
-    WEBKIT_EXPORT static WebPagePopup* create(WebWidgetClient*);
+    BLINK_EXPORT static WebPagePopup* create(WebWidgetClient*);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

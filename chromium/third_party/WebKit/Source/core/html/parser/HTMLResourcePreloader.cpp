@@ -32,8 +32,8 @@
 #include "core/html/HTMLImport.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
-#include "core/platform/HistogramSupport.h"
 #include "core/rendering/RenderObject.h"
+#include "public/platform/Platform.h"
 
 namespace WebCore {
 
@@ -59,9 +59,8 @@ FetchRequest PreloadRequest::resourceRequest(Document* document)
     initiatorInfo.position = m_initiatorPosition;
     FetchRequest request(ResourceRequest(completeURL(document)), initiatorInfo);
 
-    // FIXME: It's possible CORS should work for other request types?
-    if (m_resourceType == Resource::Script)
-        request.mutableResourceRequest().setAllowCookies(m_crossOriginModeAllowsCookies);
+    if (m_isCORSEnabled)
+        request.setCrossOriginAccessControl(document->securityOrigin(), m_allowCredentials);
     return request;
 }
 
@@ -93,7 +92,7 @@ void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload)
         return;
 
     FetchRequest request = preload->resourceRequest(m_document);
-    HistogramSupport::histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
+    blink::Platform::current()->histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
     loadingDocument->fetcher()->preload(preload->resourceType(), request, preload->charset());
 }
 

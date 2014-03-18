@@ -27,8 +27,8 @@
 #ifndef RenderNamedFlowThread_h
 #define RenderNamedFlowThread_h
 
-#include "core/platform/Timer.h"
 #include "core/rendering/RenderFlowThread.h"
+#include "platform/Timer.h"
 #include "wtf/HashCountedSet.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/text/AtomicString.h"
@@ -136,20 +136,7 @@ private:
     Timer<RenderNamedFlowThread> m_regionOversetChangeEventTimer;
 };
 
-inline RenderNamedFlowThread* toRenderNamedFlowThread(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderNamedFlowThread());
-    return static_cast<RenderNamedFlowThread*>(object);
-}
-
-inline const RenderNamedFlowThread* toRenderNamedFlowThread(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderNamedFlowThread());
-    return static_cast<const RenderNamedFlowThread*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderNamedFlowThread(const RenderNamedFlowThread*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderNamedFlowThread, isRenderNamedFlowThread());
 
 } // namespace WebCore
 

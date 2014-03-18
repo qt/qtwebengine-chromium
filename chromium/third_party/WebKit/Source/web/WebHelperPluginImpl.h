@@ -39,11 +39,12 @@ namespace WebCore {
 class Page;
 }
 
-namespace WebKit {
+namespace blink {
 
 class HelperPluginChromeClient;
+class HelperPluginFrameClient;
 class WebDocument;
-class WebFrame;
+class WebFrameImpl;
 class WebViewImpl;
 class WebWidgetClient;
 
@@ -72,16 +73,25 @@ private:
     virtual void layout() OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
     virtual void close() OVERRIDE;
+    virtual bool isHelperPlugin() const OVERRIDE { return true; }
 
     WebWidgetClient* m_widgetClient;
     WebViewImpl* m_webView;
+    WebFrameImpl* m_mainFrame;
     OwnPtr<WebCore::Page> m_page;
     OwnPtr<HelperPluginChromeClient> m_chromeClient;
+    OwnPtr<HelperPluginFrameClient> m_frameClient;
 
     friend class WebHelperPlugin;
     friend class HelperPluginChromeClient;
 };
 
-} // namespace WebKit
+inline WebHelperPluginImpl* toWebHelperPluginImpl(WebWidget* widget)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isHelperPlugin());
+    return static_cast<WebHelperPluginImpl*>(widget);
+}
+
+} // namespace blink
 
 #endif // WebHelperPluginImpl_h

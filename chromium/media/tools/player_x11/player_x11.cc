@@ -28,7 +28,7 @@
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/file_data_source.h"
-#include "media/filters/video_renderer_base.h"
+#include "media/filters/video_renderer_impl.h"
 #include "media/tools/player_x11/data_source_logger.h"
 
 // Include X11 headers here because X11/Xlib.h #define's Status
@@ -121,7 +121,7 @@ void InitPipeline(media::Pipeline* pipeline,
 
   ScopedVector<media::VideoDecoder> video_decoders;
   video_decoders.push_back(new media::FFmpegVideoDecoder(message_loop));
-  scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererBase(
+  scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererImpl(
       message_loop,
       video_decoders.Pass(),
       media::SetDecryptorReadyCB(),
@@ -136,8 +136,7 @@ void InitPipeline(media::Pipeline* pipeline,
       message_loop,
       new media::NullAudioSink(message_loop),
       audio_decoders.Pass(),
-      media::SetDecryptorReadyCB(),
-      true));
+      media::SetDecryptorReadyCB()));
   collection->SetAudioRenderer(audio_renderer.Pass());
 
   base::WaitableEvent event(true, false);
@@ -246,7 +245,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  scoped_ptr<media::AudioManager> audio_manager(media::AudioManager::Create());
+  scoped_ptr<media::AudioManager> audio_manager(
+      media::AudioManager::CreateForTesting());
   g_audio_manager = audio_manager.get();
 
   logging::LoggingSettings settings;

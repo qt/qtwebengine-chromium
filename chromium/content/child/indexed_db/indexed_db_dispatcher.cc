@@ -9,24 +9,25 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_local.h"
 #include "content/child/indexed_db/indexed_db_key_builders.h"
-#include "content/child/indexed_db/proxy_webidbcursor_impl.h"
-#include "content/child/indexed_db/proxy_webidbdatabase_impl.h"
+#include "content/child/indexed_db/webidbcursor_impl.h"
+#include "content/child/indexed_db/webidbdatabase_impl.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "ipc/ipc_channel.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 
-using WebKit::WebData;
-using WebKit::WebIDBCallbacks;
-using WebKit::WebIDBDatabase;
-using WebKit::WebIDBDatabaseCallbacks;
-using WebKit::WebIDBDatabaseError;
-using WebKit::WebIDBKey;
-using WebKit::WebIDBMetadata;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebData;
+using blink::WebIDBCallbacks;
+using blink::WebIDBDatabase;
+using blink::WebIDBDatabaseCallbacks;
+using blink::WebIDBDatabaseError;
+using blink::WebIDBKey;
+using blink::WebIDBMetadata;
+using blink::WebString;
+using blink::WebVector;
 using base::ThreadLocalPointer;
 using webkit_glue::WorkerTaskRunner;
 
@@ -39,9 +40,6 @@ namespace {
 IndexedDBDispatcher* const kHasBeenDeleted =
     reinterpret_cast<IndexedDBDispatcher*>(0x1);
 
-int32 CurrentWorkerId() {
-  return WorkerTaskRunner::Instance()->CurrentWorkerId();
-}
 }  // unnamed namespace
 
 const size_t kMaxIDBValueSizeInBytes = 64 * 1024 * 1024;
@@ -183,6 +181,7 @@ void IndexedDBDispatcher::RequestIDBCursorAdvance(
 
 void IndexedDBDispatcher::RequestIDBCursorContinue(
     const IndexedDBKey& key,
+    const IndexedDBKey& primary_key,
     WebIDBCallbacks* callbacks_ptr,
     int32 ipc_cursor_id) {
   // Reset all cursor prefetch caches except for this cursor.
@@ -192,7 +191,7 @@ void IndexedDBDispatcher::RequestIDBCursorContinue(
 
   int32 ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   Send(new IndexedDBHostMsg_CursorContinue(
-      ipc_cursor_id, CurrentWorkerId(), ipc_callbacks_id, key));
+      ipc_cursor_id, CurrentWorkerId(), ipc_callbacks_id, key, primary_key));
 }
 
 void IndexedDBDispatcher::RequestIDBCursorPrefetch(
@@ -214,7 +213,7 @@ void IndexedDBDispatcher::RequestIDBCursorPrefetchReset(int used_prefetches,
 }
 
 void IndexedDBDispatcher::RequestIDBFactoryOpen(
-    const string16& name,
+    const base::string16& name,
     int64 version,
     int64 transaction_id,
     WebIDBCallbacks* callbacks_ptr,
@@ -251,7 +250,7 @@ void IndexedDBDispatcher::RequestIDBFactoryGetDatabaseNames(
 }
 
 void IndexedDBDispatcher::RequestIDBFactoryDeleteDatabase(
-    const string16& name,
+    const base::string16& name,
     WebIDBCallbacks* callbacks_ptr,
     const std::string& database_identifier) {
   ResetCursorPrefetchCaches();
@@ -331,7 +330,7 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
 
   if (value.size() > kMaxIDBValueSizeInBytes) {
     callbacks->onError(WebIDBDatabaseError(
-        WebKit::WebIDBDatabaseExceptionUnknownError,
+        blink::WebIDBDatabaseExceptionUnknownError,
         WebString::fromUTF8(base::StringPrintf(
             "The serialized value is too large"
             " (size=%" PRIuS " bytes, max=%" PRIuS " bytes).",
@@ -460,11 +459,17 @@ void IndexedDBDispatcher::OnSuccessIDBDatabase(
     return;
   WebIDBMetadata metadata(ConvertMetadata(idb_metadata));
   // If an upgrade was performed, count will be non-zero.
-  if (!databases_.count(ipc_object_id))
-    databases_[ipc_object_id] = new RendererWebIDBDatabaseImpl(
+  WebIDBDatabase* database = NULL;
+
+  // Back-end will send kNoDatabase if it was already sent in OnUpgradeNeeded.
+  // May already be deleted and removed from the table, but do not recreate..
+  if (ipc_object_id != kNoDatabase) {
+    DCHECK(!databases_.count(ipc_object_id));
+    database = databases_[ipc_object_id] = new WebIDBDatabaseImpl(
         ipc_object_id, ipc_database_callbacks_id, thread_safe_sender_.get());
-  DCHECK_EQ(databases_.count(ipc_object_id), 1u);
-  callbacks->onSuccess(databases_[ipc_object_id], metadata);
+  }
+
+  callbacks->onSuccess(database, metadata);
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
 
@@ -482,7 +487,7 @@ void IndexedDBDispatcher::OnSuccessIndexedDBKey(int32 ipc_thread_id,
 void IndexedDBDispatcher::OnSuccessStringList(
     int32 ipc_thread_id,
     int32 ipc_callbacks_id,
-    const std::vector<string16>& value) {
+    const std::vector<base::string16>& value) {
   DCHECK_EQ(ipc_thread_id, CurrentWorkerId());
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   if (!callbacks)
@@ -560,8 +565,8 @@ void IndexedDBDispatcher::OnSuccessOpenCursor(
   if (!callbacks)
     return;
 
-  RendererWebIDBCursorImpl* cursor =
-      new RendererWebIDBCursorImpl(ipc_object_id, thread_safe_sender_.get());
+  WebIDBCursorImpl* cursor =
+      new WebIDBCursorImpl(ipc_object_id, thread_safe_sender_.get());
   cursors_[ipc_object_id] = cursor;
   callbacks->onSuccess(cursor, WebIDBKeyBuilder::Build(key),
                        WebIDBKeyBuilder::Build(primary_key), web_value);
@@ -578,7 +583,7 @@ void IndexedDBDispatcher::OnSuccessCursorContinue(
   const IndexedDBKey& primary_key = p.primary_key;
   const std::string& value = p.value;
 
-  RendererWebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
+  WebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
   DCHECK(cursor);
 
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
@@ -606,7 +611,7 @@ void IndexedDBDispatcher::OnSuccessCursorPrefetch(
     if (p.values[i].size())
       values[i].assign(&*p.values[i].begin(), p.values[i].size());
   }
-  RendererWebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
+  WebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
   DCHECK(cursor);
   cursor->SetPrefetchData(keys, primary_keys, values);
 
@@ -633,20 +638,21 @@ void IndexedDBDispatcher::OnUpgradeNeeded(
   WebIDBMetadata metadata(ConvertMetadata(p.idb_metadata));
   DCHECK(!databases_.count(p.ipc_database_id));
   databases_[p.ipc_database_id] =
-      new RendererWebIDBDatabaseImpl(p.ipc_database_id,
-                                     p.ipc_database_callbacks_id,
-                                     thread_safe_sender_.get());
+      new WebIDBDatabaseImpl(p.ipc_database_id,
+                             p.ipc_database_callbacks_id,
+                             thread_safe_sender_.get());
   callbacks->onUpgradeNeeded(
       p.old_version,
       databases_[p.ipc_database_id],
       metadata,
-      static_cast<WebIDBCallbacks::DataLoss>(p.data_loss));
+      static_cast<blink::WebIDBDataLoss>(p.data_loss),
+      WebString::fromUTF8(p.data_loss_message));
 }
 
 void IndexedDBDispatcher::OnError(int32 ipc_thread_id,
                                   int32 ipc_callbacks_id,
                                   int code,
-                                  const string16& message) {
+                                  const base::string16& message) {
   DCHECK_EQ(ipc_thread_id, CurrentWorkerId());
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   if (!callbacks)
@@ -662,7 +668,7 @@ void IndexedDBDispatcher::OnAbort(int32 ipc_thread_id,
                                   int32 ipc_database_callbacks_id,
                                   int64 transaction_id,
                                   int code,
-                                  const string16& message) {
+                                  const base::string16& message) {
   DCHECK_EQ(ipc_thread_id, CurrentWorkerId());
   WebIDBDatabaseCallbacks* callbacks =
       pending_database_callbacks_.Lookup(ipc_database_callbacks_id);
@@ -711,7 +717,7 @@ void IndexedDBDispatcher::OnIntVersionChange(int32 ipc_thread_id,
 
 void IndexedDBDispatcher::ResetCursorPrefetchCaches(
     int32 ipc_exception_cursor_id) {
-  typedef std::map<int32, RendererWebIDBCursorImpl*>::iterator Iterator;
+  typedef std::map<int32, WebIDBCursorImpl*>::iterator Iterator;
   for (Iterator i = cursors_.begin(); i != cursors_.end(); ++i) {
     if (i->first == ipc_exception_cursor_id)
       continue;

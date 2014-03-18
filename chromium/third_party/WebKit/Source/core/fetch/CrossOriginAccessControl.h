@@ -28,7 +28,7 @@
 #define CrossOriginAccessControl_h
 
 #include "core/fetch/ResourceLoaderOptions.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/network/ResourceRequest.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 
@@ -47,7 +47,7 @@ enum AccessControlStatus {
 
 bool isSimpleCrossOriginAccessRequest(const String& method, const HTTPHeaderMap&);
 bool isOnAccessControlSimpleRequestMethodWhitelist(const String&);
-bool isOnAccessControlSimpleRequestHeaderWhitelist(const String& name, const String& value);
+bool isOnAccessControlSimpleRequestHeaderWhitelist(const AtomicString& name, const AtomicString& value);
 bool isOnAccessControlResponseHeaderWhitelist(const String&);
 
 void updateRequestForAccessControl(ResourceRequest&, SecurityOrigin*, StoredCredentials);

@@ -29,13 +29,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Node.h"
-#include "core/dom/Range.h"
-#include "core/editing/Editor.h"
-#include "core/page/EditorClient.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/text/TextCheckerClient.h"
+#include "core/editing/SpellChecker.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Settings.h"
+#include "platform/text/TextCheckerClient.h"
 
 namespace WebCore {
 
@@ -71,7 +68,7 @@ PassRefPtr<SpellCheckRequest> SpellCheckRequest::create(TextCheckingTypeMask tex
     if (!text.length())
         return PassRefPtr<SpellCheckRequest>();
 
-    const Vector<DocumentMarker*>& markers = checkingRange->ownerDocument().markers()->markersInRange(checkingRange.get(), DocumentMarker::MisspellingMarkers());
+    const Vector<DocumentMarker*>& markers = checkingRange->ownerDocument().markers()->markersInRange(checkingRange.get(), DocumentMarker::SpellCheckClientMarkers());
     Vector<uint32_t> hashes(markers.size());
     Vector<unsigned> offsets(markers.size());
     for (size_t i = 0; i < markers.size(); i++) {
@@ -136,7 +133,7 @@ SpellCheckRequester::~SpellCheckRequester()
 
 TextCheckerClient& SpellCheckRequester::client() const
 {
-    return m_frame.editor().client().textChecker();
+    return m_frame.spellChecker().textChecker();
 }
 
 void SpellCheckRequester::timerFiredToProcessQueuedRequest(Timer<SpellCheckRequester>*)
@@ -236,7 +233,7 @@ void SpellCheckRequester::didCheck(int sequence, const Vector<TextCheckingResult
         return;
     }
 
-    m_frame.editor().markAndReplaceFor(m_processingRequest, results);
+    m_frame.spellChecker().markAndReplaceFor(m_processingRequest, results);
 
     if (m_lastProcessedSequence < sequence)
         m_lastProcessedSequence = sequence;
@@ -250,13 +247,12 @@ void SpellCheckRequester::didCheckSucceed(int sequence, const Vector<TextCheckin
 {
     TextCheckingRequestData requestData = m_processingRequest->data();
     if (requestData.sequence() == sequence) {
-        unsigned markers = 0;
-        if (requestData.mask() & TextCheckingTypeSpelling)
-            markers |= DocumentMarker::Spelling;
-        if (requestData.mask() & TextCheckingTypeGrammar)
-            markers |= DocumentMarker::Grammar;
-        if (markers)
-            m_frame.document()->markers()->removeMarkers(m_processingRequest->checkingRange().get(), markers);
+        DocumentMarker::MarkerTypes markers = DocumentMarker::SpellCheckClientMarkers();
+        if (!requestData.maskContains(TextCheckingTypeSpelling))
+            markers.remove(DocumentMarker::Spelling);
+        if (!requestData.maskContains(TextCheckingTypeGrammar))
+            markers.remove(DocumentMarker::Grammar);
+        m_frame.document()->markers()->removeMarkers(m_processingRequest->checkingRange().get(), markers);
     }
     didCheck(sequence, results);
 }

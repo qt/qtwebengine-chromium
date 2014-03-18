@@ -28,14 +28,16 @@
 
 #include "modules/webaudio/AudioBufferSourceNode.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/page/PageConsole.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/audio/AudioUtilities.h"
+#include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
-#include <algorithm>
+#include "platform/FloatConversion.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
+#include <algorithm>
 
 using namespace std;
 
@@ -335,9 +337,15 @@ void AudioBufferSourceNode::reset()
     m_lastGain = gain()->value();
 }
 
-bool AudioBufferSourceNode::setBuffer(AudioBuffer* buffer)
+void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+    // FIXME: It does not look like we should throw if the buffer is null as
+    // the attribute is nullable in the specification.
+    if (!buffer) {
+        exceptionState.throwTypeError("buffer cannot be null");
+        return;
+    }
 
     // The context must be locked since changing the buffer can re-configure the number of channels that are output.
     AudioContext::AutoLocker contextLocker(context());
@@ -349,8 +357,12 @@ bool AudioBufferSourceNode::setBuffer(AudioBuffer* buffer)
         // Do any necesssary re-configuration to the buffer's number of channels.
         unsigned numberOfChannels = buffer->numberOfChannels();
 
-        if (numberOfChannels > AudioContext::maxNumberOfChannels())
-            return false;
+        if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
+            exceptionState.throwTypeError("number of input channels (" + String::number(numberOfChannels)
+                + ") exceeds maximum ("
+                + String::number(AudioContext::maxNumberOfChannels()) + ").");
+            return;
+        }
 
         output(0)->setNumberOfChannels(numberOfChannels);
 
@@ -363,8 +375,6 @@ bool AudioBufferSourceNode::setBuffer(AudioBuffer* buffer)
 
     m_virtualReadIndex = 0;
     m_buffer = buffer;
-
-    return true;
 }
 
 unsigned AudioBufferSourceNode::numberOfChannels()
@@ -372,39 +382,56 @@ unsigned AudioBufferSourceNode::numberOfChannels()
     return output(0)->numberOfChannels();
 }
 
-void AudioBufferSourceNode::startGrain(double when, double grainOffset)
+void AudioBufferSourceNode::start(ExceptionState& exceptionState)
 {
-    // Duration of 0 has special value, meaning calculate based on the entire buffer's duration.
-    startGrain(when, grainOffset, 0);
+    startPlaying(false, 0, 0, buffer() ? buffer()->duration() : 0, exceptionState);
 }
 
-void AudioBufferSourceNode::startGrain(double when, double grainOffset, double grainDuration)
+void AudioBufferSourceNode::start(double when, ExceptionState& exceptionState)
+{
+    startPlaying(false, when, 0, buffer() ? buffer()->duration() : 0, exceptionState);
+}
+
+void AudioBufferSourceNode::start(double when, double grainOffset, ExceptionState& exceptionState)
+{
+    startPlaying(true, when, grainOffset, buffer() ? buffer()->duration() : 0, exceptionState);
+}
+
+void AudioBufferSourceNode::start(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
+{
+    startPlaying(true, when, grainOffset, grainDuration, exceptionState);
+}
+
+void AudioBufferSourceNode::startPlaying(bool isGrain, double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
-    if (m_playbackState != UNSCHEDULED_STATE)
+    if (m_playbackState != UNSCHEDULED_STATE) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "cannot call start more than once.");
         return;
+    }
 
     if (!buffer())
         return;
 
-    // Do sanity checking of grain parameters versus buffer size.
-    double bufferDuration = buffer()->duration();
+    if (isGrain) {
+        // Do sanity checking of grain parameters versus buffer size.
+        double bufferDuration = buffer()->duration();
 
-    grainOffset = max(0.0, grainOffset);
-    grainOffset = min(bufferDuration, grainOffset);
-    m_grainOffset = grainOffset;
+        grainOffset = max(0.0, grainOffset);
+        grainOffset = min(bufferDuration, grainOffset);
+        m_grainOffset = grainOffset;
 
-    // Handle default/unspecified duration.
-    double maxDuration = bufferDuration - grainOffset;
-    if (!grainDuration)
-        grainDuration = maxDuration;
+        double maxDuration = bufferDuration - grainOffset;
 
-    grainDuration = max(0.0, grainDuration);
-    grainDuration = min(maxDuration, grainDuration);
-    m_grainDuration = grainDuration;
+        grainDuration = max(0.0, grainDuration);
+        grainDuration = min(maxDuration, grainDuration);
+        m_grainDuration = grainDuration;
+    }
 
-    m_isGrain = true;
+    m_isGrain = isGrain;
     m_startTime = when;
 
     // We call timeToSampleFrame here since at playbackRate == 1 we don't want to go through linear interpolation
@@ -416,9 +443,12 @@ void AudioBufferSourceNode::startGrain(double when, double grainOffset, double g
     m_playbackState = SCHEDULED_STATE;
 }
 
-void AudioBufferSourceNode::noteGrainOn(double when, double grainOffset, double grainDuration)
+void AudioBufferSourceNode::noteGrainOn(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
 {
-    startGrain(when, grainOffset, grainDuration);
+    // Handle unspecified duration where 0 means the rest of the buffer.
+    if (!grainDuration && buffer())
+        grainDuration = buffer()->duration();
+    startPlaying(true, when, grainOffset, grainDuration, exceptionState);
 }
 
 double AudioBufferSourceNode::totalPitchRate()

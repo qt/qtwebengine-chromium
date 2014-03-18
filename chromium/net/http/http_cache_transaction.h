@@ -130,6 +130,8 @@ class HttpCache::Transaction : public HttpTransaction {
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
+  virtual void SetWebSocketHandshakeStreamCreateHelper(
+      net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -433,6 +435,15 @@ class HttpCache::Transaction : public HttpTransaction {
   // 304 and 206 response cases, as the network transaction may be destroyed
   // before the caller requests load timing information.
   scoped_ptr<LoadTimingInfo> old_network_trans_load_timing_;
+
+  // The helper object to use to create WebSocketHandshakeStreamBase
+  // objects. Only relevant when establishing a WebSocket connection.
+  // This is passed to the underlying network transaction. It is stored here in
+  // case the transaction does not exist yet.
+  WebSocketHandshakeStreamBase::CreateHelper*
+      websocket_handshake_stream_base_create_helper_;
+
+  DISALLOW_COPY_AND_ASSIGN(Transaction);
 };
 
 }  // namespace net

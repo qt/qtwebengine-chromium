@@ -19,6 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/auth.h"
@@ -60,7 +61,14 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "url/gurl.h"
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+#include <algorithm>
+#include "net/proxy/proxy_server.h"
+#endif
+
+
 using base::Time;
+using base::TimeDelta;
 
 namespace net {
 
@@ -111,6 +119,30 @@ base::Value* NetLogSSLVersionFallbackCallback(
   return dict;
 }
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+// Returns true if |response_headers| contains the data reduction proxy Via
+// header value.
+bool IsChromeProxyResponse(const net::HttpResponseHeaders* response_headers) {
+  if (!response_headers) {
+    return false;
+  }
+  const char kDataReductionProxyViaValue[] = "1.1 Chrome Compression Proxy";
+  size_t value_len = strlen(kDataReductionProxyViaValue);
+  void* iter = NULL;
+  std::string temp;
+  while (response_headers->EnumerateHeader(&iter, "Via", &temp)) {
+    std::string::const_iterator it =
+        std::search(temp.begin(), temp.end(),
+                    kDataReductionProxyViaValue,
+                    kDataReductionProxyViaValue + value_len,
+                    base::CaseInsensitiveCompareASCII<char>());
+    if (it != temp.end())
+      return true;
+  }
+  return false;
+}
+#endif
+
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -125,10 +157,12 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       priority_(priority),
       headers_valid_(false),
       logged_response_time_(false),
+      fallback_error_code_(ERR_SSL_INAPPROPRIATE_FALLBACK),
       request_headers_(),
       read_buf_len_(0),
       next_state_(STATE_NONE),
-      establishing_tunnel_(false) {
+      establishing_tunnel_(false),
+      websocket_handshake_stream_base_create_helper_(NULL) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
   if (session->http_stream_factory()->has_next_protos()) {
     server_ssl_config_.next_protos =
@@ -159,10 +193,13 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
       } else {
         // Otherwise, we try to drain the response body.
         HttpStreamBase* stream = stream_.release();
-        stream->Drain(session_.get());
+        stream->Drain(session_);
       }
     }
   }
+
+  if (request_ && request_->upload_data_stream)
+    request_->upload_data_stream->Reset();  // Invalidate pending callbacks.
 }
 
 int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
@@ -425,6 +462,11 @@ void HttpNetworkTransaction::SetPriority(RequestPriority priority) {
     stream_->SetPriority(priority);
 }
 
+void HttpNetworkTransaction::SetWebSocketHandshakeStreamCreateHelper(
+    WebSocketHandshakeStreamBase::CreateHelper* create_helper) {
+  websocket_handshake_stream_base_create_helper_ = create_helper;
+}
+
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
                                            HttpStreamBase* stream) {
@@ -443,11 +485,11 @@ void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
   OnIOComplete(OK);
 }
 
-void HttpNetworkTransaction::OnWebSocketStreamReady(
+void HttpNetworkTransaction::OnWebSocketHandshakeStreamReady(
     const SSLConfig& used_ssl_config,
     const ProxyInfo& used_proxy_info,
-    WebSocketStreamBase* stream) {
-  NOTREACHED() << "This function should never be called.";
+    WebSocketHandshakeStreamBase* stream) {
+  OnStreamReady(used_ssl_config, used_proxy_info, stream);
 }
 
 void HttpNetworkTransaction::OnStreamFailed(int result,
@@ -653,14 +695,27 @@ int HttpNetworkTransaction::DoLoop(int result) {
 int HttpNetworkTransaction::DoCreateStream() {
   next_state_ = STATE_CREATE_STREAM_COMPLETE;
 
-  stream_request_.reset(
-      session_->http_stream_factory()->RequestStream(
-          *request_,
-          priority_,
-          server_ssl_config_,
-          proxy_ssl_config_,
-          this,
-          net_log_));
+  if (ForWebSocketHandshake()) {
+    stream_request_.reset(
+        session_->http_stream_factory_for_websocket()
+            ->RequestWebSocketHandshakeStream(
+                  *request_,
+                  priority_,
+                  server_ssl_config_,
+                  proxy_ssl_config_,
+                  this,
+                  websocket_handshake_stream_base_create_helper_,
+                  net_log_));
+  } else {
+    stream_request_.reset(
+        session_->http_stream_factory()->RequestStream(
+            *request_,
+            priority_,
+            server_ssl_config_,
+            proxy_ssl_config_,
+            this,
+            net_log_));
+  }
   DCHECK(stream_request_.get());
   return ERR_IO_PENDING;
 }
@@ -894,6 +949,11 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       return result;
   }
 
+  if (result == ERR_QUIC_HANDSHAKE_FAILED) {
+    ResetConnectionAndRequestForResend();
+    return OK;
+  }
+
   if (result < 0 && result != ERR_CONNECTION_CLOSED)
     return HandleIOError(result);
 
@@ -917,33 +977,85 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   }
   DCHECK(response_.headers.get());
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   // Server-induced fallback; see: http://crbug.com/143712
   if (response_.was_fetched_via_proxy && response_.headers.get() != NULL) {
-    bool should_fallback =
-        response_.headers->HasHeaderValue("connection", "proxy-bypass");
-    // Additionally, fallback if a 500 is returned via the data reduction proxy.
-    // This is conservative, as the 500 might have been generated by the origin,
-    // and not the proxy.
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-    if (!should_fallback) {
-      should_fallback =
-          response_.headers->response_code() == HTTP_INTERNAL_SERVER_ERROR &&
-          proxy_info_.proxy_server().host_port_pair().Equals(
-              HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
+    ProxyService::DataReductionProxyBypassEventType proxy_bypass_event =
+        ProxyService::BYPASS_EVENT_TYPE_MAX;
+    net::HttpResponseHeaders::ChromeProxyInfo chrome_proxy_info;
+    bool chrome_proxy_used =
+        proxy_info_.proxy_server().isDataReductionProxy();
+    bool chrome_fallback_proxy_used = false;
+#if defined(DATA_REDUCTION_FALLBACK_HOST)
+    if (!chrome_proxy_used) {
+      chrome_fallback_proxy_used =
+          proxy_info_.proxy_server().isDataReductionProxyFallback();
     }
 #endif
-    if (should_fallback) {
-      ProxyService* proxy_service = session_->proxy_service();
-      if (proxy_service->MarkProxyAsBad(proxy_info_, net_log_)) {
-        // Only retry in the case of GETs. We don't want to resubmit a POST
-        // if the proxy took some action.
-        if (request_->method == "GET") {
-          ResetConnectionAndRequestForResend();
-          return OK;
+
+    if (chrome_proxy_used || chrome_fallback_proxy_used) {
+      // A Via header might not be present in a 304. Since the goal of a 304
+      // response is to minimize information transfer, a sender in general
+      // should not generate representation metadata other than Cache-Control,
+      // Content-Location, Date, ETag, Expires, and Vary.
+      if (!IsChromeProxyResponse(response_.headers.get()) &&
+          (response_.headers->response_code() != HTTP_NOT_MODIFIED)) {
+        proxy_bypass_event = ProxyService::MISSING_VIA_HEADER;
+      } else if (response_.headers->GetChromeProxyInfo(&chrome_proxy_info)) {
+        if (chrome_proxy_info.bypass_duration < TimeDelta::FromMinutes(30))
+          proxy_bypass_event = ProxyService::SHORT_BYPASS;
+        else
+          proxy_bypass_event = ProxyService::LONG_BYPASS;
+      } else {
+        // Additionally, fallback if a 500, 502 or 503 is returned via the data
+        // reduction proxy. This is conservative, as the 500, 502 or 503 might
+        // have been generated by the origin, and not the proxy.
+        if (response_.headers->response_code() == HTTP_INTERNAL_SERVER_ERROR ||
+            response_.headers->response_code() == HTTP_BAD_GATEWAY ||
+            response_.headers->response_code() == HTTP_SERVICE_UNAVAILABLE) {
+          proxy_bypass_event = ProxyService::INTERNAL_SERVER_ERROR_BYPASS;
+        }
+      }
+
+      if (proxy_bypass_event < ProxyService::BYPASS_EVENT_TYPE_MAX) {
+        ProxyService* proxy_service = session_->proxy_service();
+
+        proxy_service->RecordDataReductionProxyBypassInfo(
+            chrome_proxy_used, proxy_info_.proxy_server(), proxy_bypass_event);
+
+        ProxyServer proxy_server;
+#if defined(DATA_REDUCTION_FALLBACK_HOST)
+        if (chrome_proxy_used && chrome_proxy_info.bypass_all) {
+          // TODO(bengr): Rename as DATA_REDUCTION_FALLBACK_ORIGIN.
+          GURL proxy_url(DATA_REDUCTION_FALLBACK_HOST);
+          if (proxy_url.SchemeIsHTTPOrHTTPS()) {
+            proxy_server = ProxyServer(proxy_url.SchemeIs("http") ?
+                                           ProxyServer::SCHEME_HTTP :
+                                           ProxyServer::SCHEME_HTTPS,
+                                       HostPortPair::FromURL(proxy_url));
+            }
+        }
+#endif
+        if (proxy_service->MarkProxiesAsBad(proxy_info_,
+                                            chrome_proxy_info.bypass_duration,
+                                            proxy_server,
+                                            net_log_)) {
+          // Only retry idempotent methods. We don't want to resubmit a POST
+          // if the proxy took some action.
+          if (request_->method == "GET" ||
+              request_->method == "OPTIONS" ||
+              request_->method == "HEAD" ||
+              request_->method == "PUT" ||
+              request_->method == "DELETE" ||
+              request_->method == "TRACE") {
+            ResetConnectionAndRequestForResend();
+            return OK;
+          }
         }
       }
     }
   }
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
   // Like Net.HttpResponseCode, but only for MAIN_FRAME loads.
   if (request_->load_flags & LOAD_MAIN_FRAME) {
@@ -969,7 +1081,9 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   // need to skip over it.
   // We treat any other 1xx in this same way (although in practice getting
   // a 1xx that isn't a 100 is rare).
-  if (response_.headers->response_code() / 100 == 1) {
+  // Unless this is a WebSocket request, in which case we pass it on up.
+  if (response_.headers->response_code() / 100 == 1 &&
+      !ForWebSocketHandshake()) {
     response_.headers = new HttpResponseHeaders(std::string());
     next_state_ = STATE_READ_HEADERS;
     return OK;
@@ -1210,17 +1324,21 @@ int HttpNetworkTransaction::HandleCertificateRequest(int error) {
   return OK;
 }
 
+void HttpNetworkTransaction::HandleClientAuthError(int error) {
+  if (server_ssl_config_.send_client_cert &&
+      (error == ERR_SSL_PROTOCOL_ERROR || IsClientCertificateError(error))) {
+    session_->ssl_client_auth_cache()->Remove(
+        GetHostAndPort(request_->url));
+  }
+}
+
 // TODO(rch): This does not correctly handle errors when an SSL proxy is
 // being used, as all of the errors are handled as if they were generated
 // by the endpoint host, request_->url, rather than considering if they were
 // generated by the SSL proxy. http://crbug.com/69329
 int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
   DCHECK(request_);
-  if (server_ssl_config_.send_client_cert &&
-      (error == ERR_SSL_PROTOCOL_ERROR || IsClientCertificateError(error))) {
-    session_->ssl_client_auth_cache()->Remove(
-        GetHostAndPort(request_->url));
-  }
+  HandleClientAuthError(error);
 
   bool should_fallback = false;
   uint16 version_max = server_ssl_config_.version_max;
@@ -1246,16 +1364,7 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         // While SSL 3.0 fallback should be eliminated because of security
         // reasons, there is a high risk of breaking the servers if this is
         // done in general.
-        // For now SSL 3.0 fallback is disabled for Google servers first,
-        // and will be expanded to other servers after enough experiences
-        // have been gained showing that this experiment works well with
-        // today's Internet.
-        if (version_max > SSL_PROTOCOL_VERSION_SSL3 ||
-            (server_ssl_config_.unrestricted_ssl3_fallback_enabled ||
-             !TransportSecurityState::IsGooglePinnedProperty(
-                 request_->url.host(), true /* include SNI */))) {
-          should_fallback = true;
-        }
+        should_fallback = true;
       }
       break;
     case ERR_SSL_BAD_RECORD_MAC_ALERT:
@@ -1269,6 +1378,13 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         should_fallback = true;
       }
       break;
+    case ERR_SSL_INAPPROPRIATE_FALLBACK:
+      // The server told us that we should not have fallen back. A buggy server
+      // could trigger ERR_SSL_INAPPROPRIATE_FALLBACK with the initial
+      // connection. |fallback_error_code_| is initialised to
+      // ERR_SSL_INAPPROPRIATE_FALLBACK to catch this case.
+      error = fallback_error_code_;
+      break;
   }
 
   if (should_fallback) {
@@ -1277,6 +1393,7 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         base::Bind(&NetLogSSLVersionFallbackCallback,
                    &request_->url, error, server_ssl_config_.version_max,
                    version_max));
+    fallback_error_code_ = error;
     server_ssl_config_.version_max = version_max;
     server_ssl_config_.version_fallback = true;
     ResetConnectionAndRequestForResend();
@@ -1291,13 +1408,9 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
 // write errors or response header read errors.  It should not be used in
 // other cases, such as a Connect error.
 int HttpNetworkTransaction::HandleIOError(int error) {
-  // SSL errors may happen at any time during the stream and indicate issues
-  // with the underlying connection. Because the peer may request
-  // renegotiation at any time, check and handle any possible SSL handshake
-  // related errors. In addition to renegotiation, TLS False Start may cause
-  // SSL handshake errors (specifically servers with buggy DEFLATE support)
-  // to be delayed until the first Read on the underlying connection.
-  error = HandleSSLHandshakeError(error);
+  // Because the peer may request renegotiation with client authentication at
+  // any time, check and handle client authentication errors.
+  HandleClientAuthError(error);
 
   switch (error) {
     // If we try to reuse a connection that the server is in the process of
@@ -1332,6 +1445,7 @@ int HttpNetworkTransaction::HandleIOError(int error) {
       break;
     case ERR_SPDY_PING_FAILED:
     case ERR_SPDY_SERVER_REFUSED_STREAM:
+    case ERR_QUIC_HANDSHAKE_FAILED:
       net_log_.AddEventWithNetErrorCode(
           NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
       ResetConnectionAndRequestForResend();
@@ -1451,6 +1565,11 @@ GURL HttpNetworkTransaction::AuthURL(HttpAuth::Target target) const {
     default:
      return GURL();
   }
+}
+
+bool HttpNetworkTransaction::ForWebSocketHandshake() const {
+  return websocket_handshake_stream_base_create_helper_ &&
+         request_->url.SchemeIsWSOrWSS();
 }
 
 #define STATE_CASE(s) \

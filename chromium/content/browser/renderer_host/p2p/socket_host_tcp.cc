@@ -26,6 +26,8 @@ const int kPacketHeaderSize = sizeof(PacketLength);
 const int kReadBufferSize = 4096;
 const int kPacketLengthOffset = 2;
 const int kTurnChannelDataHeaderSize = 4;
+const int kRecvSocketBufferSize = 128 * 1024;
+const int kSendSocketBufferSize = 128 * 1024;
 
 bool IsTlsClientSocket(content::P2PSocketType type) {
   return (type == content::P2P_SOCKET_STUN_TLS_CLIENT ||
@@ -198,6 +200,17 @@ void P2PSocketHostTcpBase::ProcessTlsSslConnectDone(int status) {
 
 void P2PSocketHostTcpBase::OnOpen() {
   state_ = STATE_OPEN;
+  // Setting socket send and receive buffer size.
+  if (!socket_->SetReceiveBufferSize(kRecvSocketBufferSize)) {
+    LOG(WARNING) << "Failed to set socket receive buffer size to "
+                 << kRecvSocketBufferSize;
+  }
+
+  if (!socket_->SetSendBufferSize(kSendSocketBufferSize)) {
+    LOG(WARNING) << "Failed to set socket send buffer size to "
+                 << kSendSocketBufferSize;
+  }
+
   DoSendSocketCreateMsg();
   DoRead();
 }
@@ -268,11 +281,16 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
     }
   }
 
-  message_sender_->Send(new P2PMsg_OnDataReceived(id_, remote_address_, data));
+  message_sender_->Send(new P2PMsg_OnDataReceived(
+      id_, remote_address_, data, base::TimeTicks::Now()));
 }
 
+// Note: dscp is not actually used on TCP sockets as this point,
+// but may be honored in the future.
 void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
-                                const std::vector<char>& data) {
+                                const std::vector<char>& data,
+                                net::DiffServCodePoint dscp,
+                                uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
     // sent by hasn't been processed the renderer.
@@ -287,7 +305,7 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
   }
 
   if (!connected_) {
-    P2PSocketHost::StunMessageType type;
+    P2PSocketHost::StunMessageType type = P2PSocketHost::StunMessageType();
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
       LOG(ERROR) << "Page tried to send a data packet to " << to.ToString()

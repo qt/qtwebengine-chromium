@@ -39,7 +39,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebSelectElement::setValue(const WebString& value)
 {
@@ -61,14 +61,14 @@ WebVector<WebElement> WebSelectElement::listItems() const
     return items;
 }
 
-WebSelectElement::WebSelectElement(const PassRefPtr<HTMLSelectElement>& elem)
-    : WebFormControlElement(elem)
+WebSelectElement::WebSelectElement(const PassRefPtr<HTMLSelectElement>& element)
+    : WebFormControlElement(element)
 {
 }
 
-WebSelectElement& WebSelectElement::operator=(const PassRefPtr<HTMLSelectElement>& elem)
+WebSelectElement& WebSelectElement::operator=(const PassRefPtr<HTMLSelectElement>& element)
 {
-    m_private = elem;
+    m_private = element;
     return *this;
 }
 
@@ -77,4 +77,4 @@ WebSelectElement::operator PassRefPtr<HTMLSelectElement>() const
     return toHTMLSelectElement(m_private.get());
 }
 
-} // namespace WebKit
+} // namespace blink

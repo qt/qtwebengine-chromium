@@ -16,8 +16,9 @@
             '../content/content.gyp:content_common',
             '../net/net.gyp:net',
             '../skia/skia.gyp:skia',
+            '../ui/gfx/gfx.gyp:gfx',
             '../ui/ui.gyp:ui',
-            '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/glue/webkit_glue.gyp:glue',
             'web_contents_delegate_android_jni_headers',
           ],
           'include_dirs': [
@@ -30,6 +31,8 @@
             'web_contents_delegate_android/color_chooser_android.h',
             'web_contents_delegate_android/component_jni_registrar.cc',
             'web_contents_delegate_android/component_jni_registrar.h',
+            'web_contents_delegate_android/validation_message_bubble_android.cc',
+            'web_contents_delegate_android/validation_message_bubble_android.h',
             'web_contents_delegate_android/web_contents_delegate_android.cc',
             'web_contents_delegate_android/web_contents_delegate_android.h',
           ],
@@ -51,6 +54,7 @@
           'type': 'none',
           'sources': [
             'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java',
+            'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ValidationMessageBubble.java',
             'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java',
           ],
           'variables': {

@@ -30,10 +30,13 @@
 
 import os
 
-from idl_definitions import IdlDefinitions, IdlInterface, IdlException, IdlOperation, IdlCallbackFunction, IdlArgument, IdlAttribute, IdlConstant, IdlEnum, IdlTypedef, IdlUnionType
+from idl_definitions import IdlDefinitions, IdlInterface, IdlException, IdlOperation, IdlCallbackFunction, IdlArgument, IdlAttribute, IdlConstant, IdlEnum, IdlUnionType
 
 SPECIAL_KEYWORD_LIST = ['GETTER', 'SETTER', 'DELETER']
-
+STANDARD_TYPEDEFS = {
+    # http://www.w3.org/TR/WebIDL/#common-DOMTimeStamp
+    'DOMTimeStamp': 'unsigned long long',
+}
 
 def build_idl_definitions_from_ast(node):
     if node is None:
@@ -49,7 +52,7 @@ def file_node_to_idl_definitions(node):
     enumerations = {}
     exceptions = {}
     interfaces = {}
-    typedefs = {}
+    typedefs = STANDARD_TYPEDEFS
 
     # FIXME: only needed for Perl, remove later
     file_name = os.path.abspath(node.GetName())
@@ -65,7 +68,7 @@ def file_node_to_idl_definitions(node):
             exceptions[exception.name] = exception
         elif child_class == 'Typedef':
             type_name = child.GetName()
-            typedefs[type_name] = typedef_node_to_idl_typedef(child)
+            typedefs[type_name] = typedef_node_to_type(child)
         elif child_class == 'Enum':
             enumeration = enum_node_to_idl_enum(child)
             enumerations[enumeration.name] = enumeration
@@ -91,7 +94,7 @@ def interface_node_to_idl_interface(node):
     extended_attributes = None
     operations = []
     is_callback = node.GetProperty('CALLBACK') or False
-    # FIXME: uppercase 'Partial' in base IDL parser
+    # FIXME: uppercase 'Partial' => 'PARTIAL' in base IDL parser
     is_partial = node.GetProperty('Partial') or False
     name = node.GetName()
     parent = None
@@ -100,11 +103,7 @@ def interface_node_to_idl_interface(node):
     for child in children:
         child_class = child.GetClass()
         if child_class == 'Attribute':
-            attribute = attribute_node_to_idl_attribute(child)
-            # FIXME: This is a hack to support [CustomConstructor] for
-            # window.HTMLImageElement. Remove the hack.
-            clear_constructor_attributes(attribute.extended_attributes)
-            attributes.append(attribute)
+            attributes.append(attribute_node_to_idl_attribute(child))
         elif child_class == 'Const':
             constants.append(constant_node_to_idl_constant(child))
         elif child_class == 'ExtAttributes':
@@ -122,7 +121,7 @@ def interface_node_to_idl_interface(node):
 
 
 def attribute_node_to_idl_attribute(node):
-    data_type = None
+    idl_type = None
     extended_attributes = {}
     is_nullable = False
     is_read_only = node.GetProperty('READONLY') or False
@@ -133,14 +132,14 @@ def attribute_node_to_idl_attribute(node):
     for child in children:
         child_class = child.GetClass()
         if child_class == 'Type':
-            data_type = type_node_to_type(child)
+            idl_type = type_node_to_type(child)
             is_nullable = child.GetProperty('NULLABLE') or False
         elif child_class == 'ExtAttributes':
             extended_attributes = ext_attributes_node_to_extended_attributes(child)
         else:
             raise ValueError('Unrecognized node class: %s' % child_class)
 
-    return IdlAttribute(data_type=data_type, extended_attributes=extended_attributes, is_nullable=is_nullable, is_read_only=is_read_only, is_static=is_static, name=name)
+    return IdlAttribute(idl_type=idl_type, extended_attributes=extended_attributes, is_nullable=is_nullable, is_read_only=is_read_only, is_static=is_static, name=name)
 
 
 def constant_node_to_idl_constant(node):
@@ -154,7 +153,7 @@ def constant_node_to_idl_constant(node):
     type_node = children[0]
     # ConstType is more limited than Type, so subtree is smaller and we don't
     # use the full type_node_to_type function.
-    data_type = type_node_inner_to_type(type_node)
+    idl_type = type_node_inner_to_type(type_node)
 
     value_node = children[1]
     value_node_class = value_node.GetClass()
@@ -167,7 +166,7 @@ def constant_node_to_idl_constant(node):
         ext_attributes_node = children[2]
         extended_attributes = ext_attributes_node_to_extended_attributes(ext_attributes_node)
 
-    return IdlConstant(data_type=data_type, extended_attributes=extended_attributes, name=name, value=value)
+    return IdlConstant(idl_type=idl_type, extended_attributes=extended_attributes, name=name, value=value)
 
 
 def operation_node_to_idl_operation(node):
@@ -198,7 +197,7 @@ def operation_node_to_idl_operation(node):
         else:
             raise ValueError('Unrecognized node class: %s' % child_class)
 
-    return IdlOperation(name=name, data_type=return_type, extended_attributes=extended_attributes, is_static=is_static, arguments=arguments, specials=specials)
+    return IdlOperation(name=name, idl_type=return_type, extended_attributes=extended_attributes, is_static=is_static, arguments=arguments, specials=specials)
 
 
 def arguments_node_to_arguments(node):
@@ -218,7 +217,7 @@ def arguments_node_to_arguments(node):
 def argument_node_to_idl_argument(node):
     name = node.GetName()
 
-    data_type = None
+    idl_type = None
     extended_attributes = {}
     # FIXME: Boolean values are inconsistent due to Perl compatibility.
     # Make all default to False once Perl removed.
@@ -229,7 +228,9 @@ def argument_node_to_idl_argument(node):
     for child in children:
         child_class = child.GetClass()
         if child_class == 'Type':
-            data_type = type_node_to_type(child)
+            idl_type = type_node_to_type(child)
+            # FIXME: Doesn't handle nullable arrays (Foo[]?), and arrays of
+            # nullable (Foo?[]) are treated as nullable arrays. No actual use.
             is_nullable = child.GetProperty('NULLABLE')
         elif child_class == 'ExtAttributes':
             extended_attributes = ext_attributes_node_to_extended_attributes(child)
@@ -241,7 +242,7 @@ def argument_node_to_idl_argument(node):
         else:
             raise ValueError('Unrecognized node class: %s' % child_class)
 
-    return IdlArgument(name=name, data_type=data_type, extended_attributes=extended_attributes, is_nullable=is_nullable, is_optional=is_optional, is_variadic=is_variadic)
+    return IdlArgument(name=name, idl_type=idl_type, extended_attributes=extended_attributes, is_nullable=is_nullable, is_optional=is_optional, is_variadic=is_variadic)
 
 # Constructors for for non-interface definitions
 
@@ -254,7 +255,7 @@ def callback_node_to_idl_callback_function(node):
         raise ValueError('Expected 2 children, got %s' % num_children)
 
     type_node = children[0]
-    data_type = type_node_to_type(type_node)
+    idl_type = type_node_to_type(type_node)
 
     arguments_node = children[1]
     arguments_node_class = arguments_node.GetClass()
@@ -262,7 +263,7 @@ def callback_node_to_idl_callback_function(node):
         raise ValueError('Expected Value node, got %s' % arguments_node_class)
     arguments = arguments_node_to_arguments(arguments_node)
 
-    return IdlCallbackFunction(name=name, data_type=data_type, arguments=arguments)
+    return IdlCallbackFunction(name=name, idl_type=idl_type, arguments=arguments)
 
 
 def enum_node_to_idl_enum(node):
@@ -291,7 +292,7 @@ def exception_operation_node_to_idl_operation(node):
         ext_attributes_node = children[1]
         extended_attributes = ext_attributes_node_to_extended_attributes(ext_attributes_node)
 
-    return IdlOperation(name=name, data_type=return_type, extended_attributes=extended_attributes)
+    return IdlOperation(name=name, idl_type=return_type, extended_attributes=extended_attributes)
 
 
 def exception_node_to_idl_exception(node):
@@ -320,22 +321,15 @@ def exception_node_to_idl_exception(node):
     return IdlException(name=name, attributes=attributes, constants=constants, extended_attributes=extended_attributes, operations=operations)
 
 
-def typedef_node_to_idl_typedef(node):
-    data_type = None
-    extended_attributes = None
-
+def typedef_node_to_type(node):
     children = node.GetChildren()
-    for child in children:
-        child_class = child.GetClass()
-        if child_class == 'Type':
-            data_type = type_node_to_type(child)
-        elif child_class == 'ExtAttributes':
-            extended_attributes = ext_attributes_node_to_extended_attributes(child)
-            raise ValueError('Extended attributes in a typedef are untested!')
-        else:
-            raise ValueError('Unrecognized node class: %s' % child_class)
-
-    return IdlTypedef(data_type=data_type, extended_attributes=extended_attributes)
+    if len(children) != 1:
+        raise ValueError('Typedef node with %s children, expected 1' % len(children))
+    child = children[0]
+    child_class = child.GetClass()
+    if child_class != 'Type':
+        raise ValueError('Unrecognized node class: %s' % child_class)
+    return type_node_to_type(child)
 
 # Extended attributes
 
@@ -358,8 +352,8 @@ def ext_attributes_node_to_extended_attributes(node):
     # overloading, and thus are stored in temporary lists.
     # However, Named Constructors cannot be overloaded, and thus do not have
     # a list.
-    # FIXME: Add overloading for Named Constructors and remove custom bindings
-    # for HTMLImageElement
+    # FIXME: move Constructor logic into separate function, instead of modifying
+    #        extended attributes in-place.
     constructors = []
     custom_constructors = []
     extended_attributes = {}
@@ -422,15 +416,6 @@ def extended_attributes_to_constructors(extended_attributes):
             constructors.append(constructor)
             overloaded_index += 1
 
-        # Prefix 'CallWith' and 'RaisesException' with 'Constructor'
-        # FIXME: Change extended attributes to include prefix explicitly.
-        if 'CallWith' in extended_attributes:
-            extended_attributes['ConstructorCallWith'] = extended_attributes['CallWith']
-            del extended_attributes['CallWith']
-        if 'RaisesException' in extended_attributes:
-            extended_attributes['ConstructorRaisesException'] = extended_attributes['RaisesException']
-            del extended_attributes['RaisesException']
-
     if 'CustomConstructors' in extended_attributes:
         custom_constructor_list = extended_attributes['CustomConstructors']
         # If not overloaded, have index 0, otherwise index from 1
@@ -453,6 +438,7 @@ def extended_attributes_to_constructors(extended_attributes):
         arguments_node = children[0]
         arguments = arguments_node_to_arguments(arguments_node)
         named_constructor = IdlOperation(name=name, extended_attributes=extended_attributes, overloaded_index=overloaded_index, arguments=arguments)
+        # FIXME: should return named_constructor separately; appended for Perl
         constructors.append(named_constructor)
 
     return constructors, custom_constructors
@@ -477,16 +463,16 @@ def type_node_to_type(node):
         raise ValueError('Type node expects 1 or 2 children (type + optional array []), got %s (multi-dimensional arrays are not supported).' % len(children))
 
     type_node_child = children[0]
-    data_type = type_node_inner_to_type(type_node_child)
+    idl_type = type_node_inner_to_type(type_node_child)
 
     if len(children) == 2:
         array_node = children[1]
         array_node_class = array_node.GetClass()
         if array_node_class != 'Array':
             raise ValueError('Expected Array node as TypeSuffix, got %s node.' % array_node_class)
-        data_type += '[]'
+        idl_type += '[]'
 
-    return data_type
+    return idl_type
 
 
 def type_node_inner_to_type(node):

@@ -39,23 +39,24 @@ class ContentDecryptorDelegate {
       const PPP_ContentDecryptor_Private* plugin_decryption_interface);
   ~ContentDecryptorDelegate();
 
-  void Initialize(const std::string& key_system,
-                  const bool can_challenge_platform);
+  void Initialize(const std::string& key_system);
 
-  void SetKeyEventCallbacks(const media::KeyAddedCB& key_added_cb,
-                            const media::KeyErrorCB& key_error_cb,
-                            const media::KeyMessageCB& key_message_cb);
+  void SetSessionEventCallbacks(
+      const media::SessionCreatedCB& session_created_cb,
+      const media::SessionMessageCB& session_message_cb,
+      const media::SessionReadyCB& session_ready_cb,
+      const media::SessionClosedCB& session_closed_cb,
+      const media::SessionErrorCB& session_error_cb);
 
   // Provides access to PPP_ContentDecryptor_Private.
-  bool GenerateKeyRequest(const std::string& type,
-                          const uint8* init_data,
-                          int init_data_length);
-  bool AddKey(const std::string& session_id,
-              const uint8* key,
-              int key_length,
-              const uint8* init_data,
-              int init_data_length);
-  bool CancelKeyRequest(const std::string& session_id);
+  bool CreateSession(uint32 session_id,
+                     const std::string& type,
+                     const uint8* init_data,
+                     int init_data_length);
+  bool UpdateSession(uint32 session_id,
+                     const uint8* response,
+                     int response_length);
+  bool ReleaseSession(uint32 session_id);
   bool Decrypt(media::Decryptor::StreamType stream_type,
                const scoped_refptr<media::DecoderBuffer>& encrypted_buffer,
                const media::Decryptor::DecryptCB& decrypt_cb);
@@ -79,18 +80,15 @@ class ContentDecryptorDelegate {
       const media::Decryptor::VideoDecodeCB& video_decode_cb);
 
   // PPB_ContentDecryptor_Private dispatching methods.
-  // TODO(ddorwin): Remove this method.
-  void NeedKey(PP_Var key_system, PP_Var session_id, PP_Var init_data);
-  // TODO(ddorwin): Remove key_system_var parameter from these methods.
-  void KeyAdded(PP_Var key_system, PP_Var session_id);
-  void KeyMessage(PP_Var key_system,
-                  PP_Var session_id,
-                  PP_Var message,
-                  PP_Var default_url);
-  void KeyError(PP_Var key_system,
-                PP_Var session_id,
-                int32_t media_error,
-                int32_t system_code);
+  void OnSessionCreated(uint32 session_id, PP_Var web_session_id_var);
+  void OnSessionMessage(uint32 session_id,
+                        PP_Var message,
+                        PP_Var destination_url);
+  void OnSessionReady(uint32 session_id);
+  void OnSessionClosed(uint32 session_id);
+  void OnSessionError(uint32 session_id,
+                      int32_t media_error,
+                      int32_t system_code);
   void DeliverBlock(PP_Resource decrypted_block,
                     const PP_DecryptedBlockInfo* block_info);
   void DecoderInitializeDone(PP_DecryptorStreamType decoder_type,
@@ -103,7 +101,7 @@ class ContentDecryptorDelegate {
   void DeliverFrame(PP_Resource decrypted_frame,
                     const PP_DecryptedFrameInfo* frame_info);
   void DeliverSamples(PP_Resource audio_frames,
-                      const PP_DecryptedBlockInfo* block_info);
+                      const PP_DecryptedSampleInfo* sample_info);
 
  private:
   // Cancels the pending decrypt-and-decode callback for |stream_type|.
@@ -132,6 +130,7 @@ class ContentDecryptorDelegate {
   // buffers in |frames|. Returns true upon success.
   bool DeserializeAudioFrames(PP_Resource audio_frames,
                               size_t data_size,
+                              media::SampleFormat sample_format,
                               media::Decryptor::AudioBuffers* frames);
 
   const PP_Instance pp_instance_;
@@ -140,10 +139,12 @@ class ContentDecryptorDelegate {
   // TODO(ddorwin): Remove after updating the Pepper API to not use key system.
   std::string key_system_;
 
-  // Callbacks for firing key events.
-  media::KeyAddedCB key_added_cb_;
-  media::KeyErrorCB key_error_cb_;
-  media::KeyMessageCB key_message_cb_;
+  // Callbacks for firing session events.
+  media::SessionCreatedCB session_created_cb_;
+  media::SessionMessageCB session_message_cb_;
+  media::SessionReadyCB session_ready_cb_;
+  media::SessionClosedCB session_closed_cb_;
+  media::SessionErrorCB session_error_cb_;
 
   gfx::Size natural_size_;
 
@@ -177,14 +178,12 @@ class ContentDecryptorDelegate {
 
   std::queue<uint32_t> free_buffers_;
 
-  base::WeakPtrFactory<ContentDecryptorDelegate> weak_ptr_factory_;
-  base::WeakPtr<ContentDecryptorDelegate> weak_this_;
-
   // Keep track of audio parameters.
-  media::SampleFormat audio_sample_format_;
   int audio_samples_per_second_;
   int audio_channel_count_;
-  int audio_bytes_per_frame_;
+
+  base::WeakPtr<ContentDecryptorDelegate> weak_this_;
+  base::WeakPtrFactory<ContentDecryptorDelegate> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentDecryptorDelegate);
 };

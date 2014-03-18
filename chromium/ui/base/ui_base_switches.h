@@ -16,31 +16,24 @@ UI_EXPORT extern const char kDisableDwmComposition[];
 UI_EXPORT extern const char kDisableTouchAdjustment[];
 UI_EXPORT extern const char kDisableTouchDragDrop[];
 UI_EXPORT extern const char kDisableTouchEditing[];
-UI_EXPORT extern const char kDisableViewsTextfield[];
-UI_EXPORT extern const char kEnableScrollPrediction[];
 UI_EXPORT extern const char kEnableTouchDragDrop[];
 UI_EXPORT extern const char kEnableTouchEditing[];
-UI_EXPORT extern const char kEnableViewsTextfield[];
 UI_EXPORT extern const char kHighlightMissingScaledResources[];
 UI_EXPORT extern const char kLang[];
 UI_EXPORT extern const char kLocalePak[];
 UI_EXPORT extern const char kNoMessageBox[];
-UI_EXPORT extern const char kTouchEvents[];
-UI_EXPORT extern const char kTouchEventsAuto[];
-UI_EXPORT extern const char kTouchEventsDisabled[];
-UI_EXPORT extern const char kTouchEventsEnabled[];
 UI_EXPORT extern const char kTouchOptimizedUI[];
 UI_EXPORT extern const char kTouchOptimizedUIAuto[];
 UI_EXPORT extern const char kTouchOptimizedUIDisabled[];
 UI_EXPORT extern const char kTouchOptimizedUIEnabled[];
 UI_EXPORT extern const char kTouchSideBezels[];
 
-#if defined(USE_XI2_MT)
-UI_EXPORT extern const char kTouchCalibration[];
+#if defined(OS_ANDROID)
+UI_EXPORT extern const char kTabletUI[];
 #endif
 
-#if defined(TOOLKIT_VIEWS) && defined(OS_LINUX)
-UI_EXPORT extern const char kTouchDevices[];
+#if defined(USE_XI2_MT)
+UI_EXPORT extern const char kTouchCalibration[];
 #endif
 
 }  // namespace switches

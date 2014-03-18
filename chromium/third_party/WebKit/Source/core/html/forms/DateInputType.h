@@ -46,13 +46,12 @@ typedef BaseChooserOnlyDateAndTimeInputType BaseDateInputType;
 
 class DateInputType : public BaseDateInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
 private:
-    DateInputType(HTMLInputElement*);
+    DateInputType(HTMLInputElement&);
     virtual void countUsage() OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual DateComponents::Type dateType() const OVERRIDE;
     virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;
     virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const OVERRIDE;
     virtual bool setMillisecondToDateComponents(double, DateComponents*) const OVERRIDE;

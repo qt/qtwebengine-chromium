@@ -35,8 +35,6 @@
 namespace v8 {
 namespace internal {
 
-static const int kPrologueOffsetNotSet = -1;
-
 class ScriptDataImpl;
 class HydrogenCodeStub;
 
@@ -86,6 +84,7 @@ class CompilationInfo {
   ScriptDataImpl* pre_parse_data() const { return pre_parse_data_; }
   Handle<Context> context() const { return context_; }
   BailoutId osr_ast_id() const { return osr_ast_id_; }
+  uint32_t osr_pc_offset() const { return osr_pc_offset_; }
   int opt_count() const { return opt_count_; }
   int num_parameters() const;
   int num_heap_slots() const;
@@ -98,6 +97,10 @@ class CompilationInfo {
   void MarkAsGlobal() {
     ASSERT(!is_lazy());
     flags_ |= IsGlobal::encode(true);
+  }
+  void set_parameter_count(int parameter_count) {
+    ASSERT(IsStub());
+    parameter_count_ = parameter_count;
   }
   void SetLanguageMode(LanguageMode language_mode) {
     ASSERT(this->language_mode() == CLASSIC_MODE ||
@@ -268,12 +271,12 @@ class CompilationInfo {
   void set_bailout_reason(BailoutReason reason) { bailout_reason_ = reason; }
 
   int prologue_offset() const {
-    ASSERT_NE(kPrologueOffsetNotSet, prologue_offset_);
+    ASSERT_NE(Code::kPrologueOffsetNotSet, prologue_offset_);
     return prologue_offset_;
   }
 
   void set_prologue_offset(int prologue_offset) {
-    ASSERT_EQ(kPrologueOffsetNotSet, prologue_offset_);
+    ASSERT_EQ(Code::kPrologueOffsetNotSet, prologue_offset_);
     prologue_offset_ = prologue_offset;
   }
 
@@ -299,12 +302,12 @@ class CompilationInfo {
   }
 
   void AbortDueToDependencyChange() {
-    ASSERT(!isolate()->optimizing_compiler_thread()->IsOptimizerThread());
+    ASSERT(!OptimizingCompilerThread::IsOptimizerThread(isolate()));
     abort_due_to_dependency_ = true;
   }
 
   bool HasAbortedDueToDependencyChange() {
-    ASSERT(!isolate()->optimizing_compiler_thread()->IsOptimizerThread());
+    ASSERT(!OptimizingCompilerThread::IsOptimizerThread(isolate()));
     return abort_due_to_dependency_;
   }
 
@@ -443,6 +446,9 @@ class CompilationInfo {
   // during graph optimization.
   int opt_count_;
 
+  // Number of parameters used for compilation of stubs that require arguments.
+  int parameter_count_;
+
   Handle<Foreign> object_wrapper_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
@@ -505,14 +511,15 @@ class LChunk;
 // fail, bail-out to the full code generator or succeed.  Apart from
 // their return value, the status of the phase last run can be checked
 // using last_status().
-class OptimizingCompiler: public ZoneObject {
+class RecompileJob: public ZoneObject {
  public:
-  explicit OptimizingCompiler(CompilationInfo* info)
+  explicit RecompileJob(CompilationInfo* info)
       : info_(info),
         graph_builder_(NULL),
         graph_(NULL),
         chunk_(NULL),
-        last_status_(FAILED) { }
+        last_status_(FAILED),
+        awaiting_install_(false) { }
 
   enum Status {
     FAILED, BAILED_OUT, SUCCEEDED
@@ -532,6 +539,13 @@ class OptimizingCompiler: public ZoneObject {
     return SetLastStatus(BAILED_OUT);
   }
 
+  void WaitForInstall() {
+    ASSERT(info_->is_osr());
+    awaiting_install_ = true;
+  }
+
+  bool IsWaitingForInstall() { return awaiting_install_; }
+
  private:
   CompilationInfo* info_;
   HOptimizedGraphBuilder* graph_builder_;
@@ -541,6 +555,7 @@ class OptimizingCompiler: public ZoneObject {
   TimeDelta time_taken_to_optimize_;
   TimeDelta time_taken_to_codegen_;
   Status last_status_;
+  bool awaiting_install_;
 
   MUST_USE_RESULT Status SetLastStatus(Status status) {
     last_status_ = status;
@@ -549,9 +564,8 @@ class OptimizingCompiler: public ZoneObject {
   void RecordOptimizationStats();
 
   struct Timer {
-    Timer(OptimizingCompiler* compiler, TimeDelta* location)
-        : compiler_(compiler),
-          location_(location) {
+    Timer(RecompileJob* job, TimeDelta* location)
+        : job_(job), location_(location) {
       ASSERT(location_ != NULL);
       timer_.Start();
     }
@@ -560,7 +574,7 @@ class OptimizingCompiler: public ZoneObject {
       *location_ += timer_.Elapsed();
     }
 
-    OptimizingCompiler* compiler_;
+    RecompileJob* job_;
     ElapsedTimer timer_;
     TimeDelta* location_;
   };
@@ -625,7 +639,7 @@ class Compiler : public AllStatic {
                               bool is_toplevel,
                               Handle<Script> script);
 
-  static Handle<Code> InstallOptimizedCode(OptimizingCompiler* info);
+  static Handle<Code> InstallOptimizedCode(RecompileJob* job);
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   static bool MakeCodeForLiveEdit(CompilationInfo* info);

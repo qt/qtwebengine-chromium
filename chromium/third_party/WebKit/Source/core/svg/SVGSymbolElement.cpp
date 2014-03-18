@@ -25,7 +25,6 @@
 #include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFitToViewBox.h"
 
 namespace WebCore {
 
@@ -41,17 +40,16 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGSymbolElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGSymbolElement::SVGSymbolElement(const QualifiedName& tagName, Document& document)
-    : SVGElement(tagName, document)
+inline SVGSymbolElement::SVGSymbolElement(Document& document)
+    : SVGElement(SVGNames::symbolTag, document)
 {
-    ASSERT(hasTagName(SVGNames::symbolTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGSymbolElement();
 }
 
-PassRefPtr<SVGSymbolElement> SVGSymbolElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGSymbolElement> SVGSymbolElement::create(Document& document)
 {
-    return adoptRef(new SVGSymbolElement(tagName, document));
+    return adoptRef(new SVGSymbolElement(document));
 }
 
 bool SVGSymbolElement::isSupportedAttribute(const QualifiedName& attrName)

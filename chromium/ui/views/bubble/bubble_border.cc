@@ -12,8 +12,10 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/painter.h"
+#include "ui/views/view.h"
 
 namespace views {
 
@@ -75,12 +77,6 @@ const int kStroke = 1;
 
 // Bubble border and arrow image resource ids. They don't use the IMAGE_GRID
 // macro because there is no center image.
-const int kShadowImages[] =  {
-    IDR_BUBBLE_SHADOW_TL, IDR_BUBBLE_SHADOW_T, IDR_BUBBLE_SHADOW_TR,
-    IDR_BUBBLE_SHADOW_L,  0,                   IDR_BUBBLE_SHADOW_R,
-    IDR_BUBBLE_SHADOW_BL, IDR_BUBBLE_SHADOW_B, IDR_BUBBLE_SHADOW_BR };
-const int kShadowArrows[] = { 0, 0, 0, 0 };
-
 const int kNoShadowImages[] = {
     IDR_BUBBLE_TL, IDR_BUBBLE_T, IDR_BUBBLE_TR,
     IDR_BUBBLE_L,  0,            IDR_BUBBLE_R,
@@ -134,11 +130,6 @@ BorderImages* GetBorderImages(BubbleBorder::Shadow shadow) {
     return set;
 
   switch (shadow) {
-    case BubbleBorder::SHADOW:
-      // Note: SHADOW's border interior thickness is actually 10, but 0 is used
-      // here to match the legacy appearance of SHADOW's extra large inset.
-      set = new BorderImages(kShadowImages, kShadowArrows, 0, 0, 3);
-      break;
     case BubbleBorder::NO_SHADOW:
     case BubbleBorder::NO_SHADOW_OPAQUE_BORDER:
       set = new BorderImages(kNoShadowImages, kNoShadowArrows, 6, 7, 4);
@@ -174,29 +165,11 @@ BubbleBorder::~BubbleBorder() {}
 
 gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
                                   const gfx::Size& contents_size) const {
-  // Enlarge the contents size by the thickness of the border images.
-  gfx::Size size(contents_size);
-  const gfx::Insets insets = GetInsets();
-  size.Enlarge(insets.width(), insets.height());
-
-  // Ensure the bubble is large enough to not overlap border and arrow images.
-  const int min = 2 * images_->border_thickness;
-  const int min_with_arrow_width = min + images_->top_arrow.width();
-  const int min_with_arrow_thickness = images_->border_thickness +
-      std::max(images_->arrow_thickness + images_->border_interior_thickness,
-               images_->border_thickness);
-  // Only take arrow image sizes into account when the bubble tip is shown.
-  if (arrow_paint_type_ == PAINT_TRANSPARENT || !has_arrow(arrow_))
-    size.SetToMax(gfx::Size(min, min));
-  else if (is_arrow_on_horizontal(arrow_))
-    size.SetToMax(gfx::Size(min_with_arrow_width, min_with_arrow_thickness));
-  else
-    size.SetToMax(gfx::Size(min_with_arrow_thickness, min_with_arrow_width));
-
   int x = anchor_rect.x();
   int y = anchor_rect.y();
   int w = anchor_rect.width();
   int h = anchor_rect.height();
+  const gfx::Size size(GetSizeForContentsSize(contents_size));
   const int arrow_offset = GetArrowOffset(size);
   const int arrow_size =
       images_->arrow_interior_thickness + kStroke - images_->arrow_thickness;
@@ -251,24 +224,6 @@ int BubbleBorder::GetArrowOffset(const gfx::Size& border_size) const {
   return std::max(min, std::min(arrow_offset_, edge_length - min));
 }
 
-gfx::Insets BubbleBorder::GetInsets() const {
-  // The insets contain the stroke and shadow pixels outside the bubble fill.
-  const int inset = GetBorderThickness();
-  if (arrow_paint_type_ == PAINT_NONE)
-    return gfx::Insets(inset, inset, inset, inset);
-  const int inset_with_arrow = std::max(inset, images_->arrow_thickness);
-  if (is_arrow_on_horizontal(arrow_)) {
-    if (is_arrow_on_top(arrow_))
-      return gfx::Insets(inset_with_arrow, inset, inset, inset);
-    return gfx::Insets(inset, inset, inset_with_arrow, inset);
-  } else if (has_arrow(arrow_)) {
-    if (is_arrow_on_left(arrow_))
-      return gfx::Insets(inset, inset_with_arrow, inset, inset);
-    return gfx::Insets(inset, inset, inset, inset_with_arrow);
-  }
-  return gfx::Insets(inset, inset, inset, inset);
-}
-
 void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   gfx::Rect bounds(view.GetContentsBounds());
   bounds.Inset(-GetBorderThickness(), -GetBorderThickness());
@@ -288,15 +243,58 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   DrawArrow(canvas, arrow_bounds);
 }
 
+gfx::Insets BubbleBorder::GetInsets() const {
+  // The insets contain the stroke and shadow pixels outside the bubble fill.
+  const int inset = GetBorderThickness();
+  if ((arrow_paint_type_ == PAINT_NONE) || !has_arrow(arrow_))
+    return gfx::Insets(inset, inset, inset, inset);
+
+  int first_inset = inset;
+  int second_inset = std::max(inset, images_->arrow_thickness);
+  if (is_arrow_on_horizontal(arrow_) ?
+      is_arrow_on_top(arrow_) : is_arrow_on_left(arrow_))
+    std::swap(first_inset, second_inset);
+  return is_arrow_on_horizontal(arrow_) ?
+      gfx::Insets(first_inset, inset, second_inset, inset) :
+      gfx::Insets(inset, first_inset, inset, second_inset);
+}
+
+gfx::Size BubbleBorder::GetMinimumSize() const {
+  return GetSizeForContentsSize(gfx::Size());
+}
+
+gfx::Size BubbleBorder::GetSizeForContentsSize(
+    const gfx::Size& contents_size) const {
+  // Enlarge the contents size by the thickness of the border images.
+  gfx::Size size(contents_size);
+  const gfx::Insets insets = GetInsets();
+  size.Enlarge(insets.width(), insets.height());
+
+  // Ensure the bubble is large enough to not overlap border and arrow images.
+  const int min = 2 * images_->border_thickness;
+  const int min_with_arrow_width = min + images_->top_arrow.width();
+  const int min_with_arrow_thickness = images_->border_thickness +
+      std::max(images_->arrow_thickness + images_->border_interior_thickness,
+               images_->border_thickness);
+  // Only take arrow image sizes into account when the bubble tip is shown.
+  if (arrow_paint_type_ == PAINT_TRANSPARENT || !has_arrow(arrow_))
+    size.SetToMax(gfx::Size(min, min));
+  else if (is_arrow_on_horizontal(arrow_))
+    size.SetToMax(gfx::Size(min_with_arrow_width, min_with_arrow_thickness));
+  else
+    size.SetToMax(gfx::Size(min_with_arrow_thickness, min_with_arrow_width));
+  return size;
+}
+
 gfx::ImageSkia* BubbleBorder::GetArrowImage() const {
+  if (!has_arrow(arrow_))
+    return NULL;
   if (is_arrow_on_horizontal(arrow_)) {
     return is_arrow_on_top(arrow_) ?
         &images_->top_arrow : &images_->bottom_arrow;
-  } else if (has_arrow(arrow_)) {
-    return is_arrow_on_left(arrow_) ?
-        &images_->left_arrow : &images_->right_arrow;
   }
-  return NULL;
+  return is_arrow_on_left(arrow_) ?
+      &images_->left_arrow : &images_->right_arrow;
 }
 
 gfx::Rect BubbleBorder::GetArrowRect(const gfx::Rect& bounds) const {
@@ -365,12 +363,6 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   if (border_->shadow() == BubbleBorder::NO_SHADOW_OPAQUE_BORDER)
     canvas->DrawColor(border_->background_color());
 
-  // Clip out the client bounds to prevent overlapping transparent widgets.
-  if (!border_->client_bounds().IsEmpty()) {
-    SkRect client_rect(gfx::RectToSkRect(border_->client_bounds()));
-    canvas->sk_canvas()->clipRect(client_rect, SkRegion::kDifference_Op);
-  }
-
   // Fill the contents with a round-rect region to match the border images.
   SkPaint paint;
   paint.setAntiAlias(true);
@@ -379,10 +371,6 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   SkPath path;
   gfx::Rect bounds(view->GetLocalBounds());
   bounds.Inset(border_->GetInsets());
-
-  // Note: This matches the legacy appearance of SHADOW's extra large inset.
-  if (border_->shadow() == BubbleBorder::SHADOW)
-    bounds.Inset(-10, -10);
 
   SkScalar radius = SkIntToScalar(border_->GetBorderCornerRadius());
   path.addRoundRect(gfx::RectToSkRect(bounds), radius, radius);

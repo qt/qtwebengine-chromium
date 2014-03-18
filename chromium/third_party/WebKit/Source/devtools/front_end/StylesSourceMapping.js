@@ -31,8 +31,8 @@
 /**
  * @constructor
  * @implements {WebInspector.SourceMapping}
- * @param {WebInspector.CSSStyleModel} cssModel
- * @param {WebInspector.Workspace} workspace
+ * @param {!WebInspector.CSSStyleModel} cssModel
+ * @param {!WebInspector.Workspace} workspace
  */
 WebInspector.StylesSourceMapping = function(cssModel, workspace)
 {
@@ -40,15 +40,20 @@ WebInspector.StylesSourceMapping = function(cssModel, workspace)
     this._workspace = workspace;
     this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._projectWillReset, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAddedToWorkspace, this);
+    this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeRemoved, this._uiSourceCodeRemoved, this);
 
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameCreatedOrNavigated, this._mainFrameCreatedOrNavigated, this);
+
+    this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetChanged, this);
     this._initialize();
 }
 
+WebInspector.StylesSourceMapping.MinorChangeUpdateTimeoutMs = 1000;
+
 WebInspector.StylesSourceMapping.prototype = {
     /**
-     * @param {WebInspector.RawLocation} rawLocation
-     * @return {WebInspector.UILocation}
+     * @param {!WebInspector.RawLocation} rawLocation
+     * @return {?WebInspector.UILocation}
      */
     rawLocationToUILocation: function(rawLocation)
     {
@@ -60,10 +65,10 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number} lineNumber
      * @param {number} columnNumber
-     * @return {WebInspector.RawLocation}
+     * @return {!WebInspector.RawLocation}
      */
     uiLocationToRawLocation: function(uiSourceCode, lineNumber, columnNumber)
     {
@@ -71,15 +76,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    isIdentity: function()
-    {
-        return true;
-    },
-
-    /**
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     addHeader: function(header)
     {
@@ -105,7 +102,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     removeHeader: function(header)
     {
@@ -131,23 +128,23 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     _unbindUISourceCode: function(uiSourceCode)
     {
-        if (uiSourceCode.styleFile()) {
-            uiSourceCode.styleFile().dispose();
-            uiSourceCode.setStyleFile(null);
-        }
-        uiSourceCode.setSourceMapping(null);
+        var styleFile = this._styleFiles.get(uiSourceCode);
+        if (!styleFile)
+            return;
+        styleFile.dispose();
+        this._styleFiles.remove(uiSourceCode);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _uiSourceCodeAddedToWorkspace: function(event)
     {
-        var uiSourceCode = /** @type {WebInspector.UISourceCode} */ (event.data);
+        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         var url = uiSourceCode.url;
         if (!url || !this._urlToHeadersByFrameId[url])
             return;
@@ -155,38 +152,48 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     _bindUISourceCode: function(uiSourceCode, header)
     {
-        if (uiSourceCode.styleFile() || header.isInline)
+        if (this._styleFiles.get(uiSourceCode) || header.isInline)
             return;
         var url = uiSourceCode.url;
-        uiSourceCode.setSourceMapping(this);
-        uiSourceCode.setStyleFile(new WebInspector.StyleFile(uiSourceCode));
+        this._styleFiles.put(uiSourceCode, new WebInspector.StyleFile(uiSourceCode, this));
         header.updateLocations();
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _projectWillReset: function(event)
     {
-        var project = /** @type {WebInspector.Project} */ (event.data);
+        var project = /** @type {!WebInspector.Project} */ (event.data);
         var uiSourceCodes = project.uiSourceCodes();
-        for (var i = 0; i < uiSourceCodes; ++i)
-            delete this._urlToHeadersByFrameId[uiSourceCodes[i].url];
+        for (var i = 0; i < uiSourceCodes.length; ++i)
+            this._unbindUISourceCode(uiSourceCodes[i]);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _uiSourceCodeRemoved: function(event)
+    {
+        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
+        this._unbindUISourceCode(uiSourceCode);
     },
 
     _initialize: function()
     {
         /** @type {!Object.<string, !StringMap.<!StringMap.<!WebInspector.CSSStyleSheetHeader>>>} */
         this._urlToHeadersByFrameId = {};
+        /** @type {!Map.<!WebInspector.UISourceCode, !WebInspector.StyleFile>} */
+        this._styleFiles = new Map();
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _mainFrameCreatedOrNavigated: function(event)
     {
@@ -197,16 +204,119 @@ WebInspector.StylesSourceMapping.prototype = {
             this._unbindUISourceCode(uiSourceCode);
         }
         this._initialize();
+    },
+
+    /**
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @param {string} content
+     * @param {boolean} majorChange
+     * @param {function(?string)} userCallback
+     */
+    _setStyleContent: function(uiSourceCode, content, majorChange, userCallback)
+    {
+        var styleSheetIds = this._cssModel.styleSheetIdsForURL(uiSourceCode.url);
+        if (!styleSheetIds.length) {
+            userCallback("No stylesheet found: " + uiSourceCode.url);
+            return;
+        }
+
+        this._isSettingContent = true;
+
+        /**
+         * @param {?Protocol.Error} error
+         * @this {WebInspector.StylesSourceMapping}
+         */
+        function callback(error)
+        {
+            userCallback(error);
+            delete this._isSettingContent;
+        }
+        this._cssModel.setStyleSheetText(styleSheetIds[0], content, majorChange, callback.bind(this));
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _styleSheetChanged: function(event)
+    {
+        if (this._isSettingContent)
+            return;
+
+        if (event.data.majorChange) {
+            this._updateStyleSheetText(event.data.styleSheetId);
+            return;
+        }
+
+        this._updateStyleSheetTextSoon(event.data.styleSheetId);
+    },
+
+    /**
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
+     */
+    _updateStyleSheetTextSoon: function(styleSheetId)
+    {
+        if (this._updateStyleSheetTextTimer)
+            clearTimeout(this._updateStyleSheetTextTimer);
+
+        this._updateStyleSheetTextTimer = setTimeout(this._updateStyleSheetText.bind(this, styleSheetId), WebInspector.StylesSourceMapping.MinorChangeUpdateTimeoutMs);
+    },
+
+    /**
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
+     */
+    _updateStyleSheetText: function(styleSheetId)
+    {
+        if (this._updateStyleSheetTextTimer) {
+            clearTimeout(this._updateStyleSheetTextTimer);
+            delete this._updateStyleSheetTextTimer;
+        }
+
+        CSSAgent.getStyleSheetText(styleSheetId, callback.bind(this));
+
+        /**
+         * @param {?string} error
+         * @param {string} content
+         * @this {WebInspector.StylesSourceMapping}
+         */
+        function callback(error, content)
+        {
+            if (!error)
+                this._innerStyleSheetChanged(styleSheetId, content);
+        }
+    },
+
+    /**
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
+     * @param {string} content
+     */
+    _innerStyleSheetChanged: function(styleSheetId, content)
+    {
+        var header = this._cssModel.styleSheetHeaderForId(styleSheetId);
+        if (!header)
+            return;
+        var styleSheetURL = header.resourceURL();
+        if (!styleSheetURL)
+            return;
+
+        var uiSourceCode = this._workspace.uiSourceCodeForURL(styleSheetURL)
+        if (!uiSourceCode)
+            return;
+
+        var styleFile = this._styleFiles.get(uiSourceCode);
+        if (styleFile)
+            styleFile.addRevision(content);
     }
 }
 
 /**
  * @constructor
- * @param {WebInspector.UISourceCode} uiSourceCode
+ * @param {!WebInspector.UISourceCode} uiSourceCode
+ * @param {!WebInspector.StylesSourceMapping} mapping
  */
-WebInspector.StyleFile = function(uiSourceCode)
+WebInspector.StyleFile = function(uiSourceCode, mapping)
 {
     this._uiSourceCode = uiSourceCode;
+    this._mapping = mapping;
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._workingCopyChanged, this);
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._workingCopyCommitted, this);
 }
@@ -242,7 +352,7 @@ WebInspector.StyleFile.prototype = {
     _commitIncrementalEdit: function(majorChange)
     {
         this._clearIncrementalUpdateTimer();
-        WebInspector.styleContentBinding.setStyleContent(this._uiSourceCode, this._uiSourceCode.workingCopy(), majorChange, this._styleContentSet.bind(this));
+        this._mapping._setStyleContent(this._uiSourceCode, this._uiSourceCode.workingCopy(), majorChange, this._styleContentSet.bind(this));
     },
 
     /**
@@ -280,88 +390,3 @@ WebInspector.StyleFile.prototype = {
         this._uiSourceCode.removeEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._workingCopyChanged, this);
     }
 }
-
-/**
- * @constructor
- * @param {WebInspector.CSSStyleModel} cssModel
- */
-WebInspector.StyleContentBinding = function(cssModel, workspace)
-{
-    this._cssModel = cssModel;
-    this._workspace = workspace;
-    this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetChanged, this);
-}
-
-WebInspector.StyleContentBinding.prototype = {
-    /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
-     * @param {string} content
-     * @param {boolean} majorChange
-     * @param {function(?string)} userCallback
-     */
-    setStyleContent: function(uiSourceCode, content, majorChange, userCallback)
-    {
-        var styleSheetIds = this._cssModel.styleSheetIdsForURL(uiSourceCode.url);
-        if (!styleSheetIds.length) {
-            userCallback("No stylesheet found: " + uiSourceCode.url);
-            return;
-        }
-
-        this._isSettingContent = true;
-        function callback(error)
-        {
-            userCallback(error);
-            delete this._isSettingContent;
-        }
-        this._cssModel.setStyleSheetText(styleSheetIds[0], content, majorChange, callback.bind(this));
-    },
-
-    /**
-     * @param {WebInspector.Event} event
-     */
-    _styleSheetChanged: function(event)
-    {
-        if (this._isSettingContent)
-            return;
-
-        if (!event.data.majorChange)
-            return;
-
-        /**
-         * @param {?string} error
-         * @param {string} content
-         */
-        function callback(error, content)
-        {
-            if (!error)
-                this._innerStyleSheetChanged(event.data.styleSheetId, content);
-        }
-        CSSAgent.getStyleSheetText(event.data.styleSheetId, callback.bind(this));
-    },
-
-    /**
-     * @param {CSSAgent.StyleSheetId} styleSheetId
-     * @param {string} content
-     */
-    _innerStyleSheetChanged: function(styleSheetId, content)
-    {
-        var header = this._cssModel.styleSheetHeaderForId(styleSheetId);
-        if (!header)
-            return;
-        var styleSheetURL = header.resourceURL();
-        if (!styleSheetURL)
-            return;
-
-        var uiSourceCode = this._workspace.uiSourceCodeForURL(styleSheetURL)
-        if (!uiSourceCode)
-            return;
-
-        if (uiSourceCode.styleFile())
-            uiSourceCode.styleFile().addRevision(content);
-    }
-}
-
-/**
- * @type {?WebInspector.StyleContentBinding}
- */
-WebInspector.styleContentBinding = null;

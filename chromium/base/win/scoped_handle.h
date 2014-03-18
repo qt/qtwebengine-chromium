@@ -13,20 +13,17 @@
 #include "base/logging.h"
 #include "base/move.h"
 
-namespace base {
-namespace win {
-
 // TODO(rvargas): remove this with the rest of the verifier.
 #if defined(COMPILER_MSVC)
-// MSDN says to #include <intrin.h>, but that breaks the VS2005 build.
-extern "C" {
-  void* _ReturnAddress();
-}
+#include <intrin.h>
 #define BASE_WIN_GET_CALLER _ReturnAddress()
 #elif defined(COMPILER_GCC)
 #define BASE_WIN_GET_CALLER __builtin_extract_return_addr(\\
     __builtin_return_address(0))
 #endif
+
+namespace base {
+namespace win {
 
 // Generic wrapper for raw handles that takes care of closing handles
 // automatically. The class interface follows the style of
@@ -41,22 +38,6 @@ class GenericScopedHandle {
 
  public:
   typedef typename Traits::Handle Handle;
-
-  // Helper object to contain the effect of Receive() to the function that needs
-  // a pointer, and allow proper tracking of the handle.
-  class Receiver {
-   public:
-    explicit Receiver(GenericScopedHandle* owner)
-        : handle_(Traits::NullHandle()),
-          owner_(owner) {}
-    ~Receiver() { owner_->Set(handle_); }
-
-    operator Handle*() { return &handle_; }
-
-   private:
-    Handle handle_;
-    GenericScopedHandle* owner_;
-  };
 
   GenericScopedHandle() : handle_(Traits::NullHandle()) {}
 
@@ -103,16 +84,6 @@ class GenericScopedHandle {
 
   operator Handle() const {
     return handle_;
-  }
-
-  // This method is intended to be used with functions that require a pointer to
-  // a destination handle, like so:
-  //    void CreateRequiredHandle(Handle* out_handle);
-  //    ScopedHandle a;
-  //    CreateRequiredHandle(a.Receive());
-  Receiver Receive() {
-    DCHECK(!Traits::IsHandleValid(handle_)) << "Handle must be NULL";
-    return Receiver(this);
   }
 
   // Transfers ownership away from this object.

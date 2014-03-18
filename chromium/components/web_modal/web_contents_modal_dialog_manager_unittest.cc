@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
+
 #include <map>
 
 #include "base/memory/scoped_ptr.h"
 #include "components/web_modal/native_web_contents_modal_dialog_manager.h"
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
+#include "components/web_modal/test_web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/test/test_renderer_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -73,42 +70,6 @@ class TestNativeWebContentsModalDialogManager
   DialogStateMap dialog_state_;
 
   DISALLOW_COPY_AND_ASSIGN(TestNativeWebContentsModalDialogManager);
-};
-
-class TestWebContentsModalDialogManagerDelegate
-    : public WebContentsModalDialogManagerDelegate {
- public:
-  TestWebContentsModalDialogManagerDelegate()
-      : web_contents_visible_(true),
-        web_contents_blocked_(false) {
-  }
-
-  // WebContentsModalDialogManagerDelegate overrides
-  virtual void SetWebContentsBlocked(content::WebContents* web_contents,
-                                     bool blocked) OVERRIDE {
-    web_contents_blocked_ = blocked;
-  }
-
-  virtual WebContentsModalDialogHost* GetWebContentsModalDialogHost() OVERRIDE {
-    return NULL;
-  }
-
-  virtual bool IsWebContentsVisible(
-      content::WebContents* web_contents) OVERRIDE {
-    return web_contents_visible_;
-  }
-
-  void set_web_contents_visible(bool visible) {
-    web_contents_visible_ = visible;
-  }
-
-  bool web_contents_blocked() const { return web_contents_blocked_; }
-
- private:
-  bool web_contents_visible_;
-  bool web_contents_blocked_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestWebContentsModalDialogManagerDelegate);
 };
 
 class WebContentsModalDialogManagerTest
@@ -211,11 +172,9 @@ TEST_F(WebContentsModalDialogManagerTest, ShowDialogs) {
             native_manager->GetDialogState(dialog3));
 }
 
-// Test that the dialog is shown/hidden on
-// NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED.
+// Test that the dialog is shown/hidden when the WebContents is shown/hidden.
 TEST_F(WebContentsModalDialogManagerTest, VisibilityObservation) {
   const NativeWebContentsModalDialog dialog1 = MakeFakeDialog();
-  bool web_contents_visible = true;
 
   manager->ShowDialog(dialog1);
 
@@ -224,20 +183,14 @@ TEST_F(WebContentsModalDialogManagerTest, VisibilityObservation) {
   EXPECT_EQ(TestNativeWebContentsModalDialogManager::SHOWN,
             native_manager->GetDialogState(dialog1));
 
-  web_contents_visible = false;
-  manager->Observe(content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-                   content::NotificationService::AllSources(),
-                   content::Details<bool>(&web_contents_visible));
+  test_api->WebContentsWasHidden();
 
   EXPECT_TRUE(manager->IsDialogActive());
   EXPECT_TRUE(delegate->web_contents_blocked());
   EXPECT_EQ(TestNativeWebContentsModalDialogManager::HIDDEN,
             native_manager->GetDialogState(dialog1));
 
-  web_contents_visible = true;
-  manager->Observe(content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-                   content::NotificationService::AllSources(),
-                   content::Details<bool>(&web_contents_visible));
+  test_api->WebContentsWasShown();
 
   EXPECT_TRUE(manager->IsDialogActive());
   EXPECT_TRUE(delegate->web_contents_blocked());
@@ -245,9 +198,8 @@ TEST_F(WebContentsModalDialogManagerTest, VisibilityObservation) {
             native_manager->GetDialogState(dialog1));
 }
 
-// Test that attaching an interstitial WebUI page closes dialogs configured to
-// close on interstitial WebUI.
-TEST_F(WebContentsModalDialogManagerTest, InterstitialWebUI) {
+// Test that attaching an interstitial page closes dialogs configured to close.
+TEST_F(WebContentsModalDialogManagerTest, InterstitialPage) {
   const NativeWebContentsModalDialog dialog1 = MakeFakeDialog();
   const NativeWebContentsModalDialog dialog2 = MakeFakeDialog();
   const NativeWebContentsModalDialog dialog3 = MakeFakeDialog();
@@ -256,8 +208,14 @@ TEST_F(WebContentsModalDialogManagerTest, InterstitialWebUI) {
   manager->ShowDialog(dialog2);
   manager->ShowDialog(dialog3);
 
-  manager->SetCloseOnInterstitialWebUI(dialog1, true);
-  manager->SetCloseOnInterstitialWebUI(dialog3, true);
+#if defined(OS_WIN) || defined(USE_AURA)
+  manager->SetCloseOnInterstitialPage(dialog2, false);
+#else
+  // TODO(wittman): Remove this section once Mac is changed to close on
+  // interstitial pages by default.
+  manager->SetCloseOnInterstitialPage(dialog1, true);
+  manager->SetCloseOnInterstitialPage(dialog3, true);
+#endif
 
   test_api->DidAttachInterstitialPage();
   EXPECT_EQ(TestNativeWebContentsModalDialogManager::CLOSED,

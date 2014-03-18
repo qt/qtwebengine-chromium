@@ -27,8 +27,8 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
 
@@ -43,19 +43,18 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGScriptElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGScriptElement::SVGScriptElement(const QualifiedName& tagName, Document& document, bool wasInsertedByParser, bool alreadyStarted)
-    : SVGElement(tagName, document)
+inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
+    : SVGElement(SVGNames::scriptTag, document)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
-    ASSERT(hasTagName(SVGNames::scriptTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGScriptElement();
 }
 
-PassRefPtr<SVGScriptElement> SVGScriptElement::create(const QualifiedName& tagName, Document& document, bool insertedByParser)
+PassRefPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
 {
-    return adoptRef(new SVGScriptElement(tagName, document, insertedByParser, false));
+    return adoptRef(new SVGScriptElement(document, insertedByParser, false));
 }
 
 bool SVGScriptElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -83,7 +82,7 @@ void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 
     if (name == HTMLNames::onerrorAttr) {
-        setAttributeEventListener(eventNames().errorEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value));
         return;
     }
 
@@ -211,7 +210,7 @@ bool SVGScriptElement::hasSourceAttribute() const
 
 PassRefPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
 {
-    return adoptRef(new SVGScriptElement(tagQName(), document(), false, m_loader->alreadyStarted()));
+    return adoptRef(new SVGScriptElement(document(), false, m_loader->alreadyStarted()));
 }
 
 void SVGScriptElement::setHaveFiredLoadEvent(bool haveFiredLoadEvent)

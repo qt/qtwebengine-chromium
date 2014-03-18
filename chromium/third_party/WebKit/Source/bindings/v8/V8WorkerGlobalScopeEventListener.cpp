@@ -49,7 +49,7 @@ V8WorkerGlobalScopeEventListener::V8WorkerGlobalScopeEventListener(v8::Local<v8:
 {
 }
 
-void V8WorkerGlobalScopeEventListener::handleEvent(ScriptExecutionContext* context, Event* event)
+void V8WorkerGlobalScopeEventListener::handleEvent(ExecutionContext* context, Event* event)
 {
     if (!context)
         return;
@@ -78,7 +78,7 @@ void V8WorkerGlobalScopeEventListener::handleEvent(ScriptExecutionContext* conte
     invokeEventHandler(context, event, v8::Local<v8::Value>::New(isolate, jsEvent));
 }
 
-v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(ScriptExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(ExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
 {
     v8::Local<v8::Function> handlerFunction = getListenerFunction(context);
     v8::Local<v8::Object> receiver = getReceiverObject(context, event);
@@ -91,7 +91,8 @@ v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(Scri
         int lineNumber = 1;
         v8::ScriptOrigin origin = handlerFunction->GetScriptOrigin();
         if (!origin.ResourceName().IsEmpty()) {
-            resourceName = toWebCoreString(origin.ResourceName());
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringResourceName, origin.ResourceName(), v8::Local<v8::Value>());
+            resourceName = stringResourceName;
             lineNumber = handlerFunction->GetScriptLineNumber() + 1;
         }
         cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
@@ -106,7 +107,7 @@ v8::Local<v8::Value> V8WorkerGlobalScopeEventListener::callListenerFunction(Scri
     return result;
 }
 
-v8::Local<v8::Object> V8WorkerGlobalScopeEventListener::getReceiverObject(ScriptExecutionContext* context, Event* event)
+v8::Local<v8::Object> V8WorkerGlobalScopeEventListener::getReceiverObject(ExecutionContext* context, Event* event)
 {
     v8::Local<v8::Object> listener = getListenerObject(context);
 

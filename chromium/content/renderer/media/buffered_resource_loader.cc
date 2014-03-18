@@ -6,13 +6,12 @@
 
 #include "base/bits.h"
 #include "base/callback_helpers.h"
-#include "base/format_macros.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "content/renderer/media/cache_util.h"
 #include "media/base/media_log.h"
+#include "net/http/http_byte_range.h"
 #include "net/http/http_request_headers.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
@@ -20,13 +19,13 @@
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 
-using WebKit::WebFrame;
-using WebKit::WebString;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderOptions;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebFrame;
+using blink::WebString;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebURLLoaderOptions;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 namespace content {
 
@@ -165,11 +164,11 @@ void BufferedResourceLoader::Start(
   if (IsRangeRequest()) {
     request.setHTTPHeaderField(
         WebString::fromUTF8(net::HttpRequestHeaders::kRange),
-        WebString::fromUTF8(GenerateHeaders(first_byte_position_,
-                                            last_byte_position_)));
+        WebString::fromUTF8(net::HttpByteRange::Bounded(
+            first_byte_position_, last_byte_position_).GetHeaderValue()));
   }
 
-  frame->setReferrerForRequest(request, WebKit::WebURL());
+  frame->setReferrerForRequest(request, blink::WebURL());
 
   // Disable compression, compression for audio/video doesn't make sense...
   request.setHTTPHeaderField(
@@ -188,6 +187,8 @@ void BufferedResourceLoader::Start(
           WebURLLoaderOptions::CrossOriginRequestPolicyAllow;
     } else {
       options.exposeAllResponseHeaders = true;
+      // The author header set is empty, no preflight should go ahead.
+      options.preflightPolicy = WebURLLoaderOptions::PreventPreflight;
       options.crossOriginRequestPolicy =
           WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
       if (cors_mode_ == kUseCredentials)
@@ -322,7 +323,7 @@ bool BufferedResourceLoader::range_supported() {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// WebKit::WebURLLoaderClient implementation.
+// blink::WebURLLoaderClient implementation.
 void BufferedResourceLoader::willSendRequest(
     WebURLLoader* loader,
     WebURLRequest& newRequest,
@@ -332,7 +333,7 @@ void BufferedResourceLoader::willSendRequest(
   // In this case we shouldn't do anything.
   if (start_cb_.is_null()) {
     // Set the url in the request to an invalid value (empty url).
-    newRequest.setURL(WebKit::WebURL());
+    newRequest.setURL(blink::WebURL());
     return;
   }
 
@@ -467,7 +468,7 @@ void BufferedResourceLoader::didReceiveData(
 }
 
 void BufferedResourceLoader::didDownloadData(
-    WebKit::WebURLLoader* loader,
+    blink::WebURLLoader* loader,
     int dataLength,
     int encoded_data_length) {
   NOTIMPLEMENTED();
@@ -746,27 +747,6 @@ bool BufferedResourceLoader::VerifyPartialResponse(
   // TODO(hclam): I should also check |last_byte_position|, but since
   // we will never make such a request that it is ok to leave it unimplemented.
   return true;
-}
-
-std::string BufferedResourceLoader::GenerateHeaders(
-    int64 first_byte_position,
-    int64 last_byte_position) {
-  // Construct the value for the range header.
-  std::string header;
-  if (first_byte_position > kPositionNotSpecified &&
-      last_byte_position > kPositionNotSpecified) {
-    if (first_byte_position <= last_byte_position) {
-      header = base::StringPrintf("bytes=%" PRId64 "-%" PRId64,
-                                  first_byte_position,
-                                  last_byte_position);
-    }
-  } else if (first_byte_position > kPositionNotSpecified) {
-    header = base::StringPrintf("bytes=%" PRId64 "-",
-                                first_byte_position);
-  } else if (last_byte_position > kPositionNotSpecified) {
-    NOTIMPLEMENTED() << "Suffix range not implemented";
-  }
-  return header;
 }
 
 void BufferedResourceLoader::DoneRead(Status status, int bytes_read) {

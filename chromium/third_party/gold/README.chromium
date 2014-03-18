@@ -1,6 +1,6 @@
 Name: gold
 URL: http://www.gnu.org/software/binutils/
-Version: 2.23.1
+Version: 2.23.2
 License: GPL v2
 Security Critical: no
 
@@ -27,3 +27,7 @@ Then follow steps 1-4 above.
 (ld.bfd is a forwarding script that is in place because the NaCl build
 depends on there being a script with that name in the same directory as
 ld.)
+
+Local patches:
+
+ehframe.patch for http://crbug.com/161942

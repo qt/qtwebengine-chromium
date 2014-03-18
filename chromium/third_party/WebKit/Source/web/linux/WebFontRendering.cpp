@@ -29,17 +29,19 @@
  */
 
 #include "config.h"
-#include "WebFontRendering.h"
+#include "public/web/linux/WebFontRendering.h"
 
-#include "core/platform/graphics/FontPlatformData.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontPlatformData.h"
 
-#if OS(LINUX) && !OS(ANDROID)
-#include "WebFontInfo.h"
+#if OS(LINUX)
+#include "public/platform/linux/WebFontInfo.h"
 #endif
 
+using WebCore::FontDescription;
 using WebCore::FontPlatformData;
 
-namespace WebKit {
+namespace blink {
 
 // static
 void WebFontRendering::setHinting(SkPaint::Hinting hinting)
@@ -74,8 +76,8 @@ void WebFontRendering::setSubpixelRendering(bool useSubpixelRendering)
 // static
 void WebFontRendering::setSubpixelPositioning(bool useSubpixelPositioning)
 {
-    FontPlatformData::setSubpixelPositioning(useSubpixelPositioning);
-#if OS(LINUX) && !OS(ANDROID)
+    FontDescription::setSubpixelPositioning(useSubpixelPositioning);
+#if OS(LINUX)
     WebFontInfo::setSubpixelPositioning(useSubpixelPositioning);
 #endif
 }
@@ -92,4 +94,4 @@ void WebFontRendering::setLCDOrientation(SkFontHost::LCDOrientation orientation)
     SkFontHost::SetSubpixelOrientation(orientation);
 }
 
-} // namespace WebKit
+} // namespace blink

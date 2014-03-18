@@ -5,6 +5,7 @@
 #include "content/browser/loader/resource_request_info_impl.h"
 
 #include "content/browser/loader/global_routing_id.h"
+#include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/net/url_request_user_data.h"
 #include "content/public/browser/global_request_id.h"
@@ -27,7 +28,8 @@ void ResourceRequestInfo::AllocateForTesting(
     ResourceType::Type resource_type,
     ResourceContext* context,
     int render_process_id,
-    int render_view_id) {
+    int render_view_id,
+    bool is_async) {
   ResourceRequestInfoImpl* info =
       new ResourceRequestInfoImpl(
           PROCESS_TYPE_RENDERER,             // process_type
@@ -35,19 +37,22 @@ void ResourceRequestInfo::AllocateForTesting(
           render_view_id,                    // route_id
           0,                                 // origin_pid
           0,                                 // request_id
+          MSG_ROUTING_NONE,                  // render_frame_id
           resource_type == ResourceType::MAIN_FRAME,  // is_main_frame
           0,                                 // frame_id
           false,                             // parent_is_main_frame
           0,                                 // parent_frame_id
           resource_type,                     // resource_type
           PAGE_TRANSITION_LINK,              // transition_type
+          false,                             // should_replace_current_entry
           false,                             // is_download
           false,                             // is_stream
           true,                              // allow_download
           false,                             // has_user_gesture
-          WebKit::WebReferrerPolicyDefault,  // referrer_policy
+          blink::WebReferrerPolicyDefault,  // referrer_policy
           context,                           // context
-          false);                            // is_async
+          base::WeakPtr<ResourceMessageFilter>(),  // filter
+          is_async);                         // is_async
   info->AssociateWithRequest(request);
 }
 
@@ -86,29 +91,35 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     int route_id,
     int origin_pid,
     int request_id,
+    int render_frame_id,
     bool is_main_frame,
     int64 frame_id,
     bool parent_is_main_frame,
     int64 parent_frame_id,
     ResourceType::Type resource_type,
     PageTransition transition_type,
+    bool should_replace_current_entry,
     bool is_download,
     bool is_stream,
     bool allow_download,
     bool has_user_gesture,
-    WebKit::WebReferrerPolicy referrer_policy,
+    blink::WebReferrerPolicy referrer_policy,
     ResourceContext* context,
+    base::WeakPtr<ResourceMessageFilter> filter,
     bool is_async)
     : cross_site_handler_(NULL),
+      detachable_handler_(NULL),
       process_type_(process_type),
       child_id_(child_id),
       route_id_(route_id),
       origin_pid_(origin_pid),
       request_id_(request_id),
+      render_frame_id_(render_frame_id),
       is_main_frame_(is_main_frame),
       frame_id_(frame_id),
       parent_is_main_frame_(parent_is_main_frame),
       parent_frame_id_(parent_frame_id),
+      should_replace_current_entry_(should_replace_current_entry),
       is_download_(is_download),
       is_stream_(is_stream),
       allow_download_(allow_download),
@@ -119,6 +130,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       memory_cost_(0),
       referrer_policy_(referrer_policy),
       context_(context),
+      filter_(filter),
       is_async_(is_async) {
 }
 
@@ -145,6 +157,10 @@ int ResourceRequestInfoImpl::GetRequestID() const {
   return request_id_;
 }
 
+int ResourceRequestInfoImpl::GetRenderFrameID() const {
+  return render_frame_id_;
+}
+
 bool ResourceRequestInfoImpl::IsMainFrame() const {
   return is_main_frame_;
 }
@@ -165,7 +181,7 @@ ResourceType::Type ResourceRequestInfoImpl::GetResourceType() const {
   return resource_type_;
 }
 
-WebKit::WebReferrerPolicy ResourceRequestInfoImpl::GetReferrerPolicy() const {
+blink::WebReferrerPolicy ResourceRequestInfoImpl::GetReferrerPolicy() const {
   return referrer_policy_;
 }
 
@@ -209,6 +225,10 @@ bool ResourceRequestInfoImpl::IsAsync() const {
   return is_async_;
 }
 
+bool ResourceRequestInfoImpl::IsDownload() const {
+  return is_download_;
+}
+
 void ResourceRequestInfoImpl::AssociateWithRequest(net::URLRequest* request) {
   request->SetUserData(NULL, this);
   int render_process_id;
@@ -226,6 +246,22 @@ GlobalRequestID ResourceRequestInfoImpl::GetGlobalRequestID() const {
 
 GlobalRoutingID ResourceRequestInfoImpl::GetGlobalRoutingID() const {
   return GlobalRoutingID(child_id_, route_id_);
+}
+
+void ResourceRequestInfoImpl::UpdateForTransfer(
+    int child_id,
+    int route_id,
+    int origin_pid,
+    int request_id,
+    int64 frame_id,
+    int64 parent_frame_id,
+    base::WeakPtr<ResourceMessageFilter> filter) {
+  child_id_ = child_id;
+  route_id_ = route_id;
+  origin_pid_ = origin_pid;
+  request_id_ = request_id;
+  frame_id_ = frame_id;
+  filter_ = filter;
 }
 
 }  // namespace content

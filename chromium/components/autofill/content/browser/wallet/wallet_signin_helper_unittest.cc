@@ -34,47 +34,13 @@ namespace wallet {
 
 namespace {
 
-const char kGetTokenPairValidResponse[] =
-    "{"
-    "  \"refresh_token\": \"rt1\","
-    "  \"access_token\": \"at1\","
-    "  \"expires_in\": 3600,"
-    "  \"token_type\": \"Bearer\""
-    "}";
-
-const char kGetAccountInfoValidResponseFormat[] =
-    "{\"user_info\":["
-    "  {"
-    "    \"email\": \"%s\""
-    "  }"
-    "]}";
-
 class MockWalletSigninHelperDelegate : public WalletSigninHelperDelegate {
  public:
-  MOCK_METHOD1(OnPassiveSigninSuccess, void(const std::string& username));
-  MOCK_METHOD1(OnUserNameFetchSuccess, void(const std::string& username));
+  MOCK_METHOD0(OnPassiveSigninSuccess, void());
   MOCK_METHOD1(OnPassiveSigninFailure,
-               void(const GoogleServiceAuthError& error));
-  MOCK_METHOD1(OnUserNameFetchFailure,
                void(const GoogleServiceAuthError& error));
   MOCK_METHOD1(OnDidFetchWalletCookieValue,
                void(const std::string& cookie_value));
-};
-
-class WalletSigninHelperForTesting : public WalletSigninHelper {
- public:
-  WalletSigninHelperForTesting(WalletSigninHelperDelegate* delegate,
-                               net::URLRequestContextGetter* getter)
-      : WalletSigninHelper(delegate, getter) {
-  }
-
-  // Bring in the test-only getters.
-  using WalletSigninHelper::GetGetAccountInfoUrlForTesting;
-  using WalletSigninHelper::state;
-
-  // Bring in the State enum.
-  using WalletSigninHelper::State;
-  using WalletSigninHelper::IDLE;
 };
 
 }  // namespace
@@ -82,10 +48,9 @@ class WalletSigninHelperForTesting : public WalletSigninHelper {
 class WalletSigninHelperTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
-    signin_helper_.reset(new WalletSigninHelperForTesting(
+    signin_helper_.reset(new WalletSigninHelper(
         &mock_delegate_,
         browser_context_.GetRequestContext()));
-    EXPECT_EQ(WalletSigninHelperForTesting::IDLE, state());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -110,50 +75,29 @@ class WalletSigninHelperTest : public testing::Test {
     fetcher->delegate()->OnURLFetchComplete(fetcher);
   }
 
-  void MockSuccessfulGetAccountInfoResponse(const std::string& username) {
-    SetUpFetcherResponseAndCompleteRequest(
-        signin_helper_->GetGetAccountInfoUrlForTesting(), net::HTTP_OK,
-        net::ResponseCookies(),
-        base::StringPrintf(
-            kGetAccountInfoValidResponseFormat,
-            username.c_str()));
-  }
-
-  void MockFailedGetAccountInfoResponse404() {
-    SetUpFetcherResponseAndCompleteRequest(
-        signin_helper_->GetGetAccountInfoUrlForTesting(),
-        net::HTTP_NOT_FOUND,
-        net::ResponseCookies(),
-        std::string());
-  }
-
   void MockSuccessfulPassiveSignInResponse() {
-    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
+    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl(0).spec(),
                                            net::HTTP_OK,
                                            net::ResponseCookies(),
                                            "YES");
   }
 
   void MockFailedPassiveSignInResponseNo() {
-    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
+    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl(0).spec(),
                                            net::HTTP_OK,
                                            net::ResponseCookies(),
                                            "NOOOOOOOOOOOOOOO");
   }
 
   void MockFailedPassiveSignInResponse404() {
-    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl().spec(),
+    SetUpFetcherResponseAndCompleteRequest(wallet::GetPassiveAuthUrl(0).spec(),
                                            net::HTTP_NOT_FOUND,
                                            net::ResponseCookies(),
                                            std::string());
   }
 
-  WalletSigninHelperForTesting::State state() const {
-    return signin_helper_->state();
-  }
-
   content::TestBrowserThreadBundle thread_bundle_;
-  scoped_ptr<WalletSigninHelperForTesting> signin_helper_;
+  scoped_ptr<WalletSigninHelper> signin_helper_;
   MockWalletSigninHelperDelegate mock_delegate_;
   TestingProfile browser_context_;
 
@@ -162,41 +106,21 @@ class WalletSigninHelperTest : public testing::Test {
 };
 
 TEST_F(WalletSigninHelperTest, PassiveSigninSuccessful) {
-  EXPECT_CALL(mock_delegate_, OnPassiveSigninSuccess("user@gmail.com"));
-  signin_helper_->StartPassiveSignin();
+  EXPECT_CALL(mock_delegate_, OnPassiveSigninSuccess());
+  signin_helper_->StartPassiveSignin(0);
   MockSuccessfulPassiveSignInResponse();
-  MockSuccessfulGetAccountInfoResponse("user@gmail.com");
 }
 
 TEST_F(WalletSigninHelperTest, PassiveSigninFailedSignin404) {
   EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
-  signin_helper_->StartPassiveSignin();
+  signin_helper_->StartPassiveSignin(0);
   MockFailedPassiveSignInResponse404();
 }
 
 TEST_F(WalletSigninHelperTest, PassiveSigninFailedSigninNo) {
   EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
-  signin_helper_->StartPassiveSignin();
+  signin_helper_->StartPassiveSignin(0);
   MockFailedPassiveSignInResponseNo();
-}
-
-TEST_F(WalletSigninHelperTest, PassiveSigninFailedUserInfo) {
-  EXPECT_CALL(mock_delegate_, OnPassiveSigninFailure(_));
-  signin_helper_->StartPassiveSignin();
-  MockSuccessfulPassiveSignInResponse();
-  MockFailedGetAccountInfoResponse404();
-}
-
-TEST_F(WalletSigninHelperTest, PassiveUserInfoSuccessful) {
-  EXPECT_CALL(mock_delegate_, OnUserNameFetchSuccess("user@gmail.com"));
-  signin_helper_->StartUserNameFetch();
-  MockSuccessfulGetAccountInfoResponse("user@gmail.com");
-}
-
-TEST_F(WalletSigninHelperTest, PassiveUserInfoFailedUserInfo) {
-  EXPECT_CALL(mock_delegate_, OnUserNameFetchFailure(_));
-  signin_helper_->StartUserNameFetch();
-  MockFailedGetAccountInfoResponse404();
 }
 
 TEST_F(WalletSigninHelperTest, GetWalletCookieValueWhenPresent) {
@@ -205,7 +129,7 @@ TEST_F(WalletSigninHelperTest, GetWalletCookieValueWhenPresent) {
   net::CookieOptions httponly_options;
   httponly_options.set_include_httponly();
   scoped_ptr<net::CanonicalCookie> cookie(
-      net::CanonicalCookie::Create(GetPassiveAuthUrl().GetWithEmptyPath(),
+      net::CanonicalCookie::Create(GetPassiveAuthUrl(0).GetWithEmptyPath(),
                                    "gdToken=gdToken; HttpOnly",
                                    base::Time::Now(),
                                    httponly_options));
@@ -225,7 +149,7 @@ TEST_F(WalletSigninHelperTest, GetWalletCookieValueWhenMissing) {
   net::CookieOptions httponly_options;
   httponly_options.set_include_httponly();
   scoped_ptr<net::CanonicalCookie> cookie(
-      net::CanonicalCookie::Create(GetPassiveAuthUrl().GetWithEmptyPath(),
+      net::CanonicalCookie::Create(GetPassiveAuthUrl(0).GetWithEmptyPath(),
                                    "fake_cookie=monkeys; HttpOnly",
                                    base::Time::Now(),
                                    httponly_options));

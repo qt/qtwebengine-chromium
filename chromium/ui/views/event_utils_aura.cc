@@ -10,6 +10,7 @@
 #include "ui/aura/root_window.h"
 #include "ui/events/event.h"
 #include "ui/gfx/point.h"
+#include "ui/views/views_delegate.h"
 
 using aura::client::ScreenPositionClient;
 
@@ -20,10 +21,18 @@ bool RepostLocatedEvent(gfx::NativeWindow window,
   if (!window)
     return false;
 
-  aura::RootWindow* root_window = window->GetRootWindow();
+#if defined(OS_WIN)
+  if (ViewsDelegate::views_delegate &&
+      !ViewsDelegate::views_delegate->IsWindowInMetro(window)) {
+    return RepostLocatedEventWin(
+        window->GetDispatcher()->host()->GetAcceleratedWidget(), event);
+  }
+#endif
+  aura::Window* root_window = window->GetRootWindow();
 
   gfx::Point root_loc(event.location());
-  ScreenPositionClient* spc = GetScreenPositionClient(root_window);
+  ScreenPositionClient* spc =
+      aura::client::GetScreenPositionClient(root_window);
   if (!spc)
     return false;
 
@@ -44,7 +53,7 @@ bool RepostLocatedEvent(gfx::NativeWindow window,
   relocated->set_location(root_loc);
   relocated->set_root_location(root_loc);
 
-  root_window->RepostEvent(*relocated);
+  root_window->GetDispatcher()->RepostEvent(*relocated);
   return true;
 }
 

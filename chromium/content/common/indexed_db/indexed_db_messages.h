@@ -19,12 +19,11 @@
 
 // Argument structures used in messages
 
-IPC_ENUM_TRAITS(WebKit::WebIDBCursor::Direction)
-IPC_ENUM_TRAITS(WebKit::WebIDBDatabase::PutMode)
-IPC_ENUM_TRAITS(WebKit::WebIDBDatabase::TaskType)
+IPC_ENUM_TRAITS(blink::WebIDBCursor::Direction)
+IPC_ENUM_TRAITS(blink::WebIDBDatabase::PutMode)
+IPC_ENUM_TRAITS(blink::WebIDBDatabase::TaskType)
 
-IPC_ENUM_TRAITS_MAX_VALUE(WebKit::WebIDBCallbacks::DataLoss,
-                          WebKit::WebIDBCallbacks::DataLossTotal)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDataLoss, blink::WebIDBDataLossTotal)
 
 // Used to enumerate indexed databases.
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryGetDatabaseNames_Params)
@@ -46,7 +45,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryOpen_Params)
   // The string id of the origin doing the initiating.
   IPC_STRUCT_MEMBER(std::string, database_identifier)
   // The name of the database.
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
   // The transaction id used if a database upgrade is needed.
   IPC_STRUCT_MEMBER(int64, transaction_id)
   // The requested version of the database.
@@ -61,7 +60,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryDeleteDatabase_Params)
   // The string id of the origin doing the initiating.
   IPC_STRUCT_MEMBER(std::string, database_identifier)
   // The name of the database.
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateTransaction_Params)
@@ -87,7 +86,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateObjectStore_Params)
   // The storage id of the object store.
   IPC_STRUCT_MEMBER(int64, object_store_id)
   // The name of the object store.
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
   // The keyPath of the object store.
   IPC_STRUCT_MEMBER(content::IndexedDBKeyPath, key_path)
   // Whether the object store created should have a key generator.
@@ -130,7 +129,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabasePut_Params)
   // The key to set it on (may not be "valid"/set in some cases).
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   // Whether this is an add or a put.
-  IPC_STRUCT_MEMBER(WebKit::WebIDBDatabase::PutMode, put_mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::PutMode, put_mode)
   // The names of the indexes used below.
   IPC_STRUCT_MEMBER(std::vector<int64>, index_ids)
   // The keys for each index, such that each inner vector corresponds
@@ -159,7 +158,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseOpenCursor_Params)
   // If this is just retrieving the key
   IPC_STRUCT_MEMBER(bool, key_only)
   // The priority of this cursor.
-  IPC_STRUCT_MEMBER(WebKit::WebIDBDatabase::TaskType, task_type)
+  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TaskType, task_type)
 IPC_STRUCT_END()
 
 // Used to open both cursors and object cursors in IndexedDB.
@@ -220,7 +219,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateIndex_Params)
   // The storage id of the index.
   IPC_STRUCT_MEMBER(int64, index_id)
   // The name of the index.
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
   // The keyPath of the index.
   IPC_STRUCT_MEMBER(content::IndexedDBKeyPath, key_path)
   // Whether the index created has unique keys.
@@ -258,7 +257,7 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBIndexMetadata)
   IPC_STRUCT_MEMBER(int64, id)
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
   IPC_STRUCT_MEMBER(content::IndexedDBKeyPath, keyPath)
   IPC_STRUCT_MEMBER(bool, unique)
   IPC_STRUCT_MEMBER(bool, multiEntry)
@@ -266,7 +265,7 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBObjectStoreMetadata)
   IPC_STRUCT_MEMBER(int64, id)
-  IPC_STRUCT_MEMBER(string16, name)
+  IPC_STRUCT_MEMBER(base::string16, name)
   IPC_STRUCT_MEMBER(content::IndexedDBKeyPath, keyPath)
   IPC_STRUCT_MEMBER(bool, autoIncrement)
   IPC_STRUCT_MEMBER(int64, max_index_id)
@@ -275,8 +274,8 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBDatabaseMetadata)
   IPC_STRUCT_MEMBER(int64, id)
-  IPC_STRUCT_MEMBER(string16, name)
-  IPC_STRUCT_MEMBER(string16, version)
+  IPC_STRUCT_MEMBER(base::string16, name)
+  IPC_STRUCT_MEMBER(base::string16, version)
   IPC_STRUCT_MEMBER(int64, int_version)
   IPC_STRUCT_MEMBER(int64, max_object_store_id)
   IPC_STRUCT_MEMBER(std::vector<IndexedDBObjectStoreMetadata>, object_stores)
@@ -288,7 +287,8 @@ IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksUpgradeNeeded_Params)
   IPC_STRUCT_MEMBER(int32, ipc_database_callbacks_id)
   IPC_STRUCT_MEMBER(int32, ipc_database_id)
   IPC_STRUCT_MEMBER(int64, old_version)
-  IPC_STRUCT_MEMBER(WebKit::WebIDBCallbacks::DataLoss, data_loss)
+  IPC_STRUCT_MEMBER(blink::WebIDBDataLoss, data_loss)
+  IPC_STRUCT_MEMBER(std::string, data_loss_message)
   IPC_STRUCT_MEMBER(IndexedDBDatabaseMetadata, idb_metadata)
 IPC_STRUCT_END()
 
@@ -341,12 +341,12 @@ IPC_MESSAGE_CONTROL2(IndexedDBMsg_CallbacksSuccessUndefined,
 IPC_MESSAGE_CONTROL3(IndexedDBMsg_CallbacksSuccessStringList,
                      int32 /* ipc_thread_id */,
                      int32 /* ipc_callbacks_id */,
-                     std::vector<string16> /* dom_string_list */)
+                     std::vector<base::string16> /* dom_string_list */)
 IPC_MESSAGE_CONTROL4(IndexedDBMsg_CallbacksError,
                      int32 /* ipc_thread_id */,
                      int32 /* ipc_callbacks_id */,
                      int /* code */,
-                     string16 /* message */)
+                     base::string16 /* message */)
 IPC_MESSAGE_CONTROL2(IndexedDBMsg_CallbacksBlocked,
                      int32 /* ipc_thread_id */,
                      int32 /* ipc_callbacks_id */)
@@ -371,7 +371,7 @@ IPC_MESSAGE_CONTROL5(IndexedDBMsg_DatabaseCallbacksAbort,
                      int32, /* ipc_database_callbacks_id */
                      int64, /* transaction_id */
                      int, /* code */
-                     string16) /* message */
+                     base::string16) /* message */
 IPC_MESSAGE_CONTROL3(IndexedDBMsg_DatabaseCallbacksComplete,
                      int32, /* ipc_thread_id */
                      int32, /* ipc_database_callbacks_id */
@@ -387,11 +387,12 @@ IPC_MESSAGE_CONTROL4(IndexedDBHostMsg_CursorAdvance,
                      unsigned long) /* count */
 
 // WebIDBCursor::continue() message.
-IPC_MESSAGE_CONTROL4(IndexedDBHostMsg_CursorContinue,
+IPC_MESSAGE_CONTROL5(IndexedDBHostMsg_CursorContinue,
                      int32, /* ipc_cursor_id */
                      int32, /* ipc_thread_id */
                      int32, /* ipc_callbacks_id */
-                     content::IndexedDBKey) /* key */
+                     content::IndexedDBKey, /* key */
+                     content::IndexedDBKey) /* primary_key */
 
 // WebIDBCursor::prefetchContinue() message.
 IPC_MESSAGE_CONTROL4(IndexedDBHostMsg_CursorPrefetch,

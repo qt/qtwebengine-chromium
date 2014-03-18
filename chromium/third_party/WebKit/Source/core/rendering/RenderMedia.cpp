@@ -28,6 +28,7 @@
 #include "core/rendering/RenderMedia.h"
 
 #include "core/html/HTMLMediaElement.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderView.h"
 
@@ -37,13 +38,6 @@ RenderMedia::RenderMedia(HTMLMediaElement* video)
     : RenderImage(video)
 {
     setImageResource(RenderImageResource::create());
-}
-
-RenderMedia::RenderMedia(HTMLMediaElement* video, const IntSize& intrinsicSize)
-    : RenderImage(video)
-{
-    setImageResource(RenderImageResource::create());
-    setIntrinsicSize(intrinsicSize);
 }
 
 RenderMedia::~RenderMedia()
@@ -57,6 +51,7 @@ HTMLMediaElement* RenderMedia::mediaElement() const
 
 void RenderMedia::layout()
 {
+    LayoutRectRecorder recorder(*this);
     LayoutSize oldSize = contentBoxRect().size();
 
     RenderImage::layout();

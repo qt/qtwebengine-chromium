@@ -30,11 +30,11 @@
 #include "SVGNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSParser.h"
-#include "core/page/UseCounter.h"
-#include "core/platform/FloatConversion.h"
+#include "core/frame/UseCounter.h"
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGParserUtilities.h"
+#include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -60,7 +60,7 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document&
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGAnimationElement();
 
-    UseCounter::count(&document, UseCounter::SVGAnimationElement);
+    UseCounter::count(document, UseCounter::SVGAnimationElement);
 }
 
 static void parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)

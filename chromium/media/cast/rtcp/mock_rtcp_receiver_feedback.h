@@ -15,6 +15,9 @@ namespace cast {
 
 class MockRtcpReceiverFeedback : public RtcpReceiverFeedback {
  public:
+  MockRtcpReceiverFeedback();
+  virtual ~MockRtcpReceiverFeedback();
+
   MOCK_METHOD1(OnReceivedSenderReport,
                void(const RtcpSenderInfo& remote_sender_info));
 
@@ -22,10 +25,18 @@ class MockRtcpReceiverFeedback : public RtcpReceiverFeedback {
                void(const RtcpReceiverReferenceTimeReport& remote_time_report));
 
   MOCK_METHOD0(OnReceivedSendReportRequest, void());
+
+  MOCK_METHOD1(OnReceivedReceiverLog,
+               void(const RtcpReceiverLogMessage& receiver_log));
+  MOCK_METHOD1(OnReceivedSenderLog,
+               void(const RtcpSenderLogMessage& sender_log));
 };
 
 class MockRtcpRttFeedback : public RtcpRttFeedback {
  public:
+  MockRtcpRttFeedback();
+  virtual ~MockRtcpRttFeedback();
+
   MOCK_METHOD3(OnReceivedDelaySinceLastReport,
                void(uint32 media_ssrc,
                     uint32 last_report,

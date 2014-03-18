@@ -38,14 +38,14 @@ namespace WebCore {
 
 class HTMLShadowElement FINAL : public InsertionPoint {
 public:
-    static PassRefPtr<HTMLShadowElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLShadowElement> create(Document&);
 
     virtual ~HTMLShadowElement();
 
     ShadowRoot* olderShadowRoot();
 
 private:
-    HTMLShadowElement(const QualifiedName&, Document&);
+    explicit HTMLShadowElement(Document&);
     virtual InsertionNotificationRequest insertedInto(ContainerNode* insertionPoint) OVERRIDE;
 };
 
@@ -55,22 +55,7 @@ inline bool isHTMLShadowElement(const Node* node)
     return node->hasTagName(HTMLNames::shadowTag);
 }
 
-inline HTMLShadowElement* toHTMLShadowElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLShadowElement(node));
-    return static_cast<HTMLShadowElement*>(node);
-}
-
-inline const HTMLShadowElement* toHTMLShadowElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLShadowElement(node));
-    return static_cast<const HTMLShadowElement*>(node);
-}
-
-inline bool isActiveShadowInsertionPoint(const Node* node)
-{
-    return isHTMLShadowElement(node) && toHTMLShadowElement(node)->isActive();
-}
+DEFINE_NODE_TYPE_CASTS(HTMLShadowElement, hasTagName(HTMLNames::shadowTag));
 
 } // namespace WebCore
 

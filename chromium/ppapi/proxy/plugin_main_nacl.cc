@@ -26,7 +26,9 @@
 #include "ppapi/native_client/src/shared/ppapi_proxy/ppruntime.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
+#include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
@@ -91,9 +93,6 @@ class PpapiDispatcher : public ProxyChannel,
   void OnMsgCreateNaClChannel(int renderer_id,
                               const ppapi::PpapiNaClChannelArgs& args,
                               SerializedHandle handle);
-  void OnMsgResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
   void OnPluginDispatcherMessageReceived(const IPC::Message& msg);
 
   std::set<PP_Instance> instances_;
@@ -113,6 +112,8 @@ PpapiDispatcher::PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop)
   // NaCl sandbox.
   InitWithChannel(this, base::kNullProcessId, channel_handle,
                   false);  // Channel is server.
+  channel()->AddFilter(new ppapi::proxy::PluginMessageFilter(
+      NULL, PluginGlobals::Get()->resource_reply_thread_registrar()));
   channel()->AddFilter(
       new tracing::ChildTraceMessageFilter(message_loop_.get()));
 }
@@ -186,7 +187,6 @@ PP_Resource PpapiDispatcher::CreateBrowserFont(
 bool PpapiDispatcher::OnMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(PpapiDispatcher, msg)
     IPC_MESSAGE_HANDLER(PpapiMsg_CreateNaClChannel, OnMsgCreateNaClChannel)
-    IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnMsgResourceReply)
     // All other messages are simply forwarded to a PluginDispatcher.
     IPC_MESSAGE_UNHANDLED(OnPluginDispatcherMessageReceived(msg))
   IPC_END_MESSAGE_MAP()
@@ -214,6 +214,14 @@ void PpapiDispatcher::OnMsgCreateNaClChannel(
   // plugin.
   ppapi::proxy::InterfaceList::SetProcessGlobalPermissions(
       args.permissions);
+  ppapi::proxy::InterfaceList::SetSupportsDevChannel(
+      args.supports_dev_channel);
+
+  int32_t error = ::PPP_InitializeModule(
+      0 /* module */,
+      &ppapi::proxy::PluginDispatcher::GetBrowserInterface);
+  if (error)
+    ::exit(error);
 
   PluginDispatcher* dispatcher =
       new PluginDispatcher(::PPP_GetInterface, args.permissions,
@@ -227,13 +235,6 @@ void PpapiDispatcher::OnMsgCreateNaClChannel(
   }
   // From here, the dispatcher will manage its own lifetime according to the
   // lifetime of the attached channel.
-}
-
-void PpapiDispatcher::OnMsgResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  ppapi::proxy::PluginDispatcher::DispatchResourceReply(reply_params,
-                                                        nested_msg);
 }
 
 void PpapiDispatcher::OnPluginDispatcherMessageReceived(
@@ -279,13 +280,6 @@ int PpapiPluginMain() {
   if (!NaClSrpcAcceptClientOnThread(srpc_methods)) {
     return 1;
   }
-
-  int32_t error = ::PPP_InitializeModule(
-      0 /* module */,
-      &ppapi::proxy::PluginDispatcher::GetBrowserInterface);
-  // TODO(dmichael): Handle other error conditions, like failure to connect?
-  if (error)
-    return error;
 
   PpapiDispatcher ppapi_dispatcher(io_thread.message_loop_proxy());
   plugin_globals.set_plugin_proxy_delegate(&ppapi_dispatcher);

@@ -76,7 +76,10 @@ namespace WebCore {
             DirectAdjacent,
             IndirectAdjacent,
             SubSelector,
-            ShadowPseudo
+            ShadowPseudo,
+            // FIXME: rename ChildTree and DescendantTree when the spec for this is written down.
+            ChildTree,
+            DescendantTree
         };
 
         enum PseudoType {
@@ -160,7 +163,6 @@ namespace WebCore {
             PseudoPastCue,
             PseudoSeamlessDocument,
             PseudoDistributed,
-            PseudoPart,
             PseudoUnresolved,
             PseudoContent,
             PseudoHost
@@ -201,10 +203,15 @@ namespace WebCore {
 
         const QualifiedName& tagQName() const;
         const AtomicString& value() const;
+
+        // WARNING: Use of QualifiedName by attribute() is a lie.
+        // attribute() will return a QualifiedName with prefix and namespaceURI
+        // set to starAtom to mean "matches any namespace". Be very careful
+        // how you use the returned QualifiedName.
+        // http://www.w3.org/TR/css3-selectors/#attrnmsp
         const QualifiedName& attribute() const;
         const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
         const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
-        bool isMatchUserAgentOnly() const { return m_hasRareData ? m_data.m_rareData->m_matchUserAgentOnly : false; }
 
         void setValue(const AtomicString&);
         void setAttribute(const QualifiedName&);
@@ -218,10 +225,12 @@ namespace WebCore {
         bool matchesPseudoElement() const;
         bool isUnknownPseudoElement() const;
         bool isCustomPseudoElement() const;
+        bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
         bool isDistributedPseudoElement() const;
         bool isContentPseudoElement() const;
+        bool isHostPseudoClass() const;
 
         Relation relation() const { return static_cast<Relation>(m_relation); }
 
@@ -270,9 +279,8 @@ namespace WebCore {
             int m_a; // Used for :nth-*
             int m_b; // Used for :nth-*
             QualifiedName m_attribute; // used for attribute selector
-            AtomicString m_argument; // Used for :contains, :lang, :nth-* and ::part
+            AtomicString m_argument; // Used for :contains, :lang, :nth-*
             OwnPtr<CSSSelectorList> m_selectorList; // Used for :-webkit-any and :not
-            unsigned m_matchUserAgentOnly : 1; // Used to make ::part with "-webkit"-prefixed part name match only elements in UA shadow roots.
 
         private:
             RareData(PassRefPtr<StringImpl> value);
@@ -308,7 +316,12 @@ inline bool CSSSelector::isUnknownPseudoElement() const
 
 inline bool CSSSelector::isCustomPseudoElement() const
 {
-    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement || m_pseudoType == PseudoPart);
+    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement);
+}
+
+inline bool CSSSelector::isHostPseudoClass() const
+{
+    return m_match == PseudoClass && m_pseudoType == PseudoHost;
 }
 
 inline bool CSSSelector::isSiblingSelector() const

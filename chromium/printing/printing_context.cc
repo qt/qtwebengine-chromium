@@ -9,8 +9,13 @@
 #include "printing/page_setup.h"
 #include "printing/page_size_margins.h"
 #include "printing/print_settings_initializer.h"
+#include "printing/units.h"
 
 namespace printing {
+
+namespace {
+const float kCloudPrintMarginInch = 0.25;
+}
 
 PrintingContext::PrintingContext(const std::string& app_locale)
     : dialog_box_dismissed_(false),
@@ -24,7 +29,7 @@ PrintingContext::~PrintingContext() {
 
 void PrintingContext::set_margin_type(MarginType type) {
   DCHECK(type != CUSTOM_MARGINS);
-  settings_.margin_type = type;
+  settings_.set_margin_type(type);
 }
 
 void PrintingContext::ResetSettings() {
@@ -47,41 +52,45 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
     const PageRanges& ranges) {
   ResetSettings();
 
-  job_settings.GetBoolean(kSettingHeaderFooterEnabled,
-                          &settings_.display_header_footer);
-
-  int margin_type = DEFAULT_MARGINS;
-  if (!job_settings.GetInteger(kSettingMarginsType, &margin_type) ||
-      (margin_type != DEFAULT_MARGINS &&
-       margin_type != NO_MARGINS &&
-       margin_type != CUSTOM_MARGINS &&
-       margin_type != PRINTABLE_AREA_MARGINS)) {
-    margin_type = DEFAULT_MARGINS;
-  }
-  settings_.margin_type = static_cast<MarginType>(margin_type);
-
-  if (margin_type == CUSTOM_MARGINS) {
-    printing::PageSizeMargins page_size_margins;
-    GetCustomMarginsFromJobSettings(job_settings, &page_size_margins);
-
-    PageMargins margins_in_points;
-    margins_in_points.Clear();
-    margins_in_points.top = page_size_margins.margin_top;
-    margins_in_points.bottom = page_size_margins.margin_bottom;
-    margins_in_points.left = page_size_margins.margin_left;
-    margins_in_points.right = page_size_margins.margin_right;
-
-    settings_.SetCustomMargins(margins_in_points);
+  if (!PrintSettingsInitializer::InitSettings(job_settings, ranges,
+                                              &settings_)) {
+    NOTREACHED();
+    return OnError();
   }
 
-  PrintingContext::Result result = UpdatePrinterSettings(job_settings, ranges);
-  PrintSettingsInitializer::InitHeaderFooterStrings(job_settings, &settings_);
+  bool print_to_pdf = false;
+  bool is_cloud_dialog = false;
+  bool print_with_privet = false;
 
-  job_settings.GetBoolean(kSettingShouldPrintBackgrounds,
-                          &settings_.should_print_backgrounds);
-  job_settings.GetBoolean(kSettingShouldPrintSelectionOnly,
-                          &settings_.selection_only);
-  return result;
+  if (!job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
+      !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog) ||
+      !job_settings.GetBoolean(kSettingPrintWithPrivet, &print_with_privet)) {
+    NOTREACHED();
+    return OnError();
+  }
+
+  bool print_to_cloud = job_settings.HasKey(kSettingCloudPrintId);
+  bool open_in_external_preview =
+      job_settings.HasKey(kSettingOpenPDFInPreview);
+
+  if (!open_in_external_preview && (print_to_pdf || print_to_cloud ||
+                                    is_cloud_dialog || print_with_privet)) {
+    settings_.set_dpi(kDefaultPdfDpi);
+    // Cloud print should get size and rect from capabilities received from
+    // server.
+    gfx::Size paper_size(GetPdfPaperSizeDeviceUnits());
+    gfx::Rect paper_rect(0, 0, paper_size.width(), paper_size.height());
+    if (print_to_cloud || print_with_privet) {
+      paper_rect.Inset(
+          kCloudPrintMarginInch * settings_.device_units_per_inch(),
+          kCloudPrintMarginInch * settings_.device_units_per_inch());
+    }
+    DCHECK_EQ(settings_.device_units_per_inch(), kDefaultPdfDpi);
+    settings_.SetPrinterPrintableArea(paper_size, paper_rect, true);
+    return OK;
+  }
+
+  return UpdatePrinterSettings(open_in_external_preview);
 }
 
 }  // namespace printing

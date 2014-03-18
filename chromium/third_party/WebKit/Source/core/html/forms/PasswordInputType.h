@@ -38,14 +38,13 @@ namespace WebCore {
 
 class PasswordInputType FINAL : public BaseTextInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement*);
+    static PassRefPtr<InputType> create(HTMLInputElement&);
 
 private:
-    PasswordInputType(HTMLInputElement* element) : BaseTextInputType(element) { }
-    virtual HTMLElement* passwordGeneratorButtonElement() const OVERRIDE;
+    PasswordInputType(HTMLInputElement& element) : BaseTextInputType(element) { }
     virtual bool needsContainer() const OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
-    virtual void destroyShadowSubtree() OVERRIDE;
+    virtual void countUsage() OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual bool shouldSaveAndRestoreFormControlState() const OVERRIDE;
     virtual FormControlState saveFormControlState() const OVERRIDE;
@@ -59,8 +58,8 @@ private:
     virtual void disableSecureTextInput() OVERRIDE;
 
     bool isPasswordGenerationEnabled() const;
-
-    RefPtr<PasswordGeneratorButtonElement> m_generatorButton;
+    // For testing.
+    bool isPasswordGenerationDecorationEnabled() const;
 };
 
 } // namespace WebCore

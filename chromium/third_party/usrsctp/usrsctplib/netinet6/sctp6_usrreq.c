@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 254854 2013-08-25 12:44:03Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 257555 2013-11-02 20:12:19Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -1178,14 +1178,16 @@ sctp6_connect(struct socket *so, struct mbuf *nam, struct proc *p)
 	uint32_t vrf_id;
 	int error = 0;
 	struct sctp_inpcb *inp;
-	struct in6pcb *inp6;
 	struct sctp_tcb *stcb;
 #ifdef INET
+	struct in6pcb *inp6;
 	struct sockaddr_in6 *sin6;
 	struct sockaddr_storage ss;
 #endif
 
+#ifdef INET
 	inp6 = (struct in6pcb *)so->so_pcb;
+#endif
 	inp = (struct sctp_inpcb *)so->so_pcb;
 	if (inp == NULL) {
 		SCTP_LTRACE_ERR_RET(inp, NULL, NULL, SCTP_FROM_SCTP6_USRREQ, ECONNRESET);

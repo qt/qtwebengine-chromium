@@ -6,14 +6,15 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/stl_util.h"
 #include "net/base/net_errors.h"
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/crypto/null_encrypter.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
-#include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -51,6 +52,7 @@ const bool kEntropyFlag = true;
 const QuicPacketEntropyHash kTestEntropyHash = 76;
 
 const int kDefaultRetransmissionTimeMs = 500;
+const int kMinRetransmissionTimeMs = 200;
 
 // Used by TestConnection::SendStreamData3.
 const QuicStreamId kStreamId3 = 3;
@@ -236,21 +238,16 @@ class TestConnectionHelper : public QuicConnectionHelperInterface {
 
     virtual void SetImpl() OVERRIDE {}
     virtual void CancelImpl() OVERRIDE {}
+    using QuicAlarm::Fire;
   };
 
   TestConnectionHelper(MockClock* clock, MockRandom* random_generator)
       : clock_(clock),
-        random_generator_(random_generator),
-        blocked_(false),
-        is_server_(true),
-        use_tagging_decrypter_(false),
-        packets_write_attempts_(0) {
+        random_generator_(random_generator) {
     clock_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
   }
 
   // QuicConnectionHelperInterface
-  virtual void SetConnection(QuicConnection* connection) OVERRIDE {}
-
   virtual const QuicClock* GetClock() const OVERRIDE {
     return clock_;
   }
@@ -259,68 +256,80 @@ class TestConnectionHelper : public QuicConnectionHelperInterface {
     return random_generator_;
   }
 
-  virtual int WritePacketToWire(const QuicEncryptedPacket& packet,
-                                int* error) OVERRIDE {
-    ++packets_write_attempts_;
-
-    if (packet.length() >= sizeof(final_bytes_of_last_packet_)) {
-      memcpy(&final_bytes_of_last_packet_, packet.data() + packet.length() - 4,
-             sizeof(final_bytes_of_last_packet_));
-    }
-
-    QuicFramer framer(QuicVersionMax(), QuicTime::Zero(), is_server_);
-    if (use_tagging_decrypter_) {
-      framer.SetDecrypter(new TaggingDecrypter);
-    }
-    FramerVisitorCapturingFrames visitor;
-    framer.set_visitor(&visitor);
-    EXPECT_TRUE(framer.ProcessPacket(packet));
-    header_ = *visitor.header();
-    frame_count_ = visitor.frame_count();
-    if (visitor.ack()) {
-      ack_.reset(new QuicAckFrame(*visitor.ack()));
-    }
-    if (visitor.feedback()) {
-      feedback_.reset(new QuicCongestionFeedbackFrame(*visitor.feedback()));
-    }
-    if (visitor.stream_frames() != NULL && !visitor.stream_frames()->empty()) {
-      stream_frames_ = *visitor.stream_frames();
-    }
-    if (visitor.version_negotiation_packet() != NULL) {
-      version_negotiation_packet_.reset(new QuicVersionNegotiationPacket(
-          *visitor.version_negotiation_packet()));
-    }
-    if (blocked_) {
-      *error = ERR_IO_PENDING;
-      return -1;
-    }
-    *error = 0;
-    last_packet_size_ = packet.length();
-    return last_packet_size_;
-  }
-
-  virtual bool IsWriteBlockedDataBuffered() OVERRIDE {
-    return false;
-  }
-
-  virtual bool IsWriteBlocked(int error) OVERRIDE {
-    return error == ERR_IO_PENDING;
-  }
-
   virtual QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) OVERRIDE {
     return new TestAlarm(delegate);
   }
 
-  QuicPacketHeader* header() { return &header_; }
+ private:
+  MockClock* clock_;
+  MockRandom* random_generator_;
 
-  size_t frame_count() const { return frame_count_; }
+  DISALLOW_COPY_AND_ASSIGN(TestConnectionHelper);
+};
 
-  QuicAckFrame* ack() { return ack_.get(); }
+class TestPacketWriter : public QuicPacketWriter {
+ public:
+  TestPacketWriter()
+      : last_packet_size_(0),
+        blocked_(false),
+        is_write_blocked_data_buffered_(false),
+        is_server_(true),
+        final_bytes_of_last_packet_(0),
+        final_bytes_of_previous_packet_(0),
+        use_tagging_decrypter_(false),
+        packets_write_attempts_(0) {
+  }
 
-  QuicCongestionFeedbackFrame* feedback() { return feedback_.get(); }
+  // QuicPacketWriter
+  virtual WriteResult WritePacket(
+      const char* buffer, size_t buf_len,
+      const IPAddressNumber& self_address,
+      const IPEndPoint& peer_address,
+      QuicBlockedWriterInterface* blocked_writer) OVERRIDE {
+    QuicEncryptedPacket packet(buffer, buf_len);
+    ++packets_write_attempts_;
+
+    if (packet.length() >= sizeof(final_bytes_of_last_packet_)) {
+      final_bytes_of_previous_packet_ = final_bytes_of_last_packet_;
+      memcpy(&final_bytes_of_last_packet_, packet.data() + packet.length() - 4,
+             sizeof(final_bytes_of_last_packet_));
+    }
+
+    QuicFramer framer(QuicSupportedVersions(), QuicTime::Zero(), !is_server_);
+    if (use_tagging_decrypter_) {
+      framer.SetDecrypter(new TaggingDecrypter);
+    }
+    visitor_.Reset();
+    framer.set_visitor(&visitor_);
+    EXPECT_TRUE(framer.ProcessPacket(packet));
+    if (blocked_) {
+      return WriteResult(WRITE_STATUS_BLOCKED, -1);
+    }
+    last_packet_size_ = packet.length();
+    return WriteResult(WRITE_STATUS_OK, last_packet_size_);
+  }
+
+  virtual bool IsWriteBlockedDataBuffered() const OVERRIDE {
+    return is_write_blocked_data_buffered_;
+  }
+
+  // Resets the visitor's state by clearing out the headers and frames.
+  void Reset() {
+    visitor_.Reset();
+  }
+
+  QuicPacketHeader* header() { return visitor_.header(); }
+
+  size_t frame_count() const { return visitor_.frame_count(); }
+
+  QuicAckFrame* ack() { return visitor_.ack(); }
+
+  QuicCongestionFeedbackFrame* feedback() { return visitor_.feedback(); }
+
+  QuicConnectionCloseFrame* close() { return visitor_.close(); }
 
   const vector<QuicStreamFrame>* stream_frames() const {
-    return &stream_frames_;
+    return visitor_.stream_frames();
   }
 
   size_t last_packet_size() {
@@ -328,10 +337,14 @@ class TestConnectionHelper : public QuicConnectionHelperInterface {
   }
 
   QuicVersionNegotiationPacket* version_negotiation_packet() {
-    return version_negotiation_packet_.get();
+    return visitor_.version_negotiation_packet();
   }
 
   void set_blocked(bool blocked) { blocked_ = blocked; }
+
+  void set_is_write_blocked_data_buffered(bool buffered) {
+    is_write_blocked_data_buffered_ = buffered;
+  }
 
   void set_is_server(bool is_server) { is_server_ = is_server; }
 
@@ -341,6 +354,11 @@ class TestConnectionHelper : public QuicConnectionHelperInterface {
   // a given packet.
   uint32 final_bytes_of_last_packet() { return final_bytes_of_last_packet_; }
 
+  // Returns the final bytes of the second to last packet.
+  uint32 final_bytes_of_previous_packet() {
+    return final_bytes_of_previous_packet_;
+  }
+
   void use_tagging_decrypter() {
     use_tagging_decrypter_ = true;
   }
@@ -348,22 +366,17 @@ class TestConnectionHelper : public QuicConnectionHelperInterface {
   uint32 packets_write_attempts() { return packets_write_attempts_; }
 
  private:
-  MockClock* clock_;
-  MockRandom* random_generator_;
-  QuicPacketHeader header_;
-  size_t frame_count_;
-  scoped_ptr<QuicAckFrame> ack_;
-  scoped_ptr<QuicCongestionFeedbackFrame> feedback_;
-  vector<QuicStreamFrame> stream_frames_;
-  scoped_ptr<QuicVersionNegotiationPacket> version_negotiation_packet_;
+  FramerVisitorCapturingFrames visitor_;
   size_t last_packet_size_;
   bool blocked_;
+  bool is_write_blocked_data_buffered_;
   bool is_server_;
   uint32 final_bytes_of_last_packet_;
+  uint32 final_bytes_of_previous_packet_;
   bool use_tagging_decrypter_;
   uint32 packets_write_attempts_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestConnectionHelper);
+  DISALLOW_COPY_AND_ASSIGN(TestPacketWriter);
 };
 
 class TestConnection : public QuicConnection {
@@ -371,10 +384,13 @@ class TestConnection : public QuicConnection {
   TestConnection(QuicGuid guid,
                  IPEndPoint address,
                  TestConnectionHelper* helper,
+                 TestPacketWriter* writer,
                  bool is_server)
-      : QuicConnection(guid, address, helper, is_server, QuicVersionMax()),
-        helper_(helper) {
-    helper_->set_is_server(!is_server);
+      : QuicConnection(guid, address, helper, writer, is_server,
+                       QuicSupportedVersions()),
+        helper_(helper),
+        writer_(writer) {
+    writer_->set_is_server(is_server);
   }
 
   void SendAck() {
@@ -389,46 +405,38 @@ class TestConnection : public QuicConnection {
     QuicConnectionPeer::SetSendAlgorithm(this, send_algorithm);
   }
 
-  bool SendOrQueuePacket(EncryptionLevel level,
-                         QuicPacketSequenceNumber sequence_number,
-                         QuicPacket* packet,
-                         QuicPacketEntropyHash entropy_hash,
-                         HasRetransmittableData retransmittable) {
-    return SendOrQueuePacket(level,
-                             sequence_number,
-                             packet,
-                             entropy_hash,
-                             retransmittable,
-                             NO_FORCE);
+  void SendPacket(EncryptionLevel level,
+                  QuicPacketSequenceNumber sequence_number,
+                  QuicPacket* packet,
+                  QuicPacketEntropyHash entropy_hash,
+                  HasRetransmittableData retransmittable) {
+    RetransmittableFrames* retransmittable_frames =
+        retransmittable == HAS_RETRANSMITTABLE_DATA ?
+            new RetransmittableFrames() : NULL;
+    OnSerializedPacket(
+        SerializedPacket(sequence_number, PACKET_6BYTE_SEQUENCE_NUMBER,
+                         packet, entropy_hash, retransmittable_frames));
   }
 
-  QuicConsumedData SendStreamData(QuicStreamId id,
-                                  StringPiece data,
-                                  QuicStreamOffset offset,
-                                  bool fin) {
-    struct iovec iov = {const_cast<char*>(data.data()),
-                        static_cast<size_t>(data.size())};
-    return SendvStreamData(id, &iov, 1, offset, fin);
-  }
-
-  QuicConsumedData SendStreamDataAndNotifyWhenAcked(
+  QuicConsumedData SendStreamDataWithString(
       QuicStreamId id,
       StringPiece data,
       QuicStreamOffset offset,
       bool fin,
       QuicAckNotifier::DelegateInterface* delegate) {
-    struct iovec iov = {const_cast<char*>(data.data()),
-                        static_cast<size_t>(data.size())};
-    return SendvStreamDataAndNotifyWhenAcked(id, &iov, 1, offset, fin,
-                                             delegate);
+    IOVector data_iov;
+    if (!data.empty()) {
+      data_iov.Append(const_cast<char*>(data.data()), data.size());
+    }
+    return QuicConnection::SendStreamData(id, data_iov, offset, fin, delegate);
   }
 
   QuicConsumedData SendStreamData3() {
-    return SendStreamData(kStreamId3, "food", 0, !kFin);
+    return SendStreamDataWithString(kStreamId3, "food", 0, !kFin, NULL);
   }
 
   QuicConsumedData SendStreamData5() {
-    return SendStreamData(kStreamId5, "food2", 0, !kFin);
+    return SendStreamDataWithString(kStreamId5, "food2", 0, !kFin, NULL);
   }
 
   // The crypto stream has special semantics so that it is not blocked by a
@@ -439,7 +447,7 @@ class TestConnection : public QuicConnection {
   QuicConsumedData SendCryptoStreamData() {
     this->Flush();
     QuicConsumedData consumed =
-        SendStreamData(kCryptoStreamId, "chlo", 0, !kFin);
+        SendStreamDataWithString(kCryptoStreamId, "chlo", 0, !kFin, NULL);
     this->Flush();
     return consumed;
   }
@@ -453,51 +461,62 @@ class TestConnection : public QuicConnection {
   }
 
   void set_is_server(bool is_server) {
-    helper_->set_is_server(!is_server);
+    writer_->set_is_server(is_server);
     QuicPacketCreatorPeer::SetIsServer(
         QuicConnectionPeer::GetPacketCreator(this), is_server);
     QuicConnectionPeer::SetIsServer(this, is_server);
   }
 
-  QuicAlarm* GetAckAlarm() {
-    return QuicConnectionPeer::GetAckAlarm(this);
+  TestConnectionHelper::TestAlarm* GetAckAlarm() {
+    return reinterpret_cast<TestConnectionHelper::TestAlarm*>(
+        QuicConnectionPeer::GetAckAlarm(this));
   }
 
-  QuicAlarm* GetRetransmissionAlarm() {
-    return QuicConnectionPeer::GetRetransmissionAlarm(this);
+  TestConnectionHelper::TestAlarm* GetRetransmissionAlarm() {
+    return reinterpret_cast<TestConnectionHelper::TestAlarm*>(
+        QuicConnectionPeer::GetRetransmissionAlarm(this));
   }
 
-  QuicAlarm* GetSendAlarm() {
-    return QuicConnectionPeer::GetSendAlarm(this);
+  TestConnectionHelper::TestAlarm* GetSendAlarm() {
+    return reinterpret_cast<TestConnectionHelper::TestAlarm*>(
+        QuicConnectionPeer::GetSendAlarm(this));
   }
 
-  QuicAlarm* GetTimeoutAlarm() {
-    return QuicConnectionPeer::GetTimeoutAlarm(this);
+  TestConnectionHelper::TestAlarm* GetResumeWritesAlarm() {
+    return reinterpret_cast<TestConnectionHelper::TestAlarm*>(
+        QuicConnectionPeer::GetResumeWritesAlarm(this));
   }
 
-  using QuicConnection::SendOrQueuePacket;
+  TestConnectionHelper::TestAlarm* GetTimeoutAlarm() {
+    return reinterpret_cast<TestConnectionHelper::TestAlarm*>(
+        QuicConnectionPeer::GetTimeoutAlarm(this));
+  }
+
   using QuicConnection::SelectMutualVersion;
 
  private:
   TestConnectionHelper* helper_;
+  TestPacketWriter* writer_;
 
   DISALLOW_COPY_AND_ASSIGN(TestConnection);
 };
 
-class QuicConnectionTest : public ::testing::Test {
+class QuicConnectionTest : public ::testing::TestWithParam<bool> {
  protected:
   QuicConnectionTest()
       : guid_(42),
-        framer_(QuicVersionMax(), QuicTime::Zero(), false),
-        creator_(guid_, &framer_, QuicRandom::GetInstance(), false),
+        framer_(QuicSupportedVersions(), QuicTime::Zero(), false),
+        creator_(guid_, &framer_, &random_generator_, false),
         send_algorithm_(new StrictMock<MockSendAlgorithm>),
         helper_(new TestConnectionHelper(&clock_, &random_generator_)),
-        connection_(guid_, IPEndPoint(), helper_, false),
-        frame1_(1, false, 0, data1),
-        frame2_(1, false, 3, data2),
+        writer_(new TestPacketWriter()),
+        connection_(guid_, IPEndPoint(), helper_.get(), writer_.get(), false),
+        frame1_(1, false, 0, MakeIOVector(data1)),
+        frame2_(1, false, 3, MakeIOVector(data2)),
         accept_packet_(true) {
     connection_.set_visitor(&visitor_);
     connection_.SetSendAlgorithm(send_algorithm_);
+    framer_.set_received_entropy_calculator(&entropy_calculator_);
     // Simplify tests by not sending feedback unless specifically configured.
     SetFeedback(NULL);
     EXPECT_CALL(
@@ -505,23 +524,19 @@ class QuicConnectionTest : public ::testing::Test {
             QuicTime::Delta::Zero()));
     EXPECT_CALL(*receive_algorithm_,
                 RecordIncomingPacket(_, _, _, _)).Times(AnyNumber());
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
+        .Times(AnyNumber());
     EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
         Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillRepeatedly(Return(
         QuicBandwidth::FromKBitsPerSecond(100)));
     EXPECT_CALL(*send_algorithm_, SmoothedRtt()).WillRepeatedly(Return(
         QuicTime::Delta::FromMilliseconds(100)));
-    ON_CALL(*send_algorithm_, SentPacket(_, _, _, _, _))
+    ON_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
         .WillByDefault(Return(true));
-    // TODO(rch): remove this.
-    QuicConnection::g_acks_do_not_instigate_acks = true;
     EXPECT_CALL(visitor_, HasPendingHandshake()).Times(AnyNumber());
-  }
-
-  ~QuicConnectionTest() {
-    // TODO(rch): remove this.
-    QuicConnection::g_acks_do_not_instigate_acks = false;
+    EXPECT_CALL(visitor_, OnCanWrite()).Times(AnyNumber()).WillRepeatedly(
+        Return(true));
   }
 
   QuicAckFrame* outgoing_ack() {
@@ -530,27 +545,35 @@ class QuicConnectionTest : public ::testing::Test {
   }
 
   QuicAckFrame* last_ack() {
-    return helper_->ack();
+    return writer_->ack();
   }
 
   QuicCongestionFeedbackFrame* last_feedback() {
-    return helper_->feedback();
+    return writer_->feedback();
+  }
+
+  QuicConnectionCloseFrame* last_close() {
+    return writer_->close();
   }
 
   QuicPacketHeader* last_header() {
-    return helper_->header();
+    return writer_->header();
   }
 
   size_t last_sent_packet_size() {
-    return helper_->last_packet_size();
+    return writer_->last_packet_size();
   }
 
   uint32 final_bytes_of_last_packet() {
-    return helper_->final_bytes_of_last_packet();
+    return writer_->final_bytes_of_last_packet();
+  }
+
+  uint32 final_bytes_of_previous_packet() {
+    return writer_->final_bytes_of_previous_packet();
   }
 
   void use_tagging_decrypter() {
-    helper_->use_tagging_decrypter();
+    writer_->use_tagging_decrypter();
   }
 
   void ProcessPacket(QuicPacketSequenceNumber number) {
@@ -664,32 +687,32 @@ class QuicConnectionTest : public ::testing::Test {
     return encrypted->length();
   }
 
-  QuicByteCount SendStreamDataToPeer(QuicStreamId id, StringPiece data,
-                                     QuicStreamOffset offset, bool fin,
+  QuicByteCount SendStreamDataToPeer(QuicStreamId id,
+                                     StringPiece data,
+                                     QuicStreamOffset offset,
+                                     bool fin,
                                      QuicPacketSequenceNumber* last_packet) {
     QuicByteCount packet_size;
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _))
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
         .WillOnce(DoAll(SaveArg<2>(&packet_size), Return(true)));
-    connection_.SendStreamData(id, data, offset, fin);
+    connection_.SendStreamDataWithString(id, data, offset, fin, NULL);
     if (last_packet != NULL) {
       *last_packet =
           QuicConnectionPeer::GetPacketCreator(&connection_)->sequence_number();
     }
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
+        .Times(AnyNumber());
     return packet_size;
   }
 
   void SendAckPacketToPeer() {
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
     connection_.SendAck();
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
+        .Times(AnyNumber());
   }
 
-  QuicPacketEntropyHash ProcessAckPacket(QuicAckFrame* frame,
-                                         bool expect_writes) {
-    if (expect_writes) {
-      EXPECT_CALL(visitor_, OnCanWrite()).Times(1).WillOnce(Return(true));
-    }
+  QuicPacketEntropyHash ProcessAckPacket(QuicAckFrame* frame) {
     return ProcessFramePacket(QuicFrame(frame));
   }
 
@@ -735,7 +758,6 @@ class QuicConnectionTest : public ::testing::Test {
 
     QuicConnectionCloseFrame qccf;
     qccf.error_code = QUIC_PEER_GOING_AWAY;
-    qccf.ack_frame = QuicAckFrame(0, QuicTime::Zero(), 1);
 
     QuicFrames frames;
     QuicFrame frame(&qccf);
@@ -755,15 +777,21 @@ class QuicConnectionTest : public ::testing::Test {
     return QuicTime::Delta::FromMilliseconds(kDefaultRetransmissionTimeMs);
   }
 
+  QuicTime::Delta DefaultDelayedAckTime() {
+    return QuicTime::Delta::FromMilliseconds(kMinRetransmissionTimeMs/2);
+  }
+
   QuicGuid guid_;
   QuicFramer framer_;
   QuicPacketCreator creator_;
+  MockEntropyCalculator entropy_calculator_;
 
   MockSendAlgorithm* send_algorithm_;
   TestReceiveAlgorithm* receive_algorithm_;
   MockClock clock_;
   MockRandom random_generator_;
-  TestConnectionHelper* helper_;
+  scoped_ptr<TestConnectionHelper> helper_;
+  scoped_ptr<TestPacketWriter> writer_;
   TestConnection connection_;
   StrictMock<MockConnectionVisitor> visitor_;
 
@@ -865,7 +893,7 @@ TEST_F(QuicConnectionTest, PacketsOutOfOrderWithAdditionsAndLeastAwaiting) {
   // retransmitted, and will remove it from the missing list.
   creator_.set_sequence_number(5);
   QuicAckFrame frame(0, QuicTime::Zero(), 4);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
 
   // Force an ack to be sent.
   SendAckPacketToPeer();
@@ -875,36 +903,46 @@ TEST_F(QuicConnectionTest, PacketsOutOfOrderWithAdditionsAndLeastAwaiting) {
 TEST_F(QuicConnectionTest, RejectPacketTooFarOut) {
   // Call ProcessDataPacket rather than ProcessPacket, as we should not get a
   // packet call to the visitor.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_PACKET_HEADER, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_PACKET_HEADER, false));
   ProcessDataPacket(6000, 0, !kEntropyFlag);
 }
 
 TEST_F(QuicConnectionTest, TruncatedAck) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(2);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  for (int i = 0; i < 200; ++i) {
+  QuicPacketSequenceNumber num_packets = 256 * 2 + 1;
+  for (QuicPacketSequenceNumber i = 0; i < num_packets; ++i) {
     SendStreamDataToPeer(1, "foo", i * 3, !kFin, NULL);
   }
 
-  QuicAckFrame frame(0, QuicTime::Zero(), 1);
-  frame.received_info.largest_observed = 193;
-  InsertMissingPacketsBetween(&frame.received_info, 1, 193);
-  frame.received_info.entropy_hash =
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 193) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 192);
+  QuicAckFrame frame(num_packets, QuicTime::Zero(), 1);
+  // Create an ack with 256 nacks, none adjacent to one another.
+  for (QuicPacketSequenceNumber i = 1; i <= 256; ++i) {
+    frame.received_info.missing_packets.insert(i * 2);
+  }
+  frame.received_info.entropy_hash = 0;
+  EXPECT_CALL(entropy_calculator_,
+              EntropyHash(511)).WillOnce(testing::Return(0));
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(256);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
+  ProcessAckPacket(&frame);
 
-  ProcessAckPacket(&frame, true);
-
-  EXPECT_TRUE(QuicConnectionPeer::GetReceivedTruncatedAck(&connection_));
+  QuicReceivedPacketManager* received_packet_manager =
+      QuicConnectionPeer::GetReceivedPacketManager(&connection_);
+  // A truncated ack will not have the true largest observed.
+  EXPECT_GT(num_packets,
+            received_packet_manager->peer_largest_observed_packet());
 
   frame.received_info.missing_packets.erase(192);
-  frame.received_info.entropy_hash =
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 193) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 191);
+  frame.received_info.entropy_hash = 2;
 
-  ProcessAckPacket(&frame, true);
-  EXPECT_FALSE(QuicConnectionPeer::GetReceivedTruncatedAck(&connection_));
+  // Removing one missing packet allows us to ack 192 and one more range.
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
+  ProcessAckPacket(&frame);
+  EXPECT_EQ(num_packets,
+            received_packet_manager->peer_largest_observed_packet());
 }
 
 TEST_F(QuicConnectionTest, AckReceiptCausesAckSendBadEntropy) {
@@ -925,40 +963,72 @@ TEST_F(QuicConnectionTest, AckReceiptCausesAckSendBadEntropy) {
   // Skip a packet and then record an ack.
   creator_.set_sequence_number(2);
   QuicAckFrame frame(0, QuicTime::Zero(), 3);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
+}
+
+TEST_F(QuicConnectionTest, OutOfOrderReceiptCausesAckSend) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+
+  ProcessPacket(3);
+  // Should ack immediately since we have missing packets.
+  EXPECT_EQ(1u, writer_->packets_write_attempts());
+
+  ProcessPacket(2);
+  // Should ack immediately since we have missing packets.
+  EXPECT_EQ(2u, writer_->packets_write_attempts());
+
+  ProcessPacket(1);
+  // Should ack immediately, since this fills the last hole.
+  EXPECT_EQ(3u, writer_->packets_write_attempts());
+
+  ProcessPacket(4);
+  // Should not cause an ack.
+  EXPECT_EQ(3u, writer_->packets_write_attempts());
 }
 
 TEST_F(QuicConnectionTest, AckReceiptCausesAckSend) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  QuicPacketSequenceNumber largest_observed;
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
+  QuicPacketSequenceNumber original;
   QuicByteCount packet_size;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _))
-      .WillOnce(DoAll(SaveArg<1>(&largest_observed), SaveArg<2>(&packet_size),
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
+      .WillOnce(DoAll(SaveArg<1>(&original), SaveArg<2>(&packet_size),
                       Return(true)));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(1, _)).Times(1);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
-  QuicAckFrame frame(1, QuicTime::Zero(), largest_observed);
-  frame.received_info.missing_packets.insert(largest_observed);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _)).Times(1);
+  connection_.SendStreamDataWithString(3, "foo", 0, !kFin, NULL);
+  QuicAckFrame frame(original, QuicTime::Zero(), 1);
+  frame.received_info.missing_packets.insert(original);
   frame.received_info.entropy_hash = QuicConnectionPeer::GetSentEntropyHash(
-      &connection_, largest_observed - 1);
-  ProcessAckPacket(&frame, true);
-  ProcessAckPacket(&frame, true);
-  // Third nack should retransmit the largest observed packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, packet_size - kQuicVersionSize,
-                                           IS_RETRANSMISSION, _));
-  ProcessAckPacket(&frame, true);
+      &connection_, original - 1);
+  // First nack triggers early retransmit.
+  QuicPacketSequenceNumber retransmission;
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, _, packet_size - kQuicVersionSize,
+                           NACK_RETRANSMISSION, _))
+      .WillOnce(DoAll(SaveArg<1>(&retransmission), Return(true)));
 
+  ProcessAckPacket(&frame);
+
+  QuicAckFrame frame2(retransmission, QuicTime::Zero(), 1);
+  frame2.received_info.missing_packets.insert(original);
+  frame2.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, retransmission) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, original);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _));
+
+  ProcessAckPacket(&frame2);
   // Now if the peer sends an ack which still reports the retransmitted packet
   // as missing, then that will count as a packet which instigates an ack.
-  ProcessAckPacket(&frame, true);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _));
-  ProcessAckPacket(&frame, true);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
+  ProcessAckPacket(&frame2);
+  ProcessAckPacket(&frame2);
 
-  // But an ack with no new missing packest will not send an ack.
-  frame.received_info.missing_packets.clear();
-  ProcessAckPacket(&frame, true);
-  ProcessAckPacket(&frame, true);
+  // But an ack with no missing packets will not send an ack.
+  frame2.received_info.missing_packets.clear();
+  frame2.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, retransmission);
+  ProcessAckPacket(&frame2);
+  ProcessAckPacket(&frame2);
 }
 
 TEST_F(QuicConnectionTest, LeastUnackedLower) {
@@ -968,24 +1038,25 @@ TEST_F(QuicConnectionTest, LeastUnackedLower) {
   SendStreamDataToPeer(1, "bar", 3, !kFin, NULL);
   SendStreamDataToPeer(1, "eep", 6, !kFin, NULL);
 
-  // Start out saying the least unacked is 2
+  // Start out saying the least unacked is 2.
   creator_.set_sequence_number(5);
   QuicAckFrame frame(0, QuicTime::Zero(), 2);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
 
   // Change it to 1, but lower the sequence number to fake out-of-order packets.
   // This should be fine.
   creator_.set_sequence_number(1);
   QuicAckFrame frame2(0, QuicTime::Zero(), 1);
   // The scheduler will not process out of order acks.
-  ProcessAckPacket(&frame2, false);
+  EXPECT_CALL(visitor_, OnCanWrite()).Times(0);
+  ProcessAckPacket(&frame2);
 
   // Now claim it's one, but set the ordering so it was sent "after" the first
   // one.  This should cause a connection error.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_ACK_DATA, false));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_ACK_DATA, false));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
   creator_.set_sequence_number(7);
-  ProcessAckPacket(&frame2, false);
+  ProcessAckPacket(&frame2);
 }
 
 TEST_F(QuicConnectionTest, LargestObservedLower) {
@@ -994,52 +1065,29 @@ TEST_F(QuicConnectionTest, LargestObservedLower) {
   SendStreamDataToPeer(1, "foo", 0, !kFin, NULL);
   SendStreamDataToPeer(1, "bar", 3, !kFin, NULL);
   SendStreamDataToPeer(1, "eep", 6, !kFin, NULL);
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(2);
 
   // Start out saying the largest observed is 2.
   QuicAckFrame frame(2, QuicTime::Zero(), 0);
   frame.received_info.entropy_hash = QuicConnectionPeer::GetSentEntropyHash(
       &connection_, 2);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
 
   // Now change it to 1, and it should cause a connection error.
   QuicAckFrame frame2(1, QuicTime::Zero(), 0);
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_ACK_DATA, false));
-  ProcessAckPacket(&frame2, false);
-}
-
-TEST_F(QuicConnectionTest, LeastUnackedGreaterThanPacketSequenceNumber) {
-  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_ACK_DATA, false));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  // Create an ack with least_unacked is 2 in packet number 1.
-  creator_.set_sequence_number(0);
-  QuicAckFrame frame(0, QuicTime::Zero(), 2);
-  ProcessAckPacket(&frame, false);
-}
-
-TEST_F(QuicConnectionTest,
-       NackSequenceNumberGreaterThanLargestReceived) {
-  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-
-  SendStreamDataToPeer(1, "foo", 0, !kFin, NULL);
-  SendStreamDataToPeer(1, "bar", 3, !kFin, NULL);
-  SendStreamDataToPeer(1, "eep", 6, !kFin, NULL);
-
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_ACK_DATA, false));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  QuicAckFrame frame(0, QuicTime::Zero(), 1);
-  frame.received_info.missing_packets.insert(3);
-  ProcessAckPacket(&frame, false);
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_ACK_DATA, false));
+  EXPECT_CALL(visitor_, OnCanWrite()).Times(0);
+  ProcessAckPacket(&frame2);
 }
 
 TEST_F(QuicConnectionTest, AckUnsentData) {
   // Ack a packet which has not been sent.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_ACK_DATA, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_ACK_DATA, false));
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
   QuicAckFrame frame(1, QuicTime::Zero(), 0);
-  ProcessAckPacket(&frame, false);
+  EXPECT_CALL(visitor_, OnCanWrite()).Times(0);
+  ProcessAckPacket(&frame);
 }
 
 TEST_F(QuicConnectionTest, AckAll) {
@@ -1048,7 +1096,7 @@ TEST_F(QuicConnectionTest, AckAll) {
 
   creator_.set_sequence_number(1);
   QuicAckFrame frame1(0, QuicTime::Zero(), 1);
-  ProcessAckPacket(&frame1, true);
+  ProcessAckPacket(&frame1);
 }
 
 TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsBandwidth) {
@@ -1066,7 +1114,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsBandwidth) {
   EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillOnce(Return(
        QuicBandwidth::FromKBitsPerSecond(1000 * 256)));
 
-  SendStreamDataToPeer(1u, "bar", 3, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "bar", 3, !kFin, &last_packet);
   EXPECT_EQ(2u, last_packet);
   EXPECT_EQ(PACKET_2BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
@@ -1088,7 +1136,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsBandwidth) {
   EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillOnce(Return(
        QuicBandwidth::FromKBitsPerSecond(1000ll * 256 * 256 * 256)));
 
-  SendStreamDataToPeer(1u, "bar", 9, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "bar", 9, !kFin, &last_packet);
   EXPECT_EQ(4u, last_packet);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
@@ -1098,7 +1146,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsBandwidth) {
   EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillOnce(Return(
       QuicBandwidth::FromKBitsPerSecond(1000ll * 256 * 256 * 256 * 256)));
 
-  SendStreamDataToPeer(1u, "foo", 12, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "foo", 12, !kFin, &last_packet);
   EXPECT_EQ(5u, last_packet);
   EXPECT_EQ(PACKET_6BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
@@ -1117,7 +1165,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsUnackedDelta) {
 
   QuicConnectionPeer::GetPacketCreator(&connection_)->set_sequence_number(100);
 
-  SendStreamDataToPeer(1u, "bar", 3, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "bar", 3, !kFin, &last_packet);
   EXPECT_EQ(PACKET_2BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
   EXPECT_EQ(PACKET_1BYTE_SEQUENCE_NUMBER,
@@ -1135,7 +1183,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsUnackedDelta) {
   QuicConnectionPeer::GetPacketCreator(&connection_)->set_sequence_number(
       100 * 256 * 256);
 
-  SendStreamDataToPeer(1u, "bar", 9, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "bar", 9, !kFin, &last_packet);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
@@ -1144,7 +1192,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsUnackedDelta) {
   QuicConnectionPeer::GetPacketCreator(&connection_)->set_sequence_number(
       100 * 256 * 256 * 256);
 
-  SendStreamDataToPeer(1u, "foo", 12, !kFin, &last_packet);
+  SendStreamDataToPeer(1, "foo", 12, !kFin, &last_packet);
   EXPECT_EQ(PACKET_6BYTE_SEQUENCE_NUMBER,
             connection_.options()->send_sequence_number_length);
   EXPECT_EQ(PACKET_4BYTE_SEQUENCE_NUMBER,
@@ -1153,7 +1201,7 @@ TEST_F(QuicConnectionTest, SendingDifferentSequenceNumberLengthsUnackedDelta) {
 
 TEST_F(QuicConnectionTest, BasicSending) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(6);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(6);
   QuicPacketSequenceNumber last_packet;
   SendStreamDataToPeer(1, "foo", 0, !kFin, &last_packet);  // Packet 1
   EXPECT_EQ(1u, last_packet);
@@ -1164,7 +1212,7 @@ TEST_F(QuicConnectionTest, BasicSending) {
   SendAckPacketToPeer();  // Packet 3
   EXPECT_EQ(1u, last_ack()->sent_info.least_unacked);
 
-  SendStreamDataToPeer(1u, "bar", 3, !kFin, &last_packet);  // Packet 4
+  SendStreamDataToPeer(1, "bar", 3, !kFin, &last_packet);  // Packet 4
   EXPECT_EQ(4u, last_packet);
   SendAckPacketToPeer();  // Packet 5
   EXPECT_EQ(1u, last_ack()->sent_info.least_unacked);
@@ -1173,7 +1221,7 @@ TEST_F(QuicConnectionTest, BasicSending) {
   QuicAckFrame frame(3, QuicTime::Zero(), 0);
   frame.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 3);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
   SendAckPacketToPeer();  // Packet 6
 
   // As soon as we've acked one, we skip ack packets 2 and 3 and note lack of
@@ -1184,7 +1232,7 @@ TEST_F(QuicConnectionTest, BasicSending) {
   QuicAckFrame frame2(6, QuicTime::Zero(), 0);
   frame2.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 6);
-  ProcessAckPacket(&frame2, true);  // Acks don't instigate acks.
+  ProcessAckPacket(&frame2);  // Acks don't instigate acks.
 
   // Verify that we did not send an ack.
   EXPECT_EQ(6u, last_header()->packet_sequence_number);
@@ -1214,11 +1262,11 @@ TEST_F(QuicConnectionTest, FECSending) {
   connection_.options()->max_packets_per_fec_group = 2;
 
   // Send 4 data packets and 2 FEC packets.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(6);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(6);
   // The first stream frame will consume 2 fewer bytes than the other three.
   const string payload(payload_length * 4 - 6, 'a');
-  connection_.SendStreamData(1, payload, 0, !kFin);
-  // Expect the FEC group to be closed after SendStreamData.
+  connection_.SendStreamDataWithString(1, payload, 0, !kFin, NULL);
+  // Expect the FEC group to be closed after SendStreamDataWithString.
   EXPECT_FALSE(creator_.ShouldSendFec(true));
 }
 
@@ -1233,9 +1281,9 @@ TEST_F(QuicConnectionTest, FECQueueing) {
   connection_.options()->max_packets_per_fec_group = 2;
 
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
-  helper_->set_blocked(true);
+  writer_->set_blocked(true);
   const string payload(payload_length, 'a');
-  connection_.SendStreamData(1, payload, 0, !kFin);
+  connection_.SendStreamDataWithString(1, payload, 0, !kFin, NULL);
   EXPECT_FALSE(creator_.ShouldSendFec(true));
   // Expect the first data packet and the fec packet to be queued.
   EXPECT_EQ(2u, connection_.NumQueuedPackets());
@@ -1244,51 +1292,96 @@ TEST_F(QuicConnectionTest, FECQueueing) {
 TEST_F(QuicConnectionTest, AbandonFECFromCongestionWindow) {
   connection_.options()->max_packets_per_fec_group = 1;
   // 1 Data and 1 FEC packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(2);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(2);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
 
-  // Larger timeout for FEC bytes to expire.
   const QuicTime::Delta retransmission_time =
       QuicTime::Delta::FromMilliseconds(5000);
   clock_.AdvanceTime(retransmission_time);
 
-  // Send only data packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-  // Abandon both FEC and data packet.
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(2);
-
+  // Abandon FEC packet and data packet.
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
+  EXPECT_CALL(visitor_, OnCanWrite());
   connection_.OnRetransmissionTimeout();
 }
 
 TEST_F(QuicConnectionTest, DontAbandonAckedFEC) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
   connection_.options()->max_packets_per_fec_group = 1;
-  const QuicPacketSequenceNumber sequence_number =
-      QuicConnectionPeer::GetPacketCreator(&connection_)->sequence_number() + 1;
 
   // 1 Data and 1 FEC packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(2);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(6);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  // Send some more data afterwards to ensure early retransmit doesn't trigger.
+  connection_.SendStreamDataWithString(1, "foo", 3, !kFin, NULL);
+  connection_.SendStreamDataWithString(1, "foo", 6, !kFin, NULL);
 
   QuicAckFrame ack_fec(2, QuicTime::Zero(), 1);
   // Data packet missing.
+  // TODO(ianswett): Note that this is not a sensible ack, since if the FEC was
+  // received, it would cause the covered packet to be acked as well.
   ack_fec.received_info.missing_packets.insert(1);
   ack_fec.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
 
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
 
-  ProcessAckPacket(&ack_fec, true);
+  ProcessAckPacket(&ack_fec);
 
   clock_.AdvanceTime(DefaultRetransmissionTime());
 
-  // Abandon only data packet, FEC has been acked.
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(sequence_number, _)).Times(1);
-  // Send only data packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-  connection_.OnRetransmissionTimeout();
+  // Don't abandon the acked FEC packet, but it will abandon 2 the subsequent
+  // FEC packets.
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(5);
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(3);
+  connection_.GetRetransmissionAlarm()->Fire();
+}
+
+TEST_F(QuicConnectionTest, DontAbandonAllFEC) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  connection_.options()->max_packets_per_fec_group = 1;
+
+  // 1 Data and 1 FEC packet.
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(6);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  // Send some more data afterwards to ensure early retransmit doesn't trigger.
+  connection_.SendStreamDataWithString(1, "foo", 3, !kFin, NULL);
+  // Advance the time so not all the FEC packets are abandoned.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
+  connection_.SendStreamDataWithString(1, "foo", 6, !kFin, NULL);
+
+  QuicAckFrame ack_fec(5, QuicTime::Zero(), 1);
+  // Ack all data packets, but no fec packets.
+  ack_fec.received_info.missing_packets.insert(2);
+  ack_fec.received_info.missing_packets.insert(4);
+  ack_fec.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 5) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 4) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+
+  // Lose the first FEC packet and ack the three data packets.
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(3);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(2, _));
+  ProcessAckPacket(&ack_fec);
+
+  clock_.AdvanceTime(DefaultRetransmissionTime().Subtract(
+      QuicTime::Delta::FromMilliseconds(1)));
+
+  // Don't abandon the acked FEC packet, but it will abandon 1 of the subsequent
+  // FEC packets.
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(4, _));
+  connection_.GetRetransmissionAlarm()->Fire();
+
+  // Ensure the connection's alarm is still set, in order to abandon the third
+  // FEC packet.
+  EXPECT_TRUE(connection_.GetRetransmissionAlarm()->IsSet());
 }
 
 TEST_F(QuicConnectionTest, FramePacking) {
@@ -1305,22 +1398,21 @@ TEST_F(QuicConnectionTest, FramePacking) {
                                      &TestConnection::SendStreamData5)),
       Return(true)));
 
-  // Unblock the connection.
-  connection_.GetSendAlarm()->Cancel();
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .Times(1);
-  connection_.OnCanWrite();
+  // Unblock the connection.
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
   // Parse the last packet and ensure it's an ack and two stream frames from
   // two different streams.
-  EXPECT_EQ(3u, helper_->frame_count());
-  EXPECT_TRUE(helper_->ack());
-  EXPECT_EQ(2u, helper_->stream_frames()->size());
-  EXPECT_EQ(kStreamId3, (*helper_->stream_frames())[0].stream_id);
-  EXPECT_EQ(kStreamId5, (*helper_->stream_frames())[1].stream_id);
+  EXPECT_EQ(3u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  EXPECT_EQ(2u, writer_->stream_frames()->size());
+  EXPECT_EQ(kStreamId3, (*writer_->stream_frames())[0].stream_id);
+  EXPECT_EQ(kStreamId5, (*writer_->stream_frames())[1].stream_id);
 }
 
 TEST_F(QuicConnectionTest, FramePackingNonCryptoThenCrypto) {
@@ -1338,20 +1430,18 @@ TEST_F(QuicConnectionTest, FramePackingNonCryptoThenCrypto) {
                                      &TestConnection::SendCryptoStreamData)),
       Return(true)));
 
-  // Unblock the connection.
-  connection_.GetSendAlarm()->Cancel();
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .Times(2);
-  connection_.OnCanWrite();
+  // Unblock the connection.
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
   // Parse the last packet and ensure it's the crypto stream frame.
-  EXPECT_EQ(1u, helper_->frame_count());
-  EXPECT_TRUE(helper_->ack());
-  EXPECT_EQ(1u, helper_->stream_frames()->size());
-  EXPECT_EQ(kCryptoStreamId, (*helper_->stream_frames())[0].stream_id);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_EQ(1u, writer_->stream_frames()->size());
+  EXPECT_EQ(kCryptoStreamId, (*writer_->stream_frames())[0].stream_id);
 }
 
 TEST_F(QuicConnectionTest, FramePackingCryptoThenNonCrypto) {
@@ -1369,20 +1459,18 @@ TEST_F(QuicConnectionTest, FramePackingCryptoThenNonCrypto) {
                                      &TestConnection::SendStreamData3)),
       Return(true)));
 
-  // Unblock the connection.
-  connection_.GetSendAlarm()->Cancel();
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .Times(3);
-  connection_.OnCanWrite();
+  // Unblock the connection.
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
   // Parse the last packet and ensure it's the stream frame from stream 3.
-  EXPECT_EQ(1u, helper_->frame_count());
-  EXPECT_TRUE(helper_->ack());
-  EXPECT_EQ(1u, helper_->stream_frames()->size());
-  EXPECT_EQ(kStreamId3, (*helper_->stream_frames())[0].stream_id);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_EQ(1u, writer_->stream_frames()->size());
+  EXPECT_EQ(kStreamId3, (*writer_->stream_frames())[0].stream_id);
 }
 
 TEST_F(QuicConnectionTest, FramePackingFEC) {
@@ -1401,48 +1489,87 @@ TEST_F(QuicConnectionTest, FramePackingFEC) {
                                      &TestConnection::SendStreamData5)),
       Return(true)));
 
-  // Unblock the connection.
-  connection_.GetSendAlarm()->Cancel();
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _)).Times(2);
-  connection_.OnCanWrite();
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _)).Times(2);
+  // Unblock the connection.
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
   // Parse the last packet and ensure it's in an fec group.
-  EXPECT_EQ(1u, helper_->header()->fec_group);
-  EXPECT_EQ(0u, helper_->frame_count());
+  EXPECT_EQ(1u, writer_->header()->fec_group);
+  EXPECT_EQ(0u, writer_->frame_count());
 }
 
-TEST_F(QuicConnectionTest, FramePackingSendv) {
-  // Send two stream frames in 1 packet by using writev.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _));
+TEST_F(QuicConnectionTest, FramePackingAckResponse) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  // Process a data packet to queue up a pending ack.
+  EXPECT_CALL(visitor_, OnStreamFrames(_)).WillOnce(Return(true));
+  ProcessDataPacket(1, 1, kEntropyFlag);
 
-  char data[] = "ABCD";
-  iovec iov[2] = { {static_cast<void*>(data), 2},
-      {static_cast<void*>(data + 2), 2} };
-  connection_.SendvStreamData(1, iov, 2, 0, !kFin);
+  EXPECT_CALL(visitor_, OnCanWrite()).WillOnce(DoAll(
+      IgnoreResult(InvokeWithoutArgs(&connection_,
+                                     &TestConnection::SendStreamData3)),
+      IgnoreResult(InvokeWithoutArgs(&connection_,
+                                     &TestConnection::SendStreamData5)),
+      Return(true)));
+
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
+      .Times(1);
+
+  // Process an ack to cause the visitor's OnCanWrite to be invoked.
+  creator_.set_sequence_number(2);
+  QuicAckFrame ack_one(0, QuicTime::Zero(), 0);
+  ProcessAckPacket(&ack_one);
 
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
-  // Parse the last packet and ensure it's two stream frames from one stream.
-  // TODO(ianswett): Ideally this would arrive in one frame in the future.
-  EXPECT_EQ(2u, helper_->frame_count());
-  EXPECT_EQ(2u, helper_->stream_frames()->size());
-  EXPECT_EQ(1u, (*helper_->stream_frames())[0].stream_id);
-  EXPECT_EQ(1u, (*helper_->stream_frames())[1].stream_id);
+  // Parse the last packet and ensure it's an ack and two stream frames from
+  // two different streams.
+  EXPECT_EQ(3u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  ASSERT_EQ(2u, writer_->stream_frames()->size());
+  EXPECT_EQ(kStreamId3, (*writer_->stream_frames())[0].stream_id);
+  EXPECT_EQ(kStreamId5, (*writer_->stream_frames())[1].stream_id);
+}
+
+TEST_F(QuicConnectionTest, FramePackingSendv) {
+  // Send data in 1 packet by writing multiple blocks in a single iovector
+  // using writev.
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
+
+  char data[] = "ABCD";
+  IOVector data_iov;
+  data_iov.AppendNoCoalesce(data, 2);
+  data_iov.AppendNoCoalesce(data + 2, 2);
+  connection_.SendStreamData(1, data_iov, 0, !kFin, NULL);
+
+  EXPECT_EQ(0u, connection_.NumQueuedPackets());
+  EXPECT_FALSE(connection_.HasQueuedData());
+
+  // Parse the last packet and ensure multiple iovector blocks have
+  // been packed into a single stream frame from one stream.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_EQ(1u, writer_->stream_frames()->size());
+  QuicStreamFrame frame = (*writer_->stream_frames())[0];
+  EXPECT_EQ(1u, frame.stream_id);
+  EXPECT_EQ("ABCD", string(static_cast<char*>
+                           (frame.data.iovec()[0].iov_base),
+                           (frame.data.iovec()[0].iov_len)));
 }
 
 TEST_F(QuicConnectionTest, FramePackingSendvQueued) {
   // Try to send two stream frames in 1 packet by using writev.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
 
-  helper_->set_blocked(true);
+  writer_->set_blocked(true);
   char data[] = "ABCD";
-  iovec iov[2] = { {static_cast<void*>(data), 2},
-      {static_cast<void*>(data + 2), 2} };
-  connection_.SendvStreamData(1, iov, 2, 0, !kFin);
+  IOVector data_iov;
+  data_iov.AppendNoCoalesce(data, 2);
+  data_iov.AppendNoCoalesce(data + 2, 2);
+  connection_.SendStreamData(1, data_iov, 0, !kFin, NULL);
 
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
   EXPECT_TRUE(connection_.HasQueuedData());
@@ -1453,35 +1580,30 @@ TEST_F(QuicConnectionTest, FramePackingSendvQueued) {
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
   // Unblock the writes and actually send.
-  helper_->set_blocked(false);
-  EXPECT_CALL(visitor_, OnCanWrite());
+  writer_->set_blocked(false);
   EXPECT_TRUE(connection_.OnCanWrite());
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 
-  // Parse the last packet and ensure it's two stream frames from one stream.
-  // TODO(ianswett): Ideally this would arrive in one frame in the future.
-  EXPECT_EQ(2u, helper_->frame_count());
-  EXPECT_EQ(2u, helper_->stream_frames()->size());
-  EXPECT_EQ(1u, (*helper_->stream_frames())[0].stream_id);
-  EXPECT_EQ(1u, (*helper_->stream_frames())[1].stream_id);
+  // Parse the last packet and ensure it's one stream frame from one stream.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_EQ(1u, writer_->stream_frames()->size());
+  EXPECT_EQ(1u, (*writer_->stream_frames())[0].stream_id);
 }
 
 TEST_F(QuicConnectionTest, SendingZeroBytes) {
   // Send a zero byte write with a fin using writev.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _));
-
-  iovec iov[1];
-  connection_.SendvStreamData(1, iov, 0, 0, kFin);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
+  IOVector empty_iov;
+  connection_.SendStreamData(1, empty_iov, 0, kFin, NULL);
 
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   EXPECT_FALSE(connection_.HasQueuedData());
 
-  // Parse the last packet and ensure it's two stream frames from one stream.
-  // TODO(ianswett): Ideally this would arrive in one frame in the future.
-  EXPECT_EQ(1u, helper_->frame_count());
-  EXPECT_EQ(1u, helper_->stream_frames()->size());
-  EXPECT_EQ(1u, (*helper_->stream_frames())[0].stream_id);
-  EXPECT_TRUE((*helper_->stream_frames())[0].fin);
+  // Parse the last packet and ensure it's one stream frame from one stream.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_EQ(1u, writer_->stream_frames()->size());
+  EXPECT_EQ(1u, (*writer_->stream_frames())[0].stream_id);
+  EXPECT_TRUE((*writer_->stream_frames())[0].fin);
 }
 
 TEST_F(QuicConnectionTest, OnCanWrite) {
@@ -1501,33 +1623,68 @@ TEST_F(QuicConnectionTest, OnCanWrite) {
   connection_.OnCanWrite();
   // Parse the last packet and ensure it's the two stream frames from
   // two different streams.
-  EXPECT_EQ(2u, helper_->frame_count());
-  EXPECT_EQ(2u, helper_->stream_frames()->size());
-  EXPECT_EQ(kStreamId3, (*helper_->stream_frames())[0].stream_id);
-  EXPECT_EQ(kStreamId5, (*helper_->stream_frames())[1].stream_id);
+  EXPECT_EQ(2u, writer_->frame_count());
+  EXPECT_EQ(2u, writer_->stream_frames()->size());
+  EXPECT_EQ(kStreamId3, (*writer_->stream_frames())[0].stream_id);
+  EXPECT_EQ(kStreamId5, (*writer_->stream_frames())[1].stream_id);
 }
 
 TEST_F(QuicConnectionTest, RetransmitOnNack) {
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(2);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(2, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _)).Times(1);
   QuicPacketSequenceNumber last_packet;
   QuicByteCount second_packet_size;
-  SendStreamDataToPeer(1, "foo", 0, !kFin, &last_packet);  // Packet 1
+  SendStreamDataToPeer(3, "foo", 0, !kFin, &last_packet);  // Packet 1
   second_packet_size =
-      SendStreamDataToPeer(1, "foos", 3, !kFin, &last_packet);  // Packet 2
+      SendStreamDataToPeer(3, "foos", 3, !kFin, &last_packet);  // Packet 2
+  SendStreamDataToPeer(3, "fooos", 7, !kFin, &last_packet);  // Packet 3
+
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+
+  // Peer acks one but not two or three.  Right now we only retransmit on
+  // explicit nack, so it should not trigger a retransmission.
+  QuicAckFrame ack_one(1, QuicTime::Zero(), 0);
+  ack_one.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  ProcessAckPacket(&ack_one);
+  ProcessAckPacket(&ack_one);
+  ProcessAckPacket(&ack_one);
+
+  // Peer acks up to 3 with two explicitly missing.
+  // Early retransmit causes 2 to be retransmitted on the first ack.
+  QuicAckFrame nack_two(3, QuicTime::Zero(), 0);
+  nack_two.received_info.missing_packets.insert(2);
+  nack_two.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  // The third nack should trigger a retransmission.
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, _, second_packet_size - kQuicVersionSize,
+                           NACK_RETRANSMISSION, _)).Times(1);
+  ProcessAckPacket(&nack_two);
+}
+
+TEST_F(QuicConnectionTest, DiscardRetransmit) {
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _)).Times(1);
+  QuicPacketSequenceNumber last_packet;
+  SendStreamDataToPeer(1, "foo", 0, !kFin, &last_packet);  // Packet 1
+  SendStreamDataToPeer(1, "foos", 3, !kFin, &last_packet);  // Packet 2
   SendStreamDataToPeer(1, "fooos", 7, !kFin, &last_packet);  // Packet 3
 
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
 
   // Peer acks one but not two or three.  Right now we only retransmit on
-  // explicit nack, so it should not trigger a retransimission.
+  // explicit nack, so it should not trigger a retransmission.
   QuicAckFrame ack_one(1, QuicTime::Zero(), 0);
   ack_one.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
-  ProcessAckPacket(&ack_one, true);
-  ProcessAckPacket(&ack_one, true);
-  ProcessAckPacket(&ack_one, true);
+  ProcessAckPacket(&ack_one);
+  ProcessAckPacket(&ack_one);
+  ProcessAckPacket(&ack_one);
 
   // Peer acks up to 3 with two explicitly missing.  Two nacks should cause no
   // change.
@@ -1537,147 +1694,172 @@ TEST_F(QuicConnectionTest, RetransmitOnNack) {
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
-  ProcessAckPacket(&nack_two, true);
-  ProcessAckPacket(&nack_two, true);
+  // The first nack should trigger a fast retransmission, but we'll be
+  // write blocked, so the packet will be queued.
+  writer_->set_blocked(true);
 
-  // The third nack should trigger a retransimission.
+  ProcessAckPacket(&nack_two);
+  EXPECT_EQ(1u, connection_.NumQueuedPackets());
+
+  // Now, ack the previous transmission.
+  QuicAckFrame ack_all(3, QuicTime::Zero(), 0);
+  ack_all.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 3);
+  ProcessAckPacket(&ack_all);
+
+  // Unblock the socket and attempt to send the queued packets.  However,
+  // since the previous transmission has been acked, we will not
+  // send the retransmission.
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, second_packet_size - kQuicVersionSize,
-                         IS_RETRANSMISSION, _)).Times(1);
-  ProcessAckPacket(&nack_two, true);
+              OnPacketSent(_, _, _, _, _)).Times(0);
+
+  writer_->set_blocked(false);
+  connection_.OnCanWrite();
+
+  EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
 TEST_F(QuicConnectionTest, RetransmitNackedLargestObserved) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
   QuicPacketSequenceNumber largest_observed;
   QuicByteCount packet_size;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .WillOnce(DoAll(SaveArg<1>(&largest_observed), SaveArg<2>(&packet_size),
                       Return(true)));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(1, _)).Times(1);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _)).Times(1);
+  connection_.SendStreamDataWithString(3, "foo", 0, !kFin, NULL);
   QuicAckFrame frame(1, QuicTime::Zero(), largest_observed);
   frame.received_info.missing_packets.insert(largest_observed);
   frame.received_info.entropy_hash = QuicConnectionPeer::GetSentEntropyHash(
       &connection_, largest_observed - 1);
-  ProcessAckPacket(&frame, true);
-  ProcessAckPacket(&frame, true);
-  // Third nack should retransmit the largest observed packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, packet_size - kQuicVersionSize,
-                                           IS_RETRANSMISSION, _));
-  ProcessAckPacket(&frame, true);
+  // The first nack should retransmit the largest observed packet.
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, _, packet_size - kQuicVersionSize,
+                           NACK_RETRANSMISSION, _));
+  ProcessAckPacket(&frame);
 }
 
-TEST_F(QuicConnectionTest, RetransmitNackedPacketsOnTruncatedAck) {
-  for (int i = 0; i < 200; ++i) {
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-    connection_.SendStreamData(1, "foo", i * 3, !kFin);
+TEST_F(QuicConnectionTest, QueueAfterTwoRTOs) {
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
+    connection_.SendStreamDataWithString(1, "foo", i * 3, !kFin, NULL);
   }
 
-  // Make a truncated ack frame.
-  QuicAckFrame frame(0, QuicTime::Zero(), 1);
-  frame.received_info.largest_observed = 193;
-  InsertMissingPacketsBetween(&frame.received_info, 1, 193);
-  frame.received_info.entropy_hash =
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 193) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 192);
-
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  ProcessAckPacket(&frame, true);
-  EXPECT_TRUE(QuicConnectionPeer::GetReceivedTruncatedAck(&connection_));
-
-  QuicConnectionPeer::SetMaxPacketsPerRetransmissionAlarm(&connection_, 200);
+  // Block the congestion window and ensure they're queued.
+  writer_->set_blocked(true);
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  // Only packets that are less than largest observed should be retransmitted.
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(192);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(192);
-  connection_.OnRetransmissionTimeout();
+  // Only one packet should be retransmitted.
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(10);
+  connection_.GetRetransmissionAlarm()->Fire();
+  EXPECT_TRUE(connection_.HasQueuedData());
 
+  // Unblock the congestion window.
+  writer_->set_blocked(false);
   clock_.AdvanceTime(QuicTime::Delta::FromMicroseconds(
       2 * DefaultRetransmissionTime().ToMicroseconds()));
   // Retransmit already retransmitted packets event though the sequence number
   // greater than the largest observed.
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(192);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(192);
-  connection_.OnRetransmissionTimeout();
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(10);
+  connection_.GetRetransmissionAlarm()->Fire();
+  connection_.OnCanWrite();
+}
+
+TEST_F(QuicConnectionTest, WriteBlockedThenSent) {
+  writer_->set_blocked(true);
+
+  writer_->set_is_write_blocked_data_buffered(true);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
+
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
+  connection_.OnPacketSent(WriteResult(WRITE_STATUS_OK, 0));
+  EXPECT_TRUE(connection_.GetRetransmissionAlarm()->IsSet());
+}
+
+TEST_F(QuicConnectionTest, ResumptionAlarmThenWriteBlocked) {
+  // Set the send and resumption alarm, then block the connection.
+  connection_.GetResumeWritesAlarm()->Set(clock_.ApproximateNow());
+  connection_.GetSendAlarm()->Set(clock_.ApproximateNow());
+  QuicConnectionPeer::SetIsWriteBlocked(&connection_, true);
+
+  // Fire the alarms and ensure the connection is still write blocked.
+  connection_.GetResumeWritesAlarm()->Fire();
+  connection_.GetSendAlarm()->Fire();
+  EXPECT_TRUE(QuicConnectionPeer::IsWriteBlocked(&connection_));
 }
 
 TEST_F(QuicConnectionTest, LimitPacketsPerNack) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(12, _, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(11);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(15, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(4);
   int offset = 0;
-  // Send packets 1 to 12
-  for (int i = 0; i < 12; ++i) {
+  // Send packets 1 to 15.
+  for (int i = 0; i < 15; ++i) {
     SendStreamDataToPeer(1, "foo", offset, !kFin, NULL);
     offset += 3;
   }
 
-  // Ack 12, nack 1-11
-  QuicAckFrame nack(12, QuicTime::Zero(), 0);
-  for (int i = 1; i < 12; ++i) {
+  // Ack 15, nack 1-14.
+  QuicAckFrame nack(15, QuicTime::Zero(), 0);
+  for (int i = 1; i < 15; ++i) {
     nack.received_info.missing_packets.insert(i);
   }
 
   nack.received_info.entropy_hash =
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 12) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 11);
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 15) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 14);
 
-  // Nack three times.
-  ProcessAckPacket(&nack, true);
-  ProcessAckPacket(&nack, true);
-  // The third call should trigger retransmitting 10 packets.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(10);
-  ProcessAckPacket(&nack, true);
+  // 13 packets have been NACK'd 3 times, but we limit retransmissions to 2.
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(2);
+  ProcessAckPacket(&nack);
 
-  // The fourth call should trigger retransmitting the 11th packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-  ProcessAckPacket(&nack, true);
+  // The next call should trigger retransmitting 2 more packets.
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(2);
+  ProcessAckPacket(&nack);
 }
 
 // Test sending multiple acks from the connection to the session.
 TEST_F(QuicConnectionTest, MultipleAcks) {
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(6);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(6);
   QuicPacketSequenceNumber last_packet;
-  SendStreamDataToPeer(1u, "foo", 0, !kFin, &last_packet);  // Packet 1
+  SendStreamDataToPeer(1, "foo", 0, !kFin, &last_packet);  // Packet 1
   EXPECT_EQ(1u, last_packet);
-  SendStreamDataToPeer(3u, "foo", 0, !kFin, &last_packet);  // Packet 2
+  SendStreamDataToPeer(3, "foo", 0, !kFin, &last_packet);  // Packet 2
   EXPECT_EQ(2u, last_packet);
   SendAckPacketToPeer();  // Packet 3
-  SendStreamDataToPeer(5u, "foo", 0, !kFin, &last_packet);  // Packet 4
+  SendStreamDataToPeer(5, "foo", 0, !kFin, &last_packet);  // Packet 4
   EXPECT_EQ(4u, last_packet);
-  SendStreamDataToPeer(1u, "foo", 3, !kFin, &last_packet);  // Packet 5
+  SendStreamDataToPeer(1, "foo", 3, !kFin, &last_packet);  // Packet 5
   EXPECT_EQ(5u, last_packet);
-  SendStreamDataToPeer(3u, "foo", 3, !kFin, &last_packet);  // Packet 6
+  SendStreamDataToPeer(3, "foo", 3, !kFin, &last_packet);  // Packet 6
   EXPECT_EQ(6u, last_packet);
 
-  // Client will ack packets 1, [!2], 3, 4, 5
+  // Client will ack packets 1, 2, [!3], 4, 5.
   QuicAckFrame frame1(5, QuicTime::Zero(), 0);
-  frame1.received_info.missing_packets.insert(2);
+  frame1.received_info.missing_packets.insert(3);
   frame1.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 5) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2);
 
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
 
-  ProcessAckPacket(&frame1, true);
+  ProcessAckPacket(&frame1);
 
-  // Now the client implicitly acks 2, and explicitly acks 6
+  // Now the client implicitly acks 3, and explicitly acks 6.
   QuicAckFrame frame2(6, QuicTime::Zero(), 0);
   frame2.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 6);
 
-  ProcessAckPacket(&frame2, true);
+  ProcessAckPacket(&frame2);
 }
 
 TEST_F(QuicConnectionTest, DontLatchUnackedPacket) {
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
   SendStreamDataToPeer(1, "foo", 0, !kFin, NULL);  // Packet 1;
   SendAckPacketToPeer();  // Packet 2
 
@@ -1685,7 +1867,7 @@ TEST_F(QuicConnectionTest, DontLatchUnackedPacket) {
   QuicAckFrame frame(1, QuicTime::Zero(), 0);
   frame.received_info.entropy_hash = QuicConnectionPeer::GetSentEntropyHash(
       &connection_, 1);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
 
   // Verify that our internal state has least-unacked as 3.
   EXPECT_EQ(3u, outgoing_ack()->sent_info.least_unacked);
@@ -1740,7 +1922,7 @@ TEST_F(QuicConnectionTest, ReviveMissingPacketAfterDataPacket) {
 
   // Don't send missing packet 1.
   ProcessFecPacket(3, 1, false, !kEntropyFlag, NULL);
-  // out of order
+  // Out of order.
   ProcessFecProtectedPacket(2, true, !kEntropyFlag);
   // Entropy flag should be false, so entropy should be 0.
   EXPECT_EQ(0u, QuicConnectionPeer::ReceivedEntropyHash(&connection_, 2));
@@ -1759,7 +1941,7 @@ TEST_F(QuicConnectionTest, ReviveMissingPacketAfterDataPackets) {
   EXPECT_NE(0u, QuicConnectionPeer::ReceivedEntropyHash(&connection_, 2));
 }
 
-TEST_F(QuicConnectionTest, TestRetransmit) {
+TEST_F(QuicConnectionTest, RTO) {
   QuicTime default_retransmission_time = clock_.ApproximateNow().Add(
       DefaultRetransmissionTime());
   SendStreamDataToPeer(1, "foo", 0, !kFin, NULL);
@@ -1768,16 +1950,18 @@ TEST_F(QuicConnectionTest, TestRetransmit) {
   EXPECT_EQ(1u, last_header()->packet_sequence_number);
   EXPECT_EQ(default_retransmission_time,
             connection_.GetRetransmissionAlarm()->deadline());
-  // Simulate the retransimission alarm firing
+  // Simulate the retransmission alarm firing.
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(1, _)).Times(1);
-  connection_.RetransmitPacket(1);
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1u, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 2u, _, _, _));
+  connection_.GetRetransmissionAlarm()->Fire();
   EXPECT_EQ(2u, last_header()->packet_sequence_number);
-  EXPECT_EQ(2u, outgoing_ack()->sent_info.least_unacked);
+  // We do not raise the high water mark yet.
+  EXPECT_EQ(1u, outgoing_ack()->sent_info.least_unacked);
 }
 
-TEST_F(QuicConnectionTest, RetransmitWithSameEncryptionLevel) {
+TEST_F(QuicConnectionTest, RTOWithSameEncryptionLevel) {
   QuicTime default_retransmission_time = clock_.ApproximateNow().Add(
       DefaultRetransmissionTime());
   use_tagging_decrypter();
@@ -1795,19 +1979,55 @@ TEST_F(QuicConnectionTest, RetransmitWithSameEncryptionLevel) {
 
   EXPECT_EQ(default_retransmission_time,
             connection_.GetRetransmissionAlarm()->deadline());
-  // Simulate the retransimission alarm firing
+  {
+    InSequence s;
+    EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _));
+    EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _));
+    EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 3, _, RTO_RETRANSMISSION, _));
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 4, _, RTO_RETRANSMISSION, _));
+  }
+
+  // Simulate the retransmission alarm firing.
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(2);
+  connection_.GetRetransmissionAlarm()->Fire();
 
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  connection_.RetransmitPacket(1);
   // Packet should have been sent with ENCRYPTION_NONE.
-  EXPECT_EQ(0x01010101u, final_bytes_of_last_packet());
+  EXPECT_EQ(0x01010101u, final_bytes_of_previous_packet());
 
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  connection_.RetransmitPacket(2);
   // Packet should have been sent with ENCRYPTION_INITIAL.
   EXPECT_EQ(0x02020202u, final_bytes_of_last_packet());
+}
+
+TEST_F(QuicConnectionTest, SendHandshakeMessages) {
+  use_tagging_decrypter();
+  // A TaggingEncrypter puts kTagSize copies of the given byte (0x01 here) at
+  // the end of the packet. We can test this to check which encrypter was used.
+  connection_.SetEncrypter(ENCRYPTION_NONE, new TaggingEncrypter(0x01));
+
+  // Attempt to send a handshake message while the congestion manager
+  // does not permit sending.
+  EXPECT_CALL(*send_algorithm_,
+              TimeUntilSend(_, _, _, IS_HANDSHAKE)).WillRepeatedly(
+                  testing::Return(QuicTime::Delta::Infinite()));
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  // The packet should be serialized, but not queued.
+  EXPECT_EQ(1u, connection_.NumQueuedPackets());
+
+  // Switch to the new encrypter.
+  connection_.SetEncrypter(ENCRYPTION_INITIAL, new TaggingEncrypter(0x02));
+  connection_.SetDefaultEncryptionLevel(ENCRYPTION_INITIAL);
+
+  // Now become writeable and flush the packets.
+  EXPECT_CALL(*send_algorithm_,
+              TimeUntilSend(_, _, _, IS_HANDSHAKE)).WillRepeatedly(
+                  testing::Return(QuicTime::Delta::Zero()));
+  EXPECT_CALL(visitor_, OnCanWrite());
+  connection_.OnCanWrite();
+  EXPECT_EQ(0u, connection_.NumQueuedPackets());
+
+  // Verify that the handshake packet went out at the null encryption.
+  EXPECT_EQ(0x01010101u, final_bytes_of_last_packet());
 }
 
 TEST_F(QuicConnectionTest,
@@ -1821,17 +2041,18 @@ TEST_F(QuicConnectionTest,
                            new TaggingEncrypter(0x02));
   connection_.SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
 
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(0);
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(sequence_number, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(0);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(sequence_number, _)).Times(1);
 
   QuicTime default_retransmission_time = clock_.ApproximateNow().Add(
       DefaultRetransmissionTime());
 
   EXPECT_EQ(default_retransmission_time,
             connection_.GetRetransmissionAlarm()->deadline());
-  // Simulate the retransimission alarm firing
+  // Simulate the retransmission alarm firing.
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  connection_.OnRetransmissionTimeout();
+  connection_.GetRetransmissionAlarm()->Fire();
 }
 
 TEST_F(QuicConnectionTest, RetransmitPacketsWithInitialEncryption) {
@@ -1846,10 +2067,10 @@ TEST_F(QuicConnectionTest, RetransmitPacketsWithInitialEncryption) {
 
   SendStreamDataToPeer(2, "bar", 0, !kFin, NULL);
 
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(1);
 
-  connection_.RetransmitUnackedPackets(QuicConnection::INITIAL_ENCRYPTION_ONLY);
+  connection_.RetransmitUnackedPackets(INITIAL_ENCRYPTION_ONLY);
 }
 
 TEST_F(QuicConnectionTest, BufferNonDecryptablePackets) {
@@ -1881,132 +2102,158 @@ TEST_F(QuicConnectionTest, BufferNonDecryptablePackets) {
 
 TEST_F(QuicConnectionTest, TestRetransmitOrder) {
   QuicByteCount first_packet_size;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).WillOnce(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).WillOnce(
       DoAll(SaveArg<2>(&first_packet_size), Return(true)));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(2);
 
-  connection_.SendStreamData(1, "first_packet", 0, !kFin);
+  connection_.SendStreamDataWithString(3, "first_packet", 0, !kFin, NULL);
   QuicByteCount second_packet_size;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).WillOnce(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).WillOnce(
       DoAll(SaveArg<2>(&second_packet_size), Return(true)));
-  connection_.SendStreamData(1, "second_packet", 12, !kFin);
+  connection_.SendStreamDataWithString(3, "second_packet", 12, !kFin, NULL);
   EXPECT_NE(first_packet_size, second_packet_size);
   // Advance the clock by huge time to make sure packets will be retransmitted.
   clock_.AdvanceTime(QuicTime::Delta::FromSeconds(10));
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
   {
     InSequence s;
     EXPECT_CALL(*send_algorithm_,
-                SentPacket(_, _, first_packet_size, _, _));
+                OnPacketSent(_, _, first_packet_size, _, _));
     EXPECT_CALL(*send_algorithm_,
-                SentPacket(_, _, second_packet_size, _, _));
+                OnPacketSent(_, _, second_packet_size, _, _));
   }
-  connection_.OnRetransmissionTimeout();
+  connection_.GetRetransmissionAlarm()->Fire();
+
+  // Advance again and expect the packets to be sent again in the same order.
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(20));
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(2);
+  {
+    InSequence s;
+    EXPECT_CALL(*send_algorithm_,
+                OnPacketSent(_, _, first_packet_size, _, _));
+    EXPECT_CALL(*send_algorithm_,
+                OnPacketSent(_, _, second_packet_size, _, _));
+  }
+  connection_.GetRetransmissionAlarm()->Fire();
 }
 
-TEST_F(QuicConnectionTest, TestRetransmissionCountCalculation) {
+TEST_F(QuicConnectionTest, RetransmissionCountCalculation) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(2);
   QuicPacketSequenceNumber original_sequence_number;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .WillOnce(DoAll(SaveArg<1>(&original_sequence_number), Return(true)));
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+
   EXPECT_TRUE(QuicConnectionPeer::IsSavedForRetransmission(
       &connection_, original_sequence_number));
-  EXPECT_EQ(0u, QuicConnectionPeer::GetRetransmissionCount(
+  EXPECT_FALSE(QuicConnectionPeer::IsRetransmission(
       &connection_, original_sequence_number));
   // Force retransmission due to RTO.
   clock_.AdvanceTime(QuicTime::Delta::FromSeconds(10));
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketAbandoned(original_sequence_number, _)).Times(1);
   QuicPacketSequenceNumber rto_sequence_number;
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, IS_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, RTO_RETRANSMISSION, _))
       .WillOnce(DoAll(SaveArg<1>(&rto_sequence_number), Return(true)));
-  connection_.OnRetransmissionTimeout();
+  connection_.GetRetransmissionAlarm()->Fire();
   EXPECT_FALSE(QuicConnectionPeer::IsSavedForRetransmission(
       &connection_, original_sequence_number));
   ASSERT_TRUE(QuicConnectionPeer::IsSavedForRetransmission(
       &connection_, rto_sequence_number));
-  EXPECT_EQ(1u, QuicConnectionPeer::GetRetransmissionCount(
+  EXPECT_TRUE(QuicConnectionPeer::IsRetransmission(
       &connection_, rto_sequence_number));
   // Once by explicit nack.
-  QuicPacketSequenceNumber nack_sequence_number;
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketAbandoned(rto_sequence_number, _)).Times(1);
+  QuicPacketSequenceNumber nack_sequence_number = 0;
   // Ack packets might generate some other packets, which are not
   // retransmissions. (More ack packets).
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .Times(AnyNumber());
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, IS_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NACK_RETRANSMISSION, _))
       .WillOnce(DoAll(SaveArg<1>(&nack_sequence_number), Return(true)));
   QuicAckFrame ack(rto_sequence_number, QuicTime::Zero(), 0);
   // Ack the retransmitted packet.
+  ack.received_info.missing_packets.insert(original_sequence_number);
   ack.received_info.missing_packets.insert(rto_sequence_number);
-  ack.received_info.entropy_hash = QuicConnectionPeer::GetSentEntropyHash(
-      &connection_, rto_sequence_number - 1);
+  ack.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_,
+                                             rto_sequence_number - 1) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_,
+                                             original_sequence_number);
   for (int i = 0; i < 3; i++) {
-    ProcessAckPacket(&ack, true);
+    ProcessAckPacket(&ack);
   }
+  ASSERT_NE(0u, nack_sequence_number);
   EXPECT_FALSE(QuicConnectionPeer::IsSavedForRetransmission(
       &connection_, rto_sequence_number));
-  EXPECT_TRUE(QuicConnectionPeer::IsSavedForRetransmission(
+  ASSERT_TRUE(QuicConnectionPeer::IsSavedForRetransmission(
       &connection_, nack_sequence_number));
-  EXPECT_EQ(2u, QuicConnectionPeer::GetRetransmissionCount(
+  EXPECT_TRUE(QuicConnectionPeer::IsRetransmission(
       &connection_, nack_sequence_number));
 }
 
 TEST_F(QuicConnectionTest, SetRTOAfterWritingToSocket) {
-  helper_->set_blocked(true);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  writer_->set_blocked(true);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
   // Make sure that RTO is not started when the packet is queued.
-  EXPECT_EQ(0u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
+  EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
 
   // Test that RTO is started once we write to the socket.
-  helper_->set_blocked(false);
-  EXPECT_CALL(visitor_, OnCanWrite());
+  writer_->set_blocked(false);
   connection_.OnCanWrite();
-  EXPECT_EQ(1u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
+  EXPECT_TRUE(connection_.GetRetransmissionAlarm()->IsSet());
 }
 
 TEST_F(QuicConnectionTest, DelayRTOWithAckReceipt) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, NOT_RETRANSMISSION, _))
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, NOT_RETRANSMISSION, _))
       .Times(2);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
-  connection_.SendStreamData(2, "bar", 0, !kFin);
-  EXPECT_EQ(2u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  connection_.SendStreamDataWithString(2, "bar", 0, !kFin, NULL);
+  QuicAlarm* retransmission_alarm = connection_.GetRetransmissionAlarm();
+  EXPECT_TRUE(retransmission_alarm->IsSet());
 
   // Advance the time right before the RTO, then receive an ack for the first
   // packet to delay the RTO.
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  EXPECT_EQ(2u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
   QuicAckFrame ack(1, QuicTime::Zero(), 0);
-  ProcessAckPacket(&ack, true);
-  EXPECT_EQ(1u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
+  ack.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  ProcessAckPacket(&ack);
+  EXPECT_TRUE(retransmission_alarm->IsSet());
 
   // Move forward past the original RTO and ensure the RTO is still pending.
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  EXPECT_EQ(1u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
 
   // Ensure the second packet gets retransmitted when it finally fires.
-  EXPECT_TRUE(
-      QuicConnectionPeer::GetRetransmissionAlarm(&connection_)->IsSet());
-  EXPECT_GE(
-      QuicConnectionPeer::GetRetransmissionAlarm(&connection_)->deadline(),
-      clock_.ApproximateNow());
+  EXPECT_TRUE(retransmission_alarm->IsSet());
+  EXPECT_GE(retransmission_alarm->deadline(), clock_.ApproximateNow());
   clock_.AdvanceTime(DefaultRetransmissionTime());
-  EXPECT_LT(
-      QuicConnectionPeer::GetRetransmissionAlarm(&connection_)->deadline(),
-      clock_.ApproximateNow());
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, IS_RETRANSMISSION, _));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _));
-  connection_.OnRetransmissionTimeout();
+  EXPECT_LT(retransmission_alarm->deadline(), clock_.ApproximateNow());
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, RTO_RETRANSMISSION, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _));
+  // Manually cancel the alarm to simulate a real test.
+  connection_.GetRetransmissionAlarm()->Fire();
 
-  // The new retransmitted sequence number should now be in the timeout queue.
-  EXPECT_EQ(1u, QuicConnectionPeer::GetNumRetransmissionTimeouts(&connection_));
+  // The new retransmitted sequence number should set the RTO to a larger value
+  // than previously.
+  EXPECT_TRUE(retransmission_alarm->IsSet());
+  QuicTime next_rto_time = retransmission_alarm->deadline();
+  QuicTime::Delta expected_rto =
+      connection_.sent_packet_manager().GetRetransmissionDelay();
+  EXPECT_EQ(next_rto_time, clock_.ApproximateNow().Add(expected_rto));
 }
 
 TEST_F(QuicConnectionTest, TestQueued) {
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
-  helper_->set_blocked(true);
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  writer_->set_blocked(true);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
   // Attempt to send all packets, but since we're actually still
@@ -2015,24 +2262,23 @@ TEST_F(QuicConnectionTest, TestQueued) {
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
   // Unblock the writes and actually send.
-  helper_->set_blocked(false);
-  EXPECT_CALL(visitor_, OnCanWrite());
+  writer_->set_blocked(false);
   EXPECT_TRUE(connection_.OnCanWrite());
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
 TEST_F(QuicConnectionTest, CloseFecGroup) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  // Don't send missing packet 1
-  // Don't send missing packet 2
+  // Don't send missing packet 1.
+  // Don't send missing packet 2.
   ProcessFecProtectedPacket(3, false, !kEntropyFlag);
-  // Don't send missing FEC packet 3
+  // Don't send missing FEC packet 3.
   ASSERT_EQ(1u, connection_.NumFecGroups());
 
-  // Now send non-fec protected ack packet and close the group
+  // Now send non-fec protected ack packet and close the group.
   QuicAckFrame frame(0, QuicTime::Zero(), 5);
   creator_.set_sequence_number(4);
-  ProcessAckPacket(&frame, true);
+  ProcessAckPacket(&frame);
   ASSERT_EQ(0u, connection_.NumFecGroups());
 }
 
@@ -2070,18 +2316,25 @@ TEST_F(QuicConnectionTest, DontUpdateQuicCongestionFeedbackFrameForRevived) {
 
 TEST_F(QuicConnectionTest, InitialTimeout) {
   EXPECT_TRUE(connection_.connected());
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, false));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, false));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
 
   QuicTime default_timeout = clock_.ApproximateNow().Add(
       QuicTime::Delta::FromSeconds(kDefaultInitialTimeoutSecs));
   EXPECT_EQ(default_timeout, connection_.GetTimeoutAlarm()->deadline());
 
-  // Simulate the timeout alarm firing
+  // Simulate the timeout alarm firing.
   clock_.AdvanceTime(
       QuicTime::Delta::FromSeconds(kDefaultInitialTimeoutSecs));
-  EXPECT_TRUE(connection_.CheckForTimeout());
+  connection_.GetTimeoutAlarm()->Fire();
+  EXPECT_FALSE(connection_.GetTimeoutAlarm()->IsSet());
   EXPECT_FALSE(connection_.connected());
+
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_FALSE(connection_.GetResumeWritesAlarm()->IsSet());
+  EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
+  EXPECT_FALSE(connection_.GetSendAlarm()->IsSet());
+  EXPECT_FALSE(connection_.GetTimeoutAlarm()->IsSet());
 }
 
 TEST_F(QuicConnectionTest, TimeoutAfterSend) {
@@ -2094,7 +2347,7 @@ TEST_F(QuicConnectionTest, TimeoutAfterSend) {
   // kDefaultInitialTimeoutSecs.
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(5));
 
-  // Send an ack so we don't set the retransimission alarm.
+  // Send an ack so we don't set the retransmission alarm.
   SendAckPacketToPeer();
   EXPECT_EQ(default_timeout, connection_.GetTimeoutAlarm()->deadline());
 
@@ -2103,18 +2356,20 @@ TEST_F(QuicConnectionTest, TimeoutAfterSend) {
   clock_.AdvanceTime(QuicTime::Delta::FromMicroseconds(
       kDefaultInitialTimeoutSecs * 1000000 - 5000));
   EXPECT_EQ(default_timeout, clock_.ApproximateNow());
-  EXPECT_FALSE(connection_.CheckForTimeout());
+  connection_.GetTimeoutAlarm()->Fire();
+  EXPECT_TRUE(connection_.GetTimeoutAlarm()->IsSet());
   EXPECT_TRUE(connection_.connected());
   EXPECT_EQ(default_timeout.Add(QuicTime::Delta::FromMilliseconds(5)),
             connection_.GetTimeoutAlarm()->deadline());
 
   // This time, we should time out.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, false));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, false));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(5));
   EXPECT_EQ(default_timeout.Add(QuicTime::Delta::FromMilliseconds(5)),
             clock_.ApproximateNow());
-  EXPECT_TRUE(connection_.CheckForTimeout());
+  connection_.GetTimeoutAlarm()->Fire();
+  EXPECT_FALSE(connection_.GetTimeoutAlarm()->IsSet());
   EXPECT_FALSE(connection_.connected());
 }
 
@@ -2125,8 +2380,8 @@ TEST_F(QuicConnectionTest, SendScheduler) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::Zero()));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  connection_.SendOrQueuePacket(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
@@ -2137,8 +2392,8 @@ TEST_F(QuicConnectionTest, SendSchedulerDelay) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(1)));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 1, _, _, _)).Times(0);
-  connection_.SendOrQueuePacket(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, _, _)).Times(0);
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 }
@@ -2147,22 +2402,22 @@ TEST_F(QuicConnectionTest, SendSchedulerForce) {
   // Test that if we force send a packet, it is not queued.
   QuicPacket* packet = ConstructDataPacket(1, 0, !kEntropyFlag);
   EXPECT_CALL(*send_algorithm_,
-              TimeUntilSend(_, IS_RETRANSMISSION, _, _)).Times(0);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  connection_.SendOrQueuePacket(
+              TimeUntilSend(_, NACK_RETRANSMISSION, _, _)).Times(0);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
-  // XXX: fixme.  was:  connection_.SendOrQueuePacket(1, packet, kForce);
+  // XXX: fixme.  was:  connection_.SendPacket(1, packet, kForce);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
 TEST_F(QuicConnectionTest, SendSchedulerEAGAIN) {
   QuicPacket* packet = ConstructDataPacket(1, 0, !kEntropyFlag);
-  helper_->set_blocked(true);
+  writer_->set_blocked(true);
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::Zero()));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 1, _, _, _)).Times(0);
-  connection_.SendOrQueuePacket(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, _, _)).Times(0);
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 }
@@ -2173,7 +2428,7 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenSend) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(1)));
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
        ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
@@ -2183,43 +2438,41 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenSend) {
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillRepeatedly(
                   testing::Return(QuicTime::Delta::Zero()));
   clock_.AdvanceTime(QuicTime::Delta::FromMicroseconds(1));
-  connection_.GetSendAlarm()->Cancel();
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _));
-  EXPECT_CALL(visitor_, OnCanWrite());
-  connection_.OnCanWrite();
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
 TEST_F(QuicConnectionTest, SendSchedulerDelayThenRetransmit) {
   EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, NOT_RETRANSMISSION, _, _))
       .WillRepeatedly(testing::Return(QuicTime::Delta::Zero()));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(1, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _)).Times(1);
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, 1, _, NOT_RETRANSMISSION, _));
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+              OnPacketSent(_, 1, _, NOT_RETRANSMISSION, _));
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   // Advance the time for retransmission of lost packet.
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(501));
-  // Test that if we send a retransmit with a delay, it ends up queued.
+  // Test that if we send a retransmit with a delay, it ends up queued in the
+  // sent packet manager, but not yet serialized.
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
   EXPECT_CALL(*send_algorithm_,
-              TimeUntilSend(_, IS_RETRANSMISSION, _, _)).WillOnce(
+              TimeUntilSend(_, RTO_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(1)));
-  connection_.OnRetransmissionTimeout();
-  EXPECT_EQ(1u, connection_.NumQueuedPackets());
+  connection_.GetRetransmissionAlarm()->Fire();
+  EXPECT_EQ(0u, connection_.NumQueuedPackets());
 
   // Advance the clock to fire the alarm, and configure the scheduler
   // to permit the packet to be sent.
   EXPECT_CALL(*send_algorithm_,
-              TimeUntilSend(_, IS_RETRANSMISSION, _, _)).WillOnce(
-                  testing::Return(QuicTime::Delta::Zero()));
+              TimeUntilSend(_, RTO_RETRANSMISSION, _, _)).Times(2).
+                  WillRepeatedly(testing::Return(QuicTime::Delta::Zero()));
 
   // Ensure the scheduler is notified this is a retransmit.
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, IS_RETRANSMISSION, _));
+              OnPacketSent(_, _, _, RTO_RETRANSMISSION, _));
   clock_.AdvanceTime(QuicTime::Delta::FromMicroseconds(1));
-  connection_.GetSendAlarm()->Cancel();
-  EXPECT_CALL(visitor_, OnCanWrite());
-  connection_.OnCanWrite();
+  connection_.GetSendAlarm()->Fire();
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
@@ -2228,13 +2481,13 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayAndQueue) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(1)));
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
   // Attempt to send another packet and make sure that it gets queued.
   packet = ConstructDataPacket(2, 0, !kEntropyFlag);
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
       ENCRYPTION_NONE, 2, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(2u, connection_.NumQueuedPackets());
 }
@@ -2245,7 +2498,7 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenAckAndSend) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(10)));
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
@@ -2256,8 +2509,8 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenAckAndSend) {
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillRepeatedly(
                   testing::Return(QuicTime::Delta::Zero()));
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, _, _));
-  ProcessAckPacket(&frame, true);
+              OnPacketSent(_, _, _, _, _));
+  ProcessAckPacket(&frame);
 
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
   // Ensure alarm is not set
@@ -2270,7 +2523,7 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenAckAndHold) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(10)));
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
@@ -2280,7 +2533,7 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenAckAndHold) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(1)));
-  ProcessAckPacket(&frame, false);
+  ProcessAckPacket(&frame);
 
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 }
@@ -2290,7 +2543,7 @@ TEST_F(QuicConnectionTest, SendSchedulerDelayThenOnCanWrite) {
   EXPECT_CALL(*send_algorithm_,
               TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
                   testing::Return(QuicTime::Delta::FromMicroseconds(10)));
-  connection_.SendOrQueuePacket(
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
@@ -2314,7 +2567,8 @@ TEST_F(QuicConnectionTest, TestQueueLimitsOnSendStreamData) {
                   testing::Return(QuicTime::Delta::FromMicroseconds(10)));
   const string payload(payload_length, 'a');
   EXPECT_EQ(0u,
-            connection_.SendStreamData(1, payload, 0, !kFin).bytes_consumed);
+            connection_.SendStreamDataWithString(3, payload, 0,
+                                                 !kFin, NULL).bytes_consumed);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
@@ -2327,30 +2581,103 @@ TEST_F(QuicConnectionTest, LoopThroughSendingPackets) {
           NOT_IN_FEC_GROUP, &payload_length);
 
   // Queue the first packet.
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(7);
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(7);
   // The first stream frame will consume 2 fewer bytes than the other six.
   const string payload(payload_length * 7 - 12, 'a');
   EXPECT_EQ(payload.size(),
-            connection_.SendStreamData(1, payload, 0, !kFin).bytes_consumed);
+            connection_.SendStreamDataWithString(1, payload, 0,
+                                                 !kFin, NULL).bytes_consumed);
+}
+
+TEST_F(QuicConnectionTest, SendDelayedAckOnTimer) {
+  QuicTime ack_time = clock_.ApproximateNow().Add(DefaultDelayedAckTime());
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+  ProcessPacket(1);
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+  // Simulate delayed ack alarm firing.
+  connection_.GetAckAlarm()->Fire();
+  // Check that ack is sent and that delayed ack alarm is reset.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_F(QuicConnectionTest, SendDelayedAckOnSecondPacket) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  ProcessPacket(1);
+  ProcessPacket(2);
+  // Check that ack is sent and that delayed ack alarm is reset.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_F(QuicConnectionTest, NoAckOnOldNacks) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  // Drop one packet, triggering a sequence of acks.
+  ProcessPacket(2);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  writer_->Reset();
+  ProcessPacket(3);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  writer_->Reset();
+  ProcessPacket(4);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  writer_->Reset();
+  ProcessPacket(5);
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  // Now only set the timer on the 6th packet, instead of sending another ack.
+  writer_->Reset();
+  ProcessPacket(6);
+  EXPECT_EQ(0u, writer_->frame_count());
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_F(QuicConnectionTest, SendDelayedAckOnOutgoingPacket) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  ProcessPacket(1);
+  connection_.SendStreamDataWithString(kStreamId3, "foo", 0, !kFin, NULL);
+  // Check that ack is bundled with outgoing data and that delayed ack
+  // alarm is reset.
+  EXPECT_EQ(2u, writer_->frame_count());
+  EXPECT_TRUE(writer_->ack());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_F(QuicConnectionTest, DontSendDelayedAckOnOutgoingCryptoPacket) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  ProcessPacket(1);
+  connection_.SendStreamDataWithString(kCryptoStreamId, "foo", 0, !kFin, NULL);
+  // Check that ack is not bundled with outgoing data.
+  EXPECT_EQ(1u, writer_->frame_count());
+  EXPECT_FALSE(writer_->ack());
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
 }
 
 TEST_F(QuicConnectionTest, NoAckForClose) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
   ProcessPacket(1);
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(0);
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_PEER_GOING_AWAY, true));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(0);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(0);
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PEER_GOING_AWAY, true));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(0);
   ProcessClosePacket(2, 0);
 }
 
 TEST_F(QuicConnectionTest, SendWhenDisconnected) {
   EXPECT_TRUE(connection_.connected());
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_PEER_GOING_AWAY, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PEER_GOING_AWAY, false));
   connection_.CloseConnection(QUIC_PEER_GOING_AWAY, false);
   EXPECT_FALSE(connection_.connected());
   QuicPacket* packet = ConstructDataPacket(1, 0, !kEntropyFlag);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 1, _, _, _)).Times(0);
-  connection_.SendOrQueuePacket(
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, _, _)).Times(0);
+  connection_.SendPacket(
       ENCRYPTION_NONE, 1, packet, kTestEntropyHash, HAS_RETRANSMITTABLE_DATA);
 }
 
@@ -2362,7 +2689,7 @@ TEST_F(QuicConnectionTest, PublicReset) {
   header.rejected_sequence_number = 10101;
   scoped_ptr<QuicEncryptedPacket> packet(
       framer_.BuildPublicResetPacket(header));
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_PUBLIC_RESET, true));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PUBLIC_RESET, true));
   connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), *packet);
 }
 
@@ -2377,12 +2704,22 @@ TEST_F(QuicConnectionTest, GoAway) {
   ProcessGoAwayPacket(&goaway);
 }
 
+TEST_F(QuicConnectionTest, InvalidPacket) {
+  EXPECT_CALL(visitor_,
+              OnConnectionClosed(QUIC_INVALID_PACKET_HEADER, false));
+  QuicEncryptedPacket encrypted(NULL, 0);
+  connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), encrypted);
+  // The connection close packet should have error details.
+  ASSERT_TRUE(last_close() != NULL);
+  EXPECT_EQ("Unable to read public flags.", last_close()->error_details);
+}
+
 TEST_F(QuicConnectionTest, MissingPacketsBeforeLeastUnacked) {
   QuicAckFrame ack(0, QuicTime::Zero(), 4);
-  // Set the sequence number of the ack packet to be least unacked (4)
+  // Set the sequence number of the ack packet to be least unacked (4).
   creator_.set_sequence_number(3);
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-  ProcessAckPacket(&ack, true);
+  ProcessAckPacket(&ack);
   EXPECT_TRUE(outgoing_ack()->received_info.missing_packets.empty());
 }
 
@@ -2409,7 +2746,7 @@ TEST_F(QuicConnectionTest, UpdateEntropyForReceivedPackets) {
   ack.sent_info.entropy_hash = kRandomEntropyHash;
   creator_.set_sequence_number(5);
   QuicPacketEntropyHash six_packet_entropy_hash = 0;
-  if (ProcessAckPacket(&ack, true)) {
+  if (ProcessAckPacket(&ack)) {
     six_packet_entropy_hash = 1 << 6;
   }
 
@@ -2429,7 +2766,7 @@ TEST_F(QuicConnectionTest, UpdateEntropyHashUptoCurrentPacket) {
   // Current packet is the least unacked packet.
   QuicAckFrame ack(0, QuicTime::Zero(), 23);
   ack.sent_info.entropy_hash = kRandomEntropyHash;
-  QuicPacketEntropyHash ack_entropy_hash =  ProcessAckPacket(&ack, true);
+  QuicPacketEntropyHash ack_entropy_hash =  ProcessAckPacket(&ack);
   EXPECT_EQ((kRandomEntropyHash + ack_entropy_hash),
             outgoing_ack()->received_info.entropy_hash);
   ProcessDataPacket(25, 1, kEntropyFlag);
@@ -2476,7 +2813,7 @@ TEST_F(QuicConnectionTest, CheckSentEntropyHash) {
       packet_entropy_hash = 1 << (i % 8);
     }
     QuicPacket* packet = ConstructDataPacket(i, 0, entropy_flag);
-    connection_.SendOrQueuePacket(
+    connection_.SendPacket(
         ENCRYPTION_NONE, i, packet, packet_entropy_hash,
         HAS_RETRANSMITTABLE_DATA);
 
@@ -2515,18 +2852,93 @@ TEST_F(QuicConnectionTest, ServerSendsVersionNegotiationPacket) {
   framer_.set_version(QuicVersionMax());
   connection_.set_is_server(true);
   connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), *encrypted);
-  EXPECT_TRUE(helper_->version_negotiation_packet() != NULL);
+  EXPECT_TRUE(writer_->version_negotiation_packet() != NULL);
 
   size_t num_versions = arraysize(kSupportedQuicVersions);
   EXPECT_EQ(num_versions,
-            helper_->version_negotiation_packet()->versions.size());
+            writer_->version_negotiation_packet()->versions.size());
 
   // We expect all versions in kSupportedQuicVersions to be
   // included in the packet.
   for (size_t i = 0; i < num_versions; ++i) {
     EXPECT_EQ(kSupportedQuicVersions[i],
-              helper_->version_negotiation_packet()->versions[i]);
+              writer_->version_negotiation_packet()->versions[i]);
   }
+}
+
+TEST_F(QuicConnectionTest, ServerSendsVersionNegotiationPacketSocketBlocked) {
+  framer_.set_version_for_tests(QUIC_VERSION_UNSUPPORTED);
+
+  QuicPacketHeader header;
+  header.public_header.guid = guid_;
+  header.public_header.reset_flag = false;
+  header.public_header.version_flag = true;
+  header.entropy_flag = false;
+  header.fec_flag = false;
+  header.packet_sequence_number = 12;
+  header.fec_group = 0;
+
+  QuicFrames frames;
+  QuicFrame frame(&frame1_);
+  frames.push_back(frame);
+  scoped_ptr<QuicPacket> packet(
+      framer_.BuildUnsizedDataPacket(header, frames).packet);
+  scoped_ptr<QuicEncryptedPacket> encrypted(
+      framer_.EncryptPacket(ENCRYPTION_NONE, 12, *packet));
+
+  framer_.set_version(QuicVersionMax());
+  connection_.set_is_server(true);
+  writer_->set_blocked(true);
+  connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), *encrypted);
+  EXPECT_EQ(0u, writer_->last_packet_size());
+  EXPECT_TRUE(connection_.HasQueuedData());
+  EXPECT_TRUE(QuicConnectionPeer::IsWriteBlocked(&connection_));
+
+  writer_->set_blocked(false);
+  connection_.OnCanWrite();
+  EXPECT_TRUE(writer_->version_negotiation_packet() != NULL);
+
+  size_t num_versions = arraysize(kSupportedQuicVersions);
+  EXPECT_EQ(num_versions,
+            writer_->version_negotiation_packet()->versions.size());
+
+  // We expect all versions in kSupportedQuicVersions to be
+  // included in the packet.
+  for (size_t i = 0; i < num_versions; ++i) {
+    EXPECT_EQ(kSupportedQuicVersions[i],
+              writer_->version_negotiation_packet()->versions[i]);
+  }
+}
+
+TEST_F(QuicConnectionTest,
+       ServerSendsVersionNegotiationPacketSocketBlockedDataBuffered) {
+  framer_.set_version_for_tests(QUIC_VERSION_UNSUPPORTED);
+
+  QuicPacketHeader header;
+  header.public_header.guid = guid_;
+  header.public_header.reset_flag = false;
+  header.public_header.version_flag = true;
+  header.entropy_flag = false;
+  header.fec_flag = false;
+  header.packet_sequence_number = 12;
+  header.fec_group = 0;
+
+  QuicFrames frames;
+  QuicFrame frame(&frame1_);
+  frames.push_back(frame);
+  scoped_ptr<QuicPacket> packet(
+      framer_.BuildUnsizedDataPacket(header, frames).packet);
+  scoped_ptr<QuicEncryptedPacket> encrypted(
+      framer_.EncryptPacket(ENCRYPTION_NONE, 12, *packet));
+
+  framer_.set_version(QuicVersionMax());
+  connection_.set_is_server(true);
+  writer_->set_blocked(true);
+  writer_->set_is_write_blocked_data_buffered(true);
+  connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), *encrypted);
+  EXPECT_EQ(0u, writer_->last_packet_size());
+  EXPECT_FALSE(connection_.HasQueuedData());
+  EXPECT_TRUE(QuicConnectionPeer::IsWriteBlocked(&connection_));
 }
 
 TEST_F(QuicConnectionTest, ClientHandlesVersionNegotiation) {
@@ -2588,8 +3000,9 @@ TEST_F(QuicConnectionTest, BadVersionNegotiation) {
 
   // Send a version negotiation packet with the version the client started with.
   // It should be rejected.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_VERSION_NEGOTIATION_PACKET,
-                                        false));
+  EXPECT_CALL(visitor_,
+              OnConnectionClosed(QUIC_INVALID_VERSION_NEGOTIATION_PACKET,
+                                 false));
   scoped_ptr<QuicEncryptedPacket> encrypted(
       framer_.BuildVersionNegotiationPacket(
           header.public_header, supported_versions));
@@ -2597,36 +3010,42 @@ TEST_F(QuicConnectionTest, BadVersionNegotiation) {
 }
 
 TEST_F(QuicConnectionTest, CheckSendStats) {
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(_, _)).Times(3);
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _));
-  connection_.SendStreamData(1u, "first", 0, !kFin);
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
+  connection_.SendStreamDataWithString(3, "first", 0, !kFin, NULL);
   size_t first_packet_size = last_sent_packet_size();
 
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, NOT_RETRANSMISSION, _));
-  connection_.SendStreamData(1u, "second", 0, !kFin);
+              OnPacketSent(_, _, _, NOT_RETRANSMISSION, _));
+  connection_.SendStreamDataWithString(5, "second", 0, !kFin, NULL);
   size_t second_packet_size = last_sent_packet_size();
 
   // 2 retransmissions due to rto, 1 due to explicit nack.
+  EXPECT_CALL(*send_algorithm_, OnRetransmissionTimeout());
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, _, _, IS_RETRANSMISSION, _)).Times(3);
+              OnPacketSent(_, _, _, RTO_RETRANSMISSION, _)).Times(2);
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, _, _, NACK_RETRANSMISSION, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _)).Times(3);
+  EXPECT_CALL(visitor_, OnCanWrite()).WillRepeatedly(Return(true));
 
   // Retransmit due to RTO.
   clock_.AdvanceTime(QuicTime::Delta::FromSeconds(10));
-  connection_.OnRetransmissionTimeout();
+  connection_.GetRetransmissionAlarm()->Fire();
 
-  // Retransmit due to explicit nacks
+  // Retransmit due to explicit nacks.
   QuicAckFrame nack_three(4, QuicTime::Zero(), 0);
   nack_three.received_info.missing_packets.insert(3);
+  nack_three.received_info.missing_packets.insert(1);
   nack_three.received_info.entropy_hash =
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 4) ^
       QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
-      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2);
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
   QuicFrame frame(&nack_three);
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
-  EXPECT_CALL(visitor_, OnCanWrite()).Times(3).WillRepeatedly(Return(true));
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _)).Times(1);
+  EXPECT_CALL(visitor_, OnCanWrite()).Times(4).WillRepeatedly(Return(true));
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
 
   ProcessFramePacket(frame);
@@ -2645,7 +3064,7 @@ TEST_F(QuicConnectionTest, CheckSendStats) {
   EXPECT_EQ(2 * first_packet_size + second_packet_size - kQuicVersionSize,
             stats.bytes_retransmitted);
   EXPECT_EQ(3u, stats.packets_retransmitted);
-  EXPECT_EQ(2u, stats.rto_count);
+  EXPECT_EQ(1u, stats.rto_count);
 }
 
 TEST_F(QuicConnectionTest, CheckReceiveStats) {
@@ -2672,10 +3091,10 @@ TEST_F(QuicConnectionTest, CheckReceiveStats) {
 }
 
 TEST_F(QuicConnectionTest, TestFecGroupLimits) {
-  // Create and return a group for 1
+  // Create and return a group for 1.
   ASSERT_TRUE(QuicConnectionPeer::GetFecGroup(&connection_, 1) != NULL);
 
-  // Create and return a group for 2
+  // Create and return a group for 2.
   ASSERT_TRUE(QuicConnectionPeer::GetFecGroup(&connection_, 2) != NULL);
 
   // Create and return a group for 4.  This should remove 1 but not 2.
@@ -2693,7 +3112,7 @@ TEST_F(QuicConnectionTest, TestFecGroupLimits) {
   ASSERT_TRUE(QuicConnectionPeer::GetFecGroup(&connection_, 3) == NULL);
 }
 
-TEST_F(QuicConnectionTest, DontProcessFramesIfPacketClosedConnection) {
+TEST_F(QuicConnectionTest, ProcessFramesIfPacketClosedConnection) {
   // Construct a packet with stream frame and connection close frame.
   header_.public_header.guid = guid_;
   header_.packet_sequence_number = 1;
@@ -2705,7 +3124,6 @@ TEST_F(QuicConnectionTest, DontProcessFramesIfPacketClosedConnection) {
 
   QuicConnectionCloseFrame qccf;
   qccf.error_code = QUIC_PEER_GOING_AWAY;
-  qccf.ack_frame = QuicAckFrame(0, QuicTime::Zero(), 1);
   QuicFrame close_frame(&qccf);
   QuicFrame stream_frame(&frame1_);
 
@@ -2718,8 +3136,8 @@ TEST_F(QuicConnectionTest, DontProcessFramesIfPacketClosedConnection) {
   scoped_ptr<QuicEncryptedPacket> encrypted(framer_.EncryptPacket(
       ENCRYPTION_NONE, 1, *packet));
 
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_PEER_GOING_AWAY, true));
-  EXPECT_CALL(visitor_, OnStreamFrames(_)).Times(0);
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PEER_GOING_AWAY, true));
+  EXPECT_CALL(visitor_, OnStreamFrames(_)).Times(1);
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
 
   connection_.ProcessUdpPacket(IPEndPoint(), IPEndPoint(), *encrypted);
@@ -2755,41 +3173,41 @@ TEST_F(QuicConnectionTest, SelectMutualVersion) {
 }
 
 TEST_F(QuicConnectionTest, ConnectionCloseWhenNotWriteBlocked) {
-  helper_->set_blocked(false);  // Already default.
+  writer_->set_blocked(false);  // Already default.
 
   // Send a packet (but write will not block).
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
-  EXPECT_EQ(1u, helper_->packets_write_attempts());
+  EXPECT_EQ(1u, writer_->packets_write_attempts());
 
   // Send an erroneous packet to close the connection.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_PACKET_HEADER, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_PACKET_HEADER, false));
   ProcessDataPacket(6000, 0, !kEntropyFlag);
-  EXPECT_EQ(2u, helper_->packets_write_attempts());
+  EXPECT_EQ(2u, writer_->packets_write_attempts());
 }
 
 TEST_F(QuicConnectionTest, ConnectionCloseWhenWriteBlocked) {
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
-  helper_->set_blocked(true);
+  writer_->set_blocked(true);
 
   // Send a packet to so that write will really block.
-  connection_.SendStreamData(1, "foo", 0, !kFin);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
-  EXPECT_EQ(1u, helper_->packets_write_attempts());
+  EXPECT_EQ(1u, writer_->packets_write_attempts());
 
   // Send an erroneous packet to close the connection.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_PACKET_HEADER, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_PACKET_HEADER, false));
   ProcessDataPacket(6000, 0, !kEntropyFlag);
-  EXPECT_EQ(1u, helper_->packets_write_attempts());
+  EXPECT_EQ(1u, writer_->packets_write_attempts());
 }
 
 TEST_F(QuicConnectionTest, ConnectionCloseWhenNothingPending) {
-  helper_->set_blocked(true);
+  writer_->set_blocked(true);
 
   // Send an erroneous packet to close the connection.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_INVALID_PACKET_HEADER, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_PACKET_HEADER, false));
   ProcessDataPacket(6000, 0, !kEntropyFlag);
-  EXPECT_EQ(1u, helper_->packets_write_attempts());
+  EXPECT_EQ(1u, writer_->packets_write_attempts());
 }
 
 TEST_F(QuicConnectionTest, AckNotifierTriggerCallback) {
@@ -2800,12 +3218,14 @@ TEST_F(QuicConnectionTest, AckNotifierTriggerCallback) {
   EXPECT_CALL(delegate, OnAckNotification()).Times(1);;
 
   // Send some data, which will register the delegate to be notified.
-  connection_.SendStreamDataAndNotifyWhenAcked(1, "foo", 0, !kFin, &delegate);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, &delegate);
 
   // Process an ACK from the server which should trigger the callback.
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
   QuicAckFrame frame(1, QuicTime::Zero(), 0);
-  ProcessAckPacket(&frame, true);
+  frame.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  ProcessAckPacket(&frame);
 }
 
 TEST_F(QuicConnectionTest, AckNotifierFailToTriggerCallback) {
@@ -2815,22 +3235,26 @@ TEST_F(QuicConnectionTest, AckNotifierFailToTriggerCallback) {
   MockAckNotifierDelegate delegate;
   EXPECT_CALL(delegate, OnAckNotification()).Times(0);;
 
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(2);
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(2);
 
   // Send some data, which will register the delegate to be notified. This will
   // not be ACKed and so the delegate should never be called.
-  connection_.SendStreamDataAndNotifyWhenAcked(1, "foo", 0, !kFin, &delegate);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, &delegate);
 
   // Send some other data which we will ACK.
-  connection_.SendStreamData(1, "foo", 0, !kFin);
-  connection_.SendStreamData(1, "bar", 0, !kFin);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  connection_.SendStreamDataWithString(1, "bar", 0, !kFin, NULL);
 
   // Now we receive ACK for packets 2 and 3, but importantly missing packet 1
   // which we registered to be notified about.
   QuicAckFrame frame(3, QuicTime::Zero(), 0);
   frame.received_info.missing_packets.insert(1);
-  ProcessAckPacket(&frame, true);
+  frame.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 3) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(_, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(_, _));
+  ProcessAckPacket(&frame);
 }
 
 TEST_F(QuicConnectionTest, AckNotifierCallbackAfterRetransmission) {
@@ -2841,34 +3265,32 @@ TEST_F(QuicConnectionTest, AckNotifierCallbackAfterRetransmission) {
   EXPECT_CALL(delegate, OnAckNotification()).Times(1);;
 
   // In total expect ACKs for all 4 packets.
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(4);
-
-  // We will lose the second packet.
-  EXPECT_CALL(*send_algorithm_, OnIncomingLoss(_)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(4);
 
   // Send four packets, and register to be notified on ACK of packet 2.
-  connection_.SendStreamData(1, "foo", 0, !kFin);
-  connection_.SendStreamDataAndNotifyWhenAcked(1, "bar", 0, !kFin, &delegate);
-  connection_.SendStreamData(1, "baz", 0, !kFin);
-  connection_.SendStreamData(1, "qux", 0, !kFin);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, NULL);
+  connection_.SendStreamDataWithString(1, "bar", 0, !kFin, &delegate);
+  connection_.SendStreamDataWithString(1, "baz", 0, !kFin, NULL);
+  connection_.SendStreamDataWithString(1, "qux", 0, !kFin, NULL);
 
-  // Now we receive ACK for packets 1, 3, and 4.
+  // Now we receive ACK for packets 1, 3, and 4, which invokes fast retransmit.
   QuicAckFrame frame(4, QuicTime::Zero(), 0);
   frame.received_info.missing_packets.insert(2);
-  ProcessAckPacket(&frame, true);
-
-  // Advance time to trigger RTO, for packet 2 (which should be retransmitted as
-  // packet 5).
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(2, _)).Times(1);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(1);
-
-  clock_.AdvanceTime(DefaultRetransmissionTime());
-  connection_.OnRetransmissionTimeout();
+  frame.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 4) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 2) ^
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
+  EXPECT_CALL(*send_algorithm_, OnPacketLost(2, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(2, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+  ProcessAckPacket(&frame);
 
   // Now we get an ACK for packet 5 (retransmitted packet 2), which should
   // trigger the callback.
   QuicAckFrame second_ack_frame(5, QuicTime::Zero(), 0);
-  ProcessAckPacket(&second_ack_frame, true);
+  second_ack_frame.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 5);
+  ProcessAckPacket(&second_ack_frame);
 }
 
 // TODO(rjshade): Add a similar test that FEC recovery on peer (and resulting
@@ -2882,16 +3304,18 @@ TEST_F(QuicConnectionTest, AckNotifierCallbackAfterFECRecovery) {
   EXPECT_CALL(delegate, OnAckNotification()).Times(1);;
 
   // Expect ACKs for 1 packet.
-  EXPECT_CALL(*send_algorithm_, OnIncomingAck(_, _, _)).Times(1);
+  EXPECT_CALL(*send_algorithm_, OnPacketAcked(_, _, _)).Times(1);
 
   // Send one packet, and register to be notified on ACK.
-  connection_.SendStreamDataAndNotifyWhenAcked(1, "foo", 0, !kFin, &delegate);
+  connection_.SendStreamDataWithString(1, "foo", 0, !kFin, &delegate);
 
   // Ack packet gets dropped, but we receive an FEC packet that covers it.
   // Should recover the Ack packet and trigger the notification callback.
   QuicFrames frames;
 
   QuicAckFrame ack_frame(1, QuicTime::Zero(), 0);
+  ack_frame.received_info.entropy_hash =
+      QuicConnectionPeer::GetSentEntropyHash(&connection_, 1);
   frames.push_back(QuicFrame(&ack_frame));
 
   // Dummy stream frame to satisfy expectations set elsewhere.
@@ -2903,7 +3327,7 @@ TEST_F(QuicConnectionTest, AckNotifierCallbackAfterFECRecovery) {
   ack_header.public_header.version_flag = false;
   ack_header.entropy_flag = !kEntropyFlag;
   ack_header.fec_flag = true;
-  ack_header.packet_sequence_number = 42;
+  ack_header.packet_sequence_number = 1;
   ack_header.is_in_fec_group = IN_FEC_GROUP;
   ack_header.fec_group = 1;
 
@@ -2925,7 +3349,7 @@ class MockQuicConnectionDebugVisitor
                void(QuicPacketSequenceNumber,
                     EncryptionLevel,
                     const QuicEncryptedPacket&,
-                    int));
+                    WriteResult));
 
   MOCK_METHOD2(OnPacketRetransmitted,
                void(QuicPacketSequenceNumber,
@@ -2975,6 +3399,17 @@ TEST_F(QuicConnectionTest, OnPacketHeaderDebugVisitor) {
   connection_.set_debug_visitor(debug_visitor.get());
   EXPECT_CALL(*debug_visitor, OnPacketHeader(Ref(header))).Times(1);
   connection_.OnPacketHeader(header);
+}
+
+TEST_F(QuicConnectionTest, Pacing) {
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_pacing, true);
+
+  TestConnection server(guid_, IPEndPoint(), helper_.get(), writer_.get(),
+                        true);
+  TestConnection client(guid_, IPEndPoint(), helper_.get(), writer_.get(),
+                        false);
+  EXPECT_TRUE(client.sent_packet_manager().using_pacing());
+  EXPECT_FALSE(server.sent_packet_manager().using_pacing());
 }
 
 }  // namespace

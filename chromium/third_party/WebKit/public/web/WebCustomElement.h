@@ -33,7 +33,7 @@
 
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
@@ -44,12 +44,12 @@ public:
     // own types for. Because Custom Element processing requires the
     // set of valid names to be known ahead of time, this method
     // should be called before an element with this name is created.
-    WEBKIT_EXPORT static void addEmbedderCustomElementName(const WebString& name);
+    BLINK_EXPORT static void addEmbedderCustomElementName(const WebString& name);
 
 private:
     WebCustomElement();
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

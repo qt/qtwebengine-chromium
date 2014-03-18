@@ -155,9 +155,9 @@ bool IsValidZip(const base::string16& text) {
   return MatchesPattern(text, kZipPattern);
 }
 
-bool IsSSN(const string16& text) {
-  string16 number_string;
-  RemoveChars(text, kSSNSeparators, &number_string);
+bool IsSSN(const base::string16& text) {
+  base::string16 number_string;
+  base::RemoveChars(text, kSSNSeparators, &number_string);
 
   // A SSN is of the form AAA-GG-SSSS (A = area number, G = group number, S =
   // serial number). The validation we do here is simply checking if the area,

@@ -35,18 +35,18 @@
 #include "public/platform/WebDeviceOrientationListener.h"
 #include "wtf/RefPtr.h"
 
-namespace WebKit {
+namespace blink {
 class WebDeviceOrientationData;
 }
 
 namespace WebCore {
 
-class NewDeviceOrientationController;
+class DeviceOrientationController;
 class DeviceOrientationData;
 
 // This class listens to device motion data and dispatches it to all
 // listening controllers.
-class DeviceOrientationDispatcher : public DeviceSensorEventDispatcher, public WebKit::WebDeviceOrientationListener {
+class DeviceOrientationDispatcher : public DeviceSensorEventDispatcher, public blink::WebDeviceOrientationListener {
 public:
     static DeviceOrientationDispatcher& instance();
 
@@ -55,9 +55,9 @@ public:
     DeviceOrientationData* latestDeviceOrientationData();
 
     // This method is called every time new device motion data is available.
-    virtual void didChangeDeviceOrientation(const WebKit::WebDeviceOrientationData&) OVERRIDE;
-    void addDeviceOrientationController(NewDeviceOrientationController*);
-    void removeDeviceOrientationController(NewDeviceOrientationController*);
+    virtual void didChangeDeviceOrientation(const blink::WebDeviceOrientationData&) OVERRIDE;
+    void addDeviceOrientationController(DeviceOrientationController*);
+    void removeDeviceOrientationController(DeviceOrientationController*);
 
 private:
     DeviceOrientationDispatcher();

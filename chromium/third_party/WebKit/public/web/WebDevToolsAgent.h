@@ -34,7 +34,7 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebVector.h"
 
-namespace WebKit {
+namespace blink {
 class WebDevToolsAgentClient;
 class WebDevToolsMessageTransport;
 class WebFrame;
@@ -52,10 +52,10 @@ public:
     virtual ~WebDevToolsAgent() {}
 
     // Returns WebKit WebInspector protocol version.
-    WEBKIT_EXPORT static WebString inspectorProtocolVersion();
+    BLINK_EXPORT static WebString inspectorProtocolVersion();
 
     // Returns true if and only if the given protocol version is supported by the WebKit Web Inspector.
-    WEBKIT_EXPORT static bool supportsInspectorProtocolVersion(const WebString& version);
+    BLINK_EXPORT static bool supportsInspectorProtocolVersion(const WebString& version);
 
     virtual void attach() = 0;
     virtual void reattach(const WebString& savedState) = 0;
@@ -69,10 +69,27 @@ public:
     virtual void setProcessId(long) = 0;
     virtual void setLayerTreeId(int) = 0;
 
-    virtual void didBeginFrame() = 0;
+    virtual void didBeginFrame(int frameId = 0) = 0;
     virtual void didCancelFrame() = 0;
     virtual void willComposite() = 0;
     virtual void didComposite() = 0;
+
+    // FIXME: remove it once the client side stops firing these.
+    virtual void processGPUEvent(double timestamp, int phase, bool foreign) = 0;
+
+    class GPUEvent {
+    public:
+        GPUEvent(double timestamp, int phase, bool foreign, size_t usedGPUMemoryBytes) :
+            timestamp(timestamp),
+            phase(phase),
+            foreign(foreign),
+            usedGPUMemoryBytes(usedGPUMemoryBytes) { }
+        double timestamp;
+        int phase;
+        bool foreign;
+        size_t usedGPUMemoryBytes;
+    };
+    virtual void processGPUEvent(const GPUEvent&) = 0;
 
     // Exposed for TestRunner.
     virtual void evaluateInWebInspector(long callId, const WebString& script) = 0;
@@ -84,12 +101,12 @@ public:
         virtual WebString message() = 0;
     };
     // Asynchronously request debugger to pause immediately and run the command.
-    WEBKIT_EXPORT static void interruptAndDispatch(MessageDescriptor*);
-    WEBKIT_EXPORT static bool shouldInterruptForMessage(const WebString&);
-    WEBKIT_EXPORT static void processPendingMessages();
+    BLINK_EXPORT static void interruptAndDispatch(MessageDescriptor*);
+    BLINK_EXPORT static bool shouldInterruptForMessage(const WebString&);
+    BLINK_EXPORT static void processPendingMessages();
 
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

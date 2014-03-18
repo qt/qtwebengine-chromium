@@ -30,12 +30,14 @@
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLVideoElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/MediaPlayer.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFullScreen.h"
+#include "platform/graphics/media/MediaPlayer.h"
+#include "public/platform/WebLayer.h"
 
 namespace WebCore {
 
@@ -107,12 +109,6 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     if (video->shouldDisplayPosterImage() && !m_cachedImageSize.isEmpty() && !imageResource()->errorOccurred())
         return m_cachedImageSize;
 
-    // When the natural size of the video is unavailable, we use the provided
-    // width and height attributes of the video element as the intrinsic size until
-    // better values become available.
-    if (video->hasAttribute(widthAttr) && video->hasAttribute(heightAttr))
-        return LayoutSize(video->width(), video->height());
-
     // <video> in standalone media documents should not use the default 300x150
     // size since they also have audio-only files. By setting the intrinsic
     // size to 300x1 the video will resize itself in these cases, and audio will
@@ -156,27 +152,13 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 {
     MediaPlayer* mediaPlayer = mediaElement()->player();
     bool displayingPoster = videoElement()->shouldDisplayPosterImage();
-
-    Page* page = 0;
-    if (Frame* frame = this->frame())
-        page = frame->page();
-
-    if (!displayingPoster && !mediaPlayer) {
-        if (page && paintInfo.phase == PaintPhaseForeground)
-            page->addRelevantUnpaintedObject(this, visualOverflowRect());
+    if (!displayingPoster && !mediaPlayer)
         return;
-    }
 
     LayoutRect rect = videoBox();
-    if (rect.isEmpty()) {
-        if (page && paintInfo.phase == PaintPhaseForeground)
-            page->addRelevantUnpaintedObject(this, visualOverflowRect());
+    if (rect.isEmpty())
         return;
-    }
     rect.moveBy(paintOffset);
-
-    if (page && paintInfo.phase == PaintPhaseForeground)
-        page->addRelevantRepaintedObject(this, rect);
 
     LayoutRect contentRect = contentBoxRect();
     contentRect.moveBy(paintOffset);
@@ -189,17 +171,22 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
     if (displayingPoster)
         paintIntoRect(context, rect);
-    else if (document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers)
-        mediaPlayer->paintCurrentFrameInContext(context, pixelSnappedIntRect(rect));
-    else
+    else if ((document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !acceleratedRenderingInUse())
         mediaPlayer->paint(context, pixelSnappedIntRect(rect));
 
     if (clip)
         context->restore();
 }
 
+bool RenderVideo::acceleratedRenderingInUse()
+{
+    blink::WebLayer* webLayer = mediaElement()->platformLayer();
+    return webLayer && !webLayer->isOrphan();
+}
+
 void RenderVideo::layout()
 {
+    LayoutRectRecorder recorder(*this);
     updatePlayer();
     RenderMedia::layout();
 }
@@ -224,7 +211,7 @@ void RenderVideo::updatePlayer()
     if (!mediaPlayer)
         return;
 
-    if (!videoElement()->inActiveDocument())
+    if (!videoElement()->isActive())
         return;
 
     contentChanged(VideoChanged);
@@ -247,11 +234,7 @@ LayoutUnit RenderVideo::minimumReplacedHeight() const
 
 bool RenderVideo::supportsAcceleratedRendering() const
 {
-    MediaPlayer* p = mediaElement()->player();
-    if (p)
-        return p->supportsAcceleratedRendering();
-
-    return false;
+    return !!mediaElement()->platformLayer();
 }
 
 static const RenderBlock* rendererPlaceholder(const RenderObject* renderer)

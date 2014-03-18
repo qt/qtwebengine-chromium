@@ -29,16 +29,16 @@
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
-#include "core/page/Settings.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Settings.h"
 
 namespace WebCore {
 
 HTMLParserOptions::HTMLParserOptions(Document* document)
 {
     Frame* frame = document ? document->frame() : 0;
-    scriptEnabled = frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript);
-    pluginsEnabled = frame && frame->loader()->allowPlugins(NotAboutToInstantiatePlugin);
+    scriptEnabled = frame && frame->script().canExecuteScripts(NotAboutToExecuteScript);
+    pluginsEnabled = frame && frame->loader().allowPlugins(NotAboutToInstantiatePlugin);
 
     Settings* settings = document ? document->settings() : 0;
     // We force the main-thread parser for about:blank, javascript: and data: urls for compatibility

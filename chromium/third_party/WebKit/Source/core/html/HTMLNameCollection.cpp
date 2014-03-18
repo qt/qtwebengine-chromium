@@ -27,6 +27,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeRareData.h"
+#include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLObjectElement.h"
 
 namespace WebCore {
@@ -55,11 +56,11 @@ Element* HTMLNameCollection::virtualItemAfter(unsigned& offsetInArray, Element* 
 
     Element* current;
     if (!previous)
-        current = ElementTraversal::firstWithin(ownerNode());
+        current = ElementTraversal::firstWithin(*ownerNode());
     else
-        current = ElementTraversal::next(previous, ownerNode());
+        current = ElementTraversal::next(*previous, ownerNode());
 
-    for (; current; current = ElementTraversal::next(current, ownerNode())) {
+    for (; current; current = ElementTraversal::next(*current, ownerNode())) {
         switch (type()) {
         case WindowNamedItems:
             // find only images, forms, applets, embeds and objects by name,
@@ -79,15 +80,14 @@ Element* HTMLNameCollection::virtualItemAfter(unsigned& offsetInArray, Element* 
             // find images, forms, applets, embeds, objects and iframes by name,
             // applets and object by id, and images by id but only if they have
             // a name attribute (this very strange rule matches IE)
-            if (current->hasTagName(formTag) || current->hasTagName(embedTag) || current->hasTagName(iframeTag)) {
+            if (current->hasTagName(formTag)
+                || current->hasTagName(iframeTag)
+                || (current->hasTagName(embedTag) && toHTMLEmbedElement(current)->isExposed())) {
                 if (current->getNameAttribute() == m_name)
                     return current;
-            } else if (current->hasTagName(appletTag)) {
+            } else if (current->hasTagName(appletTag)
+                || (current->hasTagName(objectTag) && toHTMLObjectElement(current)->isExposed())) {
                 if (current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    return current;
-            } else if (current->hasTagName(objectTag)) {
-                if ((current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    && toHTMLObjectElement(current)->isDocNamedItem())
                     return current;
             } else if (current->hasTagName(imgTag)) {
                 if (current->getNameAttribute() == m_name || (current->getIdAttribute() == m_name && current->hasName()))

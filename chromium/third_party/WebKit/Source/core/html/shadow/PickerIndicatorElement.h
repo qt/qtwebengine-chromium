@@ -33,8 +33,8 @@
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/HTMLDivElement.h"
-#include "core/platform/DateTimeChooser.h"
-#include "core/platform/DateTimeChooserClient.h"
+#include "platform/DateTimeChooser.h"
+#include "platform/DateTimeChooserClient.h"
 
 namespace WebCore {
 
@@ -49,7 +49,9 @@ public:
     public:
         virtual ~PickerIndicatorOwner() { }
         virtual bool isPickerIndicatorOwnerDisabledOrReadOnly() const = 0;
+        // FIXME: Remove. Deprecated in favor of double version.
         virtual void pickerIndicatorChooseValue(const String&) = 0;
+        virtual void pickerIndicatorChooseValue(double) = 0;
         virtual bool setupDateTimeChooserParameters(DateTimeChooserParameters&) = 0;
     };
 
@@ -62,6 +64,7 @@ public:
 
     // DateTimeChooserClient implementation.
     virtual void didChooseValue(const String&) OVERRIDE;
+    virtual void didChooseValue(double) OVERRIDE;
     virtual void didEndChooser() OVERRIDE;
 
 private:
@@ -77,11 +80,7 @@ private:
     RefPtr<DateTimeChooser> m_chooser;
 };
 
-inline PickerIndicatorElement* toPickerIndicatorElement(Element* element)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isPickerIndicatorElement());
-    return static_cast<PickerIndicatorElement*>(element);
-}
+DEFINE_TYPE_CASTS(PickerIndicatorElement, Element, element, element->isPickerIndicatorElement(), element.isPickerIndicatorElement());
 
 }
 #endif

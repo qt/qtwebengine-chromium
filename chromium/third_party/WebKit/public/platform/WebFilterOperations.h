@@ -26,13 +26,12 @@
 #ifndef WebFilterOperations_h
 #define WebFilterOperations_h
 
+#include "SkImageFilter.h"
 #include "SkScalar.h"
 #include "WebColor.h"
 #include "WebPoint.h"
 
-#define WEB_FILTER_OPERATIONS_IS_VIRTUAL 1
-
-namespace WebKit {
+namespace blink {
 
 // An ordered list of filter operations.
 class WebFilterOperations {
@@ -53,9 +52,12 @@ public:
     virtual void appendZoomFilter(float amount, int inset) = 0;
     virtual void appendSaturatingBrightnessFilter(float amount) = 0;
 
+    // This grabs a ref on the passed-in filter.
+    virtual void appendReferenceFilter(SkImageFilter*) = 0;
+
     virtual void clear() = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebFilterOperations_h

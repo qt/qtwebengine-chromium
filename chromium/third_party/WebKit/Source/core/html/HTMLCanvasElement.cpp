@@ -41,13 +41,15 @@
 #include "core/html/canvas/CanvasRenderingContext2D.h"
 #include "core/html/canvas/WebGLContextAttributes.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
-#include "core/page/Frame.h"
-#include "core/page/Settings.h"
-#include "core/platform/HistogramSupport.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/ImageBuffer.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderHTMLCanvas.h"
+#include "platform/MIMETypeRegistry.h"
+#include "platform/graphics/Canvas2DImageBufferSurface.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/UnacceleratedImageBufferSurface.h"
+#include "platform/graphics/gpu/WebGLImageBufferSurface.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -61,35 +63,28 @@ static const int DefaultHeight = 150;
 // Firefox limits width/height to 32767 pixels, but slows down dramatically before it
 // reaches that limit. We limit by area instead, giving us larger maximum dimensions,
 // in exchange for a smaller maximum canvas size.
-static const float MaxCanvasArea = 32768 * 8192; // Maximum canvas area in CSS pixels
+static const int MaxCanvasArea = 32768 * 8192; // Maximum canvas area in CSS pixels
 
 //In Skia, we will also limit width/height to 32767.
-static const float MaxSkiaDim = 32767.0F; // Maximum width/height in CSS pixels.
+static const int MaxSkiaDim = 32767; // Maximum width/height in CSS pixels.
 
-HTMLCanvasElement::HTMLCanvasElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLCanvasElement::HTMLCanvasElement(Document& document)
+    : HTMLElement(canvasTag, document)
     , m_size(DefaultWidth, DefaultHeight)
     , m_rendererIsCanvas(false)
     , m_ignoreReset(false)
-    , m_deviceScaleFactor(1)
-    , m_originClean(true)
-    , m_hasCreatedImageBuffer(false)
-    , m_didClearImageBuffer(false)
     , m_accelerationDisabled(false)
     , m_externallyAllocatedMemory(0)
+    , m_originClean(true)
+    , m_didFailToCreateImageBuffer(false)
+    , m_didClearImageBuffer(false)
 {
-    ASSERT(hasTagName(canvasTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(Document& document)
 {
-    return adoptRef(new HTMLCanvasElement(canvasTag, document));
-}
-
-PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLCanvasElement(tagName, document));
+    return adoptRef(new HTMLCanvasElement(document));
 }
 
 HTMLCanvasElement::~HTMLCanvasElement()
@@ -112,7 +107,7 @@ void HTMLCanvasElement::parseAttribute(const QualifiedName& name, const AtomicSt
 RenderObject* HTMLCanvasElement::createRenderer(RenderStyle* style)
 {
     Frame* frame = document().frame();
-    if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript)) {
+    if (frame && frame->script().canExecuteScripts(NotAboutToExecuteScript)) {
         m_rendererIsCanvas = true;
         return new RenderHTMLCanvas(this);
     }
@@ -139,12 +134,12 @@ void HTMLCanvasElement::removeObserver(CanvasObserver* observer)
 
 void HTMLCanvasElement::setHeight(int value)
 {
-    setAttribute(heightAttr, String::number(value));
+    setIntegralAttribute(heightAttr, value);
 }
 
 void HTMLCanvasElement::setWidth(int value)
 {
-    setAttribute(widthAttr, String::number(value));
+    setIntegralAttribute(widthAttr, value);
 }
 
 CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, CanvasContextAttributes* attrs)
@@ -169,8 +164,8 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
         if (m_context && !m_context->is2d())
             return 0;
         if (!m_context) {
-            HistogramSupport::histogramEnumeration("Canvas.ContextType", Context2d, ContextTypeCount);
-            m_context = CanvasRenderingContext2D::create(this, RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled() ? static_cast<Canvas2DContextAttributes*>(attrs) : 0, document().inQuirksMode());
+            blink::Platform::current()->histogramEnumeration("Canvas.ContextType", Context2d, ContextTypeCount);
+            m_context = CanvasRenderingContext2D::create(this, static_cast<Canvas2DContextAttributes*>(attrs), document().inQuirksMode());
             if (m_context)
                 scheduleLayerUpdate();
         }
@@ -196,7 +191,7 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
             if (m_context && !m_context->is3d())
                 return 0;
             if (!m_context) {
-                HistogramSupport::histogramEnumeration("Canvas.ContextType", contextType, ContextTypeCount);
+                blink::Platform::current()->histogramEnumeration("Canvas.ContextType", contextType, ContextTypeCount);
                 m_context = WebGLRenderingContext::create(this, static_cast<WebGLContextAttributes*>(attrs));
                 if (m_context)
                     scheduleLayerUpdate();
@@ -238,7 +233,7 @@ void HTMLCanvasElement::reset()
         return;
 
     bool ok;
-    bool hadImageBuffer = hasCreatedImageBuffer();
+    bool hadImageBuffer = hasImageBuffer();
 
     int w = getAttribute(widthAttr).toInt(&ok);
     if (!ok || w < 0)
@@ -254,29 +249,24 @@ void HTMLCanvasElement::reset()
         m_contextStateSaver->save();
     }
 
-    if (m_context && m_context->is2d()) {
-        CanvasRenderingContext2D* context2D = static_cast<CanvasRenderingContext2D*>(m_context.get());
-        context2D->reset();
-    }
+    if (m_context && m_context->is2d())
+        toCanvasRenderingContext2D(m_context.get())->reset();
 
     IntSize oldSize = size();
     IntSize newSize(w, h);
-    float newDeviceScaleFactor = 1;
 
     // If the size of an existing buffer matches, we can just clear it instead of reallocating.
     // This optimization is only done for 2D canvases for now.
-    if (m_hasCreatedImageBuffer && oldSize == newSize && m_deviceScaleFactor == newDeviceScaleFactor && m_context && m_context->is2d()) {
+    if (hadImageBuffer && oldSize == newSize && m_context && m_context->is2d()) {
         if (!m_didClearImageBuffer)
             clearImageBuffer();
         return;
     }
 
-    m_deviceScaleFactor = newDeviceScaleFactor;
-
     setSurfaceSize(newSize);
 
     if (m_context && m_context->is3d() && oldSize != size())
-        static_cast<WebGLRenderingContext*>(m_context.get())->reshape(width(), height());
+        toWebGLRenderingContext(m_context.get())->reshape(width(), height());
 
     if (RenderObject* renderer = this->renderer()) {
         if (m_rendererIsCanvas) {
@@ -323,19 +313,19 @@ void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, boo
         m_context->paintRenderingResultsToCanvas();
     }
 
-    if (hasCreatedImageBuffer()) {
+    if (hasImageBuffer()) {
         ImageBuffer* imageBuffer = buffer();
         if (imageBuffer) {
             CompositeOperator compositeOperator = !m_context || m_context->hasAlpha() ? CompositeSourceOver : CompositeCopy;
             if (m_presentedImage)
                 context->drawImage(m_presentedImage.get(), pixelSnappedIntRect(r), compositeOperator, DoNotRespectImageOrientation, useLowQualityScale);
             else
-                context->drawImageBuffer(imageBuffer, pixelSnappedIntRect(r), compositeOperator, BlendModeNormal, useLowQualityScale);
+                context->drawImageBuffer(imageBuffer, pixelSnappedIntRect(r), compositeOperator, blink::WebBlendModeNormal, useLowQualityScale);
         }
     }
 
     if (is3D())
-        static_cast<WebGLRenderingContext*>(m_context.get())->markLayerComposited();
+        toWebGLRenderingContext(m_context.get())->markLayerComposited();
 }
 
 bool HTMLCanvasElement::is3D() const
@@ -359,7 +349,7 @@ void HTMLCanvasElement::clearPresentationCopy()
 void HTMLCanvasElement::setSurfaceSize(const IntSize& size)
 {
     m_size = size;
-    m_hasCreatedImageBuffer = false;
+    m_didFailToCreateImageBuffer = false;
     m_contextStateSaver.clear();
     m_imageBuffer.clear();
     setExternallyAllocatedMemory(0);
@@ -377,10 +367,10 @@ String HTMLCanvasElement::toEncodingMimeType(const String& mimeType)
     return lowercaseMimeType;
 }
 
-String HTMLCanvasElement::toDataURL(const String& mimeType, const double* quality, ExceptionState& es)
+String HTMLCanvasElement::toDataURL(const String& mimeType, const double* quality, ExceptionState& exceptionState)
 {
     if (!m_originClean) {
-        es.throwSecurityError(ExceptionMessages::failedToExecute("toDataURL", "HTMLCanvasElement", "tainted canvases may not be exported."));
+        exceptionState.throwSecurityError("Tainted canvases may not be exported.");
         return String();
     }
 
@@ -393,7 +383,7 @@ String HTMLCanvasElement::toDataURL(const String& mimeType, const double* qualit
     RefPtr<ImageData> imageData = getImageData();
 
     if (imageData)
-        return ImageDataToDataURL(*imageData, encodingMimeType, quality);
+        return ImageDataToDataURL(ImageDataBuffer(imageData->size(), imageData->data()), encodingMimeType, quality);
 
     if (m_context)
         m_context->paintRenderingResultsToCanvas();
@@ -405,51 +395,12 @@ PassRefPtr<ImageData> HTMLCanvasElement::getImageData()
 {
     if (!m_context || !m_context->is3d())
        return 0;
-
-    WebGLRenderingContext* ctx = static_cast<WebGLRenderingContext*>(m_context.get());
-
-    return ctx->paintRenderingResultsToImageData();
-}
-
-FloatRect HTMLCanvasElement::convertLogicalToDevice(const FloatRect& logicalRect) const
-{
-    FloatRect deviceRect(logicalRect);
-    deviceRect.scale(m_deviceScaleFactor);
-
-    float x = floorf(deviceRect.x());
-    float y = floorf(deviceRect.y());
-    float w = ceilf(deviceRect.maxX() - x);
-    float h = ceilf(deviceRect.maxY() - y);
-    deviceRect.setX(x);
-    deviceRect.setY(y);
-    deviceRect.setWidth(w);
-    deviceRect.setHeight(h);
-
-    return deviceRect;
-}
-
-FloatSize HTMLCanvasElement::convertLogicalToDevice(const FloatSize& logicalSize) const
-{
-    float width = ceilf(logicalSize.width() * m_deviceScaleFactor);
-    float height = ceilf(logicalSize.height() * m_deviceScaleFactor);
-    return FloatSize(width, height);
-}
-
-FloatSize HTMLCanvasElement::convertDeviceToLogical(const FloatSize& deviceSize) const
-{
-    float width = ceilf(deviceSize.width() / m_deviceScaleFactor);
-    float height = ceilf(deviceSize.height() / m_deviceScaleFactor);
-    return FloatSize(width, height);
+    return toWebGLRenderingContext(m_context.get())->paintRenderingResultsToImageData();
 }
 
 SecurityOrigin* HTMLCanvasElement::securityOrigin() const
 {
     return document().securityOrigin();
-}
-
-StyleResolver* HTMLCanvasElement::styleResolver()
-{
-    return document().styleResolver();
 }
 
 bool HTMLCanvasElement::shouldAccelerate(const IntSize& size) const
@@ -468,43 +419,70 @@ bool HTMLCanvasElement::shouldAccelerate(const IntSize& size) const
     if (size.width() * size.height() < settings->minimumAccelerated2dCanvasSize())
         return false;
 
-    if (!WebKit::Platform::current()->canAccelerate2dCanvas())
+    if (!blink::Platform::current()->canAccelerate2dCanvas())
         return false;
 
     return true;
+}
+
+PassOwnPtr<ImageBufferSurface> HTMLCanvasElement::createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount)
+{
+    OpacityMode opacityMode = !m_context || m_context->hasAlpha() ? NonOpaque : Opaque;
+
+    *msaaSampleCount = 0;
+    if (is3D())
+        return adoptPtr(new WebGLImageBufferSurface(size(), opacityMode));
+
+    if (shouldAccelerate(deviceSize)) {
+        if (document().settings())
+            *msaaSampleCount = document().settings()->accelerated2dCanvasMSAASampleCount();
+        OwnPtr<ImageBufferSurface> surface = adoptPtr(new Canvas2DImageBufferSurface(size(), opacityMode, *msaaSampleCount));
+        if (surface->isValid())
+            return surface.release();
+    }
+
+    return adoptPtr(new UnacceleratedImageBufferSurface(size(), opacityMode));
 }
 
 void HTMLCanvasElement::createImageBuffer()
 {
     ASSERT(!m_imageBuffer);
 
-    m_hasCreatedImageBuffer = true;
+    m_didFailToCreateImageBuffer = true;
     m_didClearImageBuffer = true;
 
-    FloatSize logicalSize = size();
-    FloatSize deviceSize = convertLogicalToDevice(logicalSize);
-    if (!deviceSize.isExpressibleAsIntSize())
-        return;
-
+    IntSize deviceSize = size();
     if (deviceSize.width() * deviceSize.height() > MaxCanvasArea)
         return;
 
     if (deviceSize.width() > MaxSkiaDim || deviceSize.height() > MaxSkiaDim)
         return;
 
-    IntSize bufferSize(deviceSize.width(), deviceSize.height());
-    if (!bufferSize.width() || !bufferSize.height())
+    if (!deviceSize.width() || !deviceSize.height())
         return;
 
-    RenderingMode renderingMode = shouldAccelerate(bufferSize) ? Accelerated : UnacceleratedNonPlatformBuffer;
-    OpacityMode opacityMode = !m_context || m_context->hasAlpha() ? NonOpaque : Opaque;
-    m_imageBuffer = ImageBuffer::create(size(), m_deviceScaleFactor, renderingMode, opacityMode);
-    if (!m_imageBuffer)
+    int msaaSampleCount;
+    OwnPtr<ImageBufferSurface> surface = createImageBufferSurface(deviceSize, &msaaSampleCount);
+    if (!surface->isValid())
         return;
+    m_imageBuffer = ImageBuffer::create(surface.release());
+
+    m_didFailToCreateImageBuffer = false;
+
     setExternallyAllocatedMemory(4 * width() * height());
+
+    if (is3D()) {
+        // Early out for WebGL canvases
+        m_contextStateSaver.clear();
+        return;
+    }
+
     m_imageBuffer->context()->setShouldClampToSourceRect(false);
     m_imageBuffer->context()->setImageInterpolationQuality(DefaultInterpolationQuality);
-    if (document().settings() && !document().settings()->antialiased2dCanvasEnabled())
+    // Enabling MSAA overrides a request to disable antialiasing. This is true regardless of whether the
+    // rendering mode is accelerated or not. For consistency, we don't want to apply AA in accelerated
+    // canvases but not in unaccelerated canvases.
+    if (!msaaSampleCount && document().settings() && !document().settings()->antialiased2dCanvasEnabled())
         m_imageBuffer->context()->setShouldAntialias(false);
     // GraphicsContext's defaults don't always agree with the 2d canvas spec.
     // See CanvasRenderingContext2D::State::State() for more information.
@@ -513,13 +491,13 @@ void HTMLCanvasElement::createImageBuffer()
     m_contextStateSaver = adoptPtr(new GraphicsContextStateSaver(*m_imageBuffer->context()));
 
     // Recalculate compositing requirements if acceleration state changed.
-    if (m_context && m_context->is2d())
+    if (m_context)
         scheduleLayerUpdate();
 }
 
 void HTMLCanvasElement::setExternallyAllocatedMemory(intptr_t externallyAllocatedMemory)
 {
-    v8::V8::AdjustAmountOfExternalAllocatedMemory(externallyAllocatedMemory - m_externallyAllocatedMemory);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(externallyAllocatedMemory - m_externallyAllocatedMemory);
     m_externallyAllocatedMemory = externallyAllocatedMemory;
 }
 
@@ -530,17 +508,29 @@ GraphicsContext* HTMLCanvasElement::drawingContext() const
 
 GraphicsContext* HTMLCanvasElement::existingDrawingContext() const
 {
-    if (!m_hasCreatedImageBuffer)
+    if (m_didFailToCreateImageBuffer) {
+        ASSERT(!hasImageBuffer());
         return 0;
+    }
 
     return drawingContext();
 }
 
 ImageBuffer* HTMLCanvasElement::buffer() const
 {
-    if (!m_hasCreatedImageBuffer)
+    if (!hasImageBuffer() && !m_didFailToCreateImageBuffer)
         const_cast<HTMLCanvasElement*>(this)->createImageBuffer();
     return m_imageBuffer.get();
+}
+
+void HTMLCanvasElement::ensureUnacceleratedImageBuffer()
+{
+    if ((hasImageBuffer() && !m_imageBuffer->isAccelerated()) || m_didFailToCreateImageBuffer)
+        return;
+    m_imageBuffer.clear();
+    OpacityMode opacityMode = !m_context || m_context->hasAlpha() ? NonOpaque : Opaque;
+    m_imageBuffer = ImageBuffer::create(size(), opacityMode);
+    m_didFailToCreateImageBuffer = !m_imageBuffer;
 }
 
 Image* HTMLCanvasElement::copiedImage() const
@@ -555,16 +545,16 @@ Image* HTMLCanvasElement::copiedImage() const
 
 void HTMLCanvasElement::clearImageBuffer()
 {
-    ASSERT(m_hasCreatedImageBuffer);
+    ASSERT(hasImageBuffer() && !m_didFailToCreateImageBuffer);
     ASSERT(!m_didClearImageBuffer);
     ASSERT(m_context);
 
     m_didClearImageBuffer = true;
 
     if (m_context->is2d()) {
-        CanvasRenderingContext2D* context2D = static_cast<CanvasRenderingContext2D*>(m_context.get());
-        // No need to undo transforms/clip/etc. because we are called right after the context is reset.
-        context2D->clearRect(0, 0, width(), height());
+        // No need to undo transforms/clip/etc. because we are called right
+        // after the context is reset.
+        toCanvasRenderingContext2D(m_context.get())->clearRect(0, 0, width(), height());
     }
 }
 
@@ -576,14 +566,8 @@ void HTMLCanvasElement::clearCopiedImage()
 
 AffineTransform HTMLCanvasElement::baseTransform() const
 {
-    ASSERT(m_hasCreatedImageBuffer);
-    FloatSize unscaledSize = size();
-    FloatSize deviceSize = convertLogicalToDevice(unscaledSize);
-    IntSize size(deviceSize.width(), deviceSize.height());
-    AffineTransform transform;
-    if (size.width() && size.height())
-        transform.scaleNonUniform(size.width() / unscaledSize.width(), size.height() / unscaledSize.height());
-    return m_imageBuffer->baseTransform() * transform;
+    ASSERT(hasImageBuffer() && !m_didFailToCreateImageBuffer);
+    return m_imageBuffer->baseTransform();
 }
 
 }

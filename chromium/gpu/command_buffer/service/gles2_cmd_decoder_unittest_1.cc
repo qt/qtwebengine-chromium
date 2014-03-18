@@ -251,11 +251,25 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::GetProgramInfoLog, 0>(
   attach_cmd.Init(client_program_id_, kClientFragmentShaderId);
   EXPECT_EQ(error::kNoError, ExecuteCmd(attach_cmd));
 
-  program->Link(NULL, NULL, NULL, NULL, base::Bind(&ShaderCacheCb));
+  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+                base::Bind(&ShaderCacheCb));
 };
 
 template <>
 void GLES2DecoderTestBase::SpecializedSetup<cmds::GetVertexAttribfv, 0>(
+    bool valid) {
+  DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
+  DoVertexAttribPointer(1, 1, GL_FLOAT, 0, 0);
+  if (valid) {
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+  }
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<cmds::GetVertexAttribiv, 0>(
     bool valid) {
   DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
   DoVertexAttribPointer(1, 1, GL_FLOAT, 0, 0);

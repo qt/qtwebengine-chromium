@@ -16,7 +16,7 @@
 
 #include "webrtc/modules/audio_processing/utility/delay_estimator.h"
 #include "webrtc/modules/audio_processing/utility/delay_estimator_internal.h"
-#include "webrtc/system_wrappers/interface/compile_assert.h"
+#include "webrtc/system_wrappers/interface/compile_assert_c.h"
 
 // Only bit |kBandFirst| through bit |kBandLast| are processed and
 // |kBandFirst| - |kBandLast| must be < 32.
@@ -310,6 +310,30 @@ int WebRtc_InitDelayEstimator(void* handle) {
   self->near_spectrum_initialized = 0;
 
   return 0;
+}
+
+int WebRtc_enable_robust_validation(void* handle, int enable) {
+  DelayEstimator* self = (DelayEstimator*) handle;
+
+  if (self == NULL) {
+    return -1;
+  }
+  if ((enable < 0) || (enable > 1)) {
+    return -1;
+  }
+  assert(self->binary_handle != NULL);
+  self->binary_handle->robust_validation_enabled = enable;
+  return 0;
+}
+
+int WebRtc_is_robust_validation_enabled(void* handle) {
+  DelayEstimator* self = (DelayEstimator*) handle;
+
+  if (self == NULL) {
+    return -1;
+  }
+  assert(self->binary_handle != NULL);
+  return self->binary_handle->robust_validation_enabled;
 }
 
 int WebRtc_DelayEstimatorProcessFix(void* handle,

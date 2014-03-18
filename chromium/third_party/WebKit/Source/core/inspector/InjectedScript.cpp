@@ -35,7 +35,7 @@
 
 #include "bindings/v8/ScriptFunctionCall.h"
 #include "core/inspector/InjectedScriptHost.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
 using WebCore::TypeBuilder::Array;
@@ -293,6 +293,21 @@ ScriptValue InjectedScript::findObjectById(const String& objectId) const
     bool hadException = false;
     ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
+    return resultValue;
+}
+
+ScriptValue InjectedScript::findCallFrameById(ErrorString* errorString, const ScriptValue& topCallFrame, const String& callFrameId)
+{
+    ScriptFunctionCall function(injectedScriptObject(), "callFrameForId");
+    function.appendArgument(topCallFrame);
+    function.appendArgument(callFrameId);
+    bool hadException = false;
+    ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
+    ASSERT(!hadException);
+    if (hadException || resultValue.hasNoValue() || !resultValue.isObject()) {
+        *errorString = "Internal error";
+        return ScriptValue();
+    }
     return resultValue;
 }
 

@@ -69,7 +69,7 @@ public:
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode);
     virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*);
 
-    virtual FloatRect resourceBoundingBox(RenderObject*);
+    FloatRect resourceBoundingBox(RenderObject*);
 
     PassRefPtr<SVGFilterBuilder> buildPrimitives(SVGFilter*);
 
@@ -79,26 +79,17 @@ public:
     void primitiveAttributeChanged(RenderObject*, const QualifiedName&);
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
     FloatRect drawingRegion(RenderObject*) const;
 private:
     bool fitsInMaximumImageSize(const FloatSize&, FloatSize&);
 
-    HashMap<RenderObject*, FilterData*> m_filter;
+    typedef HashMap<RenderObject*, OwnPtr<FilterData> > FilterMap;
+    FilterMap m_filter;
 };
 
-inline RenderSVGResourceFilter* toRenderSVGResourceFilter(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGResourceFilter());
-    return static_cast<RenderSVGResourceFilter*>(object);
-}
-
-inline RenderSVGResourceFilter* toRenderSVGResourceFilter(RenderSVGResourceContainer* resource)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == FilterResourceType);
-    return static_cast<RenderSVGResourceFilter*>(resource);
-}
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGResourceFilter, isSVGResourceFilter());
 
 }
 

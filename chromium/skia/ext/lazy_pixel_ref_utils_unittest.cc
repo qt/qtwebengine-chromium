@@ -29,7 +29,7 @@ class TestPixelRef : public SkPixelRef {
   TestPixelRef(int width, int height);
   virtual ~TestPixelRef();
 
-  virtual SkFlattenable::Factory getFactory() OVERRIDE;
+  virtual SkFlattenable::Factory getFactory() const OVERRIDE;
   virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE;
   virtual void onUnlockPixels() OVERRIDE {}
   virtual SkPixelRef* deepCopy(SkBitmap::Config config, const SkIRect* subset)
@@ -44,7 +44,7 @@ class TestLazyPixelRef : public skia::LazyPixelRef {
   TestLazyPixelRef(int width, int height);
   virtual ~TestLazyPixelRef();
 
-  virtual SkFlattenable::Factory getFactory() OVERRIDE;
+  virtual SkFlattenable::Factory getFactory() const OVERRIDE;
   virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE;
   virtual void onUnlockPixels() OVERRIDE {}
   virtual bool PrepareToDecode(const PrepareParams& params) OVERRIDE;
@@ -94,7 +94,7 @@ TestPixelRef::TestPixelRef(int width, int height)
 
 TestPixelRef::~TestPixelRef() {}
 
-SkFlattenable::Factory TestPixelRef::getFactory() { return NULL; }
+SkFlattenable::Factory TestPixelRef::getFactory() const { return NULL; }
 
 void* TestPixelRef::onLockPixels(SkColorTable** color_table) {
   return pixels_.get();
@@ -111,7 +111,7 @@ TestLazyPixelRef::TestLazyPixelRef(int width, int height)
 
 TestLazyPixelRef::~TestLazyPixelRef() {}
 
-SkFlattenable::Factory TestLazyPixelRef::getFactory() { return NULL; }
+SkFlattenable::Factory TestLazyPixelRef::getFactory() const { return NULL; }
 
 void* TestLazyPixelRef::onLockPixels(SkColorTable** color_table) {
   return pixels_.get();
@@ -474,8 +474,9 @@ TEST(LazyPixelRefUtilsTest, DrawBitmap) {
   canvas->restore();
   canvas->save();
 
+  canvas->translate(1, 0);
   canvas->rotate(90);
-  // At (0, 0), rotated 90 degrees
+  // At (1, 0), rotated 90 degrees
   canvas->drawBitmap(fourth, 0, 0);
 
   canvas->restore();
@@ -496,7 +497,7 @@ TEST(LazyPixelRefUtilsTest, DrawBitmap) {
                        gfx::SkRectToRectF(pixel_refs[1].pixel_ref_rect));
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(50, 50, 50, 50),
                        gfx::SkRectToRectF(pixel_refs[2].pixel_ref_rect));
-  EXPECT_FLOAT_RECT_EQ(gfx::RectF(-1, 0, 1, 50),
+  EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 1, 50),
                        gfx::SkRectToRectF(pixel_refs[3].pixel_ref_rect));
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 50, 60),
                        gfx::SkRectToRectF(pixel_refs[4].pixel_ref_rect));

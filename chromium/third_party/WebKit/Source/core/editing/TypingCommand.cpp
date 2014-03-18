@@ -35,11 +35,11 @@
 #include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/InsertParagraphSeparatorCommand.h"
 #include "core/editing/InsertTextCommand.h"
-#include "core/editing/SpellCheckRequester.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -110,11 +110,16 @@ void TypingCommand::deleteSelection(Document& document, Options options)
 void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     if (granularity == CharacterGranularity) {
-        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
-            updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), document.frame());
-            lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
-            lastTypingCommand->deleteKeyPressed(granularity, options & KillRing);
-            return;
+        Frame* frame = document.frame();
+        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
+            // If the last typing command is not Delete, open a new typing command.
+            // We need to group continuous delete commands alone in a single typing command.
+            if (lastTypingCommand->commandTypeOfOpenCommand() == DeleteKey) {
+                updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
+                lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
+                lastTypingCommand->deleteKeyPressed(granularity, options & KillRing);
+                return;
+            }
         }
     }
 
@@ -124,8 +129,8 @@ void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGr
 void TypingCommand::forwardDeleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     // FIXME: Forward delete in TextEdit appears to open and close a new typing command.
-    Frame* frame = document.frame();
     if (granularity == CharacterGranularity) {
+        Frame* frame = document.frame();
         if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
             updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
             lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
@@ -154,7 +159,7 @@ void TypingCommand::insertText(Document& document, const String& text, Options o
     ASSERT(frame);
 
     if (!text.isEmpty())
-        document.frame()->editor().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
+        document.frame()->spellChecker().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
 
     insertText(document, text, frame->selection().selection(), options, composition);
 }
@@ -285,10 +290,10 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     if (!frame)
         return;
 
-    if (!frame->editor().isContinuousSpellCheckingEnabled())
+    if (!frame->spellChecker().isContinuousSpellCheckingEnabled())
         return;
 
-    frame->editor().spellCheckRequester().cancelCheck();
+    frame->spellChecker().cancelCheck();
 
     // Take a look at the selection that results after typing and determine whether we need to spellcheck.
     // Since the word containing the current selection is never marked, this does a check to
@@ -300,7 +305,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
         if (p1 != p2)
-            frame->editor().markMisspellingsAfterTypingToWord(p1, endingSelection());
+            frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }
 
@@ -311,6 +316,7 @@ void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedT
         return;
 
     updatePreservesTypingStyle(commandTypeForAddedTyping);
+    updateCommandTypeOfOpenCommand(commandTypeForAddedTyping);
 
     // The old spellchecking code requires that checking be done first, to prevent issues like that in 6864072, where <doesn't> is marked as misspelled.
     markMisspellingsAfterTyping(commandTypeForAddedTyping);
@@ -396,17 +402,17 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (!frame)
         return;
 
-    frame->editor().updateMarkersForWordsAffectedByEditing(false);
+    frame->spellChecker().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
 
     switch (endingSelection().selectionType()) {
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         selectionToDelete = endingSelection();
         selectionAfterUndo = selectionToDelete;
         break;
-    case VisibleSelection::CaretSelection: {
+    case CaretSelection: {
         // After breaking out of an empty mail blockquote, we still want continue with the deletion
         // so actual content will get deleted, and not just the quote style.
         if (breakOutOfEmptyMailBlockquotedParagraph())
@@ -470,7 +476,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             selectionAfterUndo.setWithoutValidation(startingSelection().end(), selectionToDelete.extent());
         break;
     }
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         ASSERT_NOT_REACHED();
         break;
     }
@@ -479,15 +485,15 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret())
         return;
 
     if (killRing)
         frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
-    // Make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
+    // On Mac, make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
     // FIXME: This behaves like TextEdit except for the case where you open with text insertion and then delete
     // more text than you insert.  In that case all of the text that was around originally should be selected.
-    if (m_openedByBackwardDelete)
+    if (frame->editor().behavior().shouldUndoOfDeleteSelectText() && m_openedByBackwardDelete)
         setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);
     setSmartDelete(false);
@@ -500,17 +506,17 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (!frame)
         return;
 
-    frame->editor().updateMarkersForWordsAffectedByEditing(false);
+    frame->spellChecker().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
 
     switch (endingSelection().selectionType()) {
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         selectionToDelete = endingSelection();
         selectionAfterUndo = selectionToDelete;
         break;
-    case VisibleSelection::CaretSelection: {
+    case CaretSelection: {
         m_smartDelete = false;
 
         // Handle delete at beginning-of-block case.
@@ -530,8 +536,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion
-        if (downstreamEnd.containerNode() && downstreamEnd.containerNode()->renderer() && downstreamEnd.containerNode()->renderer()->isTable()
-            && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
+        if (isRenderedTable(downstreamEnd.containerNode()) && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
             setEndingSelection(VisibleSelection(endingSelection().end(), positionAfterNode(downstreamEnd.containerNode()), DOWNSTREAM, endingSelection().isDirectional()));
             typingAddedToOpenCommand(ForwardDeleteKey);
             return;
@@ -563,7 +568,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         }
         break;
     }
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         ASSERT_NOT_REACHED();
         break;
     }
@@ -572,13 +577,14 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret())
         return;
 
     if (killRing)
         frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
-    // make undo select what was deleted
-    setStartingSelection(selectionAfterUndo);
+    // Make undo select what was deleted on Mac alone
+    if (frame->editor().behavior().shouldUndoOfDeleteSelectText())
+        setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);
     setSmartDelete(false);
     typingAddedToOpenCommand(ForwardDeleteKey);

@@ -26,11 +26,11 @@
 
 #include "WebGamepad.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 #include "wtf/Assertions.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 
 #pragma pack(push, 1)
 
@@ -51,7 +51,7 @@ public:
     WebGamepad items[itemsLengthCap];
 };
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 COMPILE_ASSERT(sizeof(WebGamepads) == 1864, WebGamepads_has_wrong_size);
 #endif
 

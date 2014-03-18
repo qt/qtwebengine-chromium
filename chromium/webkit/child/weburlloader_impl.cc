@@ -19,6 +19,7 @@
 #include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
 #include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -38,20 +39,20 @@
 
 using base::Time;
 using base::TimeTicks;
-using WebKit::WebData;
-using WebKit::WebHTTPBody;
-using WebKit::WebHTTPHeaderVisitor;
-using WebKit::WebHTTPLoadInfo;
-using WebKit::WebReferrerPolicy;
-using WebKit::WebSecurityPolicy;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoadTiming;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebData;
+using blink::WebHTTPBody;
+using blink::WebHTTPHeaderVisitor;
+using blink::WebHTTPLoadInfo;
+using blink::WebReferrerPolicy;
+using blink::WebSecurityPolicy;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoadTiming;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 namespace webkit_glue {
 
@@ -268,7 +269,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
 WebURLLoaderImpl::Context::Context(WebURLLoaderImpl* loader)
     : loader_(loader),
       client_(NULL),
-      referrer_policy_(WebKit::WebReferrerPolicyDefault) {
+      referrer_policy_(blink::WebReferrerPolicyDefault) {
 }
 
 void WebURLLoaderImpl::Context::Cancel() {
@@ -423,17 +424,17 @@ void WebURLLoaderImpl::Context::Start(
           }
           break;
         case WebHTTPBody::Element::TypeFileSystemURL: {
-          GURL url = GURL(element.url);
-          DCHECK(url.SchemeIsFileSystem());
+          GURL file_system_url = element.fileSystemURL;
+          DCHECK(file_system_url.SchemeIsFileSystem());
           request_body->AppendFileSystemFileRange(
-              url,
+              file_system_url,
               static_cast<uint64>(element.fileStart),
               static_cast<uint64>(element.fileLength),
               base::Time::FromDoubleT(element.modificationTime));
           break;
         }
         case WebHTTPBody::Element::TypeBlob:
-          request_body->AppendBlobDeprecated(GURL(element.blobURL));
+          request_body->AppendBlob(element.blobUUID.utf8());
           break;
         default:
           NOTREACHED();
@@ -486,8 +487,9 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   if (!referrer.isEmpty())
     new_request.setHTTPHeaderField(referrer_string, referrer);
 
-  if (response.httpStatusCode() == 307)
-    new_request.setHTTPMethod(request_.httpMethod());
+  std::string new_method = net::URLRequest::ComputeMethodForRedirect(
+             request_.httpMethod().utf8(), response.httpStatusCode());
+  new_request.setHTTPMethod(WebString::fromUTF8(new_method));
 
   client_->willSendRequest(loader_, new_request, response);
   request_ = new_request;
@@ -545,7 +547,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
     std::string boundary;
     net::HttpUtil::ParseContentType(content_type, &mime_type, &charset,
                                     &had_charset, &boundary);
-    TrimString(boundary, " \"", &boundary);
+    base::TrimString(boundary, " \"", &boundary);
 
     // If there's no boundary, just handle the request normally.  In the gecko
     // code, nsMultiMixedConv::OnStartRequest throws an exception.
@@ -691,6 +693,9 @@ WebURLError WebURLLoaderImpl::CreateError(const WebURL& unreachable_url,
   } else if (reason == net::ERR_TEMPORARILY_THROTTLED) {
     error.localizedDescription = WebString::fromUTF8(
         kThrottledErrorDescription);
+  } else {
+    error.localizedDescription = WebString::fromUTF8(
+        net::ErrorToString(reason));
   }
   return error;
 }

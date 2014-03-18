@@ -13,7 +13,7 @@
 #include "base/message_loop/message_loop.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
 #include "content/common/content_export.h"
-#include "content/common/p2p_sockets.h"
+#include "content/public/common/p2p_socket_type.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/completion_callback.h"
 #include "net/socket/tcp_server_socket.h"
@@ -36,7 +36,9 @@ class CONTENT_EXPORT P2PSocketHostTcpServer : public P2PSocketHost {
   virtual bool Init(const net::IPEndPoint& local_address,
                     const net::IPEndPoint& remote_address) OVERRIDE;
   virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data) OVERRIDE;
+                    const std::vector<char>& data,
+                    net::DiffServCodePoint dscp,
+                    uint64 packet_id) OVERRIDE;
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
       const net::IPEndPoint& remote_address, int id) OVERRIDE;
 

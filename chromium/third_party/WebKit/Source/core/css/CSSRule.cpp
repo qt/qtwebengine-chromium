@@ -25,7 +25,7 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/platform/NotImplemented.h"
+#include "platform/NotImplemented.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ COMPILE_ASSERT(StyleRuleBase::Region == static_cast<StyleRuleBase::Type>(CSSRule
 
 COMPILE_ASSERT(StyleRuleBase::Viewport == static_cast<StyleRuleBase::Type>(CSSRule::VIEWPORT_RULE), enums_should_match);
 
-void CSSRule::setCssText(const String&)
+void CSSRule::setCSSText(const String&)
 {
     notImplemented();
 }

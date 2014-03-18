@@ -36,7 +36,7 @@ public:
                 : fBounds.fTop < rh.fBounds.fTop;
     }
 
-    void addCoincident(int index, SkOpContour* other, int otherIndex,
+    bool addCoincident(int index, SkOpContour* other, int otherIndex,
                        const SkIntersections& ts, bool swap);
     void addCoincidentPoints();
 
@@ -63,7 +63,7 @@ public:
         fSegments[segIndex].addOtherT(tIndex, otherT, otherIndex);
     }
 
-    void addPartialCoincident(int index, SkOpContour* other, int otherIndex,
+    bool addPartialCoincident(int index, SkOpContour* other, int otherIndex,
                        const SkIntersections& ts, int ptIndex, bool swap);
 
     int addQuad(const SkPoint pts[3]) {
@@ -72,10 +72,9 @@ public:
         return fSegments.count();
     }
 
-    int addT(int segIndex, SkOpContour* other, int otherIndex, const SkPoint& pt, double newT,
-            bool isNear) {
+    int addT(int segIndex, SkOpContour* other, int otherIndex, const SkPoint& pt, double newT) {
         setContainsIntercepts();
-        return fSegments[segIndex].addT(&other->fSegments[otherIndex], pt, newT, isNear);
+        return fSegments[segIndex].addT(&other->fSegments[otherIndex], pt, newT);
     }
 
     int addSelfT(int segIndex, SkOpContour* other, int otherIndex, const SkPoint& pt, double newT) {
@@ -99,6 +98,9 @@ public:
             SkOpSegment* segment = &fSegments[sIndex];
             if (segment->verb() == SkPath::kLine_Verb) {
                 continue;
+            }
+            if (segment->done()) {
+                continue;   // likely coincident, nothing to do
             }
             segment->checkEnds();
         }
@@ -147,6 +149,11 @@ public:
         for (int sIndex = 0; sIndex < segmentCount; ++sIndex) {
             fSegments[sIndex].fixOtherTIndex();
         }
+    }
+
+    void joinCoincidence() {
+        joinCoincidence(fCoincidences, false);
+        joinCoincidence(fPartialCoincidences, true);
     }
 
     SkOpSegment* nonVerticalSegment(int* start, int* end);
@@ -236,7 +243,8 @@ public:
 #endif
 
 private:
-    void calcCommonCoincidentWinding(const SkCoincidence& coincidence);
+    void calcCommonCoincidentWinding(const SkCoincidence& );
+    void joinCoincidence(const SkTArray<SkCoincidence, true>& , bool partial);
     void setBounds();
 
     SkTArray<SkOpSegment> fSegments;

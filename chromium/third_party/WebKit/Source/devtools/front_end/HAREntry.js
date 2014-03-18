@@ -36,7 +36,7 @@
 
 /**
  * @constructor
- * @param {WebInspector.NetworkRequest} request
+ * @param {!WebInspector.NetworkRequest} request
  */
 WebInspector.HAREntry = function(request)
 {
@@ -45,7 +45,7 @@ WebInspector.HAREntry = function(request)
 
 WebInspector.HAREntry.prototype = {
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     build: function()
     {
@@ -67,18 +67,19 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     _buildRequest: function()
     {
+        var headersText = this._request.requestHeadersText();
         var res = {
             method: this._request.requestMethod,
             url: this._buildRequestURL(this._request.url),
-            httpVersion: this._request.requestHttpVersion,
-            headers: this._request.requestHeaders,
+            httpVersion: this._request.requestHttpVersion(),
+            headers: this._request.requestHeaders(),
             queryString: this._buildParameters(this._request.queryParameters || []),
             cookies: this._buildCookies(this._request.requestCookies || []),
-            headersSize: this._request.requestHeadersSize,
+            headersSize: headersText ? headersText.length : -1,
             bodySize: this.requestBodySize
         };
         if (this._request.requestFormData)
@@ -88,7 +89,7 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     _buildResponse: function()
     {
@@ -106,7 +107,7 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     _buildContent: function()
     {
@@ -122,7 +123,7 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     _buildTimings: function()
     {
@@ -164,12 +165,12 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     _buildPostData: function()
     {
         var res = {
-            mimeType: this._request.requestHeaderValue("Content-Type"),
+            mimeType: this._request.requestContentType(),
             text: this._request.requestFormData
         };
         if (this._request.formParameters)
@@ -178,8 +179,8 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @param {Array.<Object>} parameters
-     * @return {Array.<Object>}
+     * @param {!Array.<!Object>} parameters
+     * @return {!Array.<!Object>}
      */
     _buildParameters: function(parameters)
     {
@@ -196,8 +197,8 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @param {Array.<WebInspector.Cookie>} cookies
-     * @return {Array.<Object>}
+     * @param {!Array.<!WebInspector.Cookie>} cookies
+     * @return {!Array.<!Object>}
      */
     _buildCookies: function(cookies)
     {
@@ -205,8 +206,8 @@ WebInspector.HAREntry.prototype = {
     },
 
     /**
-     * @param {WebInspector.Cookie} cookie
-     * @return {Object}
+     * @param {!WebInspector.Cookie} cookie
+     * @return {!Object}
      */
     _buildCookie: function(cookie)
     {
@@ -261,7 +262,7 @@ WebInspector.HAREntry._toMilliseconds = function(time)
 
 /**
  * @constructor
- * @param {Array.<WebInspector.NetworkRequest>} requests
+ * @param {!Array.<!WebInspector.NetworkRequest>} requests
  */
 WebInspector.HARLog = function(requests)
 {
@@ -270,7 +271,7 @@ WebInspector.HARLog = function(requests)
 
 WebInspector.HARLog.prototype = {
     /**
-     * @return {Object}
+     * @return {!Object}
      */
     build: function()
     {
@@ -293,7 +294,7 @@ WebInspector.HARLog.prototype = {
     },
 
     /**
-     * @return {Array}
+     * @return {!Array.<!Object>}
      */
     _buildPages: function()
     {
@@ -310,8 +311,8 @@ WebInspector.HARLog.prototype = {
     },
 
     /**
-     * @param {WebInspector.PageLoad} page
-     * @return {Object}
+     * @param {!WebInspector.PageLoad} page
+     * @return {!Object}
      */
     _convertPage: function(page)
     {
@@ -327,8 +328,8 @@ WebInspector.HARLog.prototype = {
     },
 
     /**
-     * @param {WebInspector.NetworkRequest} request
-     * @return {Object}
+     * @param {!WebInspector.NetworkRequest} request
+     * @return {!Object}
      */
     _convertResource: function(request)
     {
@@ -336,7 +337,7 @@ WebInspector.HARLog.prototype = {
     },
 
     /**
-     * @param {WebInspector.PageLoad} page
+     * @param {!WebInspector.PageLoad} page
      * @param {number} time
      * @return {number}
      */
@@ -358,9 +359,9 @@ WebInspector.HARWriter = function()
 
 WebInspector.HARWriter.prototype = {
     /**
-     * @param {WebInspector.OutputStream} stream
-     * @param {Array.<WebInspector.NetworkRequest>} requests
-     * @param {WebInspector.Progress} progress
+     * @param {!WebInspector.OutputStream} stream
+     * @param {!Array.<!WebInspector.NetworkRequest>} requests
+     * @param {!WebInspector.Progress} progress
      */
     write: function(stream, requests, progress)
     {
@@ -387,12 +388,10 @@ WebInspector.HARWriter.prototype = {
     },
 
     /**
-     * @param {Object} entry
-     * @param {string|null} content
-     * @param {boolean} contentEncoded
-     * @param {string=} mimeType
+     * @param {!Object} entry
+     * @param {?string} content
      */
-    _onContentAvailable: function(entry, content, contentEncoded, mimeType)
+    _onContentAvailable: function(entry, content)
     {
         if (content !== null)
             entry.response.content.text = content;
@@ -415,7 +414,7 @@ WebInspector.HARWriter.prototype = {
     },
 
     /**
-     * @param {WebInspector.OutputStream} stream
+     * @param {!WebInspector.OutputStream} stream
      * @param {string=} error
      */
     _writeNextChunk: function(stream, error)

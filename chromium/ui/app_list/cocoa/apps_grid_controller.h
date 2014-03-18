@@ -23,13 +23,12 @@ class AppsGridDelegateBridge;
 @protocol AppsPaginationModelObserver;
 @class AppsCollectionViewDragManager;
 
-// Controls a grid of views, representing AppListModel::Apps sub models.
+// Controls a grid of views, representing AppListItemList sub models.
 APP_LIST_EXPORT
 @interface AppsGridController : NSViewController<GestureScrollDelegate,
                                                  AppListPagerDelegate,
                                                  NSCollectionViewDelegate> {
  @private
-  scoped_ptr<app_list::AppListModel> model_;
   app_list::AppListViewDelegate* delegate_;  // Weak. Owned by view controller.
   scoped_ptr<app_list::AppsGridDelegateBridge> bridge_;
 
@@ -66,14 +65,11 @@ APP_LIST_EXPORT
 
 - (app_list::AppListModel*)model;
 
-- (void)setModel:(scoped_ptr<app_list::AppListModel>)newModel;
-
 - (void)setDelegate:(app_list::AppListViewDelegate*)newDelegate;
 
 - (size_t)visiblePage;
 
-// Calls delegate_->ActivateAppListItem for the currently selected item by
-// simulating a click.
+// Calls item->Activate for the currently selected item by simulating a click.
 - (void)activateSelection;
 
 // Return the number of pages of icons in the grid.

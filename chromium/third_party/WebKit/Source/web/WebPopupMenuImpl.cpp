@@ -38,23 +38,23 @@
 #include "WebRange.h"
 #include "WebViewClient.h"
 #include "WebWidgetClient.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Cursor.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformKeyboardEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformWheelEvent.h"
-#include "core/platform/chromium/FramelessScrollView.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/skia/SkiaUtils.h"
+#include "core/frame/FrameView.h"
+#include "platform/Cursor.h"
+#include "platform/NotImplemented.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformKeyboardEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformWheelEvent.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/skia/SkiaUtils.h"
+#include "platform/scroll/FramelessScrollView.h"
 #include "public/platform/WebRect.h"
 #include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // WebPopupMenu ---------------------------------------------------------------
 
@@ -263,6 +263,7 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GestureTap:
     case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureShowPress:
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureDoubleTap:
     case WebInputEvent::GestureTwoFingerTap:
@@ -379,10 +380,6 @@ WebScreenInfo WebPopupMenuImpl::screenInfo() const
     return WebScreenInfo();
 }
 
-void WebPopupMenuImpl::setCursor(const WebCore::Cursor&)
-{
-}
-
 //-----------------------------------------------------------------------------
 // WebCore::FramelessScrollViewClient
 
@@ -397,4 +394,4 @@ void WebPopupMenuImpl::popupClosed(FramelessScrollView* widget)
         m_client->closeWidgetSoon();
 }
 
-} // namespace WebKit
+} // namespace blink

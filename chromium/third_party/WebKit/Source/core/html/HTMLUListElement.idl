@@ -21,4 +21,3 @@ interface HTMLUListElement : HTMLElement {
     [Reflect] attribute boolean compact;
     [Reflect] attribute DOMString type;
 };
-

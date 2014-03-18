@@ -215,7 +215,8 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
   def testAddListExample(self):
     policy = {
       'name': 'PolicyName',
-      'example_value': ['Foo', 'Bar']
+      'example_value': ['Foo', 'Bar'],
+      'supported_on': [ { 'platforms': ['win', 'mac', 'linux'] } ]
     }
     self.writer._AddListExample(self.doc_root, policy)
     self.assertEquals(
@@ -246,7 +247,8 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     policy = {
       'name': 'PolicyName',
       'type': 'main',
-      'example_value': True
+      'example_value': True,
+      'supported_on': [ { 'platforms': ['win', 'mac', 'linux'] } ]
     }
     e1 = self.writer.AddElement(self.doc_root, 'e1')
     self.writer._AddExample(e1, policy)
@@ -257,7 +259,8 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     policy = {
       'name': 'PolicyName',
       'type': 'main',
-      'example_value': False
+      'example_value': False,
+      'supported_on': [ { 'platforms': ['win', 'mac', 'linux'] } ]
     }
     e2 = self.writer.AddElement(self.doc_root, 'e2')
     self.writer._AddExample(e2, policy)
@@ -270,12 +273,13 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     policy = {
       'name': 'PolicyName',
       'type': 'int-enum',
-      'example_value': 16
+      'example_value': 16,
+      'supported_on': [ { 'platforms': ['win', 'mac', 'linux'] } ]
     }
     self.writer._AddExample(self.doc_root, policy)
     self.assertEquals(
         self.doc_root.toxml(),
-        '<root>0x00000010 (Windows), 16 (Linux/Mac)</root>')
+        '<root>0x00000010 (Windows), 16 (Linux), 16 (Mac)</root>')
 
   def testStringEnumExample(self):
     # Test representation of 'int-enum' example values.
@@ -306,12 +310,13 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     policy = {
       'name': 'PolicyName',
       'type': 'int',
-      'example_value': 26
+      'example_value': 26,
+      'supported_on': [ { 'platforms': ['win', 'mac', 'linux'] } ]
     }
     self.writer._AddExample(self.doc_root, policy)
     self.assertEquals(
         self.doc_root.toxml(),
-        '<root>0x0000001a (Windows), 26 (Linux/Mac)</root>')
+        '<root>0x0000001a (Windows), 26 (Linux), 26 (Mac)</root>')
 
   def testAddPolicyAttribute(self):
     # Test creating a policy attribute term-definition pair.
@@ -333,7 +338,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       'desc': 'TestPolicyDesc',
       'supported_on': [{
         'product': 'chrome',
-        'platforms': ['win'],
+        'platforms': ['win', 'mac', 'linux'],
         'since_version': '8',
         'until_version': '',
       }],
@@ -353,7 +358,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       '<dt style="style_dt;">_test_supported_on</dt>'
       '<dd>'
         '<ul style="style_ul;">'
-          '<li>Chrome (Windows) ...8...</li>'
+          '<li>Chrome (Windows, Mac, Linux) ...8...</li>'
         '</ul>'
       '</dd>'
       '<dt style="style_dt;">_test_supported_features</dt>'
@@ -420,12 +425,12 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       'type': 'string',
       'supported_on': [{
         'product': 'chrome',
-        'platforms': ['win'],
+        'platforms': ['win', 'mac'],
         'since_version': '7',
         'until_version': '',
       }],
       'features': {'dynamic_refresh': False},
-      'example_value': False
+      'example_value': 'False'
     }
     self.writer.messages['doc_since_version'] = {'text': '..$6..'}
     self.writer._AddPolicySection(self.doc_root, policy)
@@ -445,7 +450,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
             '<dt style="style_dt;">_test_supported_on</dt>'
             '<dd>'
               '<ul style="style_ul;">'
-                '<li>Chrome (Windows) ..7..</li>'
+                '<li>Chrome (Windows, Mac) ..7..</li>'
               '</ul>'
             '</dd>'
             '<dt style="style_dt;">_test_supported_features</dt>'
@@ -472,6 +477,141 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         '</div>'
       '</root>')
 
+  def testAddPolicySectionForWindowsOnly(self):
+    policy = {
+      'name': 'PolicyName',
+      'caption': 'PolicyCaption',
+      'desc': 'PolicyDesc',
+      'type': 'int',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['win'],
+        'since_version': '33',
+        'until_version': '',
+      }],
+      'features': {'dynamic_refresh': False},
+      'example_value': 123
+    }
+    self.writer.messages['doc_since_version'] = {'text': '..$6..'}
+    self.writer._AddPolicySection(self.doc_root, policy)
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root>'
+        '<div style="margin-left: 0px">'
+          '<h3><a name="PolicyName"/>PolicyName</h3>'
+          '<span>PolicyCaption</span>'
+          '<dl>'
+            '<dt style="style_dt;">_test_data_type</dt>'
+            '<dd>Integer (REG_DWORD)</dd>'
+            '<dt style="style_dt;">_test_win_reg_loc</dt>'
+            '<dd style="style_.monospace;">MockKey\\PolicyName</dd>'
+            '<dt style="style_dt;">_test_supported_on</dt>'
+            '<dd>'
+              '<ul style="style_ul;">'
+                '<li>Chrome (Windows) ..33..</li>'
+              '</ul>'
+            '</dd>'
+            '<dt style="style_dt;">_test_supported_features</dt>'
+            '<dd>_test_feature_dynamic_refresh: _test_not_supported</dd>'
+            '<dt style="style_dt;">_test_description</dt>'
+            '<dd>PolicyDesc</dd>'
+            '<dt style="style_dt;">_test_example_value</dt>'
+            '<dd>0x0000007b (Windows)</dd>'
+          '</dl>'
+          '<a href="#top">_test_back_to_top</a>'
+        '</div>'
+      '</root>')
+
+  def testAddPolicySectionForMacOnly(self):
+    policy = {
+      'name': 'PolicyName',
+      'caption': 'PolicyCaption',
+      'desc': 'PolicyDesc',
+      'type': 'int',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['mac'],
+        'since_version': '33',
+        'until_version': '',
+      }],
+      'features': {'dynamic_refresh': False},
+      'example_value': 123
+    }
+    self.writer.messages['doc_since_version'] = {'text': '..$6..'}
+    self.writer._AddPolicySection(self.doc_root, policy)
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root>'
+        '<div style="margin-left: 0px">'
+          '<h3><a name="PolicyName"/>PolicyName</h3>'
+          '<span>PolicyCaption</span>'
+          '<dl>'
+            '<dt style="style_dt;">_test_data_type</dt>'
+            '<dd>Integer</dd>'
+            '<dt style="style_dt;">_test_mac_linux_pref_name</dt>'
+            '<dd style="style_.monospace;">PolicyName</dd>'
+            '<dt style="style_dt;">_test_supported_on</dt>'
+            '<dd>'
+              '<ul style="style_ul;">'
+                '<li>Chrome (Mac) ..33..</li>'
+              '</ul>'
+            '</dd>'
+            '<dt style="style_dt;">_test_supported_features</dt>'
+            '<dd>_test_feature_dynamic_refresh: _test_not_supported</dd>'
+            '<dt style="style_dt;">_test_description</dt>'
+            '<dd>PolicyDesc</dd>'
+            '<dt style="style_dt;">_test_example_value</dt>'
+            '<dd>123 (Mac)</dd>'
+          '</dl>'
+          '<a href="#top">_test_back_to_top</a>'
+        '</div>'
+      '</root>')
+
+  def testAddPolicySectionForLinuxOnly(self):
+    policy = {
+      'name': 'PolicyName',
+      'caption': 'PolicyCaption',
+      'desc': 'PolicyDesc',
+      'type': 'int',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['linux'],
+        'since_version': '33',
+        'until_version': '',
+      }],
+      'features': {'dynamic_refresh': False},
+      'example_value': 123
+    }
+    self.writer.messages['doc_since_version'] = {'text': '..$6..'}
+    self.writer._AddPolicySection(self.doc_root, policy)
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root>'
+        '<div style="margin-left: 0px">'
+          '<h3><a name="PolicyName"/>PolicyName</h3>'
+          '<span>PolicyCaption</span>'
+          '<dl>'
+            '<dt style="style_dt;">_test_data_type</dt>'
+            '<dd>Integer</dd>'
+            '<dt style="style_dt;">_test_mac_linux_pref_name</dt>'
+            '<dd style="style_.monospace;">PolicyName</dd>'
+            '<dt style="style_dt;">_test_supported_on</dt>'
+            '<dd>'
+              '<ul style="style_ul;">'
+                '<li>Chrome (Linux) ..33..</li>'
+              '</ul>'
+            '</dd>'
+            '<dt style="style_dt;">_test_supported_features</dt>'
+            '<dd>_test_feature_dynamic_refresh: _test_not_supported</dd>'
+            '<dt style="style_dt;">_test_description</dt>'
+            '<dd>PolicyDesc</dd>'
+            '<dt style="style_dt;">_test_example_value</dt>'
+            '<dd>123 (Linux)</dd>'
+          '</dl>'
+          '<a href="#top">_test_back_to_top</a>'
+        '</div>'
+      '</root>')
+
   def testAddDictionaryExample(self):
     policy = {
       'name': 'PolicyName',
@@ -480,7 +620,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       'type': 'dict',
       'supported_on': [{
         'product': 'chrome',
-        'platforms': ['win'],
+        'platforms': ['win', 'mac', 'linux'],
         'since_version': '7',
         'until_version': '',
       }],

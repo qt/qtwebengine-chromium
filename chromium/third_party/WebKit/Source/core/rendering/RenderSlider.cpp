@@ -25,6 +25,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "wtf/MathExtras.h"
 
 using std::min;
@@ -42,11 +43,6 @@ RenderSlider::RenderSlider(HTMLInputElement* element)
 
 RenderSlider::~RenderSlider()
 {
-}
-
-bool RenderSlider::canBeReplacedWithInlineRunIn() const
-{
-    return false;
 }
 
 int RenderSlider::baselinePosition(FontBaseline, bool /*firstLine*/, LineDirectionMode, LinePositionMode linePositionMode) const
@@ -97,6 +93,7 @@ inline SliderThumbElement* RenderSlider::sliderThumbElement() const
 
 void RenderSlider::layout()
 {
+    LayoutRectRecorder recorder(*this);
     // FIXME: Find a way to cascade appearance.
     // http://webkit.org/b/62535
     RenderBox* thumbBox = sliderThumbElement()->renderBox();

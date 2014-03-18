@@ -30,16 +30,16 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/WebGLGetInfo.h"
 #include "core/page/Page.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/GraphicsContext3D.h"
-#include "core/platform/graphics/ImageBuffer.h"
+#include "platform/Timer.h"
+#include "platform/graphics/GraphicsContext3D.h"
+#include "platform/graphics/ImageBuffer.h"
 
 #include "wtf/Float32Array.h"
 #include "wtf/Int32Array.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit { class WebLayer; }
+namespace blink { class WebLayer; }
 
 namespace WebCore {
 
@@ -315,7 +315,7 @@ public:
 
     GraphicsContext3D* graphicsContext3D() const { return m_context.get(); }
     WebGLContextGroup* contextGroup() const { return m_contextGroup.get(); }
-    virtual WebKit::WebLayer* platformLayer() const;
+    virtual blink::WebLayer* platformLayer() const;
 
     void reshape(int width, int height);
 
@@ -372,6 +372,8 @@ public:
     // Adds a compressed texture format.
     void addCompressedTextureFormat(GC3Denum);
     void removeAllCompressedTextureFormats();
+
+    PassRefPtr<Image> drawImageIntoBuffer(Image*, int width, int height);
 
     PassRefPtr<Image> videoFrameToImage(HTMLVideoElement*, BackingStoreCopy);
 
@@ -459,10 +461,10 @@ public:
         ImageBuffer* imageBuffer(const IntSize& size);
     private:
         void bubbleToFront(int idx);
-        OwnArrayPtr<OwnPtr<ImageBuffer> > m_buffers;
+        OwnPtr<OwnPtr<ImageBuffer>[]> m_buffers;
         int m_capacity;
     };
-    LRUImageBufferCache m_videoCache;
+    LRUImageBufferCache m_generatedImageCache;
 
     GC3Dint m_maxTextureSize;
     GC3Dint m_maxCubeMapTextureSize;
@@ -542,7 +544,7 @@ public:
 
     class ExtensionTracker {
     public:
-        ExtensionTracker(ExtensionFlags flags, const char** prefixes)
+        ExtensionTracker(ExtensionFlags flags, const char* const* prefixes)
             : m_privileged(flags & PrivilegedExtension)
             , m_draft(flags & DraftExtension)
             , m_prefixed(flags & PrefixedExtension)
@@ -587,13 +589,13 @@ public:
         bool m_draft;
         bool m_prefixed;
         bool m_webglDebugRendererInfo;
-        const char** m_prefixes;
+        const char* const* m_prefixes;
     };
 
     template <typename T>
     class TypedExtensionTracker : public ExtensionTracker {
     public:
-        TypedExtensionTracker(RefPtr<T>& extensionField, ExtensionFlags flags, const char** prefixes)
+        TypedExtensionTracker(RefPtr<T>& extensionField, ExtensionFlags flags, const char* const* prefixes)
             : ExtensionTracker(flags, prefixes)
             , m_extensionField(extensionField)
         {
@@ -641,7 +643,7 @@ public:
     Vector<ExtensionTracker*> m_extensions;
 
     template <typename T>
-    void registerExtension(RefPtr<T>& extensionPtr, ExtensionFlags flags = ApprovedExtension, const char** prefixes = 0)
+    void registerExtension(RefPtr<T>& extensionPtr, ExtensionFlags flags = ApprovedExtension, const char* const* prefixes = 0)
     {
         m_extensions.append(new TypedExtensionTracker<T>(extensionPtr, flags, prefixes));
     }
@@ -923,6 +925,8 @@ public:
     static size_t oldestContextIndex();
     static IntSize oldestContextSize();
 };
+
+DEFINE_TYPE_CASTS(WebGLRenderingContext, CanvasRenderingContext, context, context->is3d(), context.is3d());
 
 } // namespace WebCore
 

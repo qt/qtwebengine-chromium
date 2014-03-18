@@ -23,12 +23,12 @@
 #ifndef ImageResource_h
 #define ImageResource_h
 
-#include "core/fetch/Resource.h"
-#include "core/platform/graphics/ImageObserver.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/IntSizeHash.h"
-#include "core/platform/graphics/LayoutSize.h"
+#include "core/fetch/ResourcePtr.h"
 #include "core/svg/graphics/SVGImageCache.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/geometry/IntSizeHash.h"
+#include "platform/geometry/LayoutSize.h"
+#include "platform/graphics/ImageObserver.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -36,14 +36,17 @@ namespace WebCore {
 class ImageResourceClient;
 class ResourceFetcher;
 class FloatSize;
+class Length;
 class MemoryCache;
 class RenderObject;
-struct Length;
+class SecurityOrigin;
 
 class ImageResource : public Resource, public ImageObserver {
     friend class MemoryCache;
 
 public:
+    typedef ImageResourceClient ClientType;
+
     ImageResource(const ResourceRequest&);
     ImageResource(WebCore::Image*);
     virtual ~ImageResource();
@@ -64,6 +67,9 @@ public:
     bool usesImageContainerSize() const;
     bool imageHasRelativeWidth() const;
     bool imageHasRelativeHeight() const;
+    // The device pixel ratio we got from the server for this image, or 1.0.
+    float devicePixelRatioHeaderValue() const { return m_devicePixelRatioHeaderValue; }
+    bool hasDevicePixelRatioHeaderValue() const { return m_hasDevicePixelRatioHeaderValue; }
 
     enum SizeType {
         NormalSize, // Report the size of the image associated with a certain renderer
@@ -72,6 +78,8 @@ public:
     // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
     LayoutSize imageSizeForRenderer(const RenderObject*, float multiplier, SizeType = NormalSize); // returns the size of the complete image.
     void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
+
+    bool isAccessAllowed(SecurityOrigin*);
 
     virtual void didAddClient(ResourceClient*);
     virtual void didRemoveClient(ResourceClient*);
@@ -113,11 +121,15 @@ private:
     typedef pair<IntSize, float> SizeAndZoom;
     typedef HashMap<const ImageResourceClient*, SizeAndZoom> ContainerSizeRequests;
     ContainerSizeRequests m_pendingContainerSizeRequests;
+    float m_devicePixelRatioHeaderValue;
 
     RefPtr<WebCore::Image> m_image;
     OwnPtr<SVGImageCache> m_svgImageCache;
     bool m_loadingMultipartContent;
+    bool m_hasDevicePixelRatioHeaderValue;
 };
+
+DEFINE_RESOURCE_TYPE_CASTS(Image);
 
 }
 

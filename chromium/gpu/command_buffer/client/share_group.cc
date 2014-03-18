@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gpu/command_buffer/client/atomicops.h"
+#include "gpu/command_buffer/client/share_group.h"
+
+#include "base/logging.h"
+#include "base/synchronization/lock.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/program_info_manager.h"
-#include "gpu/command_buffer/client/share_group.h"
 #include "gpu/command_buffer/common/id_allocator.h"
-#include "gpu/command_buffer/common/logging.h"
 
 namespace gpu {
 namespace gles2 {
@@ -67,7 +68,7 @@ class StrictIdHandler : public IdHandler {
 
   // Overridden from IdHandler.
   virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    GPU_DCHECK(id == 0 || id_allocator_.InUse(id));
+    DCHECK(id == 0 || id_allocator_.InUse(id));
     return IdHandler::MarkAsUsedForBind(id);
   }
 };
@@ -156,7 +157,7 @@ class ThreadSafeIdHandlerWrapper : public IdHandlerInterface {
                        GLuint id_offset,
                        GLsizei n,
                        GLuint* ids) OVERRIDE {
-    AutoLock auto_lock(lock_);
+    base::AutoLock auto_lock(lock_);
     id_handler_->MakeIds(gl_impl, id_offset, n, ids);
   }
 
@@ -165,19 +166,19 @@ class ThreadSafeIdHandlerWrapper : public IdHandlerInterface {
                        GLsizei n,
                        const GLuint* ids,
                        DeleteFn delete_fn) OVERRIDE {
-    AutoLock auto_lock(lock_);
+    base::AutoLock auto_lock(lock_);
     return id_handler_->FreeIds(gl_impl, n, ids, delete_fn);
   }
 
   // Overridden from IdHandlerInterface.
   virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    AutoLock auto_lock(lock_);
+    base::AutoLock auto_lock(lock_);
     return id_handler_->MarkAsUsedForBind(id);
   }
 
  private:
    scoped_ptr<IdHandlerInterface> id_handler_;
-   Lock lock_;
+   base::Lock lock_;
 };
 
 ShareGroup::ShareGroup(bool bind_generates_resource)

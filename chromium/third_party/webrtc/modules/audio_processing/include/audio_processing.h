@@ -12,6 +12,7 @@
 #define WEBRTC_MODULES_AUDIO_PROCESSING_INCLUDE_AUDIO_PROCESSING_H_
 
 #include <stddef.h>  // size_t
+#include <stdio.h>  // FILE
 
 #include "webrtc/common.h"
 #include "webrtc/modules/interface/module.h"
@@ -29,6 +30,30 @@ class HighPassFilter;
 class LevelEstimator;
 class NoiseSuppression;
 class VoiceDetection;
+
+// Use to enable the delay correction feature. This now engages an extended
+// filter mode in the AEC, along with robustness measures around the reported
+// system delays. It comes with a significant increase in AEC complexity, but is
+// much more robust to unreliable reported delays.
+//
+// Detailed changes to the algorithm:
+// - The filter length is changed from 48 to 128 ms. This comes with tuning of
+//   several parameters: i) filter adaptation stepsize and error threshold;
+//   ii) non-linear processing smoothing and overdrive.
+// - Option to ignore the reported delays on platforms which we deem
+//   sufficiently unreliable. See WEBRTC_UNTRUSTED_DELAY in echo_cancellation.c.
+// - Faster startup times by removing the excessive "startup phase" processing
+//   of reported delays.
+// - Much more conservative adjustments to the far-end read pointer. We smooth
+//   the delay difference more heavily, and back off from the difference more.
+//   Adjustments force a readaptation of the filter, so they should be avoided
+//   except when really necessary.
+struct DelayCorrection {
+  DelayCorrection() : enabled(false) {}
+  DelayCorrection(bool enabled) : enabled(enabled) {}
+
+  bool enabled;
+};
 
 // The Audio Processing Module (APM) provides a collection of voice processing
 // components designed for real-time communications software.
@@ -131,6 +156,9 @@ class AudioProcessing : public Module {
   // ensures the options are applied immediately.
   virtual void SetExtraOptions(const Config& config) = 0;
 
+  virtual int EnableExperimentalNs(bool enable) = 0;
+  virtual bool experimental_ns_enabled() const = 0;
+
   // Sets the sample |rate| in Hz for both the primary and reverse audio
   // streams. 8000, 16000 or 32000 Hz are permitted.
   virtual int set_sample_rate_hz(int rate) = 0;
@@ -206,6 +234,10 @@ class AudioProcessing : public Module {
   // An already existing file will be overwritten without warning.
   static const size_t kMaxFilenameSize = 1024;
   virtual int StartDebugRecording(const char filename[kMaxFilenameSize]) = 0;
+
+  // Same as above but uses an existing file handle. Takes ownership
+  // of |handle| and closes it at StopDebugRecording().
+  virtual int StartDebugRecording(FILE* handle) = 0;
 
   // Stops recording debugging information, and closes the file. Recording
   // cannot be resumed in the same file (without overwriting it).

@@ -28,13 +28,16 @@
 
 #include "ChromeClientImpl.h"
 #include "WebColorChooser.h"
-#include "core/platform/ColorChooserClient.h"
-#include "core/platform/graphics/Color.h"
+#include "WebColorSuggestion.h"
+#include "WebViewClient.h"
+#include "WebViewImpl.h"
+#include "platform/ColorChooserClient.h"
+#include "platform/graphics/Color.h"
 #include "public/platform/WebColor.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 
 ColorChooserUIController::ColorChooserUIController(ChromeClientImpl* chromeClient, ColorChooserClient* client)
@@ -80,7 +83,11 @@ void ColorChooserUIController::didEndChooser()
 void ColorChooserUIController::openColorChooser()
 {
     ASSERT(!m_chooser);
-    m_chooser = m_chromeClient->createWebColorChooser(this, static_cast<WebColor>(m_client->currentColor().rgb()));
+    WebViewClient* webViewClient = static_cast<WebViewImpl*>(m_chromeClient->webView())->client();
+    if (!webViewClient)
+        return;
+    m_chooser = adoptPtr(webViewClient->createColorChooser(
+        this, static_cast<WebColor>(m_client->currentColor().rgb()), m_client->suggestions()));
 }
 
-} // namespace WebKit
+} // namespace blink

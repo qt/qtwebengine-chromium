@@ -31,7 +31,9 @@
 #ifndef AnimatableUnknown_h
 #define AnimatableUnknown_h
 
+#include "CSSValueKeywords.h"
 #include "core/animation/AnimatableValue.h"
+#include "core/css/CSSValuePool.h"
 
 namespace WebCore {
 
@@ -43,8 +45,13 @@ public:
     {
         return adoptRef(new AnimatableUnknown(value));
     }
+    static PassRefPtr<AnimatableUnknown> create(CSSValueID value)
+    {
+        return adoptRef(new AnimatableUnknown(cssValuePool().createIdentifierValue(value)));
+    }
 
     PassRefPtr<CSSValue> toCSSValue() const { return m_value; }
+    CSSValueID toCSSValueID() const { return toCSSPrimitiveValue(m_value.get())->getValueID(); }
 
 protected:
     virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue* value, double fraction) const OVERRIDE
@@ -54,19 +61,22 @@ protected:
 
 private:
     explicit AnimatableUnknown(PassRefPtr<CSSValue> value)
-        : AnimatableValue(TypeUnknown)
-        , m_value(value)
+        : m_value(value)
     {
         ASSERT(m_value);
     }
+    virtual AnimatableType type() const OVERRIDE { return TypeUnknown; }
+    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
 
     const RefPtr<CSSValue> m_value;
 };
 
-inline const AnimatableUnknown* toAnimatableUnknown(const AnimatableValue* value)
+DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableUnknown, isUnknown());
+
+inline bool AnimatableUnknown::equalTo(const AnimatableValue* value) const
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(value && value->isUnknown());
-    return static_cast<const AnimatableUnknown*>(value);
+    const AnimatableUnknown* unknown = toAnimatableUnknown(value);
+    return m_value == unknown->m_value || m_value->equals(*unknown->m_value);
 }
 
 } // namespace WebCore

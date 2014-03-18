@@ -66,10 +66,10 @@ ValidityState* FormAssociatedElement::validity()
     return m_validityState.get();
 }
 
-void FormAssociatedElement::didMoveToNewDocument(Document* oldDocument)
+void FormAssociatedElement::didMoveToNewDocument(Document& oldDocument)
 {
     HTMLElement* element = toHTMLElement(this);
-    if (oldDocument && element->fastHasAttribute(formAttr))
+    if (element->fastHasAttribute(formAttr))
         m_formAttributeTargetObserver = nullptr;
 }
 
@@ -122,8 +122,9 @@ HTMLFormElement* FormAssociatedElement::findAssociatedForm(const HTMLElement* el
 void FormAssociatedElement::formRemovedFromTree(const Node* formRoot)
 {
     ASSERT(m_form);
-    if (toHTMLElement(this)->highestAncestor() != formRoot)
-        setForm(0);
+    if (toHTMLElement(this)->highestAncestor() == formRoot)
+        return;
+    setForm(0);
 }
 
 void FormAssociatedElement::setForm(HTMLFormElement* newForm)
@@ -135,7 +136,7 @@ void FormAssociatedElement::setForm(HTMLFormElement* newForm)
         m_form->removeFormElement(this);
     m_form = newForm;
     if (m_form)
-        m_form->registerFormElement(this);
+        m_form->registerFormElement(*this);
     didChangeForm();
 }
 
@@ -274,17 +275,28 @@ bool FormAssociatedElement::isFormControlElementWithState() const
     return false;
 }
 
-const HTMLElement* toHTMLElement(const FormAssociatedElement* associatedElement)
+const HTMLElement& toHTMLElement(const FormAssociatedElement& associatedElement)
 {
-    if (associatedElement->isFormControlElement())
+    if (associatedElement.isFormControlElement())
         return toHTMLFormControlElement(associatedElement);
     // Assumes the element is an HTMLObjectElement
     return toHTMLObjectElement(associatedElement);
 }
 
+const HTMLElement* toHTMLElement(const FormAssociatedElement* associatedElement)
+{
+    ASSERT(associatedElement);
+    return &toHTMLElement(*associatedElement);
+}
+
 HTMLElement* toHTMLElement(FormAssociatedElement* associatedElement)
 {
     return const_cast<HTMLElement*>(toHTMLElement(static_cast<const FormAssociatedElement*>(associatedElement)));
+}
+
+HTMLElement& toHTMLElement(FormAssociatedElement& associatedElement)
+{
+    return const_cast<HTMLElement&>(toHTMLElement(static_cast<const FormAssociatedElement&>(associatedElement)));
 }
 
 PassOwnPtr<FormAttributeTargetObserver> FormAttributeTargetObserver::create(const AtomicString& id, FormAssociatedElement* element)

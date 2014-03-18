@@ -26,10 +26,9 @@ class FilePath;
 class MessageLoop;
 }
 
-namespace WebKit {
+namespace blink {
 class WebAudioDevice;
 class WebClipboard;
-class WebCrypto;
 class WebFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
@@ -44,12 +43,14 @@ class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebThemeEngine;
 class WebURLRequest;
+class WebWorkerPermissionClientProxy;
 struct WebPluginParams;
 struct WebURLError;
 }
 
 namespace content {
-
+class DocumentState;
+class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
 struct KeySystemInfo;
@@ -62,6 +63,9 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Notifies us that the RenderThread has been created.
   virtual void RenderThreadStarted() {}
+
+  // Notifies that a new RenderFrame has been created.
+  virtual void RenderFrameCreated(RenderFrame* render_frame) {}
 
   // Notifies that a new RenderView has been created.
   virtual void RenderViewCreated(RenderView* render_view) {}
@@ -83,15 +87,15 @@ class CONTENT_EXPORT ContentRendererClient {
   // |plugin| will contain the created plugin, although it could be NULL. If it
   // returns false, the content layer will create the plugin.
   virtual bool OverrideCreatePlugin(
-      RenderView* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params,
-      WebKit::WebPlugin** plugin);
+      RenderFrame* render_frame,
+      blink::WebFrame* frame,
+      const blink::WebPluginParams& params,
+      blink::WebPlugin** plugin);
 
   // Creates a replacement plug-in that is shown when the plug-in at |file_path|
   // couldn't be loaded. This allows the embedder to show a custom placeholder.
-  virtual WebKit::WebPlugin* CreatePluginReplacement(
-      RenderView* render_view,
+  virtual blink::WebPlugin* CreatePluginReplacement(
+      RenderFrame* render_frame,
       const base::FilePath& plugin_path);
 
   // Returns true if the embedder has an error page to show for the given http
@@ -114,55 +118,52 @@ class CONTENT_EXPORT ContentRendererClient {
   // (lack of information on the error code) so the caller should take care to
   // initialize the string values with safe defaults before the call.
   virtual void GetNavigationErrorStrings(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& failed_request,
-      const WebKit::WebURLError& error,
+      blink::WebFrame* frame,
+      const blink::WebURLRequest& failed_request,
+      const blink::WebURLError& error,
+      const std::string& accept_languages,
       std::string* error_html,
-      string16* error_description) {}
+      base::string16* error_description) {}
 
   // Allows the embedder to control when media resources are loaded. Embedders
   // can run |closure| immediately if they don't wish to defer media resource
   // loading.
-  virtual void DeferMediaLoad(RenderView* render_view,
+  virtual void DeferMediaLoad(RenderFrame* render_frame,
                               const base::Closure& closure);
 
   // Allows the embedder to override creating a WebMediaStreamCenter. If it
   // returns NULL the content layer will create the stream center.
-  virtual WebKit::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
-      WebKit::WebMediaStreamCenterClient* client);
+  virtual blink::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
+      blink::WebMediaStreamCenterClient* client);
 
   // Allows the embedder to override creating a WebRTCPeerConnectionHandler. If
   // it returns NULL the content layer will create the connection handler.
-  virtual WebKit::WebRTCPeerConnectionHandler*
+  virtual blink::WebRTCPeerConnectionHandler*
   OverrideCreateWebRTCPeerConnectionHandler(
-      WebKit::WebRTCPeerConnectionHandlerClient* client);
+      blink::WebRTCPeerConnectionHandlerClient* client);
 
   // Allows the embedder to override creating a WebMIDIAccessor.  If it
   // returns NULL the content layer will create the MIDI accessor.
-  virtual WebKit::WebMIDIAccessor* OverrideCreateMIDIAccessor(
-      WebKit::WebMIDIAccessorClient* client);
+  virtual blink::WebMIDIAccessor* OverrideCreateMIDIAccessor(
+      blink::WebMIDIAccessorClient* client);
 
   // Allows the embedder to override creating a WebAudioDevice.  If it
   // returns NULL the content layer will create the audio device.
-  virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
+  virtual blink::WebAudioDevice* OverrideCreateAudioDevice(
       double sample_rate);
 
-  // Allows the embedder to override the WebKit::WebClipboard used. If it
+  // Allows the embedder to override the blink::WebClipboard used. If it
   // returns NULL the content layer will handle clipboard interactions.
-  virtual WebKit::WebClipboard* OverrideWebClipboard();
+  virtual blink::WebClipboard* OverrideWebClipboard();
 
   // Allows the embedder to override the WebThemeEngine used. If it returns NULL
   // the content layer will provide an engine.
-  virtual WebKit::WebThemeEngine* OverrideThemeEngine();
+  virtual blink::WebThemeEngine* OverrideThemeEngine();
 
   // Allows the embedder to override the WebSpeechSynthesizer used.
   // If it returns NULL the content layer will provide an engine.
-  virtual WebKit::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
-      WebKit::WebSpeechSynthesizerClient* client);
-
-  // Allows the embedder to override the WebCrypto used.
-  // If it returns NULL the content layer will handle crypto.
-  virtual WebKit::WebCrypto* OverrideWebCrypto();
+  virtual blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
+      blink::WebSpeechSynthesizerClient* client);
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.
@@ -171,16 +172,28 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if a popup window should be allowed.
   virtual bool AllowPopup();
 
+#ifdef OS_ANDROID
+  // TODO(sgurun) This callback is deprecated and will be removed as soon
+  // as android webview completes implementation of a resource throttle based
+  // shouldoverrideurl implementation. See crbug.com/325351
+  //
   // Returns true if the navigation was handled by the embedder and should be
-  // ignored by WebKit. This method is used by CEF.
-  virtual bool HandleNavigation(WebKit::WebFrame* frame,
-                                const WebKit::WebURLRequest& request,
-                                WebKit::WebNavigationType type,
-                                WebKit::WebNavigationPolicy default_policy,
+  // ignored by WebKit. This method is used by CEF and android_webview.
+  virtual bool HandleNavigation(RenderView* view,
+                                DocumentState* document_state,
+                                int opener_id,
+                                blink::WebFrame* frame,
+                                const blink::WebURLRequest& request,
+                                blink::WebNavigationType type,
+                                blink::WebNavigationPolicy default_policy,
                                 bool is_redirect);
+#endif
 
   // Returns true if we should fork a new process for the given navigation.
-  virtual bool ShouldFork(WebKit::WebFrame* frame,
+  // If |send_referrer| is set to false (which is the default), no referrer
+  // header will be send for the navigation. Otherwise, the referrer header is
+  // set according to the frame's referrer policy.
+  virtual bool ShouldFork(blink::WebFrame* frame,
                           const GURL& url,
                           const std::string& http_method,
                           bool is_initial_navigation,
@@ -189,47 +202,29 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
-  virtual bool WillSendRequest(WebKit::WebFrame* frame,
+  virtual bool WillSendRequest(blink::WebFrame* frame,
                                PageTransition transition_type,
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url);
 
-  // Whether to pump events when sending sync cookie messages.  Needed if the
-  // embedder can potentiall put up a modal dialog on the UI thread as a result.
-  virtual bool ShouldPumpEventsDuringCookieMessage();
-
-  // See the corresponding functions in WebKit::WebFrameClient.
-  virtual void DidCreateScriptContext(WebKit::WebFrame* frame,
+  // See the corresponding functions in blink::WebFrameClient.
+  virtual void DidCreateScriptContext(blink::WebFrame* frame,
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
                                       int world_id) {}
-  virtual void WillReleaseScriptContext(WebKit::WebFrame* frame,
+  virtual void WillReleaseScriptContext(blink::WebFrame* frame,
                                         v8::Handle<v8::Context>,
                                         int world_id) {}
 
-  // See WebKit::Platform.
+  // See blink::Platform.
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length);
   virtual bool IsLinkVisited(unsigned long long link_hash);
-  virtual WebKit::WebPrescientNetworking* GetPrescientNetworking();
+  virtual blink::WebPrescientNetworking* GetPrescientNetworking();
   virtual bool ShouldOverridePageVisibilityState(
-      const RenderView* render_view,
-      WebKit::WebPageVisibilityState* override_state);
-
-  // Return true if the GetCookie request will be handled by the embedder.
-  // Cookies are returned in the cookie parameter.
-  virtual bool HandleGetCookieRequest(RenderView* sender,
-                                      const GURL& url,
-                                      const GURL& first_party_for_cookies,
-                                      std::string* cookies);
-
-  // Return true if the SetCookie request will be handled by the embedder.
-  // Cookies to be set are passed in the value parameter.
-  virtual bool HandleSetCookieRequest(RenderView* sender,
-                                      const GURL& url,
-                                      const GURL& first_party_for_cookies,
-                                      const std::string& value);
+      const RenderFrame* render_frame,
+      blink::WebPageVisibilityState* override_state);
 
   // Allows an embedder to return custom PPAPI interfaces.
   virtual const void* CreatePPAPIInterface(
@@ -239,13 +234,8 @@ class CONTENT_EXPORT ContentRendererClient {
   // startup steps).
   virtual bool IsExternalPepperPlugin(const std::string& module_name);
 
-  // Returns true if plugin living in the container can use
-  // pp::FileIO::RequestOSFileHandle.
-  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      WebKit::WebPluginContainer* container);
-
   // Returns whether BrowserPlugin should be allowed within the |container|.
-  virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container);
+  virtual bool AllowBrowserPlugin(blink::WebPluginContainer* container);
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
@@ -265,6 +255,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // this renderer process. Currently, we apply the policy only to a renderer
   // process running on a normal page from the web.
   virtual bool ShouldEnableSiteIsolationPolicy() const;
+
+  // Creates a permission client proxy for in-renderer worker.
+  virtual blink::WebWorkerPermissionClientProxy*
+      CreateWorkerPermissionClientProxy(RenderView* render_view,
+                                        blink::WebFrame* frame);
 };
 
 }  // namespace content

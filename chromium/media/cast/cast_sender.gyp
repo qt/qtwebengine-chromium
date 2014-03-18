@@ -10,7 +10,7 @@
   ],
   'targets': [
     {
-      'target_name': 'cast_sender_impl',
+      'target_name': 'cast_sender',
       'type': 'static_library',
       'include_dirs': [
         '<(DEPTH)/',
@@ -23,11 +23,12 @@
         'cast_sender_impl.h',
       ], # source
       'dependencies': [
+        '<(DEPTH)/crypto/crypto.gyp:crypto',
         'audio_sender',
         'congestion_control',
-        'pacing/paced_sender.gyp:paced_sender',
+        'net/pacing/paced_sender.gyp:cast_paced_sender',
+        'net/rtp_sender/rtp_sender.gyp:cast_rtp_sender',
         'rtcp/rtcp.gyp:cast_rtcp',
-        'rtp_sender/rtp_sender.gyp:cast_rtp_sender',
         'video_sender',
       ], # dependencies
     },

@@ -12,15 +12,11 @@
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "ipc/ipc_message.h"
-#include "media/audio/shared_memory_util.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_structs.h"
-#include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebPluginContainer.h"
 
 namespace content {
 
@@ -54,7 +50,8 @@ PepperAudioInputHost::PepperAudioInputHost(
           this,
           PepperMediaDeviceManager::GetForRenderView(
               host->GetRenderViewForInstance(pp_instance())),
-          PP_DEVICETYPE_DEV_AUDIOCAPTURE) {
+          PP_DEVICETYPE_DEV_AUDIOCAPTURE,
+          host->GetDocumentURL(instance)) {
 }
 
 PepperAudioInputHost::~PepperAudioInputHost() {
@@ -100,9 +97,8 @@ int32_t PepperAudioInputHost::OnOpen(
   if (audio_input_)
     return PP_ERROR_FAILED;
 
-  PepperPluginInstanceImpl* instance =
-      renderer_ppapi_host_->GetPluginInstanceImpl(pp_instance());
-  if (!instance)
+  GURL document_url = renderer_ppapi_host_->GetDocumentURL(pp_instance());
+  if (!document_url.is_valid())
     return PP_ERROR_FAILED;
 
   // When it is done, we'll get called back on StreamCreated() or
@@ -112,7 +108,7 @@ int32_t PepperAudioInputHost::OnOpen(
 
   audio_input_ = PepperPlatformAudioInput::Create(
       render_view->AsWeakPtr(), device_id,
-      instance->container()->element().document().url(),
+      document_url,
       static_cast<int>(sample_rate),
       static_cast<int>(sample_frame_count), this);
   if (audio_input_) {
@@ -169,13 +165,7 @@ void PepperAudioInputHost::OnOpenComplete(
         scoped_socket, scoped_shared_memory, &temp_socket, &temp_shmem);
 
     serialized_socket_handle.set_socket(temp_socket);
-    // Note that we must call TotalSharedMemorySizeInBytes() because extra space
-    // in shared memory is allocated for book-keeping, so the actual size of the
-    // shared memory buffer is larger than |shared_memory_size|. When sending to
-    // NaCl, NaClIPCAdapter expects this size to match the size of the full
-    // shared memory buffer.
-    serialized_shared_memory_handle.set_shmem(
-        temp_shmem, media::TotalSharedMemorySizeInBytes(shared_memory_size));
+    serialized_shared_memory_handle.set_shmem(temp_shmem, shared_memory_size);
   }
 
   // Send all the values, even on error. This simplifies some of our cleanup

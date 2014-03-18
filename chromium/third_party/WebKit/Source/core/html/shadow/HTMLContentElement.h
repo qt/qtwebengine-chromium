@@ -38,27 +38,26 @@ namespace WebCore {
 
 class HTMLContentElement FINAL : public InsertionPoint {
 public:
-    static PassRefPtr<HTMLContentElement> create(const QualifiedName&, Document&);
     static PassRefPtr<HTMLContentElement> create(Document&);
 
     virtual ~HTMLContentElement();
 
     virtual bool canAffectSelector() const OVERRIDE { return true; }
 
-    bool canSelectNode(const Vector<Node*>& siblings, int nth) const;
+    bool canSelectNode(const Vector<Node*, 32>& siblings, int nth) const;
 
     const CSSSelectorList& selectorList() const;
     bool isSelectValid() const;
 
 private:
-    HTMLContentElement(const QualifiedName&, Document&);
+    explicit HTMLContentElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     bool validateSelect() const;
     void parseSelect();
 
-    bool matchSelector(const Vector<Node*>& siblings, int nth) const;
+    bool matchSelector(const Vector<Node*, 32>& siblings, int nth) const;
 
     bool m_shouldParseSelect;
     bool m_isValidSelector;
@@ -80,7 +79,7 @@ inline bool HTMLContentElement::isSelectValid() const
     return m_isValidSelector;
 }
 
-inline bool HTMLContentElement::canSelectNode(const Vector<Node*>& siblings, int nth) const
+inline bool HTMLContentElement::canSelectNode(const Vector<Node*, 32>& siblings, int nth) const
 {
     if (m_select.isNull() || m_select.isEmpty())
         return true;
@@ -101,11 +100,7 @@ inline bool isHTMLContentElement(const Element* element)
     return element->hasTagName(HTMLNames::contentTag);
 }
 
-inline HTMLContentElement* toHTMLContentElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLContentElement(node));
-    return static_cast<HTMLContentElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLContentElement, hasTagName(HTMLNames::contentTag));
 
 }
 

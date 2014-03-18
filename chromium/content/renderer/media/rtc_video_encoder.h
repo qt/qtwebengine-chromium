@@ -69,6 +69,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   void NotifyError(int32_t error);
 
+  void RecordInitEncodeUMA(int32_t init_retval);
+
   base::ThreadChecker thread_checker_;
 
   // The video codec type, as reported to WebRTC.
@@ -79,10 +81,6 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Factory for creating VEAs, shared memory buffers, etc.
   scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories_;
-
-  // Weak pointer factory for posting back VEA::Client notifications to
-  // RTCVideoEncoder.
-  base::WeakPtrFactory<RTCVideoEncoder> weak_this_factory_;
 
   // webrtc::VideoEncoder encode complete callback.
   webrtc::EncodedImageCallback* encoded_image_callback_;
@@ -95,6 +93,10 @@ class CONTENT_EXPORT RTCVideoEncoder
   // Instead, we cache an error status here and return it the next time an
   // interface entry point is called.
   int32_t impl_status_;
+
+  // Weak pointer factory for posting back VEA::Client notifications to
+  // RTCVideoEncoder.
+  base::WeakPtrFactory<RTCVideoEncoder> weak_this_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoEncoder);
 };

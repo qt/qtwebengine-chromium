@@ -42,7 +42,7 @@ public:
 protected:
     virtual void centerContainerIfNeeded(RenderBox*) const { }
     virtual LayoutUnit computeLogicalHeightLimit() const;
-    HTMLElement* containerElement() const;
+    Element* containerElement() const;
     Element* editingViewPortElement() const;
     HTMLInputElement* inputElement() const;
     virtual void updateFromElement() OVERRIDE;
@@ -74,8 +74,6 @@ private:
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
-    virtual RenderStyle* textBaseStyle() const;
-
     bool textShouldBeTruncated() const;
 
     HTMLElement* innerSpinButtonElement() const;
@@ -84,19 +82,7 @@ private:
     LayoutUnit m_desiredInnerTextLogicalHeight;
 };
 
-inline HTMLElement* RenderTextControlSingleLine::containerElement() const
-{
-    return inputElement()->containerElement();
-}
-
-inline RenderTextControlSingleLine* toRenderTextControlSingleLine(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextField());
-    return static_cast<RenderTextControlSingleLine*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTextControlSingleLine(const RenderTextControlSingleLine*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTextControlSingleLine, isTextField());
 
 // ----------------------------
 

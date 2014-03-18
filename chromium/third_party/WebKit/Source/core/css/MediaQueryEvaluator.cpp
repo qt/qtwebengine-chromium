@@ -34,21 +34,22 @@
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSToLengthConversionData.h"
 #include "core/css/MediaFeatureNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
-#include "core/css/MediaQueryExp.h"
-#include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/MediaQueryResult.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/graphics/FloatRect.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/PlatformScreen.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -88,7 +89,7 @@ MediaQueryEvaluator::MediaQueryEvaluator(const AtomicString& acceptedMediaType, 
     : m_mediaType(acceptedMediaType)
     , m_frame(frame)
     , m_style(style)
-    , m_expResult(false) // doesn't matter when we have m_frame and m_style
+    , m_expResult(false) // Doesn't matter when we have m_frame and m_style.
 {
 }
 
@@ -117,14 +118,14 @@ static bool applyRestrictor(MediaQuery::Restrictor r, bool value)
     return r == MediaQuery::Not ? !value : value;
 }
 
-bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, StyleResolver* styleResolver) const
+bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultList* viewportDependentMediaQueryResults) const
 {
     if (!querySet)
         return true;
 
     const Vector<OwnPtr<MediaQuery> >& queries = querySet->queryVector();
     if (!queries.size())
-        return true; // empty query list evaluates to true
+        return true; // Empty query list evaluates to true.
 
     // Iterate over queries, stop if any of them eval to true (OR semantics).
     bool result = false;
@@ -137,11 +138,8 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, StyleResolver* sty
             size_t j = 0;
             for (; j < expressions.size(); ++j) {
                 bool exprResult = eval(expressions.at(j).get());
-                // FIXME: Instead of storing these on StyleResolver, we should store them locally
-                // and then any client of this method can grab at them afterwords.
-                // Alternatively we could use an explicit out-parameter of this method.
-                if (styleResolver && expressions.at(j)->isViewportDependent())
-                    styleResolver->addViewportDependentMediaQueryResult(expressions.at(j).get(), exprResult);
+                if (viewportDependentMediaQueryResults && expressions.at(j)->isViewportDependent())
+                    viewportDependentMediaQueryResults->append(adoptRef(new MediaQueryResult(*expressions.at(j), exprResult)));
                 if (!exprResult)
                     break;
             }
@@ -172,7 +170,7 @@ bool compareValue(T a, T b, MediaFeaturePrefix op)
 static bool compareAspectRatioValue(CSSValue* value, int width, int height, MediaFeaturePrefix op)
 {
     if (value->isAspectRatioValue()) {
-        CSSAspectRatioValue* aspectRatio = static_cast<CSSAspectRatioValue*>(value);
+        CSSAspectRatioValue* aspectRatio = toCSSAspectRatioValue(value);
         return compareValue(width * static_cast<int>(aspectRatio->denominatorValue()), height * static_cast<int>(aspectRatio->numeratorValue()), op);
     }
 
@@ -191,7 +189,7 @@ static bool numberValue(CSSValue* value, float& result)
 
 static bool colorMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
-    int bitsPerComponent = screenDepthPerComponent(frame->page()->mainFrame()->view());
+    int bitsPerComponent = screenDepthPerComponent(frame->view());
     float number;
     if (value)
         return numberValue(value, number) && compareValue(bitsPerComponent, static_cast<int>(number), op);
@@ -206,13 +204,14 @@ static bool colorIndexMediaFeatureEval(CSSValue* value, RenderStyle*, Frame*, Me
     if (!value)
         return false;
 
+    // Acording to spec, if the device does not use a color lookup table, the value is zero.
     float number;
     return numberValue(value, number) && compareValue(0, static_cast<int>(number), op);
 }
 
 static bool monochromeMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix op)
 {
-    if (!screenIsMonochrome(frame->page()->mainFrame()->view())) {
+    if (!screenIsMonochrome(frame->view())) {
         if (value) {
             float number;
             return numberValue(value, number) && compareValue(0, static_cast<int>(number), op);
@@ -252,25 +251,26 @@ static bool aspectRatioMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* fr
     }
 
     // ({,min-,max-}aspect-ratio)
-    // assume if we have a device, its aspect ratio is non-zero
+    // assume if we have a device, its aspect ratio is non-zero.
     return true;
 }
 
 static bool deviceAspectRatioMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
 {
     if (value) {
-        FloatRect sg = screenRect(frame->page()->mainFrame()->view());
+        FloatRect sg = screenRect(frame->view());
         return compareAspectRatioValue(value, static_cast<int>(sg.width()), static_cast<int>(sg.height()), op);
     }
 
     // ({,min-,max-}device-aspect-ratio)
-    // assume if we have a device, its aspect ratio is non-zero
+    // assume if we have a device, its aspect ratio is non-zero.
     return true;
 }
 
 static bool evalResolution(CSSValue* value, Frame* frame, MediaFeaturePrefix op)
 {
-    // FIXME: Possibly handle other media types than 'screen' and 'print'.
+    // According to MQ4, only 'screen', 'print' and 'speech' may match.
+    // FIXME: What should speech match? https://www.w3.org/Style/CSS/Tracker/issues/348
     float actualResolution = 0;
 
     // This checks the actual media type applied to the document, and we know
@@ -348,9 +348,9 @@ static bool computeLength(CSSValue* value, bool strict, RenderStyle* initialStyl
     }
 
     if (primitiveValue->isLength()) {
-        // Relative (like EM) and root relative (like REM) units are always resolved against the initial values
-        // for media queries, hence the two initialStyle parameters.
-        result = primitiveValue->computeLength<int>(initialStyle, initialStyle, 1.0 /* multiplier */, true /* computingFontSize */);
+        // Relative (like EM) and root relative (like REM) units are always resolved against
+        // the initial values for media queries, hence the two initialStyle parameters.
+        result = primitiveValue->computeLength<int>(CSSToLengthConversionData(initialStyle, initialStyle, 1.0 /* zoom */, true /* computingFontSize */));
         return true;
     }
 
@@ -360,11 +360,13 @@ static bool computeLength(CSSValue* value, bool strict, RenderStyle* initialStyl
 static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix op)
 {
     if (value) {
-        FloatRect sg = screenRect(frame->page()->mainFrame()->view());
         int length;
-        long height = sg.height();
-        InspectorInstrumentation::applyScreenHeightOverride(frame, &height);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(height), length, op);
+        if (!computeLength(value, !frame->document()->inQuirksMode(), style, length))
+            return false;
+        int height = static_cast<int>(screenRect(frame->view()).height());
+        if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
+            height = lroundf(height * frame->page()->deviceScaleFactor());
+        return compareValue(height, length, op);
     }
     // ({,min-,max-}device-height)
     // assume if we have a device, assume non-zero
@@ -374,11 +376,13 @@ static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Fr
 static bool deviceWidthMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix op)
 {
     if (value) {
-        FloatRect sg = screenRect(frame->page()->mainFrame()->view());
         int length;
-        long width = sg.width();
-        InspectorInstrumentation::applyScreenWidthOverride(frame, &width);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(width), length, op);
+        if (!computeLength(value, !frame->document()->inQuirksMode(), style, length))
+            return false;
+        int width = static_cast<int>(screenRect(frame->view()).width());
+        if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
+            width = lroundf(width * frame->page()->deviceScaleFactor());
+        return compareValue(width, length, op);
     }
     // ({,min-,max-}device-width)
     // assume if we have a device, assume non-zero
@@ -415,7 +419,7 @@ static bool widthMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* fr
     return width;
 }
 
-// rest of the functions are trampolines which set the prefix according to the media feature expression used
+// Rest of the functions are trampolines which set the prefix according to the media feature expression used.
 
 static bool minColorMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix)
 {
@@ -575,9 +579,8 @@ static bool transform3dMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* fr
     return returnValueIfNoParameter;
 }
 
-static bool viewModeMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix op)
+static bool viewModeMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix)
 {
-    UNUSED_PARAM(op);
     if (!value)
         return true;
 
@@ -646,7 +649,7 @@ static bool pointerMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame,
 
 static bool scanMediaFeatureEval(CSSValue* value, RenderStyle*, Frame* frame, MediaFeaturePrefix)
 {
-    // Scan only applies to tv media.
+    // Scan only applies to 'tv' media.
     if (!equalIgnoringCase(frame->view()->mediaType(), "tv"))
         return false;
 
@@ -680,9 +683,8 @@ bool MediaQueryEvaluator::eval(const MediaQueryExp* expr) const
     if (!gFunctionMap)
         createFunctionMap();
 
-    // call the media feature evaluation function. Assume no prefix
-    // and let trampoline functions override the prefix if prefix is
-    // used
+    // Call the media feature evaluation function. Assume no prefix and let
+    // trampoline functions override the prefix if prefix is used.
     EvalFunc func = gFunctionMap->get(expr->mediaFeature().impl());
     if (func)
         return func(expr->value(), m_style.get(), m_frame, NoPrefix);

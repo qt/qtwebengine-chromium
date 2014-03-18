@@ -21,7 +21,7 @@
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/kill.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/common/content_descriptors.h"
@@ -39,6 +39,14 @@ namespace {
 
 // NOP function. See below where this handler is installed.
 void SIGCHLDHandler(int signal) {
+}
+
+int LookUpFd(const base::GlobalDescriptors::Mapping& fd_mapping, uint32_t key) {
+  for (size_t index = 0; index < fd_mapping.size(); ++index) {
+    if (fd_mapping[index].first == key)
+      return fd_mapping[index].second;
+  }
+  return -1;
 }
 
 }  // namespace
@@ -274,7 +282,7 @@ void Zygote::HandleGetTerminationStatus(int fd,
 }
 
 int Zygote::ForkWithRealPid(const std::string& process_type,
-                            std::vector<int>& fds,
+                            const base::GlobalDescriptors::Mapping& fd_mapping,
                             const std::string& channel_switch,
                             std::string* uma_name,
                             int* uma_sample,
@@ -303,8 +311,15 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
   }
 
   if (use_helper) {
-    fds.push_back(dummy_fd);
-    fds.push_back(pipe_fds[0]);
+    std::vector<int> fds;
+    int ipc_channel_fd = LookUpFd(fd_mapping, kPrimaryIPCChannel);
+    if (ipc_channel_fd < 0) {
+      DLOG(ERROR) << "Failed to find kPrimaryIPCChannel in FD mapping";
+      goto error;
+    }
+    fds.push_back(ipc_channel_fd);  // kBrowserFDIndex
+    fds.push_back(dummy_fd);  // kDummyFDIndex
+    fds.push_back(pipe_fds[0]);  // kParentFDIndex
     pid = helper_->Fork(fds);
   } else {
     pid = fork();
@@ -319,9 +334,8 @@ int Zygote::ForkWithRealPid(const std::string& process_type,
     // should not fork any child processes (which the seccomp
     // sandbox does) until then, because that can interfere with the
     // parent's discovery of our PID.
-    if (!file_util::ReadFromFD(pipe_fds[0],
-                               reinterpret_cast<char*>(&real_pid),
-                               sizeof(real_pid))) {
+    if (!base::ReadFromFD(pipe_fds[0], reinterpret_cast<char*>(&real_pid),
+                          sizeof(real_pid))) {
       LOG(FATAL) << "Failed to synchronise with parent zygote process";
     }
     if (real_pid <= 0) {
@@ -459,7 +473,7 @@ base::ProcessId Zygote::ReadArgsAndFork(const Pickle& pickle,
       static_cast<uint32_t>(kSandboxIPCChannel), GetSandboxFD()));
 
   // Returns twice, once per process.
-  base::ProcessId child_pid = ForkWithRealPid(process_type, fds, channel_id,
+  base::ProcessId child_pid = ForkWithRealPid(process_type, mapping, channel_id,
                                               uma_name, uma_sample,
                                               uma_boundary_value);
   if (!child_pid) {

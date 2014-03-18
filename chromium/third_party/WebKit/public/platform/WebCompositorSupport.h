@@ -32,7 +32,7 @@
 #include "WebScrollbar.h"
 #include "WebScrollbarThemePainter.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebAnimationCurve;
 class WebCompositorOutputSurface;
@@ -40,6 +40,7 @@ class WebContentLayer;
 class WebContentLayerClient;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
+class WebFilterAnimationCurve;
 class WebFilterOperations;
 class WebFloatAnimationCurve;
 class WebGraphicsContext3D;
@@ -56,7 +57,7 @@ class WebTransformOperations;
 class WebCompositorSupport {
 public:
     // Creates an output surface for the compositor backed by a 3d context.
-    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebKit::WebGraphicsContext3D*) { return 0; }
+    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(blink::WebGraphicsContext3D*) { return 0; }
 
     // Creates an output surface for the compositor backed by a software device.
     virtual WebCompositorOutputSurface* createOutputSurfaceForSoftware() { return 0; }
@@ -75,6 +76,7 @@ public:
 
     virtual WebSolidColorLayer* createSolidColorLayer() { return 0; }
 
+    // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
 
     virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, bool isLeftSideVerticalScrollbar) { return 0; }
@@ -82,6 +84,8 @@ public:
     // Animation ----------------------------------------------------
 
     virtual WebAnimation* createAnimation(const WebAnimationCurve&, WebAnimation::TargetProperty, int animationId = 0) { return 0; }
+
+    virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return 0; }
 
     virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
 

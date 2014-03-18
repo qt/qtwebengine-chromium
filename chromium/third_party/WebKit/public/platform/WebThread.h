@@ -27,13 +27,13 @@
 
 #include "WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 
 // Provides an interface to an embedder-defined thread implementation.
 //
 // Deleting the thread blocks until all pending, non-delayed tasks have been
 // run.
-class WebThread {
+class BLINK_PLATFORM_EXPORT WebThread {
 public:
     class Task {
     public:
@@ -41,13 +41,16 @@ public:
         virtual void run() = 0;
     };
 
-    class TaskObserver {
+    class BLINK_PLATFORM_EXPORT TaskObserver {
     public:
         virtual ~TaskObserver() { }
         virtual void willProcessTask() = 0;
         virtual void didProcessTask() = 0;
     };
 
+    // postTask() and postDelayedTask() take ownership of the passed Task
+    // object. It is safe to invoke postTask() and postDelayedTask() from any
+    // thread.
     virtual void postTask(Task*) = 0;
     virtual void postDelayedTask(Task*, long long delayMs) = 0;
 
@@ -68,6 +71,6 @@ public:
     virtual ~WebThread() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

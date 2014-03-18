@@ -31,6 +31,7 @@
 #include "config.h"
 #include "V8Worker.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
@@ -41,27 +42,29 @@
 
 namespace WebCore {
 
-void V8Worker::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8Worker::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    Worker* worker = V8Worker::toNative(args.Holder());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "postMessage", "Worker", info.Holder(), info.GetIsolate());
+    Worker* worker = V8Worker::toNative(info.Holder());
     MessagePortArray ports;
     ArrayBufferArray arrayBuffers;
-    if (args.Length() > 1) {
-        if (!extractTransferables(args[1], ports, arrayBuffers, args.GetIsolate()))
+    if (info.Length() > 1) {
+        const int transferablesArgIndex = 1;
+        bool notASequence = false;
+        if (!extractTransferables(info[transferablesArgIndex], ports, arrayBuffers, notASequence, info.GetIsolate())) {
+            if (notASequence) {
+                exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(transferablesArgIndex + 1));
+                exceptionState.throwIfNeeded();
+            }
             return;
+        }
     }
     bool didThrow = false;
-    RefPtr<SerializedScriptValue> message =
-        SerializedScriptValue::create(args[0],
-                                      &ports,
-                                      &arrayBuffers,
-                                      didThrow,
-                                      args.GetIsolate());
+    RefPtr<SerializedScriptValue> message = SerializedScriptValue::create(info[0], &ports, &arrayBuffers, didThrow, info.GetIsolate());
     if (didThrow)
         return;
-    ExceptionState es(args.GetIsolate());
-    worker->postMessage(message.release(), &ports, es);
-    es.throwIfNeeded();
+    worker->postMessage(message.release(), &ports, exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 } // namespace WebCore

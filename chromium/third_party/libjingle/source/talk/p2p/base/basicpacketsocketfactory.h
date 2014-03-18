@@ -51,6 +51,8 @@ class BasicPacketSocketFactory : public PacketSocketFactory {
       const SocketAddress& local_address, const SocketAddress& remote_address,
       const ProxyInfo& proxy_info, const std::string& user_agent, int opts);
 
+  virtual AsyncResolverInterface* CreateAsyncResolver();
+
  private:
   int BindSocket(AsyncSocket* socket, const SocketAddress& local_address,
                  int min_port, int max_port);

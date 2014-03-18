@@ -46,6 +46,7 @@
 #include "net/url_request/url_request_redirect_job.h"
 #include "net/url_request/url_request_throttler_header_adapter.h"
 #include "net/url_request/url_request_throttler_manager.h"
+#include "net/websockets/websocket_handshake_stream_base.h"
 
 static const char kAvailDictionaryHeader[] = "Avail-Dictionary";
 
@@ -214,7 +215,8 @@ void URLRequestHttpJob::HttpFilterContext::RecordPacketStats(
 URLRequestJob* URLRequestHttpJob::Factory(URLRequest* request,
                                           NetworkDelegate* network_delegate,
                                           const std::string& scheme) {
-  DCHECK(scheme == "http" || scheme == "https");
+  DCHECK(scheme == "http" || scheme == "https" || scheme == "ws" ||
+         scheme == "wss");
 
   if (!request->context()->http_transaction_factory()) {
     NOTREACHED() << "requires a valid context";
@@ -324,7 +326,6 @@ void URLRequestHttpJob::Start() {
   request_info_.url = request_->url();
   request_info_.method = request_->method();
   request_info_.load_flags = request_->load_flags();
-  request_info_.request_id = request_->identifier();
   // Enable privacy mode if cookie settings or flags tell us not send or
   // save cookies.
   bool enable_privacy_mode =
@@ -352,7 +353,7 @@ void URLRequestHttpJob::Start() {
       HttpRequestHeaders::kUserAgent,
       http_user_agent_settings_ ?
           http_user_agent_settings_->GetUserAgent(request_->url()) :
-          EmptyString());
+          std::string());
 
   AddExtraHeaders();
   AddCookieHeaderAndStart();
@@ -440,15 +441,14 @@ void URLRequestHttpJob::DestroyTransaction() {
 
 void URLRequestHttpJob::StartTransaction() {
   if (network_delegate()) {
+    OnCallToDelegate();
     int rv = network_delegate()->NotifyBeforeSendHeaders(
         request_, notify_before_headers_sent_callback_,
         &request_info_.extra_headers);
     // If an extension blocks the request, we rely on the callback to
     // MaybeStartTransactionInternal().
-    if (rv == ERR_IO_PENDING) {
-      SetBlockedOnDelegate();
+    if (rv == ERR_IO_PENDING)
       return;
-    }
     MaybeStartTransactionInternal(rv);
     return;
   }
@@ -456,8 +456,6 @@ void URLRequestHttpJob::StartTransaction() {
 }
 
 void URLRequestHttpJob::NotifyBeforeSendHeadersCallback(int result) {
-  SetUnblockedOnDelegate();
-
   // Check that there are no callbacks to already canceled requests.
   DCHECK_NE(URLRequestStatus::CANCELED, GetStatus().status());
 
@@ -465,6 +463,7 @@ void URLRequestHttpJob::NotifyBeforeSendHeadersCallback(int result) {
 }
 
 void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
+  OnCallToDelegateComplete();
   if (result == OK) {
     StartTransactionInternal();
   } else {
@@ -497,6 +496,20 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
         priority_, &transaction_, http_transaction_delegate_.get());
+
+    if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
+      // TODO(ricea): Implement WebSocket throttling semantics as defined in
+      // RFC6455 Section 4.1.
+      base::SupportsUserData::Data* data = request_->GetUserData(
+          WebSocketHandshakeStreamBase::CreateHelper::DataKey());
+      if (data) {
+        transaction_->SetWebSocketHandshakeStreamCreateHelper(
+            static_cast<WebSocketHandshakeStreamBase::CreateHelper*>(data));
+      } else {
+        rv = ERR_DISALLOWED_URL_SCHEME;
+      }
+    }
+
     if (rv == OK) {
       if (!throttling_entry_.get() ||
           !throttling_entry_->ShouldRejectRequest(*request_)) {
@@ -660,6 +673,9 @@ void URLRequestHttpJob::DoStartTransaction() {
 }
 
 void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete(int result) {
+  // End of the call started in OnStartCompleted.
+  OnCallToDelegateComplete();
+
   if (result != net::OK) {
     std::string source("delegate");
     request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
@@ -868,6 +884,7 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       // Note that |this| may not be deleted until
       // |on_headers_received_callback_| or
       // |NetworkDelegate::URLRequestDestroyed()| has been called.
+      OnCallToDelegate();
       int error = network_delegate()->NotifyHeadersReceived(
           request_,
           on_headers_received_callback_,
@@ -876,12 +893,12 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       if (error != net::OK) {
         if (error == net::ERR_IO_PENDING) {
           awaiting_callback_ = true;
-          SetBlockedOnDelegate();
         } else {
           std::string source("delegate");
           request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
                                        NetLog::StringCallback("source",
                                                               &source));
+          OnCallToDelegateComplete();
           NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, error));
         }
         return;
@@ -890,18 +907,27 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
 
     SaveCookiesAndNotifyHeadersComplete(net::OK);
   } else if (IsCertificateError(result)) {
-    // We encountered an SSL certificate error.  Ask our delegate to decide
-    // what we should do.
-
-    TransportSecurityState::DomainState domain_state;
-    const URLRequestContext* context = request_->context();
-    const bool fatal = context->transport_security_state() &&
-        context->transport_security_state()->GetDomainState(
-            request_info_.url.host(),
-            SSLConfigService::IsSNIAvailable(context->ssl_config_service()),
-            &domain_state) &&
-        domain_state.ShouldSSLErrorsBeFatal();
-    NotifySSLCertificateError(transaction_->GetResponseInfo()->ssl_info, fatal);
+    // We encountered an SSL certificate error.
+    if (result == ERR_SSL_WEAK_SERVER_EPHEMERAL_DH_KEY ||
+        result == ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN) {
+      // These are hard failures. They're handled separately and don't have
+      // the correct cert status, so set it here.
+      SSLInfo info(transaction_->GetResponseInfo()->ssl_info);
+      info.cert_status = MapNetErrorToCertStatus(result);
+      NotifySSLCertificateError(info, true);
+    } else {
+      // Maybe overridable, maybe not. Ask the delegate to decide.
+      TransportSecurityState::DomainState domain_state;
+      const URLRequestContext* context = request_->context();
+      const bool fatal = context->transport_security_state() &&
+          context->transport_security_state()->GetDomainState(
+              request_info_.url.host(),
+              SSLConfigService::IsSNIAvailable(context->ssl_config_service()),
+              &domain_state) &&
+          domain_state.ShouldSSLErrorsBeFatal();
+      NotifySSLCertificateError(
+          transaction_->GetResponseInfo()->ssl_info, fatal);
+    }
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     NotifyCertificateRequested(
         transaction_->GetResponseInfo()->cert_request_info.get());
@@ -911,7 +937,6 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
 }
 
 void URLRequestHttpJob::OnHeadersReceivedCallback(int result) {
-  SetUnblockedOnDelegate();
   awaiting_callback_ = false;
 
   // Check that there are no callbacks to already canceled requests.
@@ -1479,6 +1504,10 @@ void URLRequestHttpJob::RecordPerfHistograms(CompletionCause reason) {
       UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeNotCached", total_time);
     }
   }
+
+  if (request_info_.load_flags & LOAD_PREFETCH && !request_->was_cached())
+    UMA_HISTOGRAM_COUNTS("Net.Prefetch.PrefilterBytesReadFromNetwork",
+                         prefilter_bytes_read());
 
   start_time_ = base::TimeTicks();
 }

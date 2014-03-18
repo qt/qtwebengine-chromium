@@ -999,6 +999,11 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_PATCHWELCOME;
     }
 
+    if (!ctx->planes[0].bands) {
+        av_log(avctx, AV_LOG_ERROR, "Color planes not initialized yet\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     ctx->switch_buffers(ctx);
 
     //{ START_TIMER;
@@ -1037,7 +1042,12 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
      */
     if (avctx->codec_id == AV_CODEC_ID_INDEO4 &&
         ctx->frame_type == 0/*FRAMETYPE_INTRA*/) {
-        while (get_bits(&ctx->gb, 8)); // skip version string
+            // skip version string
+        while (get_bits(&ctx->gb, 8)) {
+            if (get_bits_left(&ctx->gb) < 8)
+                return AVERROR_INVALIDDATA;
+        }
+
         skip_bits_long(&ctx->gb, 64);  // skip padding, TODO: implement correct 8-bytes alignment
         if (get_bits_left(&ctx->gb) > 18 && show_bits(&ctx->gb, 18) == 0x3FFF8)
             av_log(avctx, AV_LOG_ERROR, "Buffer contains IP frames!\n");
@@ -1046,7 +1056,10 @@ int ff_ivi_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (!ctx->is_nonnull_frame(ctx))
         return buf_size;
 
-    avcodec_set_dimensions(avctx, ctx->planes[0].width, ctx->planes[0].height);
+    result = ff_set_dimensions(avctx, ctx->planes[0].width, ctx->planes[0].height);
+    if (result < 0)
+        return result;
+
     if ((result = ff_get_buffer(avctx, frame, 0)) < 0)
         return result;
 

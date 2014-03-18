@@ -19,19 +19,18 @@
  */
 
 [
-    CustomLegacyCall,
+    Custom=LegacyCallAsFunction,
 ] interface HTMLEmbedElement : HTMLElement {
-[Reflect] attribute DOMString align;
-[Reflect] attribute DOMString height;
-[Reflect] attribute DOMString name;
-[Reflect, URL] attribute DOMString src;
-[Reflect] attribute DOMString type;
-[Reflect] attribute DOMString width;
-[Custom, NotEnumerable] getter boolean (unsigned long index);
-[Custom] setter boolean (unsigned long index, Node value);
-[Custom, NotEnumerable] getter Node (DOMString name);
-[Custom] setter Node (DOMString name, Node value);
+    [Reflect] attribute DOMString align;
+    [Reflect] attribute DOMString height;
+    [Reflect] attribute DOMString name;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect] attribute DOMString type;
+    [Reflect] attribute DOMString width;
+    [Custom, NotEnumerable] getter boolean (unsigned long index);
+    [Custom] setter boolean (unsigned long index, Node value);
+    [Custom, NotEnumerable] getter Node (DOMString name);
+    [Custom] setter Node (DOMString name, Node value);
 
-[CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
+    [CheckSecurity=Node, RaisesException] SVGDocument getSVGDocument();
 };
-

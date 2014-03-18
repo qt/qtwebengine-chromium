@@ -13,7 +13,7 @@
 #define VP9_COMMON_VP9_ENTROPYMV_H_
 
 #include "vp9/common/vp9_treecoder.h"
-#include "vpx_config.h"
+#include "./vpx_config.h"
 #include "vp9/common/vp9_blockd.h"
 
 struct VP9Common;
@@ -43,9 +43,6 @@ static INLINE int mv_joint_horizontal(MV_JOINT_TYPE type) {
   return type == MV_JOINT_HNZVZ || type == MV_JOINT_HNZVNZ;
 }
 
-extern const vp9_tree_index vp9_mv_joint_tree[2 * MV_JOINTS - 2];
-extern struct vp9_token vp9_mv_joint_encodings[MV_JOINTS];
-
 /* Symbols for coding magnitude class of nonzero components */
 #define MV_CLASSES     11
 typedef enum {
@@ -62,9 +59,6 @@ typedef enum {
   MV_CLASS_10 = 10,    /* (1024,2048] integer pel */
 } MV_CLASS_TYPE;
 
-extern const vp9_tree_index vp9_mv_class_tree[2 * MV_CLASSES - 2];
-extern struct vp9_token vp9_mv_class_encodings[MV_CLASSES];
-
 #define CLASS0_BITS    1  /* bits at integer precision for class 0 */
 #define CLASS0_SIZE    (1 << CLASS0_BITS)
 #define MV_OFFSET_BITS (MV_CLASSES + CLASS0_BITS - 2)
@@ -73,10 +67,20 @@ extern struct vp9_token vp9_mv_class_encodings[MV_CLASSES];
 #define MV_MAX         ((1 << MV_MAX_BITS) - 1)
 #define MV_VALS        ((MV_MAX << 1) + 1)
 
-extern const vp9_tree_index vp9_mv_class0_tree[2 * CLASS0_SIZE - 2];
+#define MV_IN_USE_BITS 14
+#define MV_UPP   ((1 << MV_IN_USE_BITS) - 1)
+#define MV_LOW   (-(1 << MV_IN_USE_BITS))
+
+extern const vp9_tree_index vp9_mv_joint_tree[TREE_SIZE(MV_JOINTS)];
+extern struct vp9_token vp9_mv_joint_encodings[MV_JOINTS];
+
+extern const vp9_tree_index vp9_mv_class_tree[TREE_SIZE(MV_CLASSES)];
+extern struct vp9_token vp9_mv_class_encodings[MV_CLASSES];
+
+extern const vp9_tree_index vp9_mv_class0_tree[TREE_SIZE(CLASS0_SIZE)];
 extern struct vp9_token vp9_mv_class0_encodings[CLASS0_SIZE];
 
-extern const vp9_tree_index vp9_mv_fp_tree[2 * 4 - 2];
+extern const vp9_tree_index vp9_mv_fp_tree[TREE_SIZE(4)];
 extern struct vp9_token vp9_mv_fp_encodings[4];
 
 typedef struct {
@@ -108,7 +112,6 @@ int vp9_get_mv_mag(MV_CLASS_TYPE c, int offset);
 
 
 typedef struct {
-  unsigned int mvcount[MV_VALS];
   unsigned int sign[2];
   unsigned int classes[MV_CLASSES];
   unsigned int class0[CLASS0_SIZE];

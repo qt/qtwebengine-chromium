@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
+#include "crypto/scoped_nss_types.h"
 #include "net/base/net_export.h"
 #include "net/cert/cert_type.h"
 #include "net/cert/x509_certificate.h"
@@ -39,10 +40,10 @@ class NET_EXPORT NSSCertDatabase {
     // Will be called when a certificate is removed.
     virtual void OnCertRemoved(const X509Certificate* cert) {}
 
-    // Will be called when a certificate's trust is changed.
+    // Will be called when a CA certificate is changed.
     // Called with |cert| == NULL after importing a list of certificates
     // in ImportCACerts().
-    virtual void OnCertTrustChanged(const X509Certificate* cert) {}
+    virtual void OnCACertChanged(const X509Certificate* cert) {}
 
    protected:
     Observer() {}
@@ -94,16 +95,27 @@ class NET_EXPORT NSSCertDatabase {
   // instance of all certificates).
   void ListCerts(CertificateList* certs);
 
+  // Get the default slot for public key data.
+  crypto::ScopedPK11Slot GetPublicSlot() const;
+
+  // Get the default slot for private key or mixed private/public key data.
+  crypto::ScopedPK11Slot GetPrivateSlot() const;
+
   // Get the default module for public key data.
   // The returned pointer must be stored in a scoped_refptr<CryptoModule>.
+  // DEPRECATED: use GetPublicSlot instead.
+  // TODO(mattm): remove usage of this method and remove it.
   CryptoModule* GetPublicModule() const;
 
   // Get the default module for private key or mixed private/public key data.
   // The returned pointer must be stored in a scoped_refptr<CryptoModule>.
+  // DEPRECATED: use GetPrivateSlot instead.
+  // TODO(mattm): remove usage of this method and remove it.
   CryptoModule* GetPrivateModule() const;
 
   // Get all modules.
   // If |need_rw| is true, only writable modules will be returned.
+  // TODO(mattm): come up with better alternative to CryptoModuleList.
   void ListModules(CryptoModuleList* modules, bool need_rw) const;
 
   // Import certificates and private keys from PKCS #12 blob into the module.
@@ -178,6 +190,9 @@ class NET_EXPORT NSSCertDatabase {
   // Check whether cert is stored in a readonly slot.
   bool IsReadOnly(const X509Certificate* cert) const;
 
+  // Check whether cert is stored in a hardware slot.
+  bool IsHardwareBacked(const X509Certificate* cert) const;
+
   // Registers |observer| to receive notifications of certificate changes.  The
   // thread on which this is called is the thread on which |observer| will be
   // called back with notifications.
@@ -196,7 +211,7 @@ class NET_EXPORT NSSCertDatabase {
   // Broadcasts notifications to all registered observers.
   void NotifyObserversOfCertAdded(const X509Certificate* cert);
   void NotifyObserversOfCertRemoved(const X509Certificate* cert);
-  void NotifyObserversOfCertTrustChanged(const X509Certificate* cert);
+  void NotifyObserversOfCACertChanged(const X509Certificate* cert);
 
   const scoped_refptr<ObserverListThreadSafe<Observer> > observer_list_;
 

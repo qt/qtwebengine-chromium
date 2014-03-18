@@ -53,19 +53,11 @@ PrefService::PrefService(
       read_error_callback_(read_error_callback) {
   pref_notifier_->SetPrefService(this);
 
-  pref_registry_->SetRegistrationCallback(
-      base::Bind(&PrefService::AddRegisteredPreference,
-                 base::Unretained(this)));
-  AddInitialPreferences();
-
   InitFromStorage(async);
 }
 
 PrefService::~PrefService() {
   DCHECK(CalledOnValidThread());
-
-  // Remove our callback, setting a NULL one.
-  pref_registry_->SetRegistrationCallback(PrefRegistry::RegistrationCallback());
 
   // Reset pointers so accesses after destruction reliably crash.
   pref_value_store_.reset();
@@ -85,11 +77,6 @@ void PrefService::InitFromStorage(bool async) {
                    user_pref_store_.get(),
                    new ReadErrorHandler(read_error_callback_)));
   }
-}
-
-bool PrefService::ReloadPersistentPrefs() {
-  return user_pref_store_->ReadPrefs() ==
-             PersistentPrefStore::PREF_READ_ERROR_NONE;
 }
 
 void PrefService::CommitPendingWrite() {
@@ -177,16 +164,29 @@ bool PrefService::HasPrefPath(const char* path) const {
   return pref && !pref->IsDefaultValue();
 }
 
-base::DictionaryValue* PrefService::GetPreferenceValues() const {
+scoped_ptr<base::DictionaryValue> PrefService::GetPreferenceValues() const {
   DCHECK(CalledOnValidThread());
-  base::DictionaryValue* out = new base::DictionaryValue;
+  scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
   PrefRegistry::const_iterator i = pref_registry_->begin();
   for (; i != pref_registry_->end(); ++i) {
     const base::Value* value = GetPreferenceValue(i->first);
     DCHECK(value);
     out->Set(i->first, value->DeepCopy());
   }
-  return out;
+  return out.Pass();
+}
+
+scoped_ptr<base::DictionaryValue>
+PrefService::GetPreferenceValuesWithoutPathExpansion() const {
+  DCHECK(CalledOnValidThread());
+  scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
+  PrefRegistry::const_iterator i = pref_registry_->begin();
+  for (; i != pref_registry_->end(); ++i) {
+    const base::Value* value = GetPreferenceValue(i->first);
+    DCHECK(value);
+    out->SetWithoutPathExpansion(i->first, value->DeepCopy());
+  }
+  return out.Pass();
 }
 
 const PrefService::Preference* PrefService::FindPreference(
@@ -318,42 +318,6 @@ void PrefService::AddPrefInitObserver(base::Callback<void(bool)> obs) {
 
 PrefRegistry* PrefService::DeprecatedGetPrefRegistry() {
   return pref_registry_.get();
-}
-
-void PrefService::AddInitialPreferences() {
-  for (PrefRegistry::const_iterator it = pref_registry_->begin();
-       it != pref_registry_->end();
-       ++it) {
-    AddRegisteredPreference(it->first.c_str(), it->second);
-  }
-}
-
-// TODO(joi): Once MarkNeedsEmptyValue is gone, we can probably
-// completely get rid of this method. There will be one difference in
-// semantics; currently all registered preferences are stored right
-// away in the prefs_map_, if we remove this they would be stored only
-// opportunistically.
-void PrefService::AddRegisteredPreference(const char* path,
-                                          base::Value* default_value) {
-  DCHECK(CalledOnValidThread());
-
-  // For ListValue and DictionaryValue with non empty default, empty value
-  // for |path| needs to be persisted in |user_pref_store_|. So that
-  // non empty default is not used when user sets an empty ListValue or
-  // DictionaryValue.
-  bool needs_empty_value = false;
-  base::Value::Type orig_type = default_value->GetType();
-  if (orig_type == base::Value::TYPE_LIST) {
-    const base::ListValue* list = NULL;
-    if (default_value->GetAsList(&list) && !list->empty())
-      needs_empty_value = true;
-  } else if (orig_type == base::Value::TYPE_DICTIONARY) {
-    const base::DictionaryValue* dict = NULL;
-    if (default_value->GetAsDictionary(&dict) && !dict->empty())
-      needs_empty_value = true;
-  }
-  if (needs_empty_value)
-    user_pref_store_->MarkNeedsEmptyValue(path);
 }
 
 void PrefService::ClearPref(const char* path) {

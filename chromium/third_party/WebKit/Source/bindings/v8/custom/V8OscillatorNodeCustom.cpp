@@ -31,7 +31,7 @@
 
 namespace WebCore {
 
-void V8OscillatorNode::typeAttributeSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
+void V8OscillatorNode::typeAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     v8::Handle<v8::Object> holder = info.Holder();
     OscillatorNode* imp = V8OscillatorNode::toNative(holder);
@@ -45,7 +45,7 @@ void V8OscillatorNode::typeAttributeSetterCustom(v8::Local<v8::String> name, v8:
     }
 
     if (value->IsString()) {
-        String type = toWebCoreString(value);
+        String type = toCoreString(value.As<v8::String>());
         if (type == "sine" || type == "square" || type == "sawtooth" || type == "triangle") {
             imp->setType(type);
             return;

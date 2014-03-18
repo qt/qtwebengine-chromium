@@ -4,6 +4,7 @@
 
 #include "content/shell/browser/shell_browser_main_parts.h"
 
+#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -34,12 +35,16 @@
 #endif
 
 #if defined(OS_ANDROID)
+#include "components/breakpad/browser/crash_dump_manager_android.h"
 #include "net/android/network_change_notifier_factory_android.h"
 #include "net/base/network_change_notifier.h"
 #endif
 
 #if defined(USE_AURA) && defined(USE_X11)
-#include "ui/base/touch/touch_factory_x11.h"
+#include "ui/events/x/touch_factory_x11.h"
+#if !defined(OS_CHROMEOS)
+#include "ui/base/ime/input_method_initializer.h"
+#endif
 #endif
 
 namespace content {
@@ -104,6 +109,9 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 }
 
 void ShellBrowserMainParts::PreEarlyInitialization() {
+#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(USE_X11)
+  ui::InitializeInputMethodForTesting();
+#endif
 #if defined(OS_ANDROID)
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
@@ -114,6 +122,15 @@ void ShellBrowserMainParts::PreEarlyInitialization() {
 }
 
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
+#if defined(OS_ANDROID)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCrashReporter)) {
+    base::FilePath crash_dumps_dir =
+        CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+            switches::kCrashDumpsDir);
+    crash_dump_manager_.reset(new breakpad::CrashDumpManager(crash_dumps_dir));
+  }
+#endif
   net_log_.reset(new ShellNetLog());
   browser_context_.reset(new ShellBrowserContext(false, net_log_.get()));
   off_the_record_browser_context_.reset(
@@ -163,9 +180,6 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code)  {
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
-#if defined(USE_AURA)
-  Shell::PlatformExit();
-#endif
   if (devtools_delegate_)
     devtools_delegate_->Stop();
   browser_context_.reset();

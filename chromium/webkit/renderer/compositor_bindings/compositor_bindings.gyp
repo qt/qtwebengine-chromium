@@ -34,7 +34,7 @@
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
-        '<(DEPTH)/ui/ui.gyp:ui',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
       ],
       'defines': [
@@ -54,6 +54,8 @@
         'web_external_bitmap_impl.h',
         'web_external_texture_layer_impl.cc',
         'web_external_texture_layer_impl.h',
+        'web_filter_animation_curve_impl.cc',
+        'web_filter_animation_curve_impl.h',
         'web_filter_operations_impl.cc',
         'web_filter_operations_impl.h',
         'web_float_animation_curve_impl.cc',

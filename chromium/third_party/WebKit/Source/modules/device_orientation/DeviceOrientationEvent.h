@@ -26,7 +26,7 @@
 #ifndef DeviceOrientationEvent_h
 #define DeviceOrientationEvent_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 
 namespace WebCore {
 
@@ -61,6 +61,12 @@ private:
 
     RefPtr<DeviceOrientationData> m_orientation;
 };
+
+inline DeviceOrientationEvent* toDeviceOrientationEvent(Event* event)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!event || event->interfaceName() == EventNames::DeviceOrientationEvent);
+    return static_cast<DeviceOrientationEvent*>(event);
+}
 
 } // namespace WebCore
 

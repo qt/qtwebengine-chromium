@@ -16,22 +16,22 @@ class AddressParserTest : public testing::Test {
  public:
   AddressParserTest() {}
 
-  void TokenizeWords(const string16& content, WordList* words) const {
+  void TokenizeWords(const base::string16& content, WordList* words) const {
     String16Tokenizer tokenizer(content.begin(), content.end(),
-                                kWhitespaceUTF16);
+                                base::kWhitespaceUTF16);
     while (tokenizer.GetNext()) {
       words->push_back(Word(tokenizer.token_begin(), tokenizer.token_end()));
     }
   }
 
   std::string GetHouseNumber(const std::string& content) const {
-    string16 content_16 = UTF8ToUTF16(content);
-    string16 result;
+    base::string16 content_16 = UTF8ToUTF16(content);
+    base::string16 result;
 
     HouseNumberParser parser;
     Word word;
     if (parser.Parse(content_16.begin(), content_16.end(), &word))
-      result = string16(word.begin, word.end);
+      result = base::string16(word.begin, word.end);
     return UTF16ToUTF8(result);
   }
 
@@ -40,9 +40,9 @@ class AddressParserTest : public testing::Test {
   }
 
   bool GetState(const std::string& state, size_t* state_index) const {
-    string16 state_16 = UTF8ToUTF16(state);
+    base::string16 state_16 = UTF8ToUTF16(state);
     String16Tokenizer tokenizer(state_16.begin(), state_16.end(),
-                                kWhitespaceUTF16);
+                                base::kWhitespaceUTF16);
     if (!tokenizer.GetNext())
       return false;
 
@@ -62,7 +62,7 @@ class AddressParserTest : public testing::Test {
     size_t state_index;
     EXPECT_TRUE(GetState(state, &state_index));
 
-    string16 zip_16 = UTF8ToUTF16(zip);
+    base::string16 zip_16 = UTF8ToUTF16(zip);
     WordList words;
     TokenizeWords(zip_16, &words);
     EXPECT_TRUE(words.size() == 1);
@@ -70,7 +70,7 @@ class AddressParserTest : public testing::Test {
   }
 
   bool IsLocationName(const std::string& street) const {
-    string16 street_16 = UTF8ToUTF16(street);
+    base::string16 street_16 = UTF8ToUTF16(street);
     WordList words;
     TokenizeWords(street_16, &words);
     EXPECT_TRUE(words.size() == 1);
@@ -78,8 +78,8 @@ class AddressParserTest : public testing::Test {
   }
 
   std::string FindAddress(const std::string& content) const {
-    string16 content_16 = UTF8ToUTF16(content);
-    string16 result_16;
+    base::string16 content_16 = UTF8ToUTF16(content);
+    base::string16 result_16;
     size_t start, end;
     if (::FindAddress(content_16.begin(), content_16.end(), &start, &end))
       result_16 = content_16.substr(start, end - start);

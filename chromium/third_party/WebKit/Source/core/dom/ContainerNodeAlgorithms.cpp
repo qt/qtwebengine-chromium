@@ -29,7 +29,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/html/HTMLFrameOwnerElement.h"
 
 namespace WebCore {
 
@@ -42,115 +41,115 @@ public:
     }
 };
 
-void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerNode* node)
+void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerNode& node)
 {
     ChildNodesLazySnapshot snapshot(node);
     while (RefPtr<Node> child = snapshot.nextNode()) {
         // If we have been removed from the document during this loop, then
         // we don't want to tell the rest of our children that they've been
         // inserted into the document because they haven't.
-        if (node->inDocument() && child->parentNode() == node)
-            notifyNodeInsertedIntoDocument(child.get());
+        if (node.inDocument() && child->parentNode() == node)
+            notifyNodeInsertedIntoDocument(*child);
     }
 
-    if (!node->isElementNode())
+    if (!node.isElementNode())
         return;
 
-    if (ElementShadow* shadow = toElement(node)->shadow()) {
+    if (ElementShadow* shadow = toElement(node).shadow()) {
         ShadowRootVector roots(shadow);
         for (size_t i = 0; i < roots.size(); ++i) {
-            if (node->inDocument() && roots[i]->host() == node)
-                notifyNodeInsertedIntoDocument(roots[i].get());
+            if (node.inDocument() && roots[i]->host() == node)
+                notifyNodeInsertedIntoDocument(*roots[i]);
         }
     }
 }
 
-void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoTree(ContainerNode* node)
+void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoTree(ContainerNode& node)
 {
-    for (Node* child = node->firstChild(); child; child = child->nextSibling()) {
+    for (Node* child = node.firstChild(); child; child = child->nextSibling()) {
         if (child->isContainerNode())
-            notifyNodeInsertedIntoTree(toContainerNode(child));
+            notifyNodeInsertedIntoTree(toContainerNode(*child));
     }
 
-    for (ShadowRoot* root = node->youngestShadowRoot(); root; root = root->olderShadowRoot())
-        notifyNodeInsertedIntoTree(root);
+    for (ShadowRoot* root = node.youngestShadowRoot(); root; root = root->olderShadowRoot())
+        notifyNodeInsertedIntoTree(*root);
 }
 
-void ChildNodeRemovalNotifier::notifyDescendantRemovedFromDocument(ContainerNode* node)
+void ChildNodeRemovalNotifier::notifyDescendantRemovedFromDocument(ContainerNode& node)
 {
     ChildNodesLazySnapshot snapshot(node);
     while (RefPtr<Node> child = snapshot.nextNode()) {
         // If we have been added to the document during this loop, then we
         // don't want to tell the rest of our children that they've been
         // removed from the document because they haven't.
-        if (!node->inDocument() && child->parentNode() == node)
-            notifyNodeRemovedFromDocument(child.get());
+        if (!node.inDocument() && child->parentNode() == node)
+            notifyNodeRemovedFromDocument(*child);
     }
 
-    if (!node->isElementNode())
+    if (!node.isElementNode())
         return;
 
-    if (node->document().cssTarget() == node)
-        node->document().setCSSTarget(0);
+    if (node.document().cssTarget() == node)
+        node.document().setCSSTarget(0);
 
-    if (ElementShadow* shadow = toElement(node)->shadow()) {
+    if (ElementShadow* shadow = toElement(node).shadow()) {
         ShadowRootVector roots(shadow);
         for (size_t i = 0; i < roots.size(); ++i) {
-            if (!node->inDocument() && roots[i]->host() == node)
-                notifyNodeRemovedFromDocument(roots[i].get());
+            if (!node.inDocument() && roots[i]->host() == node)
+                notifyNodeRemovedFromDocument(*roots[i]);
         }
     }
 }
 
-void ChildNodeRemovalNotifier::notifyDescendantRemovedFromTree(ContainerNode* node)
+void ChildNodeRemovalNotifier::notifyDescendantRemovedFromTree(ContainerNode& node)
 {
-    for (Node* child = node->firstChild(); child; child = child->nextSibling()) {
+    for (Node* child = node.firstChild(); child; child = child->nextSibling()) {
         if (child->isContainerNode())
-            notifyNodeRemovedFromTree(toContainerNode(child));
+            notifyNodeRemovedFromTree(toContainerNode(*child));
     }
 
-    if (!node->isElementNode())
+    if (!node.isElementNode())
         return;
 
-    if (ElementShadow* shadow = toElement(node)->shadow()) {
+    if (ElementShadow* shadow = toElement(node).shadow()) {
         ShadowRootVector roots(shadow);
         for (size_t i = 0; i < roots.size(); ++i)
-            notifyNodeRemovedFromTree(roots[i].get());
+            notifyNodeRemovedFromTree(*roots[i]);
     }
 }
 
-void ChildFrameDisconnector::collectFrameOwners(ElementShadow* shadow)
+void ChildFrameDisconnector::collectFrameOwners(ElementShadow& shadow)
 {
-    for (ShadowRoot* root = shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
-        collectFrameOwners(root);
+    for (ShadowRoot* root = shadow.youngestShadowRoot(); root; root = root->olderShadowRoot())
+        collectFrameOwners(*root);
 }
 
 #ifndef NDEBUG
-unsigned assertConnectedSubrameCountIsConsistent(Node* node)
+unsigned assertConnectedSubrameCountIsConsistent(Node& node)
 {
     unsigned count = 0;
 
-    if (node->isElementNode()) {
-        if (node->isFrameOwnerElement() && toHTMLFrameOwnerElement(node)->contentFrame())
+    if (node.isElementNode()) {
+        if (node.isFrameOwnerElement() && toHTMLFrameOwnerElement(node).contentFrame())
             count++;
 
-        if (ElementShadow* shadow = toElement(node)->shadow()) {
+        if (ElementShadow* shadow = toElement(node).shadow()) {
             for (ShadowRoot* root = shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
-                count += assertConnectedSubrameCountIsConsistent(root);
+                count += assertConnectedSubrameCountIsConsistent(*root);
         }
     }
 
-    for (Node* child = node->firstChild(); child; child = child->nextSibling())
-        count += assertConnectedSubrameCountIsConsistent(child);
+    for (Node* child = node.firstChild(); child; child = child->nextSibling())
+        count += assertConnectedSubrameCountIsConsistent(*child);
 
     // If we undercount there's possibly a security bug since we'd leave frames
     // in subtrees outside the document.
-    ASSERT(node->connectedSubframeCount() >= count);
+    ASSERT(node.connectedSubframeCount() >= count);
 
     // If we overcount it's safe, but not optimal because it means we'll traverse
     // through the document in ChildFrameDisconnector looking for frames that have
     // already been disconnected.
-    ASSERT(node->connectedSubframeCount() == count);
+    ASSERT(node.connectedSubframeCount() == count);
 
     return count;
 }

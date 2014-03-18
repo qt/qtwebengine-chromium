@@ -13,11 +13,20 @@ namespace media {
 namespace cast {
 
 static const int kRtcpRpsiDataSize = 30;
-static const int kRtcpCnameSize = 256;  // RFC 3550 page 44, including end null.
+
+// RFC 3550 page 44, including end null.
+static const size_t kRtcpCnameSize = 256;
 static const int kRtcpMaxNumberOfRembFeedbackSsrcs = 255;
 
 static const uint32 kRemb = ('R' << 24) + ('E' << 16) + ('M' << 8) + 'B';
 static const uint32 kCast = ('C' << 24) + ('A' << 16) + ('S' << 8) + 'T';
+
+static const uint8 kSenderLogSubtype = 1;
+static const uint8 kReceiverLogSubtype = 2;
+
+static const size_t kRtcpMaxReceiverLogMessages = 256;
+static const size_t kRtcpMaxNackFields = 253;
+static const size_t kRtcpMaxCastLossFields = 100;
 
 struct RtcpFieldReceiverReport {
   // RFC 3550.
@@ -137,6 +146,21 @@ struct RtcpFieldPayloadSpecificCastNackItem {
   uint8 bitmask;
 };
 
+struct RtcpFieldApplicationSpecificCastReceiverLogItem {
+  uint32 sender_ssrc;
+  uint32 rtp_timestamp;
+  uint32 event_timestamp_base;
+  uint8 event;
+  uint16 delay_delta_or_packet_id;
+  uint16 event_timestamp_delta;
+};
+
+struct RtcpFieldApplicationSpecificCastSenderLogItem {
+  uint32 sender_ssrc;
+  uint8 status;
+  uint32 rtp_timestamp;
+};
+
 union RtcpField {
   RtcpFieldReceiverReport               receiver_report;
   RtcpFieldSenderReport                 sender_report;
@@ -159,6 +183,9 @@ union RtcpField {
   RtcpFieldPayloadSpecificRembItem      remb_item;
   RtcpFieldPayloadSpecificCastItem      cast_item;
   RtcpFieldPayloadSpecificCastNackItem  cast_nack_item;
+
+  RtcpFieldApplicationSpecificCastReceiverLogItem cast_receiver_log;
+  RtcpFieldApplicationSpecificCastSenderLogItem cast_sender_log;
 };
 
 enum RtcpFieldTypes {
@@ -187,10 +214,15 @@ enum RtcpFieldTypes {
   kRtcpPayloadSpecificRpsiCode,
   kRtcpPayloadSpecificAppCode,
 
+  // Application specific.
   kRtcpPayloadSpecificRembCode,
   kRtcpPayloadSpecificRembItemCode,
   kRtcpPayloadSpecificCastCode,
   kRtcpPayloadSpecificCastNackItemCode,
+  kRtcpApplicationSpecificCastReceiverLogCode,
+  kRtcpApplicationSpecificCastReceiverLogFrameCode,
+  kRtcpApplicationSpecificCastReceiverLogEventCode,
+  kRtcpApplicationSpecificCastSenderLogCode,
 
   // RFC 5104.
   kRtcpPayloadSpecificFirCode,
@@ -213,11 +245,11 @@ enum RtcpPacketTypes {
   kPacketTypeInterArrivalJitterReport = 195,
   kPacketTypeSenderReport = 200,
   kPacketTypeReceiverReport = 201,
-  kPacketTypeSdes= 202,
+  kPacketTypeSdes = 202,
   kPacketTypeBye = 203,
   kPacketTypeApplicationDefined = 204,
   kPacketTypeGenericRtpFeedback = 205,
-  kPacketTypePayloadSpecific  = 206,
+  kPacketTypePayloadSpecific = 206,
   kPacketTypeXr = 207,
   kPacketTypeHigh = 210,  // Port Mapping.
 };
@@ -241,6 +273,9 @@ class RtcpParser {
     kStateReportBlock,  // Sender/Receiver report report blocks.
     kStateSdes,
     kStateBye,
+    kStateApplicationSpecificCastReceiverFrameLog,
+    kStateApplicationSpecificCastReceiverEventLog,
+    kStateApplicationSpecificCastSenderLog,
     kStateExtendedReportBlock,
     kStateExtendedReportDelaySinceLastReceiverReport,
     kStateGenericRtpFeedbackNack,
@@ -260,6 +295,9 @@ class RtcpParser {
   void IterateReportBlockItem();
   void IterateSdesItem();
   void IterateByeItem();
+  void IterateCastReceiverLogFrame();
+  void IterateCastReceiverLogEvent();
+  void IterateCastSenderLog();
   void IterateExtendedReportItem();
   void IterateExtendedReportDelaySinceLastReceiverReportItem();
   void IterateNackItem();
@@ -282,6 +320,10 @@ class RtcpParser {
   bool ParseSdesTypes();
   bool ParseBye();
   bool ParseByeItem();
+  bool ParseApplicationDefined(uint8 subtype);
+  bool ParseCastReceiverLogFrameItem();
+  bool ParseCastReceiverLogEventItem();
+  bool ParseCastSenderLogItem();
 
   bool ParseExtendedReport();
   bool ParseExtendedReportItem();

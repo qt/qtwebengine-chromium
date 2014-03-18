@@ -300,7 +300,7 @@ void RenderWidgetHelper::OnResumeRequestsForView(int route_id) {
 }
 
 void RenderWidgetHelper::CreateNewWidget(int opener_id,
-                                         WebKit::WebPopupType popup_type,
+                                         blink::WebPopupType popup_type,
                                          int* route_id,
                                          int* surface_id) {
   *route_id = GetNextRoutingID();
@@ -327,7 +327,7 @@ void RenderWidgetHelper::CreateNewFullscreenWidget(int opener_id,
 }
 
 void RenderWidgetHelper::OnCreateWidgetOnUI(
-    int opener_id, int route_id, WebKit::WebPopupType popup_type) {
+    int opener_id, int route_id, blink::WebPopupType popup_type) {
   RenderViewHostImpl* host = RenderViewHostImpl::FromID(
       render_process_id_, opener_id);
   if (host)
@@ -381,7 +381,7 @@ void RenderWidgetHelper::FreeTransportDIB(TransportDIB::Id dib_id) {
     i = allocated_dibs_.find(dib_id);
 
   if (i != allocated_dibs_.end()) {
-    if (HANDLE_EINTR(close(i->second)) < 0)
+    if (IGNORE_EINTR(close(i->second)) < 0)
       PLOG(ERROR) << "close";
     allocated_dibs_.erase(i);
   } else {
@@ -392,7 +392,7 @@ void RenderWidgetHelper::FreeTransportDIB(TransportDIB::Id dib_id) {
 void RenderWidgetHelper::ClearAllocatedDIBs() {
   for (std::map<TransportDIB::Id, int>::iterator
        i = allocated_dibs_.begin(); i != allocated_dibs_.end(); ++i) {
-    if (HANDLE_EINTR(close(i->second)) < 0)
+    if (IGNORE_EINTR(close(i->second)) < 0)
       PLOG(ERROR) << "close: " << i->first;
   }
 

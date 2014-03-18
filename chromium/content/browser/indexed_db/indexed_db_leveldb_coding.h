@@ -27,9 +27,11 @@ CONTENT_EXPORT void EncodeByte(unsigned char value, std::string* into);
 CONTENT_EXPORT void EncodeBool(bool value, std::string* into);
 CONTENT_EXPORT void EncodeInt(int64 value, std::string* into);
 CONTENT_EXPORT void EncodeVarInt(int64 value, std::string* into);
-CONTENT_EXPORT void EncodeString(const string16& value, std::string* into);
-CONTENT_EXPORT void EncodeStringWithLength(const string16& value,
+CONTENT_EXPORT void EncodeString(const base::string16& value,
+                                 std::string* into);
+CONTENT_EXPORT void EncodeStringWithLength(const base::string16& value,
                                            std::string* into);
+CONTENT_EXPORT void EncodeBinary(const std::string& value, std::string* into);
 CONTENT_EXPORT void EncodeDouble(double value, std::string* into);
 CONTENT_EXPORT void EncodeIDBKey(const IndexedDBKey& value, std::string* into);
 CONTENT_EXPORT void EncodeIDBKeyPath(const IndexedDBKeyPath& value,
@@ -44,10 +46,12 @@ CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeInt(base::StringPiece* slice,
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeVarInt(base::StringPiece* slice,
                                                     int64* value);
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeString(base::StringPiece* slice,
-                                                    string16* value);
+                                                    base::string16* value);
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeStringWithLength(
     base::StringPiece* slice,
-    string16* value);
+    base::string16* value);
+CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeBinary(base::StringPiece* slice,
+                                                    std::string* value);
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeDouble(base::StringPiece* slice,
                                                     double* value);
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeIDBKey(
@@ -65,8 +69,8 @@ CONTENT_EXPORT WARN_UNUSED_RESULT bool ExtractEncodedIDBKey(
     base::StringPiece* slice,
     std::string* result);
 
-CONTENT_EXPORT int CompareEncodedIDBKeys(const std::string& a,
-                                         const std::string& b,
+CONTENT_EXPORT int CompareEncodedIDBKeys(base::StringPiece* slice1,
+                                         base::StringPiece* slice2,
                                          bool* ok);
 
 CONTENT_EXPORT int Compare(const base::StringPiece& a,
@@ -185,18 +189,19 @@ class DatabaseNameKey {
  public:
   static bool Decode(base::StringPiece* slice, DatabaseNameKey* result);
   CONTENT_EXPORT static std::string Encode(const std::string& origin_identifier,
-                                           const string16& database_name);
+                                           const base::string16& database_name);
   static std::string EncodeMinKeyForOrigin(
       const std::string& origin_identifier);
   static std::string EncodeStopKeyForOrigin(
       const std::string& origin_identifier);
-  string16 origin() const { return origin_; }
-  string16 database_name() const { return database_name_; }
+  base::string16 origin() const { return origin_; }
+  base::string16 database_name() const { return database_name_; }
   int Compare(const DatabaseNameKey& other);
 
  private:
-  string16 origin_;  // TODO(jsbell): Store encoded strings, or just pointers.
-  string16 database_name_;
+  base::string16 origin_;  // TODO(jsbell): Store encoded strings, or just
+                           // pointers.
+  base::string16 database_name_;
 };
 
 class DatabaseMetaDataKey {
@@ -312,14 +317,15 @@ class ObjectStoreNamesKey {
   // because a mapping is kept in the IndexedDBDatabase. Can the
   // mapping become unreliable?  Can we remove this?
   static bool Decode(base::StringPiece* slice, ObjectStoreNamesKey* result);
-  CONTENT_EXPORT static std::string Encode(int64 database_id,
-                                           const string16& object_store_name);
+  CONTENT_EXPORT static std::string Encode(
+      int64 database_id,
+      const base::string16& object_store_name);
   int Compare(const ObjectStoreNamesKey& other);
-  string16 object_store_name() const { return object_store_name_; }
+  base::string16 object_store_name() const { return object_store_name_; }
 
  private:
   // TODO(jsbell): Store the encoded string, or just pointers to it.
-  string16 object_store_name_;
+  base::string16 object_store_name_;
 };
 
 class IndexNamesKey {
@@ -330,13 +336,13 @@ class IndexNamesKey {
   static bool Decode(base::StringPiece* slice, IndexNamesKey* result);
   CONTENT_EXPORT static std::string Encode(int64 database_id,
                                            int64 object_store_id,
-                                           const string16& index_name);
+                                           const base::string16& index_name);
   int Compare(const IndexNamesKey& other);
-  string16 index_name() const { return index_name_; }
+  base::string16 index_name() const { return index_name_; }
 
  private:
   int64 object_store_id_;
-  string16 index_name_;
+  base::string16 index_name_;
 };
 
 class ObjectStoreDataKey {
@@ -348,7 +354,6 @@ class ObjectStoreDataKey {
   static std::string Encode(int64 database_id,
                             int64 object_store_id,
                             const IndexedDBKey& user_key);
-  int Compare(const ObjectStoreDataKey& other, bool* ok);
   scoped_ptr<IndexedDBKey> user_key() const;
   static const int64 kSpecialIndexNumber;
   ObjectStoreDataKey();
@@ -370,7 +375,6 @@ class ExistsEntryKey {
   static std::string Encode(int64 database_id,
                             int64 object_store_id,
                             const IndexedDBKey& user_key);
-  int Compare(const ExistsEntryKey& other, bool* ok);
   scoped_ptr<IndexedDBKey> user_key() const;
 
   static const int64 kSpecialIndexNumber;
@@ -396,15 +400,17 @@ class IndexDataKey {
                             int64 object_store_id,
                             int64 index_id,
                             const IndexedDBKey& user_key);
+  static std::string Encode(int64 database_id,
+                            int64 object_store_id,
+                            int64 index_id,
+                            const IndexedDBKey& user_key,
+                            const IndexedDBKey& user_primary_key);
   static std::string EncodeMinKey(int64 database_id,
                                   int64 object_store_id,
                                   int64 index_id);
   CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
                                                  int64 object_store_id,
                                                  int64 index_id);
-  int Compare(const IndexDataKey& other,
-              bool only_compare_index_keys,
-              bool* ok);
   int64 DatabaseId() const;
   int64 ObjectStoreId() const;
   int64 IndexId() const;

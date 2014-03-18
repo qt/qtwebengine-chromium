@@ -10,8 +10,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
 #include "content/public/common/content_client.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
 namespace content {
 
@@ -51,6 +51,9 @@ class WebUIDataSourceImpl::InternalDataSource : public URLDataSource {
   }
   virtual bool ShouldReplaceExistingSource() const OVERRIDE {
     return parent_->replace_existing_source_;
+  }
+  virtual bool AllowCaching() const OVERRIDE {
+    return false;
   }
   virtual bool ShouldAddContentSecurityPolicy() const OVERRIDE {
     return parent_->add_csp_;
@@ -92,7 +95,7 @@ WebUIDataSourceImpl::~WebUIDataSourceImpl() {
 }
 
 void WebUIDataSourceImpl::AddString(const std::string& name,
-                                    const string16& value) {
+                                    const base::string16& value) {
   localized_strings_.SetString(name, value);
 }
 

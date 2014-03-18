@@ -253,6 +253,9 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     policies_elem = self._active_policies_elem
     policy_type = policy['type']
     policy_name = policy['name']
+    if policy_type == 'external':
+      # This type can only be set through cloud policy.
+      return
 
     attributes = {
       'name': name,

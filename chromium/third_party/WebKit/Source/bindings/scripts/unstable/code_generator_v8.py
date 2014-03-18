@@ -40,6 +40,7 @@ Output: V8X.h and V8X.cpp
 
 import os
 import posixpath
+import re
 import sys
 
 # jinja2 is in chromium's third_party directory.
@@ -52,8 +53,10 @@ import jinja2
 templates_dir = os.path.join(module_path, os.pardir, os.pardir, 'templates')
 
 import v8_callback_interface
+from v8_globals import includes
 import v8_interface
-from v8_utilities import cpp_class_name, generate_conditional_string, v8_class_name
+import v8_types
+from v8_utilities import capitalize, cpp_name, conditional_string, v8_class_name
 
 
 class CodeGeneratorV8:
@@ -78,17 +81,24 @@ class CodeGeneratorV8:
             header_template_filename = 'interface.h'
             cpp_template_filename = 'interface.cpp'
             self.generate_contents = v8_interface.generate_interface
-        # FIXME: update to Jinja 2.7 and use:
-        # keep_trailing_newline=True,  # newline-terminate generated files
-        # lstrip_blocks=True,  # so can indent control flow tags
         jinja_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(templates_dir),
+            keep_trailing_newline=True,  # newline-terminate generated files
+            lstrip_blocks=True,  # so can indent control flow tags
             trim_blocks=True)
+        jinja_env.filters.update({
+            'blink_capitalize': capitalize,
+            'conditional': conditional_if_endif,
+            'runtime_enabled': runtime_enabled_if,
+            })
         self.header_template = jinja_env.get_template(header_template_filename)
         self.cpp_template = jinja_env.get_template(cpp_template_filename)
 
-        class_name = cpp_class_name(self.interface)
+        class_name = cpp_name(self.interface)
         self.include_for_cpp_class = posixpath.join(relative_dir_posix, class_name + '.h')
+        enumerations = definitions.enumerations
+        if enumerations:
+            v8_types.set_enum_types(enumerations)
 
     def write_dummy_header_and_cpp(self):
         # FIXME: fix GYP so these files aren't needed and remove this method
@@ -108,10 +118,9 @@ class CodeGeneratorV8:
     def write_header_and_cpp(self):
         interface = self.interface
         template_contents = self.generate_contents(interface)
-        template_contents['conditional_string'] = generate_conditional_string(interface)
         template_contents['header_includes'].add(self.include_for_cpp_class)
         template_contents['header_includes'] = sorted(template_contents['header_includes'])
-        template_contents['cpp_includes'] = sorted(template_contents['cpp_includes'])
+        template_contents['cpp_includes'] = sorted(includes)
 
         header_basename = v8_class_name(interface) + '.h'
         header_file_text = self.header_template.render(template_contents)
@@ -125,3 +134,23 @@ class CodeGeneratorV8:
         filename = os.path.join(self.output_directory, basename)
         with open(filename, 'w') as output_file:
             output_file.write(file_text)
+
+
+# [Conditional]
+def conditional_if_endif(code, conditional_string):
+    # Jinja2 filter to generate if/endif directive blocks
+    if not conditional_string:
+        return code
+    return ('#if %s\n' % conditional_string +
+            code +
+            '#endif // %s\n' % conditional_string)
+
+
+# [RuntimeEnabled]
+def runtime_enabled_if(code, runtime_enabled_function_name):
+    if not runtime_enabled_function_name:
+        return code
+    # Indent if statement to level of original code
+    indent = re.match(' *', code).group(0)
+    return ('%sif (%s())\n' % (indent, runtime_enabled_function_name) +
+            '    %s' % code)

@@ -18,6 +18,7 @@
     'tests/unit_tests.cc',
     'tests/unit_tests.h',
     'services/broker_process_unittest.cc',
+    'services/thread_helpers_unittests.cc',
   ],
   'conditions': [
     [ 'compile_suid_client==1', {
@@ -33,6 +34,11 @@
         'seccomp-bpf/sandbox_bpf_unittest.cc',
         'seccomp-bpf/syscall_iterator_unittest.cc',
         'seccomp-bpf/syscall_unittest.cc',
+      ],
+    }],
+    [ 'compile_credentials==1', {
+      'sources': [
+        'services/credentials_unittest.cc',
       ],
     }],
   ],

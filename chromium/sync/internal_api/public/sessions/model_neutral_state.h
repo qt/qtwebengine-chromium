@@ -22,14 +22,8 @@ struct SYNC_EXPORT ModelNeutralState {
   ModelNeutralState();
   ~ModelNeutralState();
 
-  // We GetUpdates for some combination of types at once.
-  // requested_update_types stores the set of types which were requested.
-  ModelTypeSet updates_request_types;
-
   // The set of types for which commits were sent to the server.
   ModelTypeSet commit_request_types;
-
-  sync_pb::ClientToServerResponse updates_response;
 
   int num_successful_commits;
 
@@ -66,9 +60,6 @@ struct SYNC_EXPORT ModelNeutralState {
 
   // Set to true by PostCommitMessageCommand if any commits were successful.
   bool items_committed;
-
-  // True indicates debug info has been sent once this session.
-  bool debug_info_sent;
 
   // Number of changes remaining, according to the server.
   // Take it as an estimate unless it's value is zero, in which case there

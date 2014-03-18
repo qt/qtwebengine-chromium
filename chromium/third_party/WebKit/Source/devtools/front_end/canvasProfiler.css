@@ -28,7 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-.canvas-profile-view {
+.canvas-profile-view,
+#canvas-replay-image-container {
     overflow: hidden;
     position: absolute;
     top: 0;
@@ -76,6 +77,10 @@
     left: 0;
     right: 0;
     bottom: 0;
+}
+
+.canvas-replay-log .data-grid {
+    border: none;
 }
 
 button.status-bar-item.canvas-sidebar-show-hide-button {

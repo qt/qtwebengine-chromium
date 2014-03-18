@@ -94,12 +94,11 @@ bool FormatFromGuid(const GUID& guid, VideoPixelFormat* format) {
   return false;
 }
 
-bool GetFrameSize(IMFMediaType* type, int* width, int* height) {
+bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
   UINT32 width32, height32;
   if (FAILED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width32, &height32)))
     return false;
-  *width = width32;
-  *height = height32;
+  frame_size->SetSize(width32, height32);
   return true;
 }
 
@@ -121,19 +120,16 @@ bool FillCapabilitiesFromType(IMFMediaType* type,
                               VideoCaptureCapabilityWin* capability) {
   GUID type_guid;
   if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &type_guid)) ||
-      !FormatFromGuid(type_guid, &capability->color) ||
-      !GetFrameSize(type, &capability->width, &capability->height) ||
+      !GetFrameSize(type, &capability->supported_format.frame_size) ||
       !GetFrameRate(type,
                     &capability->frame_rate_numerator,
-                    &capability->frame_rate_denominator)) {
+                    &capability->frame_rate_denominator) ||
+      !FormatFromGuid(type_guid, &capability->supported_format.pixel_format)) {
     return false;
   }
   // Keep the integer version of the frame_rate for (potential) returns.
-  capability->frame_rate =
+  capability->supported_format.frame_rate =
       capability->frame_rate_numerator / capability->frame_rate_denominator;
-
-  capability->expected_capture_delay = 0;  // Currently not used.
-  capability->interlaced = false;          // Currently not used.
 
   return true;
 }
@@ -210,7 +206,7 @@ class MFReaderCallback
       DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
     base::Time stamp(base::Time::Now());
     if (!sample) {
-      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0, false, false);
+      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0);
       return S_OK;
     }
 
@@ -224,8 +220,7 @@ class MFReaderCallback
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
-        observer_->OnIncomingCapturedFrame(data, length, stamp,
-                                           0, false, false);
+        observer_->OnIncomingCapturedFrame(data, length, stamp, 0);
         buffer->Unlock();
       }
     }
@@ -312,7 +307,7 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
 }
 
 VideoCaptureDeviceMFWin::VideoCaptureDeviceMFWin(const Name& device_name)
-    : name_(device_name), observer_(NULL), capture_(0) {
+    : name_(device_name), capture_(0) {
   DetachFromThread();
 }
 
@@ -339,19 +334,14 @@ bool VideoCaptureDeviceMFWin::Init() {
                                                        reader_.Receive()));
 }
 
-void VideoCaptureDeviceMFWin::Allocate(
-    const VideoCaptureCapability& capture_format,
-    VideoCaptureDevice::EventHandler* observer) {
+void VideoCaptureDeviceMFWin::AllocateAndStart(
+    const VideoCaptureParams& params,
+    scoped_ptr<VideoCaptureDevice::Client> client) {
   DCHECK(CalledOnValidThread());
 
   base::AutoLock lock(lock_);
 
-  if (observer_) {
-    DCHECK_EQ(observer, observer_);
-    return;
-  }
-
-  observer_ = observer;
+  client_ = client.Pass();
   DCHECK_EQ(capture_, false);
 
   CapabilityList capabilities;
@@ -361,14 +351,11 @@ void VideoCaptureDeviceMFWin::Allocate(
     return;
   }
 
-  const VideoCaptureCapabilityWin& found_capability =
-      capabilities.GetBestMatchedCapability(capture_format.width,
-                                            capture_format.height,
-                                            capture_format.frame_rate);
-  DLOG(INFO) << "Chosen capture format= (" << found_capability.width << "x"
-             << found_capability.height << ")@("
-             << found_capability.frame_rate_numerator << "/"
-             << found_capability.frame_rate_denominator << ")fps";
+  VideoCaptureCapabilityWin found_capability =
+      capabilities.GetBestMatchedFormat(
+          params.requested_format.frame_size.width(),
+          params.requested_format.frame_size.height(),
+          params.requested_format.frame_rate);
 
   ScopedComPtr<IMFMediaType> type;
   if (FAILED(hr = reader_->GetNativeMediaType(
@@ -380,25 +367,16 @@ void VideoCaptureDeviceMFWin::Allocate(
     return;
   }
 
-  observer_->OnFrameInfo(found_capability);
-}
-
-void VideoCaptureDeviceMFWin::Start() {
-  DCHECK(CalledOnValidThread());
-
-  base::AutoLock lock(lock_);
-  if (!capture_) {
-    capture_ = true;
-    HRESULT hr;
-    if (FAILED(hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
-                                        NULL, NULL, NULL, NULL))) {
-      OnError(hr);
-      capture_ = false;
-    }
+  if (FAILED(hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
+                                      NULL, NULL, NULL, NULL))) {
+    OnError(hr);
+    return;
   }
+  capture_format_ = found_capability.supported_format;
+  capture_ = true;
 }
 
-void VideoCaptureDeviceMFWin::Stop() {
+void VideoCaptureDeviceMFWin::StopAndDeAllocate() {
   DCHECK(CalledOnValidThread());
   base::WaitableEvent flushed(false, false);
   const int kFlushTimeOutInMs = 1000;
@@ -412,9 +390,9 @@ void VideoCaptureDeviceMFWin::Stop() {
       wait = SUCCEEDED(hr);
       if (!wait) {
         callback_->SetSignalOnFlush(NULL);
-        OnError(hr);
       }
     }
+    client_.reset();
   }
 
   // If the device has been unplugged, the Flush() won't trigger the event
@@ -426,31 +404,18 @@ void VideoCaptureDeviceMFWin::Stop() {
     flushed.TimedWait(base::TimeDelta::FromMilliseconds(kFlushTimeOutInMs));
 }
 
-void VideoCaptureDeviceMFWin::DeAllocate() {
-  DCHECK(CalledOnValidThread());
-
-  Stop();
-
-  base::AutoLock lock(lock_);
-  observer_ = NULL;
-}
-
-const VideoCaptureDevice::Name& VideoCaptureDeviceMFWin::device_name() {
-  DCHECK(CalledOnValidThread());
-  return name_;
-}
-
 void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
     const uint8* data,
     int length,
     const base::Time& time_stamp,
-    int rotation,
-    bool flip_vert,
-    bool flip_horiz) {
+    int rotation) {
   base::AutoLock lock(lock_);
-  if (data && observer_)
-    observer_->OnIncomingCapturedFrame(data, length, time_stamp,
-                                       rotation, flip_vert, flip_horiz);
+  if (data && client_.get())
+    client_->OnIncomingCapturedFrame(data,
+                                     length,
+                                     time_stamp,
+                                     rotation,
+                                     capture_format_);
 
   if (capture_) {
     HRESULT hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
@@ -468,8 +433,8 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
 
 void VideoCaptureDeviceMFWin::OnError(HRESULT hr) {
   DLOG(ERROR) << "VideoCaptureDeviceMFWin: " << std::hex << hr;
-  if (observer_)
-    observer_->OnError();
+  if (client_.get())
+    client_->OnError();
 }
 
 }  // namespace media

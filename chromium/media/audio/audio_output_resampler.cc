@@ -14,7 +14,6 @@
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/sample_rates.h"
 #include "media/base/audio_converter.h"
 #include "media/base/limits.h"
@@ -44,6 +43,8 @@ class OnMoreDataConverter
   // Clears |source_callback_| and flushes the resampler.
   void Stop();
 
+  bool started() { return source_callback_ != NULL; }
+
  private:
   // AudioConverter::InputCallback implementation.
   virtual double ProvideInput(AudioBus* audio_bus,
@@ -51,14 +52,10 @@ class OnMoreDataConverter
 
   // Ratio of input bytes to output bytes used to correct playback delay with
   // regard to buffering and resampling.
-  double io_ratio_;
+  const double io_ratio_;
 
-  // Source callback and associated lock.
-  base::Lock source_lock_;
+  // Source callback.
   AudioOutputStream::AudioSourceCallback* source_callback_;
-
-  // |source| passed to OnMoreIOData() which should be passed downstream.
-  AudioBus* source_bus_;
 
   // Last AudioBuffersState object received via OnMoreData(), used to correct
   // playback delay by ProvideInput() and passed on to |source_callback_|.
@@ -121,28 +118,27 @@ static void RecordFallbackStats(const AudioParameters& output_params) {
   }
 }
 
+// Converts low latency based |output_params| into high latency appropriate
+// output parameters in error situations.
+void AudioOutputResampler::SetupFallbackParams() {
 // Only Windows has a high latency output driver that is not the same as the low
 // latency path.
 #if defined(OS_WIN)
-// Converts low latency based |output_params| into high latency appropriate
-// output parameters in error situations.
-static AudioParameters SetupFallbackParams(
-    const AudioParameters& input_params, const AudioParameters& output_params) {
   // Choose AudioParameters appropriate for opening the device in high latency
   // mode.  |kMinLowLatencyFrameSize| is arbitrarily based on Pepper Flash's
   // MAXIMUM frame size for low latency.
   static const int kMinLowLatencyFrameSize = 2048;
-  int frames_per_buffer = std::min(
-      std::max(input_params.frames_per_buffer(), kMinLowLatencyFrameSize),
-      static_cast<int>(
-          GetHighLatencyOutputBufferSize(input_params.sample_rate())));
+  const int frames_per_buffer =
+      std::max(params_.frames_per_buffer(), kMinLowLatencyFrameSize);
 
-  return AudioParameters(
-      AudioParameters::AUDIO_PCM_LINEAR, input_params.channel_layout(),
-      input_params.sample_rate(), input_params.bits_per_sample(),
+  output_params_ = AudioParameters(
+      AudioParameters::AUDIO_PCM_LINEAR, params_.channel_layout(),
+      params_.sample_rate(), params_.bits_per_sample(),
       frames_per_buffer);
-}
+  output_device_id_ = "";
+  Initialize();
 #endif
+}
 
 AudioOutputResampler::AudioOutputResampler(AudioManager* audio_manager,
                                            const AudioParameters& input_params,
@@ -178,7 +174,7 @@ void AudioOutputResampler::Initialize() {
 }
 
 bool AudioOutputResampler::OpenStream() {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (dispatcher_->OpenStream()) {
     // Only record the UMA statistic if we didn't fallback during construction
@@ -210,8 +206,7 @@ bool AudioOutputResampler::OpenStream() {
   DLOG(ERROR) << "Unable to open audio device in low latency mode.  Falling "
               << "back to high latency audio output.";
 
-  output_params_ = SetupFallbackParams(params_, output_params_);
-  Initialize();
+  SetupFallbackParams();
   if (dispatcher_->OpenStream()) {
     streams_opened_ = true;
     return true;
@@ -238,7 +233,7 @@ bool AudioOutputResampler::OpenStream() {
 bool AudioOutputResampler::StartStream(
     AudioOutputStream::AudioSourceCallback* callback,
     AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   OnMoreDataConverter* resampler_callback = NULL;
   CallbackMap::iterator it = callbacks_.find(stream_proxy);
@@ -258,12 +253,12 @@ bool AudioOutputResampler::StartStream(
 
 void AudioOutputResampler::StreamVolumeSet(AudioOutputProxy* stream_proxy,
                                            double volume) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->StreamVolumeSet(stream_proxy, volume);
 }
 
 void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->StopStream(stream_proxy);
 
   // Now that StopStream() has completed the underlying physical stream should
@@ -275,7 +270,7 @@ void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->CloseStream(stream_proxy);
 
   // We assume that StopStream() is always called prior to CloseStream(), so
@@ -288,7 +283,7 @@ void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::Shutdown() {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // No AudioOutputProxy objects should hold a reference to us when we get
   // to this stage.
@@ -298,16 +293,44 @@ void AudioOutputResampler::Shutdown() {
   DCHECK(callbacks_.empty());
 }
 
+void AudioOutputResampler::CloseStreamsForWedgeFix() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  // Stop and close all active streams.  Once all streams across all dispatchers
+  // have been closed the AudioManager will call RestartStreamsForWedgeFix().
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    if (it->second->started())
+      dispatcher_->StopStream(it->first);
+    dispatcher_->CloseStream(it->first);
+  }
+
+  // Close all idle streams as well.
+  dispatcher_->CloseStreamsForWedgeFix();
+}
+
+void AudioOutputResampler::RestartStreamsForWedgeFix() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  // By opening all streams first and then starting them one by one we ensure
+  // the dispatcher only opens streams for those which will actually be used.
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    dispatcher_->OpenStream();
+  }
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    if (it->second->started())
+      dispatcher_->StartStream(it->second, it->first);
+  }
+}
+
 OnMoreDataConverter::OnMoreDataConverter(const AudioParameters& input_params,
                                          const AudioParameters& output_params)
-    : source_callback_(NULL),
-      source_bus_(NULL),
+    : io_ratio_(static_cast<double>(input_params.GetBytesPerSecond()) /
+                output_params.GetBytesPerSecond()),
+      source_callback_(NULL),
       input_bytes_per_second_(input_params.GetBytesPerSecond()),
-      audio_converter_(input_params, output_params, false) {
-  io_ratio_ =
-      static_cast<double>(input_params.GetBytesPerSecond()) /
-      output_params.GetBytesPerSecond();
-}
+      audio_converter_(input_params, output_params, false) {}
 
 OnMoreDataConverter::~OnMoreDataConverter() {
   // Ensure Stop() has been called so we don't end up with an AudioOutputStream
@@ -317,7 +340,6 @@ OnMoreDataConverter::~OnMoreDataConverter() {
 
 void OnMoreDataConverter::Start(
     AudioOutputStream::AudioSourceCallback* callback) {
-  base::AutoLock auto_lock(source_lock_);
   CHECK(!source_callback_);
   source_callback_ = callback;
 
@@ -328,7 +350,6 @@ void OnMoreDataConverter::Start(
 }
 
 void OnMoreDataConverter::Stop() {
-  base::AutoLock auto_lock(source_lock_);
   CHECK(source_callback_);
   source_callback_ = NULL;
   audio_converter_.RemoveInput(this);
@@ -342,26 +363,20 @@ int OnMoreDataConverter::OnMoreData(AudioBus* dest,
 int OnMoreDataConverter::OnMoreIOData(AudioBus* source,
                                       AudioBus* dest,
                                       AudioBuffersState buffers_state) {
-  base::AutoLock auto_lock(source_lock_);
-  // While we waited for |source_lock_| the callback might have been cleared.
-  if (!source_callback_) {
-    dest->Zero();
-    return dest->frames();
-  }
+  // Note: The input portion of OnMoreIOData() is not supported when a converter
+  // has been injected.  Downstream clients prefer silence to potentially split
+  // apart input data.
 
-  source_bus_ = source;
   current_buffers_state_ = buffers_state;
   audio_converter_.Convert(dest);
 
-  // Always return the full number of frames requested, ProvideInput_Locked()
+  // Always return the full number of frames requested, ProvideInput()
   // will pad with silence if it wasn't able to acquire enough data.
   return dest->frames();
 }
 
 double OnMoreDataConverter::ProvideInput(AudioBus* dest,
                                          base::TimeDelta buffer_delay) {
-  source_lock_.AssertAcquired();
-
   // Adjust playback delay to include |buffer_delay|.
   // TODO(dalecurtis): Stop passing bytes around, it doesn't make sense since
   // AudioBus is just float data.  Use TimeDelta instead.
@@ -371,27 +386,18 @@ double OnMoreDataConverter::ProvideInput(AudioBus* dest,
                    buffer_delay.InSecondsF() * input_bytes_per_second_);
 
   // Retrieve data from the original callback.
-  int frames = source_callback_->OnMoreIOData(
-      source_bus_, dest, new_buffers_state);
-
-  // |source_bus_| should only be provided once.
-  // TODO(dalecurtis, crogers): This is not a complete fix.  If ProvideInput()
-  // is called multiple times, we need to do something more clever here.
-  source_bus_ = NULL;
+  const int frames = source_callback_->OnMoreIOData(
+      NULL, dest, new_buffers_state);
 
   // Zero any unfilled frames if anything was filled, otherwise we'll just
   // return a volume of zero and let AudioConverter drop the output.
   if (frames > 0 && frames < dest->frames())
     dest->ZeroFramesPartial(frames, dest->frames() - frames);
-
-  // TODO(dalecurtis): Return the correct volume here.
   return frames > 0 ? 1 : 0;
 }
 
 void OnMoreDataConverter::OnError(AudioOutputStream* stream) {
-  base::AutoLock auto_lock(source_lock_);
-  if (source_callback_)
-    source_callback_->OnError(stream);
+  source_callback_->OnError(stream);
 }
 
 }  // namespace media

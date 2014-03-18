@@ -31,10 +31,11 @@
 #ifndef WebBlob_h
 #define WebBlob_h
 
-#include "../platform/WebCommon.h"
-#include "../platform/WebPrivatePtr.h"
-#include "../platform/WebString.h"
-#include "../platform/WebURL.h"
+#include "public/platform/WebBlobData.h"
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebPrivatePtr.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 
 namespace v8 {
 class Value;
@@ -43,7 +44,7 @@ template <class T> class Handle;
 
 namespace WebCore { class Blob; }
 
-namespace WebKit {
+namespace blink {
 
 class WebBlob {
 public:
@@ -57,18 +58,18 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT static WebBlob createFromFile(const WebString& path, long long size);
-    WEBKIT_EXPORT static WebBlob fromV8Value(v8::Handle<v8::Value>);
+    BLINK_EXPORT static WebBlob createFromFile(const WebString& path, long long size);
+    BLINK_EXPORT static WebBlob fromV8Value(v8::Handle<v8::Value>);
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebBlob&);
-    WEBKIT_EXPORT WebURL url();
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebBlob&);
+    BLINK_EXPORT WebString uuid();
 
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT v8::Handle<v8::Value>  toV8Value();
+    BLINK_EXPORT v8::Handle<v8::Value>  toV8Value();
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebBlob(const WTF::PassRefPtr<WebCore::Blob>&);
     WebBlob& operator=(const WTF::PassRefPtr<WebCore::Blob>&);
     operator WTF::PassRefPtr<WebCore::Blob>() const;
@@ -78,6 +79,6 @@ protected:
     WebPrivatePtr<WebCore::Blob> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebBlob_h

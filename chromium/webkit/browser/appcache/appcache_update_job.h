@@ -20,6 +20,7 @@
 #include "webkit/browser/appcache/appcache.h"
 #include "webkit/browser/appcache/appcache_host.h"
 #include "webkit/browser/appcache/appcache_response.h"
+#include "webkit/browser/appcache/appcache_service.h"
 #include "webkit/browser/appcache/appcache_storage.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -31,7 +32,8 @@ class HostNotifier;
 // Application cache Update algorithm and state.
 class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
     : public AppCacheStorage::Delegate,
-      public AppCacheHost::Observer {
+      public AppCacheHost::Observer,
+      public AppCacheService::Observer {
  public:
   AppCacheUpdateJob(AppCacheService* service, AppCacheGroup* group);
   virtual ~AppCacheUpdateJob();
@@ -160,6 +162,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE {}  // N/A
   virtual void OnDestructionImminent(AppCacheHost* host) OVERRIDE;
 
+  // Methods for AppCacheService::Observer.
+  virtual void OnServiceReinitialized(
+      AppCacheStorageReference* old_storage) OVERRIDE;
+
   void HandleCacheFailure(const std::string& error_message);
 
   void FetchManifest(bool is_first_fetch);
@@ -239,6 +245,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   AppCacheService* service_;
   const GURL manifest_url_;  // here for easier access
 
+  // Defined prior to refs to AppCaches and Groups because destruction
+  // order matters, the disabled_storage_reference_ must outlive those
+  // objects.
+  scoped_refptr<AppCacheStorageReference> disabled_storage_reference_;
+
   scoped_refptr<AppCache> inprogress_cache_;
 
   AppCacheGroup* group_;
@@ -299,6 +310,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
 
   // Whether we've stored the resulting group/cache yet.
   StoredState stored_state_;
+
+  AppCacheStorage* storage_;
 
   FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
 

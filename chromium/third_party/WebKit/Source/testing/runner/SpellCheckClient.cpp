@@ -32,10 +32,11 @@
 
 #include "MockGrammarCheck.h"
 #include "public/testing/WebTestDelegate.h"
+#include "public/testing/WebTestProxy.h"
 #include "public/web/WebTextCheckingCompletion.h"
 #include "public/web/WebTextCheckingResult.h"
 
-using namespace WebKit;
+using namespace blink;
 using namespace std;
 
 namespace WebTestRunner {
@@ -58,8 +59,9 @@ private:
 
 }
 
-SpellCheckClient::SpellCheckClient()
+SpellCheckClient::SpellCheckClient(WebTestProxyBase* webTestProxy)
     : m_lastRequestedTextCheckingCompletion(0)
+    , m_webTestProxy(webTestProxy)
 {
 }
 
@@ -72,7 +74,7 @@ void SpellCheckClient::setDelegate(WebTestDelegate* delegate)
     m_delegate = delegate;
 }
 
-// WebKit::WebSpellCheckClient
+// blink::WebSpellCheckClient
 void SpellCheckClient::spellCheck(const WebString& text, int& misspelledOffset, int& misspelledLength, WebVector<WebString>* optionalSuggestions)
 {
     // Check the spelling of the given text.
@@ -92,7 +94,7 @@ void SpellCheckClient::checkTextOfParagraph(const WebString& text, WebTextChecki
             if (!misspelledLength)
                 break;
             WebTextCheckingResult result;
-            result.type = WebTextCheckingTypeSpelling;
+            result.decoration = WebTextDecorationTypeSpelling;
             result.location = offset + misspelledPosition;
             result.length = misspelledLength;
             results.push_back(result);
@@ -134,21 +136,25 @@ void SpellCheckClient::finishLastTextCheck()
     vector<WebTextCheckingResult> results;
     int offset = 0;
     string16 text = m_lastRequestedTextCheckString;
-    while (text.length()) {
-        int misspelledPosition = 0;
-        int misspelledLength = 0;
-        m_spellcheck.spellCheckWord(WebString(text), &misspelledPosition, &misspelledLength);
-        if (!misspelledLength)
-            break;
-        WebVector<WebString> suggestions;
-        m_spellcheck.fillSuggestionList(WebString(text.substr(misspelledPosition, misspelledLength)), &suggestions);
-        results.push_back(WebTextCheckingResult(WebTextCheckingTypeSpelling, offset + misspelledPosition, misspelledLength, suggestions.isEmpty() ? WebString() : suggestions[0]));
-        text = text.substr(misspelledPosition + misspelledLength);
-        offset += misspelledPosition + misspelledLength;
+    if (!m_spellcheck.isMultiWordMisspelling(WebString(text), &results)) {
+        while (text.length()) {
+            int misspelledPosition = 0;
+            int misspelledLength = 0;
+            m_spellcheck.spellCheckWord(WebString(text), &misspelledPosition, &misspelledLength);
+            if (!misspelledLength)
+                break;
+            WebVector<WebString> suggestions;
+            m_spellcheck.fillSuggestionList(WebString(text.substr(misspelledPosition, misspelledLength)), &suggestions);
+            results.push_back(WebTextCheckingResult(WebTextDecorationTypeSpelling, offset + misspelledPosition, misspelledLength, suggestions.isEmpty() ? WebString() : suggestions[0]));
+            text = text.substr(misspelledPosition + misspelledLength);
+            offset += misspelledPosition + misspelledLength;
+        }
+        MockGrammarCheck::checkGrammarOfString(m_lastRequestedTextCheckString, &results);
     }
-    MockGrammarCheck::checkGrammarOfString(m_lastRequestedTextCheckString, &results);
     m_lastRequestedTextCheckingCompletion->didFinishCheckingText(results);
     m_lastRequestedTextCheckingCompletion = 0;
+
+    m_webTestProxy->postSpellCheckEvent(WebString("finishLastTextCheck"));
 }
 
 WebString SpellCheckClient::autoCorrectWord(const WebString&)

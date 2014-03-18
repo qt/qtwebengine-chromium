@@ -30,14 +30,13 @@
  */
 
 [
-    EnabledAtRuntime=SharedWorker,
+    ActiveDOMObject,
     Constructor(DOMString scriptURL, [Default=NullString] optional DOMString name),
-    ConstructorCallWith=ScriptExecutionContext,
-    ConstructorRaisesException,
-    ActiveDOMObject
+    ConstructorCallWith=ExecutionContext,
+    RaisesException=Constructor,
+    RuntimeEnabled=SharedWorker,
 ] interface SharedWorker : EventTarget {
     readonly attribute MessagePort port;
 };
 
 SharedWorker implements AbstractWorker;
-

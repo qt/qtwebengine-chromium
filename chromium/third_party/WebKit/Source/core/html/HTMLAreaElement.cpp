@@ -25,11 +25,11 @@
 #include "HTMLNames.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMapElement.h"
-#include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderView.h"
+#include "platform/graphics/Path.h"
+#include "platform/transforms/AffineTransform.h"
 
 using namespace std;
 
@@ -37,18 +37,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLAreaElement::HTMLAreaElement(const QualifiedName& tagName, Document& document)
-    : HTMLAnchorElement(tagName, document)
+inline HTMLAreaElement::HTMLAreaElement(Document& document)
+    : HTMLAnchorElement(areaTag, document)
     , m_lastSize(-1, -1)
     , m_shape(Unknown)
 {
-    ASSERT(hasTagName(areaTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAreaElement> HTMLAreaElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLAreaElement> HTMLAreaElement::create(Document& document)
 {
-    return adoptRef(new HTMLAreaElement(tagName, document));
+    return adoptRef(new HTMLAreaElement(document));
 }
 
 void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

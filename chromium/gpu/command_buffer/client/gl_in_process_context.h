@@ -40,6 +40,7 @@ struct GLES2_IMPL_EXPORT GLInProcessContextAttribs {
   int32 stencil_size;
   int32 samples;
   int32 sample_buffers;
+  int32 fail_if_major_perf_caveat;
 };
 
 class GLES2_IMPL_EXPORT GLInProcessContext {
@@ -68,11 +69,6 @@ class GLES2_IMPL_EXPORT GLInProcessContext {
       gfx::GpuPreference gpu_preference);
 
   virtual void SetContextLostCallback(const base::Closure& callback) = 0;
-
-  virtual void SignalSyncPoint(unsigned sync_point,
-                               const base::Closure& callback) = 0;
-
-  virtual void SignalQuery(unsigned query, const base::Closure& callback) = 0;
 
   // Allows direct access to the GLES2 implementation so a GLInProcessContext
   // can be used without making it current.

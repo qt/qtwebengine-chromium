@@ -32,15 +32,15 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseCallback.h"
 #include "modules/webdatabase/DatabaseManager.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionState& es)
+PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
 {
     if (!window->isCurrentlyDisplayedInFrame())
         return 0;
@@ -49,12 +49,13 @@ PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const
     DatabaseManager& dbManager = DatabaseManager::manager();
     DatabaseError error = DatabaseError::None;
     if (RuntimeEnabledFeatures::databaseEnabled() && window->document()->securityOrigin()->canAccessDatabase()) {
-        database = dbManager.openDatabase(window->document(), name, version, displayName, estimatedSize, creationCallback, error);
+        String errorMessage;
+        database = dbManager.openDatabase(window->document(), name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
         ASSERT(database || error != DatabaseError::None);
         if (error != DatabaseError::None)
-            es.throwDOMException(DatabaseManager::exceptionCodeForDatabaseError(error));
+            DatabaseManager::throwExceptionForDatabaseError(error, errorMessage, exceptionState);
     } else {
-        es.throwDOMException(SecurityError);
+        exceptionState.throwSecurityError("Access to the WebDatabase API is denied in this context.");
     }
 
     return database;

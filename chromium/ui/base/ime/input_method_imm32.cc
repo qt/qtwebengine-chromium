@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/win/tsf_input_scope.h"
 
 
 namespace ui {
@@ -97,7 +98,6 @@ void InputMethodIMM32::OnCaretBoundsChanged(const TextInputClient* client) {
       !IsWindowFocused(client)) {
     return;
   }
-
   // The current text input type should not be NONE if |client| is focused.
   DCHECK(!IsTextInputTypeNone());
   gfx::Rect screen_bounds(GetTextInputClient()->GetCaretBounds());
@@ -105,14 +105,13 @@ void InputMethodIMM32::OnCaretBoundsChanged(const TextInputClient* client) {
   HWND attached_window = GetAttachedWindowHandle(client);
   // TODO(ime): see comment in TextInputClient::GetCaretBounds(), this
   // conversion shouldn't be necessary.
-  RECT r;
+  RECT r = {};
   GetClientRect(attached_window, &r);
   POINT window_point = { screen_bounds.x(), screen_bounds.y() };
   ScreenToClient(attached_window, &window_point);
-  imm32_manager_.UpdateCaretRect(
-      attached_window,
-      gfx::Rect(gfx::Point(window_point.x, window_point.y),
-                screen_bounds.size()));
+  gfx::Rect caret_rect(gfx::Point(window_point.x, window_point.y),
+                       screen_bounds.size());
+  imm32_manager_.UpdateCaretRect(attached_window, caret_rect);
 }
 
 void InputMethodIMM32::CancelComposition(const TextInputClient* client) {
@@ -146,6 +145,7 @@ void InputMethodIMM32::OnDidChangeFocusedClient(TextInputClient* focused_before,
     // bounds has not changed.
     OnCaretBoundsChanged(focused);
   }
+  InputMethodWin::OnDidChangeFocusedClient(focused_before, focused);
 }
 
 LRESULT InputMethodIMM32::OnImeSetContext(HWND window_handle,
@@ -235,13 +235,25 @@ LRESULT InputMethodIMM32::OnImeNotify(UINT message,
                                       BOOL* handled) {
   *handled = FALSE;
 
+  bool previous_state = is_candidate_popup_open_;
+
   // Update |is_candidate_popup_open_|, whether a candidate window is open.
   switch (wparam) {
   case IMN_OPENCANDIDATE:
     is_candidate_popup_open_ = true;
+    if (!previous_state)
+      OnCandidateWindowShown();
     break;
   case IMN_CLOSECANDIDATE:
     is_candidate_popup_open_ = false;
+    if (previous_state)
+      OnCandidateWindowHidden();
+    break;
+  case IMN_CHANGECANDIDATE:
+    // TODO(kochi): The IME API expects this event to notify window size change,
+    // while this may fire more often without window resize. There is no generic
+    // way to get bounds of candidate window.
+    OnCandidateWindowUpdated();
     break;
   }
 
@@ -265,7 +277,9 @@ void InputMethodIMM32::UpdateIMEState() {
   // Use switch here in case we are going to add more text input types.
   // We disable input method in password field.
   const HWND window_handle = GetAttachedWindowHandle(GetTextInputClient());
-  switch (GetTextInputType()) {
+  const TextInputType text_input_type = GetTextInputType();
+  const TextInputMode text_input_mode = GetTextInputMode();
+  switch (text_input_type) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
       imm32_manager_.DisableIME(window_handle);
@@ -277,7 +291,9 @@ void InputMethodIMM32::UpdateIMEState() {
       break;
   }
 
-  imm32_manager_.SetTextInputMode(window_handle, GetTextInputMode());
+  imm32_manager_.SetTextInputMode(window_handle, text_input_mode);
+  tsf_inputscope::SetInputScopeForTsfUnawareWindow(
+      window_handle, text_input_type, text_input_mode);
 }
 
 }  // namespace ui

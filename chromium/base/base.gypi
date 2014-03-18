@@ -39,6 +39,10 @@
           'android/base_jni_registrar.h',
           'android/build_info.cc',
           'android/build_info.h',
+          'android/command_line_android.cc',
+          'android/command_line_android.h',
+          'android/content_uri_utils.cc',
+          'android/content_uri_utils.h',
           'android/cpu_features.cc',
           'android/fifo_utils.cc',
           'android/fifo_utils.h',
@@ -108,10 +112,8 @@
           'callback_helpers.h',
           'callback_internal.cc',
           'callback_internal.h',
-          'callback_registry.h',
+          'callback_list.h',
           'cancelable_callback.h',
-          'chromeos/chromeos_version.cc',
-          'chromeos/chromeos_version.h',
           'command_line.cc',
           'command_line.h',
           'compiler_specific.h',
@@ -179,6 +181,8 @@
           'files/dir_reader_fallback.h',
           'files/dir_reader_linux.h',
           'files/dir_reader_posix.h',
+          'files/file.cc',
+          'files/file.h',
           'files/file_enumerator.cc',
           'files/file_enumerator.h',
           'files/file_enumerator_posix.cc',
@@ -192,8 +196,10 @@
           'files/file_path_watcher_linux.cc',
           'files/file_path_watcher_stub.cc',
           'files/file_path_watcher_win.cc',
+          'files/file_posix.cc',
           'files/file_util_proxy.cc',
           'files/file_util_proxy.h',
+          'files/file_win.cc',
           'files/important_file_writer.h',
           'files/important_file_writer.cc',
           'files/memory_mapped_file.cc',
@@ -285,10 +291,18 @@
           'mac/sdk_forward_declarations.h',
           'memory/aligned_memory.cc',
           'memory/aligned_memory.h',
-          'memory/discardable_memory.cc',
           'memory/discardable_memory.h',
+          'memory/discardable_memory_allocator_android.cc',
+          'memory/discardable_memory_allocator_android.h',
           'memory/discardable_memory_android.cc',
+          'memory/discardable_memory_android.h',
+          'memory/discardable_memory_emulated.cc',
+          'memory/discardable_memory_emulated.h',
+          'memory/discardable_memory_linux.cc',
           'memory/discardable_memory_mac.cc',
+          'memory/discardable_memory_provider.cc',
+          'memory/discardable_memory_provider.h',
+          'memory/discardable_memory_win.cc',
           'memory/linked_ptr.h',
           'memory/manual_constructor.h',
           'memory/memory_pressure_listener.cc',
@@ -341,6 +355,8 @@
           'metrics/histogram.h',
           'metrics/histogram_base.cc',
           'metrics/histogram_base.h',
+          'metrics/histogram_delta_serialization.cc',
+          'metrics/histogram_delta_serialization.h',
           'metrics/histogram_flattener.h',
           'metrics/histogram_samples.cc',
           'metrics/histogram_samples.h',
@@ -534,6 +550,7 @@
           'sys_info_android.cc',
           'sys_info_chromeos.cc',
           'sys_info_freebsd.cc',
+          'sys_info_internal.h',
           'sys_info_ios.mm',
           'sys_info_linux.cc',
           'sys_info_mac.cc',
@@ -598,9 +615,11 @@
           'time/time_mac.cc',
           'time/time_posix.cc',
           'time/time_win.cc',
+          'timer/elapsed_timer.cc',
+          'timer/elapsed_timer.h',
+          'timer/hi_res_timer_manager.h',
           'timer/hi_res_timer_manager_posix.cc',
           'timer/hi_res_timer_manager_win.cc',
-          'timer/hi_res_timer_manager.h',
           'timer/timer.cc',
           'timer/timer.h',
           'tracked_objects.cc',
@@ -667,8 +686,17 @@
           'win/windows_version.h',
           'win/wrapped_window_proc.cc',
           'win/wrapped_window_proc.h',
+          'x11/x11_error_tracker.cc',
+          'x11/x11_error_tracker.h',
+          'x11/x11_error_tracker_gtk.cc',
         ],
         'conditions': [
+          ['use_aura==1 and use_x11==1', {
+            'sources': [
+              'x11/edid_parser_x11.cc',
+              'x11/edid_parser_x11.h',
+            ],
+          }],
           ['google_tv==1', {
            'sources': [
              'android/context_types.cc',
@@ -686,13 +714,21 @@
           4018,
         ],
         'target_conditions': [
-          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+          ['(<(desktop_linux) == 0 and <(chromeos) == 0) or >(nacl_untrusted_build)==1', {
               'sources/': [
                 ['exclude', '^nix/'],
               ],
               'sources!': [
                 'atomicops_internals_x86_gcc.cc',
+              ],
+          }],
+          ['<(use_glib)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_glib.cc',
+              ],
+          }],
+          ['<(use_x11)==0 or >(nacl_untrusted_build)==1', {
+              'sources!': [
                 'message_loop/message_pump_x11.cc',
               ],
           }],
@@ -901,6 +937,11 @@
           ['<(use_system_nspr)==1 and >(nacl_untrusted_build)==0', {
             'sources/': [
               ['exclude', '^third_party/nspr/'],
+            ],
+          }],
+          ['<(toolkit_uses_gtk) == 1', {
+            'sources!': [
+              'x11/x11_error_tracker.cc',
             ],
           }],
         ],

@@ -5,6 +5,7 @@
 #include "net/tools/quic/quic_server_session.h"
 
 #include "base/logging.h"
+#include "net/quic/quic_connection.h"
 #include "net/quic/reliable_quic_stream.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 
@@ -15,7 +16,7 @@ QuicServerSession::QuicServerSession(
     const QuicConfig& config,
     QuicConnection* connection,
     QuicSessionOwner* owner)
-    : QuicSession(connection, config, true),
+    : QuicSession(connection, config),
       owner_(owner) {
 }
 
@@ -32,12 +33,13 @@ QuicCryptoServerStream* QuicServerSession::CreateQuicCryptoServerStream(
   return new QuicCryptoServerStream(crypto_config, this);
 }
 
-void QuicServerSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
-  QuicSession::ConnectionClose(error, from_peer);
-  owner_->OnConnectionClose(connection()->guid(), error);
+void QuicServerSession::OnConnectionClosed(QuicErrorCode error,
+                                           bool from_peer) {
+  QuicSession::OnConnectionClosed(error, from_peer);
+  owner_->OnConnectionClosed(connection()->guid(), error);
 }
 
-bool QuicServerSession::ShouldCreateIncomingReliableStream(QuicStreamId id) {
+bool QuicServerSession::ShouldCreateIncomingDataStream(QuicStreamId id) {
   if (id % 2 == 0) {
     DLOG(INFO) << "Invalid incoming even stream_id:" << id;
     connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
@@ -52,16 +54,16 @@ bool QuicServerSession::ShouldCreateIncomingReliableStream(QuicStreamId id) {
   return true;
 }
 
-ReliableQuicStream* QuicServerSession::CreateIncomingReliableStream(
+QuicDataStream* QuicServerSession::CreateIncomingDataStream(
     QuicStreamId id) {
-  if (!ShouldCreateIncomingReliableStream(id)) {
+  if (!ShouldCreateIncomingDataStream(id)) {
     return NULL;
   }
 
   return new QuicSpdyServerStream(id, this);
 }
 
-ReliableQuicStream* QuicServerSession::CreateOutgoingReliableStream() {
+QuicDataStream* QuicServerSession::CreateOutgoingDataStream() {
   DLOG(ERROR) << "Server push not yet supported";
   return NULL;
 }

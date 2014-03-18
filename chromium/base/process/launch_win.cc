@@ -11,6 +11,7 @@
 #include <psapi.h>
 
 #include <ios>
+#include <limits>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -25,6 +26,7 @@
 #include "base/win/object_watcher.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_process_information.h"
+#include "base/win/startup_information.h"
 #include "base/win/windows_version.h"
 
 // userenv.dll is required for CreateEnvironmentBlock().
@@ -103,26 +105,61 @@ void RouteStdioToConsole() {
 
 bool LaunchProcess(const string16& cmdline,
                    const LaunchOptions& options,
-                   ProcessHandle* process_handle) {
-  STARTUPINFO startup_info = {};
-  startup_info.cb = sizeof(startup_info);
+                   win::ScopedHandle* process_handle) {
+  win::StartupInformation startup_info_wrapper;
+  STARTUPINFO* startup_info = startup_info_wrapper.startup_info();
+
+  bool inherit_handles = options.inherit_handles;
+  DWORD flags = 0;
+  if (options.handles_to_inherit) {
+    if (options.handles_to_inherit->empty()) {
+      inherit_handles = false;
+    } else {
+      if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+        DLOG(ERROR) << "Specifying handles to inherit requires Vista or later.";
+        return false;
+      }
+
+      if (options.handles_to_inherit->size() >
+              std::numeric_limits<DWORD>::max() / sizeof(HANDLE)) {
+        DLOG(ERROR) << "Too many handles to inherit.";
+        return false;
+      }
+
+      if (!startup_info_wrapper.InitializeProcThreadAttributeList(1)) {
+        DPLOG(ERROR);
+        return false;
+      }
+
+      if (!startup_info_wrapper.UpdateProcThreadAttribute(
+              PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+              const_cast<HANDLE*>(&options.handles_to_inherit->at(0)),
+              static_cast<DWORD>(options.handles_to_inherit->size() *
+                  sizeof(HANDLE)))) {
+        DPLOG(ERROR);
+        return false;
+      }
+
+      inherit_handles = true;
+      flags |= EXTENDED_STARTUPINFO_PRESENT;
+    }
+  }
+
   if (options.empty_desktop_name)
-    startup_info.lpDesktop = L"";
-  startup_info.dwFlags = STARTF_USESHOWWINDOW;
-  startup_info.wShowWindow = options.start_hidden ? SW_HIDE : SW_SHOW;
+    startup_info->lpDesktop = L"";
+  startup_info->dwFlags = STARTF_USESHOWWINDOW;
+  startup_info->wShowWindow = options.start_hidden ? SW_HIDE : SW_SHOW;
 
   if (options.stdin_handle || options.stdout_handle || options.stderr_handle) {
-    DCHECK(options.inherit_handles);
+    DCHECK(inherit_handles);
     DCHECK(options.stdin_handle);
     DCHECK(options.stdout_handle);
     DCHECK(options.stderr_handle);
-    startup_info.dwFlags |= STARTF_USESTDHANDLES;
-    startup_info.hStdInput = options.stdin_handle;
-    startup_info.hStdOutput = options.stdout_handle;
-    startup_info.hStdError = options.stderr_handle;
+    startup_info->dwFlags |= STARTF_USESTDHANDLES;
+    startup_info->hStdInput = options.stdin_handle;
+    startup_info->hStdOutput = options.stdout_handle;
+    startup_info->hStdError = options.stderr_handle;
   }
-
-  DWORD flags = 0;
 
   if (options.job_handle) {
     flags |= CREATE_SUSPENDED;
@@ -136,7 +173,7 @@ bool LaunchProcess(const string16& cmdline,
   if (options.force_breakaway_from_job_)
     flags |= CREATE_BREAKAWAY_FROM_JOB;
 
-  base::win::ScopedProcessInformation process_info;
+  PROCESS_INFORMATION temp_process_info = {};
 
   if (options.as_user) {
     flags |= CREATE_UNICODE_ENVIRONMENT;
@@ -150,9 +187,9 @@ bool LaunchProcess(const string16& cmdline,
     BOOL launched =
         CreateProcessAsUser(options.as_user, NULL,
                             const_cast<wchar_t*>(cmdline.c_str()),
-                            NULL, NULL, options.inherit_handles, flags,
-                            enviroment_block, NULL, &startup_info,
-                            process_info.Receive());
+                            NULL, NULL, inherit_handles, flags,
+                            enviroment_block, NULL, startup_info,
+                            &temp_process_info);
     DestroyEnvironmentBlock(enviroment_block);
     if (!launched) {
       DPLOG(ERROR);
@@ -161,12 +198,13 @@ bool LaunchProcess(const string16& cmdline,
   } else {
     if (!CreateProcess(NULL,
                        const_cast<wchar_t*>(cmdline.c_str()), NULL, NULL,
-                       options.inherit_handles, flags, NULL, NULL,
-                       &startup_info, process_info.Receive())) {
+                       inherit_handles, flags, NULL, NULL,
+                       startup_info, &temp_process_info)) {
       DPLOG(ERROR);
       return false;
     }
   }
+  base::win::ScopedProcessInformation process_info(temp_process_info);
 
   if (options.job_handle) {
     if (0 == AssignProcessToJobObject(options.job_handle,
@@ -184,7 +222,7 @@ bool LaunchProcess(const string16& cmdline,
 
   // If the caller wants the process handle, we won't close it.
   if (process_handle)
-    *process_handle = process_info.TakeProcessHandle();
+    process_handle->Set(process_info.TakeProcessHandle());
 
   return true;
 }
@@ -192,7 +230,13 @@ bool LaunchProcess(const string16& cmdline,
 bool LaunchProcess(const CommandLine& cmdline,
                    const LaunchOptions& options,
                    ProcessHandle* process_handle) {
-  return LaunchProcess(cmdline.GetCommandLineString(), options, process_handle);
+  if (!process_handle)
+    return LaunchProcess(cmdline.GetCommandLineString(), options, NULL);
+
+  win::ScopedHandle process;
+  bool rv = LaunchProcess(cmdline.GetCommandLineString(), options, &process);
+  *process_handle = process.Take();
+  return rv;
 }
 
 bool SetJobObjectLimitFlags(HANDLE job_object, DWORD limit_flags) {
@@ -206,6 +250,10 @@ bool SetJobObjectLimitFlags(HANDLE job_object, DWORD limit_flags) {
 }
 
 bool GetAppOutput(const CommandLine& cl, std::string* output) {
+  return GetAppOutput(cl.GetCommandLineString(), output);
+}
+
+bool GetAppOutput(const StringPiece16& cl, std::string* output) {
   HANDLE out_read = NULL;
   HANDLE out_write = NULL;
 
@@ -231,10 +279,10 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
     return false;
   }
 
-  FilePath::StringType writable_command_line_string(cl.GetCommandLineString());
+  FilePath::StringType writable_command_line_string;
+  writable_command_line_string.assign(cl.data(), cl.size());
 
-  base::win::ScopedProcessInformation proc_info;
-  STARTUPINFO start_info = { 0 };
+  STARTUPINFO start_info = {};
 
   start_info.cb = sizeof(STARTUPINFO);
   start_info.hStdOutput = out_write;
@@ -244,14 +292,16 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
   start_info.dwFlags |= STARTF_USESTDHANDLES;
 
   // Create the child process.
+  PROCESS_INFORMATION temp_process_info = {};
   if (!CreateProcess(NULL,
                      &writable_command_line_string[0],
                      NULL, NULL,
                      TRUE,  // Handles are inherited.
-                     0, NULL, NULL, &start_info, proc_info.Receive())) {
+                     0, NULL, NULL, &start_info, &temp_process_info)) {
     NOTREACHED() << "Failed to start process";
     return false;
   }
+  base::win::ScopedProcessInformation proc_info(temp_process_info);
 
   // Close our writing end of pipe now. Otherwise later read would not be able
   // to detect end of child's output.

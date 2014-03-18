@@ -33,8 +33,7 @@
 #include "core/dom/IconURL.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
-#include "core/page/LayoutMilestones.h"
-#include "core/platform/network/ResourceLoadPriority.h"
+#include "platform/network/ResourceLoadPriority.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 
@@ -45,9 +44,10 @@ class Context;
 template<class T> class Handle;
 }
 
-namespace WebKit {
+namespace blink {
 class WebCookieJar;
-class WebServiceWorkerRegistry;
+class WebServiceWorkerProvider;
+class WebServiceWorkerProviderClient;
 }
 
 namespace WebCore {
@@ -83,6 +83,11 @@ class FetchRequest;
     class SubstituteData;
     class Widget;
 
+    enum NavigationHistoryPolicy {
+        NavigationCreatedHistoryEntry,
+        NavigationReusedHistoryEntry
+    };
+
     class FrameLoaderClient {
     public:
         virtual ~FrameLoaderClient() { }
@@ -101,18 +106,17 @@ class FetchRequest;
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
-        virtual void dispatchDidNavigateWithinPage() { }
+        virtual void dispatchDidNavigateWithinPage(NavigationHistoryPolicy, HistoryItem*) { }
         virtual void dispatchWillClose() = 0;
         virtual void dispatchDidStartProvisionalLoad() = 0;
         virtual void dispatchDidReceiveTitle(const String&) = 0;
         virtual void dispatchDidChangeIcons(IconType) = 0;
-        virtual void dispatchDidCommitLoad() = 0;
+        virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, NavigationHistoryPolicy) = 0;
         virtual void dispatchDidFailProvisionalLoad(const ResourceError&) = 0;
         virtual void dispatchDidFailLoad(const ResourceError&) = 0;
         virtual void dispatchDidFinishDocumentLoad() = 0;
         virtual void dispatchDidFinishLoad() = 0;
-
-        virtual void dispatchDidLayout(LayoutMilestones) { }
+        virtual void dispatchDidFirstVisuallyNonEmptyLayout() = 0;
 
         virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
 
@@ -128,7 +132,7 @@ class FetchRequest;
 
         virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
 
-        virtual void navigateBackForward(int offset) const = 0;
+        virtual bool navigateBackForward(int offset) const = 0;
 
         // Another page has accessed the initial empty document of this frame.
         // It is no longer safe to display a provisional URL, since a URL spoof
@@ -150,6 +154,10 @@ class FetchRequest;
         virtual void didRunInsecureContent(SecurityOrigin*, const KURL&) = 0;
         virtual void didDetectXSS(const KURL&, bool didBlockEntirePage) = 0;
         virtual void didDispatchPingLoader(const KURL&) = 0;
+
+        // Transmits the change in the set of watched CSS selectors property
+        // that match any element on the frame.
+        virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) = 0;
 
         virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) = 0;
 
@@ -193,7 +201,7 @@ class FetchRequest;
         // This callback is similar, but for plugins.
         virtual void didNotAllowPlugins() { }
 
-        virtual WebKit::WebCookieJar* cookieJar() const = 0;
+        virtual blink::WebCookieJar* cookieJar() const = 0;
 
         // Returns true if the embedder intercepted the postMessage call
         virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin* /*target*/, MessageEvent*) const { return false; }
@@ -219,7 +227,11 @@ class FetchRequest;
 
         virtual void dispatchDidChangeResourcePriority(unsigned long /*identifier*/, ResourceLoadPriority) { }
 
-        virtual WebKit::WebServiceWorkerRegistry* serviceWorkerRegistry() = 0;
+        virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>) = 0;
+
+        virtual void didStopAllLoaders() { }
+
+        virtual bool isFrameLoaderClientImpl() const { return false; }
     };
 
 } // namespace WebCore

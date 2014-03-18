@@ -59,7 +59,10 @@ void FilterOperations::GetOutsets(int* top,
                                   int* left) const {
   *top = *right = *bottom = *left = 0;
   for (size_t i = 0; i < operations_.size(); ++i) {
-    const FilterOperation op = operations_[i];
+    const FilterOperation& op = operations_[i];
+    // TODO(ajuma): Add support for reference filters once SkImageFilter
+    // reports its outsets.
+    DCHECK(op.type() != FilterOperation::REFERENCE);
     if (op.type() == FilterOperation::BLUR ||
         op.type() == FilterOperation::DROP_SHADOW) {
       int spread = SpreadForStdDeviation(op.amount());
@@ -80,11 +83,14 @@ void FilterOperations::GetOutsets(int* top,
 
 bool FilterOperations::HasFilterThatMovesPixels() const {
   for (size_t i = 0; i < operations_.size(); ++i) {
-    const FilterOperation op = operations_[i];
+    const FilterOperation& op = operations_[i];
+    // TODO(ajuma): Once SkImageFilter reports its outsets, use those here to
+    // determine whether a reference filter really moves pixels.
     switch (op.type()) {
       case FilterOperation::BLUR:
       case FilterOperation::DROP_SHADOW:
       case FilterOperation::ZOOM:
+      case FilterOperation::REFERENCE:
         return true;
       case FilterOperation::OPACITY:
       case FilterOperation::COLOR_MATRIX:
@@ -104,12 +110,15 @@ bool FilterOperations::HasFilterThatMovesPixels() const {
 
 bool FilterOperations::HasFilterThatAffectsOpacity() const {
   for (size_t i = 0; i < operations_.size(); ++i) {
-    const FilterOperation op = operations_[i];
+    const FilterOperation& op = operations_[i];
+    // TODO(ajuma): Make this smarter for reference filters. Once SkImageFilter
+    // can report affectsOpacity(), call that.
     switch (op.type()) {
       case FilterOperation::OPACITY:
       case FilterOperation::BLUR:
       case FilterOperation::DROP_SHADOW:
       case FilterOperation::ZOOM:
+      case FilterOperation::REFERENCE:
         return true;
       case FilterOperation::COLOR_MATRIX: {
         const SkScalar* matrix = op.matrix();
@@ -135,34 +144,51 @@ bool FilterOperations::HasFilterThatAffectsOpacity() const {
   return false;
 }
 
+bool FilterOperations::HasReferenceFilter() const {
+  for (size_t i = 0; i < operations_.size(); ++i) {
+    if (operations_[i].type() == FilterOperation::REFERENCE)
+      return true;
+  }
+  return false;
+}
+
 FilterOperations FilterOperations::Blend(const FilterOperations& from,
                                          double progress) const {
-  FilterOperations blended_filters;
-  if (from.size() == 0) {
-    for (size_t i = 0; i < size(); i++)
-      blended_filters.Append(FilterOperation::Blend(NULL, &at(i), progress));
-    return blended_filters;
-  }
-
-  if (size() == 0) {
-    for (size_t i = 0; i < from.size(); i++) {
-      blended_filters.Append(
-          FilterOperation::Blend(&from.at(i), NULL, progress));
-    }
-    return blended_filters;
-  }
-
-  if (from.size() != size())
+  if (HasReferenceFilter() || from.HasReferenceFilter())
     return *this;
 
-  for (size_t i = 0; i < size(); i++) {
+  bool from_is_longer = from.size() > size();
+
+  size_t shorter_size, longer_size;
+  if (size() == from.size()) {
+    shorter_size = longer_size = size();
+  } else if  (from_is_longer) {
+    longer_size = from.size();
+    shorter_size = size();
+  } else {
+    longer_size = size();
+    shorter_size = from.size();
+  }
+
+  for (size_t i = 0; i < shorter_size; i++) {
     if (from.at(i).type() != at(i).type())
       return *this;
   }
 
-  for (size_t i = 0; i < size(); i++) {
+  FilterOperations blended_filters;
+  for (size_t i = 0; i < shorter_size; i++) {
     blended_filters.Append(
         FilterOperation::Blend(&from.at(i), &at(i), progress));
+  }
+
+  if (from_is_longer) {
+    for (size_t i = shorter_size; i < longer_size; i++) {
+      blended_filters.Append(
+          FilterOperation::Blend(&from.at(i), NULL, progress));
+    }
+  } else {
+    for (size_t i = shorter_size; i < longer_size; i++)
+      blended_filters.Append(FilterOperation::Blend(NULL, &at(i), progress));
   }
 
   return blended_filters;

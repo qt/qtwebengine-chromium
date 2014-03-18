@@ -71,7 +71,7 @@ DECLARE_ALIGNED(8, const uint64_t, ff_w1111)        = 0x0001000100010001ULL;
 #if HAVE_MMX_INLINE
 #undef RENAME
 #define COMPILE_TEMPLATE_MMXEXT 0
-#define RENAME(a) a ## _MMX
+#define RENAME(a) a ## _mmx
 #include "swscale_template.c"
 #endif
 
@@ -80,7 +80,7 @@ DECLARE_ALIGNED(8, const uint64_t, ff_w1111)        = 0x0001000100010001ULL;
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 1
-#define RENAME(a) a ## _MMXEXT
+#define RENAME(a) a ## _mmxext
 #include "swscale_template.c"
 #endif
 
@@ -206,7 +206,7 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
                            const uint8_t *dither, int offset)
 {
     if(((int)dest) & 15){
-        return yuv2yuvX_MMXEXT(filter, filterSize, src, dest, dstW, dither, offset);
+        return yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
     }
     if (offset) {
         __asm__ volatile("movq       (%0), %%xmm3\n\t"
@@ -377,22 +377,22 @@ INPUT_FUNCS(sse2);
 INPUT_FUNCS(ssse3);
 INPUT_FUNCS(avx);
 
-av_cold void ff_sws_init_swScale_mmx(SwsContext *c)
+av_cold void ff_sws_init_swscale_x86(SwsContext *c)
 {
     int cpu_flags = av_get_cpu_flags();
 
-#if HAVE_INLINE_ASM
+#if HAVE_MMX_INLINE
     if (cpu_flags & AV_CPU_FLAG_MMX)
-        sws_init_swScale_MMX(c);
+        sws_init_swscale_mmx(c);
+#endif
 #if HAVE_MMXEXT_INLINE
     if (cpu_flags & AV_CPU_FLAG_MMXEXT)
-        sws_init_swScale_MMXEXT(c);
+        sws_init_swscale_mmxext(c);
     if (cpu_flags & AV_CPU_FLAG_SSE3){
         if(c->use_mmx_vfilter && !(c->flags & SWS_ACCURATE_RND))
             c->yuv2planeX = yuv2yuvX_sse3;
     }
 #endif
-#endif /* HAVE_INLINE_ASM */
 
 #define ASSIGN_SCALE_FUNC2(hscalefn, filtersize, opt1, opt2) do { \
     if (c->srcBpc == 8) { \

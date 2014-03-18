@@ -33,16 +33,16 @@
 
 #include "public/platform/WebContentDecryptionModuleSession.h"
 
-namespace WebKit {
+namespace blink {
 
-class WebContentDecryptionModule {
+class BLINK_PLATFORM_EXPORT WebContentDecryptionModule {
 public:
-    virtual ~WebContentDecryptionModule() { }
+    virtual ~WebContentDecryptionModule();
 
     // Must return non-null.
     virtual WebContentDecryptionModuleSession* createSession(WebContentDecryptionModuleSession::Client*) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebContentDecryptionModule_h

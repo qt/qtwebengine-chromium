@@ -51,10 +51,6 @@ class ChildProcessSecurityPolicy {
   virtual void GrantCreateReadWriteFile(int child_id,
                                         const base::FilePath& file) = 0;
 
-  // This permission grants creation and write access to a file.
-  virtual void GrantCreateWriteFile(int child_id,
-                                    const base::FilePath& file) = 0;
-
   // These methods verify whether or not the child process has been granted
   // permissions perform these functions on |file|.
 
@@ -62,21 +58,16 @@ class ChildProcessSecurityPolicy {
   // browser should call this method to determine whether the process has the
   // capability to upload the requested file.
   virtual bool CanReadFile(int child_id, const base::FilePath& file) = 0;
-  virtual bool CanWriteFile(int child_id, const base::FilePath& file) = 0;
-  virtual bool CanCreateFile(int child_id, const base::FilePath& file) = 0;
-  virtual bool CanCreateWriteFile(int child_id, const base::FilePath& file) = 0;
+  virtual bool CanCreateReadWriteFile(int child_id,
+                                      const base::FilePath& file) = 0;
 
   // Grants read access permission to the given isolated file system
   // identified by |filesystem_id|. An isolated file system can be
   // created for a set of native files/directories (like dropped files)
   // using fileapi::IsolatedContext. A child process needs to be granted
   // permission to the file system to access the files in it using
-  // file system URL.
-  //
-  // Note: to grant read access to the content of files you also need
-  // to give permission directly to the file paths using GrantReadFile.
-  // TODO(kinuko): We should unify this file-level and file-system-level
-  // permission when a file is accessed via a file system.
+  // file system URL. You do NOT need to give direct permission to
+  // individual file paths.
   //
   // Note: files/directories in the same file system share the same
   // permission as far as they are accessed via the file system, i.e.
@@ -87,22 +78,33 @@ class ChildProcessSecurityPolicy {
 
   // Grants write access permission to the given isolated file system
   // identified by |filesystem_id|.  See comments for GrantReadFileSystem
-  // for more details.  For writing you do NOT need to give direct permission
-  // to individual file paths.
+  // for more details.  You do NOT need to give direct permission to
+  // individual file paths.
   //
   // This must be called with a great care as this gives write permission
   // to all files/directories included in the file system.
   virtual void GrantWriteFileSystem(int child_id,
                                     const std::string& filesystem_id) = 0;
 
-  // Grant create file permission to the given isolated file system identified
-  // by |filesystem_id|.
-  // See comments for GrantReadFileSystem for more details.  For creating you
-  // do NOT need to give direct permission to individual file paths.
+  // Grants create file permission to the given isolated file system
+  // identified by |filesystem_id|.  See comments for GrantReadFileSystem
+  // for more details.  You do NOT need to give direct permission to
+  // individual file paths.
   //
   // This must be called with a great care as this gives create permission
   // within all directories included in the file system.
   virtual void GrantCreateFileForFileSystem(
+      int child_id,
+      const std::string& filesystem_id) = 0;
+
+  // Grants create, read and write access permissions to the given isolated
+  // file system identified by |filesystem_id|.  See comments for
+  // GrantReadFileSystem for more details.  You do NOT need to give direct
+  // permission to individual file paths.
+  //
+  // This must be called with a great care as this gives create, read and write
+  // permissions to all files/directories included in the file system.
+  virtual void GrantCreateReadWriteFileSystem(
       int child_id,
       const std::string& filesystem_id) = 0;
 
@@ -111,6 +113,12 @@ class ChildProcessSecurityPolicy {
   // granting more general create and write permissions.
   virtual void GrantCopyIntoFileSystem(int child_id,
                                        const std::string& filesystem_id) = 0;
+
+  // Grants permission to delete from filesystem |filesystem_id|. 'delete-from'
+  // is used to allow deleting files into the destination filesystem without
+  // granting more general create and write permissions.
+  virtual void GrantDeleteFromFileSystem(int child_id,
+                                         const std::string& filesystem_id) = 0;
 
   // Grants the child process the capability to access URLs of the provided
   // scheme.
@@ -127,8 +135,12 @@ class ChildProcessSecurityPolicy {
   // Returns true if copy-into access has been granted to |filesystem_id|.
   virtual bool CanCopyIntoFileSystem(int child_id,
                                      const std::string& filesystem_id) = 0;
+
+  // Returns true if delete-from access has been granted to |filesystem_id|.
+  virtual bool CanDeleteFromFileSystem(int child_id,
+                                       const std::string& filesystem_id) = 0;
 };
 
-};  // namespace content
+}  // namespace content
 
 #endif  // CONTENT_PUBLIC_BROWSER_CHILD_PROCESS_SECURITY_POLICY_H_

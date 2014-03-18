@@ -32,13 +32,11 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 
 #include "InspectorFrontend.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/inspector/InspectorDOMAgent.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include "core/platform/JSONValues.h"
-#include "wtf/text/WTFString.h"
+#include "platform/JSONValues.h"
 
 namespace {
 
@@ -49,8 +47,8 @@ enum DOMBreakpointType {
     DOMBreakpointTypesCount
 };
 
-static const char* const listenerEventCategoryType = "listener:";
-static const char* const instrumentationEventCategoryType = "instrumentation:";
+static const char listenerEventCategoryType[] = "listener:";
+static const char instrumentationEventCategoryType[] = "instrumentation:";
 
 const uint32_t inheritableDOMBreakpointTypesMask = (1 << SubtreeModified);
 const int domBreakpointDerivedTypeShift = 16;
@@ -59,15 +57,15 @@ const int domBreakpointDerivedTypeShift = 16;
 
 namespace WebCore {
 
-static const char* const requestAnimationFrameEventName = "requestAnimationFrame";
-static const char* const cancelAnimationFrameEventName = "cancelAnimationFrame";
-static const char* const animationFrameFiredEventName = "animationFrameFired";
-static const char* const setTimerEventName = "setTimer";
-static const char* const clearTimerEventName = "clearTimer";
-static const char* const timerFiredEventName = "timerFired";
-static const char* const webglErrorFiredEventName = "webglErrorFired";
-static const char* const webglWarningFiredEventName = "webglWarningFired";
-static const char* const webglErrorNameProperty = "webglErrorName";
+static const char requestAnimationFrameEventName[] = "requestAnimationFrame";
+static const char cancelAnimationFrameEventName[] = "cancelAnimationFrame";
+static const char animationFrameFiredEventName[] = "animationFrameFired";
+static const char setTimerEventName[] = "setTimer";
+static const char clearTimerEventName[] = "clearTimer";
+static const char timerFiredEventName[] = "timerFired";
+static const char webglErrorFiredEventName[] = "webglErrorFired";
+static const char webglWarningFiredEventName[] = "webglWarningFired";
+static const char webglErrorNameProperty[] = "webglErrorName";
 
 namespace DOMDebuggerAgentState {
 static const char eventListenerBreakpoints[] = "eventListenerBreakpoints";
@@ -407,17 +405,17 @@ PassRefPtr<JSONObject> InspectorDOMDebuggerAgent::preparePauseOnNativeEventData(
     return eventData.release();
 }
 
-void InspectorDOMDebuggerAgent::didInstallTimer(ScriptExecutionContext* context, int timerId, int timeout, bool singleShot)
+void InspectorDOMDebuggerAgent::didInstallTimer(ExecutionContext* context, int timerId, int timeout, bool singleShot)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, setTimerEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::didRemoveTimer(ScriptExecutionContext* context, int timerId)
+void InspectorDOMDebuggerAgent::didRemoveTimer(ExecutionContext* context, int timerId)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, clearTimerEventName), true);
 }
 
-void InspectorDOMDebuggerAgent::willFireTimer(ScriptExecutionContext* context, int timerId)
+void InspectorDOMDebuggerAgent::willFireTimer(ExecutionContext* context, int timerId)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, timerFiredEventName), false);
 }

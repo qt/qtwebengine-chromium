@@ -7,17 +7,21 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "media/cdm/ppapi/api/content_decryption_module.h"
+#include "base/memory/scoped_ptr.h"
 #include "media/cdm/ppapi/cdm_video_decoder.h"
+#include "media/cdm/ppapi/clear_key_cdm_common.h"
 
 struct AVCodecContext;
 struct AVFrame;
 
 namespace media {
 
+class ScopedPtrAVFreeContext;
+class ScopedPtrAVFreeFrame;
+
 class FFmpegCdmVideoDecoder : public CdmVideoDecoder {
  public:
-  explicit FFmpegCdmVideoDecoder(cdm::Host* host);
+  explicit FFmpegCdmVideoDecoder(ClearKeyCdmHost* host);
   virtual ~FFmpegCdmVideoDecoder();
 
   // CdmVideoDecoder implementation.
@@ -43,12 +47,12 @@ class FFmpegCdmVideoDecoder : public CdmVideoDecoder {
   void ReleaseFFmpegResources();
 
   // FFmpeg structures owned by this object.
-  AVCodecContext* codec_context_;
-  AVFrame* av_frame_;
+  scoped_ptr_malloc<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
+  scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
 
   bool is_initialized_;
 
-  cdm::Host* const host_;
+  ClearKeyCdmHost* const host_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegCdmVideoDecoder);
 };

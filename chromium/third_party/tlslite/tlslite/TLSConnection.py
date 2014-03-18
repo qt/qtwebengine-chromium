@@ -936,7 +936,9 @@ class TLSConnection(TLSRecordLayer):
     def handshakeServer(self, sharedKeyDB=None, verifierDB=None,
                         certChain=None, privateKey=None, reqCert=False,
                         sessionCache=None, settings=None, checker=None,
-                        reqCAs=None, tlsIntolerant=0):
+                        reqCAs=None, tlsIntolerant=0,
+                        signedCertTimestamps=None, fallbackSCSV=False,
+                        ocspResponse=None):
         """Perform a handshake in the role of server.
 
         This function performs an SSL or TLS handshake.  Depending on
@@ -1007,6 +1009,34 @@ class TLSConnection(TLSRecordLayer):
         will be sent along with a certificate request. This does not affect
         verification.
 
+        @type signedCertTimestamps: str
+        @param signedCertTimestamps: A SignedCertificateTimestampList (as a
+        binary 8-bit string) that will be sent as a TLS extension whenever
+        the client announces support for the extension.
+
+        @type tlsIntolerant: int
+        @param tlsIntolerant: if non-zero, the server will simulate TLS
+        version intolerance by returning a fatal, handshake_failure alert.
+        The versions to which it's intolerant vary depending on the value:
+        1: reject all TLS versions.
+        2: reject TLS 1.1 or higher.
+        3: reject TLS 1.2 or higher.
+
+        @type fallbackSCSV: bool
+        @param fallbackSCSV: if true, the server will implement
+        TLS_FALLBACK_SCSV and thus reject connections using less than the
+        server's maximum TLS version that include this cipher suite.
+
+        @type ocspResponse: str
+        @param ocspResponse: An OCSP response (as a binary 8-bit string) that
+        will be sent stapled in the handshake whenever the client announces
+        support for the status_request extension.
+        Note that the response is sent independent of the ClientHello
+        status_request extension contents, and is thus only meant for testing
+        environments. Real OCSP stapling is more complicated as it requires
+        choosing a suitable response based on the ClientHello status_request
+        extension contents.
+
         @raise socket.error: If a socket error occurs.
         @raise tlslite.errors.TLSAbruptCloseError: If the socket is closed
         without a preceding alert.
@@ -1016,14 +1046,17 @@ class TLSConnection(TLSRecordLayer):
         """
         for result in self.handshakeServerAsync(sharedKeyDB, verifierDB,
                 certChain, privateKey, reqCert, sessionCache, settings,
-                checker, reqCAs, tlsIntolerant):
+                checker, reqCAs, tlsIntolerant, signedCertTimestamps,
+                fallbackSCSV, ocspResponse):
             pass
 
 
     def handshakeServerAsync(self, sharedKeyDB=None, verifierDB=None,
                              certChain=None, privateKey=None, reqCert=False,
                              sessionCache=None, settings=None, checker=None,
-                             reqCAs=None, tlsIntolerant=0):
+                             reqCAs=None, tlsIntolerant=0,
+                             signedCertTimestamps=None,
+                             fallbackSCSV=False, ocspResponse=None):
         """Start a server handshake operation on the TLS connection.
 
         This function returns a generator which behaves similarly to
@@ -1041,14 +1074,19 @@ class TLSConnection(TLSRecordLayer):
             privateKey=privateKey, reqCert=reqCert,
             sessionCache=sessionCache, settings=settings,
             reqCAs=reqCAs,
-            tlsIntolerant=tlsIntolerant)
+            tlsIntolerant=tlsIntolerant,
+            signedCertTimestamps=signedCertTimestamps,
+            fallbackSCSV=fallbackSCSV, ocspResponse=ocspResponse)
+
         for result in self._handshakeWrapperAsync(handshaker, checker):
             yield result
 
 
     def _handshakeServerAsyncHelper(self, sharedKeyDB, verifierDB,
-                             certChain, privateKey, reqCert, sessionCache,
-                             settings, reqCAs, tlsIntolerant):
+                                    certChain, privateKey, reqCert,
+                                    sessionCache, settings, reqCAs,
+                                    tlsIntolerant, signedCertTimestamps,
+                                    fallbackSCSV, ocspResponse):
 
         self._handshakeStart(client=False)
 
@@ -1060,6 +1098,9 @@ class TLSConnection(TLSRecordLayer):
             raise ValueError("Caller passed a privateKey but no certChain")
         if reqCAs and not reqCert:
             raise ValueError("Caller passed reqCAs but not reqCert")
+        if signedCertTimestamps and not certChain:
+            raise ValueError("Caller passed signedCertTimestamps but no "
+                             "certChain")
 
         if not settings:
             settings = HandshakeSettings()
@@ -1129,12 +1170,18 @@ class TLSConnection(TLSRecordLayer):
                 yield result
 
         #If client's version is too high, propose my highest version
-        elif clientHello.client_version > settings.maxVersion:
+        if clientHello.client_version > settings.maxVersion:
             self.version = settings.maxVersion
-
         else:
             #Set the version to the client's version
             self.version = clientHello.client_version
+            if (fallbackSCSV and
+                clientHello.client_version < settings.maxVersion):
+                for cipherSuite in clientHello.cipher_suites:
+                    if cipherSuite == 0x5600:
+                        for result in self._sendError(\
+                                AlertDescription.inappropriate_fallback):
+                            yield result
 
         #Get the client nonce; create server nonce
         clientRandom = clientHello.random
@@ -1415,9 +1462,15 @@ class TLSConnection(TLSRecordLayer):
                     self.version, serverRandom,
                     sessionID, cipherSuite, certificateType)
             serverHello.channel_id = clientHello.channel_id
+            if clientHello.support_signed_cert_timestamps:
+              serverHello.signed_cert_timestamps = signedCertTimestamps
+            serverHello.status_request = (clientHello.status_request and
+                                          ocspResponse)
             doingChannelID = clientHello.channel_id
             msgs.append(serverHello)
             msgs.append(Certificate(certificateType).create(serverCertChain))
+            if serverHello.status_request:
+                msgs.append(CertificateStatus().create(ocspResponse))
             if reqCert and reqCAs:
                 msgs.append(CertificateRequest().create([], reqCAs))
             elif reqCert:

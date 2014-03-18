@@ -17,7 +17,8 @@
 @interface MockAccessibilityDelegate :
     NSView<BrowserAccessibilityDelegateCocoa>
 
-- (NSPoint)accessibilityPointInScreen:(BrowserAccessibilityCocoa*)accessibility;
+- (NSPoint)accessibilityPointInScreen:(NSPoint)origin
+                                 size:(NSSize)size;
 - (void)doDefaultAction:(int32)accessibilityObjectId;
 - (void)accessibilitySetTextSelection:(int32)accId
                           startOffset:(int32)startOffset
@@ -31,8 +32,8 @@
 
 @implementation MockAccessibilityDelegate
 
-- (NSPoint)accessibilityPointInScreen:
-    (BrowserAccessibilityCocoa*)accessibility {
+- (NSPoint)accessibilityPointInScreen:(NSPoint)origin
+                                 size:(NSSize)size {
   return NSZeroPoint;
 }
 - (void)doDefaultAction:(int32)accessibilityObjectId {
@@ -67,7 +68,7 @@ class BrowserAccessibilityTest : public ui::CocoaTest {
     root.id = 1000;
     root.location.set_width(500);
     root.location.set_height(100);
-    root.role = WebKit::WebAXRoleRootWebArea;
+    root.role = blink::WebAXRoleRootWebArea;
     root.AddStringAttribute(AccessibilityNodeData::ATTR_HELP, "HelpText");
     root.child_ids.push_back(1001);
     root.child_ids.push_back(1002);
@@ -77,14 +78,14 @@ class BrowserAccessibilityTest : public ui::CocoaTest {
     child1.SetName("Child1");
     child1.location.set_width(250);
     child1.location.set_height(100);
-    child1.role = WebKit::WebAXRoleButton;
+    child1.role = blink::WebAXRoleButton;
 
     AccessibilityNodeData child2;
     child2.id = 1002;
     child2.location.set_x(250);
     child2.location.set_width(250);
     child2.location.set_height(100);
-    child2.role = WebKit::WebAXRoleHeading;
+    child2.role = blink::WebAXRoleHeading;
 
     delegate_.reset([[MockAccessibilityDelegate alloc] init]);
     manager_.reset(
@@ -125,8 +126,7 @@ TEST_F(BrowserAccessibilityTest, InvalidHitTestCoordsTest) {
 }
 
 // Test to ensure querying standard attributes works.
-// http://crbug.com/173983 Test fails on Mac ASan bot
-TEST_F(BrowserAccessibilityTest, DISABLED_BasicAttributeTest) {
+TEST_F(BrowserAccessibilityTest, BasicAttributeTest) {
   NSString* helpText = [accessibility_
       accessibilityAttributeValue:NSAccessibilityHelpAttribute];
   EXPECT_NSEQ(@"HelpText", helpText);

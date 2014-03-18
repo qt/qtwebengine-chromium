@@ -52,7 +52,7 @@ void FetchContext::addAdditionalRequestHeaders(Document&, ResourceRequest&, Reso
 {
 }
 
-CachePolicy FetchContext::cachePolicy(Resource::Type) const
+CachePolicy FetchContext::cachePolicy(Document*) const
 {
     return CachePolicyVerify;
 }
@@ -73,6 +73,10 @@ void FetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long, const 
 {
 }
 
+void FetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long, int, int)
+{
+}
+
 void FetchContext::dispatchDidFinishLoading(DocumentLoader*, unsigned long, double)
 {
 }
@@ -81,7 +85,7 @@ void FetchContext::dispatchDidFail(DocumentLoader*, unsigned long, const Resourc
 {
 }
 
-void FetchContext::sendRemainingDelegateMessages(DocumentLoader*, unsigned long, const ResourceResponse&, const char*, int, int, const ResourceError&)
+void FetchContext::sendRemainingDelegateMessages(DocumentLoader*, unsigned long, const ResourceResponse&, int)
 {
 }
 

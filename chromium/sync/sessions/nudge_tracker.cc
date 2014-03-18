@@ -40,6 +40,8 @@ bool NudgeTracker::IsSyncRequired() const {
 }
 
 bool NudgeTracker::IsGetUpdatesRequired() const {
+  if (invalidations_out_of_sync_)
+    return true;
   for (TypeTrackerMap::const_iterator it = type_trackers_.begin();
        it != type_trackers_.end(); ++it) {
     if (it->second.IsGetUpdatesRequired()) {
@@ -96,16 +98,17 @@ void NudgeTracker::RecordRemoteInvalidation(
     const ObjectIdInvalidationMap& invalidation_map) {
   updates_source_ = sync_pb::GetUpdatesCallerInfo::NOTIFICATION;
 
-  for (ObjectIdInvalidationMap::const_iterator it = invalidation_map.begin();
-       it != invalidation_map.end(); ++it) {
+  ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
     ModelType type;
-    if (!ObjectIdToRealModelType(it->first, &type)) {
+    if (!ObjectIdToRealModelType(*it, &type)) {
       NOTREACHED()
-          << "Object ID " << ObjectIdToString(it->first)
+          << "Object ID " << ObjectIdToString(*it)
           << " does not map to valid model type";
     }
     DCHECK(type_trackers_.find(type) != type_trackers_.end());
-    type_trackers_[type].RecordRemoteInvalidation(it->second.payload);
+    type_trackers_[type].RecordRemoteInvalidations(
+        invalidation_map.ForObject(*it));
   }
 }
 

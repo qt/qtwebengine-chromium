@@ -129,7 +129,7 @@ void XMLErrors::insertErrorMessageBlock()
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
 
-        m_document->parserRemoveChild(documentElement.get());
+        m_document->parserRemoveChild(*documentElement);
 
         body->parserAppendChild(documentElement);
         m_document->parserAppendChild(rootElement);
@@ -151,7 +151,7 @@ void XMLErrors::insertErrorMessageBlock()
 
     Node* firstChild = documentElement->firstChild();
     if (firstChild)
-        documentElement->parserInsertBefore(reportElement, documentElement->firstChild());
+        documentElement->parserInsertBefore(reportElement, *firstChild);
     else
         documentElement->parserAppendChild(reportElement);
 

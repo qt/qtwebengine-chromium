@@ -33,15 +33,15 @@
 #include "config.h"
 #include "core/html/shadow/SliderThumbElement.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/MouseEvent.h"
+#include "core/events/Event.h"
+#include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderFlexibleBox.h"
 #include "core/rendering/RenderSlider.h"
 #include "core/rendering/RenderTheme.h"
@@ -196,7 +196,7 @@ void RenderSliderContainer::layout()
 // --------------------------------
 
 inline SliderThumbElement::SliderThumbElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
     , m_inDragMode(false)
 {
 }
@@ -245,8 +245,8 @@ Node* SliderThumbElement::focusDelegate()
 void SliderThumbElement::dragFrom(const LayoutPoint& point)
 {
     RefPtr<SliderThumbElement> protector(this);
-    setPositionFromPoint(point);
     startDragging();
+    setPositionFromPoint(point);
 }
 
 void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
@@ -287,16 +287,14 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
     StepRange stepRange(input->createStepRange(RejectAny));
     Decimal value = stepRange.clampValue(stepRange.valueFromProportion(fraction));
 
-    const LayoutUnit snappingThreshold = RenderTheme::theme().sliderTickSnappingThreshold();
-    if (snappingThreshold > 0) {
-        Decimal closest = input->findClosestTickMarkValue(value);
-        if (closest.isFinite()) {
-            double closestFraction = stepRange.proportionFromValue(closest).toDouble();
-            double closestRatio = isVertical || !isLeftToRightDirection ? 1.0 - closestFraction : closestFraction;
-            LayoutUnit closestPosition = trackSize * closestRatio;
-            if ((closestPosition - position).abs() <= snappingThreshold)
-                value = closest;
-        }
+    Decimal closest = input->findClosestTickMarkValue(value);
+    if (closest.isFinite()) {
+        double closestFraction = stepRange.proportionFromValue(closest).toDouble();
+        double closestRatio = isVertical || !isLeftToRightDirection ? 1.0 - closestFraction : closestFraction;
+        LayoutUnit closestPosition = trackSize * closestRatio;
+        const LayoutUnit snappingThreshold = 5;
+        if ((closestPosition - position).abs() <= snappingThreshold)
+            value = closest;
     }
 
     String valueString = serializeForNumberType(value);
@@ -313,7 +311,7 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 void SliderThumbElement::startDragging()
 {
     if (Frame* frame = document().frame()) {
-        frame->eventHandler()->setCapturingMouseEventsNode(this);
+        frame->eventHandler().setCapturingMouseEventsNode(this);
         m_inDragMode = true;
     }
 }
@@ -324,7 +322,7 @@ void SliderThumbElement::stopDragging()
         return;
 
     if (Frame* frame = document().frame())
-        frame->eventHandler()->setCapturingMouseEventsNode(0);
+        frame->eventHandler().setCapturingMouseEventsNode(0);
     m_inDragMode = false;
     if (renderer())
         renderer()->setNeedsLayout();
@@ -353,13 +351,13 @@ void SliderThumbElement::defaultEventHandler(Event* event)
     // We intentionally do not call event->setDefaultHandled() here because
     // MediaControlTimelineElement::defaultEventHandler() wants to handle these
     // mouse events.
-    if (eventType == eventNames().mousedownEvent && isLeftButton) {
+    if (eventType == EventTypeNames::mousedown && isLeftButton) {
         startDragging();
         return;
-    } else if (eventType == eventNames().mouseupEvent && isLeftButton) {
+    } else if (eventType == EventTypeNames::mouseup && isLeftButton) {
         stopDragging();
         return;
-    } else if (eventType == eventNames().mousemoveEvent) {
+    } else if (eventType == EventTypeNames::mousemove) {
         if (m_inDragMode)
             setPositionFromPoint(mouseEvent->absoluteLocation());
         return;
@@ -390,7 +388,7 @@ void SliderThumbElement::detach(const AttachContext& context)
 {
     if (m_inDragMode) {
         if (Frame* frame = document().frame())
-            frame->eventHandler()->setCapturingMouseEventsNode(0);
+            frame->eventHandler().setCapturingMouseEventsNode(0);
     }
     HTMLDivElement::detach(context);
 }
@@ -414,7 +412,7 @@ static const AtomicString& mediaSliderThumbShadowPartId()
     return mediaSliderThumb;
 }
 
-const AtomicString& SliderThumbElement::part() const
+const AtomicString& SliderThumbElement::pseudo() const
 {
     HTMLInputElement* input = hostInput();
     if (!input)
@@ -437,7 +435,7 @@ const AtomicString& SliderThumbElement::part() const
 // --------------------------------
 
 inline SliderContainerElement::SliderContainerElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
 {
 }
 
@@ -451,7 +449,7 @@ RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
     return new RenderSliderContainer(this);
 }
 
-const AtomicString& SliderContainerElement::part() const
+const AtomicString& SliderContainerElement::pseudo() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));

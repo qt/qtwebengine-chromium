@@ -14,10 +14,9 @@
 #include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_treecoder.h"
 
-#define SUBMVREF_COUNT 5
 #define TX_SIZE_CONTEXTS 2
-#define MODE_UPDATE_PROB  252
 #define SWITCHABLE_FILTERS 3   // number of switchable filters
+#define SWITCHABLE_FILTER_CONTEXTS (SWITCHABLE_FILTERS + 1)
 
 // #define MODE_STATS
 
@@ -39,19 +38,17 @@ extern const vp9_prob vp9_kf_uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
 extern const vp9_prob vp9_kf_y_mode_prob[INTRA_MODES][INTRA_MODES]
                                         [INTRA_MODES - 1];
 
-extern const vp9_tree_index vp9_intra_mode_tree[];
-extern const vp9_tree_index vp9_inter_mode_tree[];
-
+extern const vp9_tree_index vp9_intra_mode_tree[TREE_SIZE(INTRA_MODES)];
 extern struct vp9_token vp9_intra_mode_encodings[INTRA_MODES];
+
+extern const vp9_tree_index vp9_inter_mode_tree[TREE_SIZE(INTER_MODES)];
 extern struct vp9_token vp9_inter_mode_encodings[INTER_MODES];
 
-// probability models for partition information
-extern const vp9_tree_index vp9_partition_tree[];
+extern const vp9_tree_index vp9_partition_tree[TREE_SIZE(PARTITION_TYPES)];
 extern struct vp9_token vp9_partition_encodings[PARTITION_TYPES];
 
 extern const vp9_tree_index vp9_switchable_interp_tree
-                 [2 * (SWITCHABLE_FILTERS - 1)];
-
+                                [TREE_SIZE(SWITCHABLE_FILTERS)];
 extern struct vp9_token vp9_switchable_interp_encodings[SWITCHABLE_FILTERS];
 
 void vp9_entropy_mode_init();
@@ -62,11 +59,11 @@ void vp9_init_mbmode_probs(struct VP9Common *cm);
 
 void vp9_adapt_mode_probs(struct VP9Common *cm);
 
-void tx_counts_to_branch_counts_32x32(unsigned int *tx_count_32x32p,
+void tx_counts_to_branch_counts_32x32(const unsigned int *tx_count_32x32p,
                                       unsigned int (*ct_32x32p)[2]);
-void tx_counts_to_branch_counts_16x16(unsigned int *tx_count_16x16p,
+void tx_counts_to_branch_counts_16x16(const unsigned int *tx_count_16x16p,
                                       unsigned int (*ct_16x16p)[2]);
-void tx_counts_to_branch_counts_8x8(unsigned int *tx_count_8x8p,
+void tx_counts_to_branch_counts_8x8(const unsigned int *tx_count_8x8p,
                                     unsigned int (*ct_8x8p)[2]);
 
 #endif  // VP9_COMMON_VP9_ENTROPYMODE_H_

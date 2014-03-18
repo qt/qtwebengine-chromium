@@ -25,7 +25,7 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGGraphicsElement.h"
+#include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGPathByteStream.h"
 #include "core/svg/SVGPathSegList.h"
 
@@ -52,10 +52,10 @@ class SVGPathSegCurvetoQuadraticSmoothAbs;
 class SVGPathSegCurvetoQuadraticSmoothRel;
 class SVGPathSegListPropertyTearOff;
 
-class SVGPathElement FINAL : public SVGGraphicsElement,
+class SVGPathElement FINAL : public SVGGeometryElement,
                              public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGPathElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGPathElement> create(Document&);
 
     float getTotalLength();
     SVGPoint getPointAtLength(float distance);
@@ -91,14 +91,14 @@ public:
 
     void pathSegListChanged(SVGPathSegRole, ListModification = ListModificationUnknown);
 
-    virtual FloatRect getBBox(StyleUpdateStrategy = AllowStyleUpdate);
+    virtual SVGRect getBBox() OVERRIDE FINAL;
 
     static const SVGPropertyInfo* dPropertyInfo();
 
     bool isAnimValObserved() const { return m_isAnimValObserved; }
 
 private:
-    SVGPathElement(const QualifiedName&, Document&);
+    explicit SVGPathElement(Document&);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
@@ -112,11 +112,6 @@ private:
     static void synchronizeD(SVGElement* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateDWrapper(SVGElement* contextElement);
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPathElement)
-        DECLARE_ANIMATED_NUMBER(PathLength, pathLength)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
-
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
@@ -124,17 +119,17 @@ private:
 
     void invalidateMPathDependencies();
 
-private:
     OwnPtr<SVGPathByteStream> m_pathByteStream;
     mutable SVGSynchronizableAnimatedProperty<SVGPathSegList> m_pathSegList;
     bool m_isAnimValObserved;
+
+    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGPathElement)
+        DECLARE_ANIMATED_NUMBER(PathLength, pathLength)
+        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
+    END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGPathElement* toSVGPathElement(Element* element)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::pathTag));
-    return static_cast<SVGPathElement*>(element);
-}
+DEFINE_NODE_TYPE_CASTS(SVGPathElement, hasTagName(SVGNames::pathTag));
 
 } // namespace WebCore
 

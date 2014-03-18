@@ -67,7 +67,27 @@ int ResolveHostname(const std::string& hostname, int family,
 }
 
 // AsyncResolver
-AsyncResolver::AsyncResolver() : error_(0) {
+AsyncResolver::AsyncResolver() : error_(-1) {
+}
+
+void AsyncResolver::Start(const SocketAddress& addr) {
+  addr_ = addr;
+  // SignalThred Start will kickoff the resolve process.
+  SignalThread::Start();
+}
+
+bool AsyncResolver::GetResolvedAddress(int family, SocketAddress* addr) const {
+  if (error_ != 0 || addresses_.empty())
+    return false;
+
+  *addr = addr_;
+  for (size_t i = 0; i < addresses_.size(); ++i) {
+    if (family == addresses_[i].family()) {
+      addr->SetIP(addresses_[i]);
+      return true;
+    }
+  }
+  return false;
 }
 
 void AsyncResolver::DoWork() {
@@ -76,9 +96,7 @@ void AsyncResolver::DoWork() {
 }
 
 void AsyncResolver::OnWorkDone() {
-  if (addresses_.size() > 0) {
-    addr_.SetIP(addresses_[0]);
-  }
+  SignalDone(this);
 }
 
 const char* inet_ntop(int af, const void *src, char* dst, socklen_t size) {
@@ -109,7 +127,7 @@ bool HasIPv6Enabled() {
     return false;
   }
   DWORD protbuff_size = 4096;
-  scoped_array<char> protocols;
+  scoped_ptr<char[]> protocols;
   LPWSAPROTOCOL_INFOW protocol_infos = NULL;
   int requested_protocols[2] = {AF_INET6, 0};
 

@@ -5,8 +5,6 @@
 #ifndef WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 #define WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 
-#if defined(ENABLE_GPU)
-
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -17,25 +15,28 @@
 #include "webkit/common/gpu/webkit_gpu_export.h"
 
 namespace gpu {
+class ContextSupport;
+
 namespace gles2 {
+class GLES2Interface;
 class GLES2Implementation;
 }
 }
 
-using WebKit::WebGLId;
+using blink::WebGLId;
 
-using WebKit::WGC3Dbyte;
-using WebKit::WGC3Dchar;
-using WebKit::WGC3Denum;
-using WebKit::WGC3Dboolean;
-using WebKit::WGC3Dbitfield;
-using WebKit::WGC3Dint;
-using WebKit::WGC3Dsizei;
-using WebKit::WGC3Duint;
-using WebKit::WGC3Dfloat;
-using WebKit::WGC3Dclampf;
-using WebKit::WGC3Dintptr;
-using WebKit::WGC3Dsizeiptr;
+using blink::WGC3Dbyte;
+using blink::WGC3Dchar;
+using blink::WGC3Denum;
+using blink::WGC3Dboolean;
+using blink::WGC3Dbitfield;
+using blink::WGC3Dint;
+using blink::WGC3Dsizei;
+using blink::WGC3Duint;
+using blink::WGC3Dfloat;
+using blink::WGC3Dclampf;
+using blink::WGC3Dintptr;
+using blink::WGC3Dsizeiptr;
 
 namespace gpu {
 class GLInProcessContext;
@@ -46,28 +47,28 @@ namespace webkit {
 namespace gpu {
 
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
-    : public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
+    : public NON_EXPORTED_BASE(blink::WebGraphicsContext3D) {
  public:
   static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
       CreateViewContext(
-          const WebKit::WebGraphicsContext3D::Attributes& attributes,
+          const blink::WebGraphicsContext3D::Attributes& attributes,
           gfx::AcceleratedWidget window);
 
   static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
       CreateOffscreenContext(
-          const WebKit::WebGraphicsContext3D::Attributes& attributes);
+          const blink::WebGraphicsContext3D::Attributes& attributes);
 
   static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
       WrapContext(
           scoped_ptr< ::gpu::GLInProcessContext> context,
-          const WebKit::WebGraphicsContext3D::Attributes& attributes);
+          const blink::WebGraphicsContext3D::Attributes& attributes);
 
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
 
   // Convert WebGL context creation attributes into GLInProcessContext / EGL
   // size requests.
   static void ConvertAttributes(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes,
+      const blink::WebGraphicsContext3D::Attributes& attributes,
       ::gpu::GLInProcessContextAttribs* output_attribs);
 
   //----------------------------------------------------------------------
@@ -76,10 +77,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual uint32_t lastFlushID();
 
-  virtual int width();
-  virtual int height();
-
-  virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(int width, int height, float scaleFactor);
 
   virtual void prepareTexture();
@@ -218,7 +215,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void getProgramiv(WebGLId program, WGC3Denum pname, WGC3Dint* value);
 
-  virtual WebKit::WebString getProgramInfoLog(WebGLId program);
+  virtual blink::WebString getProgramInfoLog(WebGLId program);
 
   virtual void getRenderbufferParameteriv(WGC3Denum target,
                                           WGC3Denum pname,
@@ -226,15 +223,15 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void getShaderiv(WebGLId shader, WGC3Denum pname, WGC3Dint* value);
 
-  virtual WebKit::WebString getShaderInfoLog(WebGLId shader);
+  virtual blink::WebString getShaderInfoLog(WebGLId shader);
 
   virtual void getShaderPrecisionFormat(WGC3Denum shadertype,
                                         WGC3Denum precisiontype,
                                         WGC3Dint* range,
                                         WGC3Dint* precision);
 
-  virtual WebKit::WebString getShaderSource(WebGLId shader);
-  virtual WebKit::WebString getString(WGC3Denum name);
+  virtual blink::WebString getShaderSource(WebGLId shader);
+  virtual blink::WebString getString(WGC3Denum name);
 
   virtual void getTexParameterfv(WGC3Denum target,
                                  WGC3Denum pname,
@@ -398,19 +395,31 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
                         WGC3Dsizei width, WGC3Dsizei height);
 
   // Support for buffer creation and deletion
+  virtual void genBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genTextures(WGC3Dsizei count, WebGLId* ids);
+
+  virtual void deleteBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteTextures(WGC3Dsizei count, WebGLId* ids);
+
   virtual WebGLId createBuffer();
   virtual WebGLId createFramebuffer();
-  virtual WebGLId createProgram();
   virtual WebGLId createRenderbuffer();
-  virtual WebGLId createShader(WGC3Denum);
   virtual WebGLId createTexture();
 
   virtual void deleteBuffer(WebGLId);
   virtual void deleteFramebuffer(WebGLId);
-  virtual void deleteProgram(WebGLId);
   virtual void deleteRenderbuffer(WebGLId);
-  virtual void deleteShader(WebGLId);
   virtual void deleteTexture(WebGLId);
+
+  virtual WebGLId createProgram();
+  virtual WebGLId createShader(WGC3Denum);
+
+  virtual void deleteProgram(WebGLId);
+  virtual void deleteShader(WebGLId);
 
   virtual void synthesizeGLError(WGC3Denum);
 
@@ -432,21 +441,16 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void setVisibilityCHROMIUM(bool visible);
 
-  virtual void setMemoryAllocationChangedCallbackCHROMIUM(
-      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
-
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void discardBackbufferCHROMIUM();
-  virtual void ensureBackbufferCHROMIUM();
 
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
 
   virtual void rateLimitOffscreenContextCHROMIUM();
 
-  virtual WebKit::WebString getRequestableExtensionsCHROMIUM();
+  virtual blink::WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
 
   virtual void blitFramebufferCHROMIUM(
@@ -457,7 +461,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
       WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat,
       WGC3Dsizei width, WGC3Dsizei height);
 
-  virtual WebKit::WebString getTranslatedShaderSourceANGLE(WebGLId shader);
+  virtual blink::WebString getTranslatedShaderSourceANGLE(WebGLId shader);
 
   virtual void setContextLostCallback(
       WebGraphicsContext3D::WebGraphicsContextLostCallback* callback);
@@ -543,26 +547,26 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   virtual void drawBuffersEXT(WGC3Dsizei n, const WGC3Denum* bufs);
 
   virtual unsigned insertSyncPoint();
-  virtual void signalSyncPoint(unsigned sync_point,
-                               WebGraphicsSyncPointCallback* callback);
-  virtual void signalQuery(unsigned query,
-                           WebGraphicsSyncPointCallback* callback);
 
   virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
 
- protected:
-  virtual GrGLInterface* onCreateGrGLInterface();
+  virtual GrGLInterface* createGrGLInterface();
+
+  ::gpu::gles2::GLES2Interface* GetGLInterface();
+  ::gpu::ContextSupport* GetContextSupport();
+
+  ::gpu::gles2::GLES2Implementation* GetImplementation() {
+    return gl_;
+  }
 
  private:
   WebGraphicsContext3DInProcessCommandBufferImpl(
       scoped_ptr< ::gpu::GLInProcessContext> context,
-      const WebKit::WebGraphicsContext3D::Attributes& attributes,
+      const blink::WebGraphicsContext3D::Attributes& attributes,
       bool is_offscreen,
       gfx::AcceleratedWidget window);
 
-  // SwapBuffers callback.
-  void OnSwapBuffersComplete();
-  virtual void OnContextLost();
+  void OnContextLost();
 
   bool MaybeInitializeGL();
 
@@ -585,8 +589,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   WebGraphicsContext3D::WebGraphicsContextLostCallback* context_lost_callback_;
   WGC3Denum context_lost_reason_;
 
-  WebKit::WebGraphicsContext3D::Attributes attributes_;
-  int cached_width_, cached_height_;
+  blink::WebGraphicsContext3D::Attributes attributes_;
 
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
@@ -597,5 +600,4 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 }  // namespace gpu
 }  // namespace webkit
 
-#endif  // defined(ENABLE_GPU)
 #endif  // WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_

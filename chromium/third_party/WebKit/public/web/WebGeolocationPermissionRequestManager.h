@@ -29,7 +29,7 @@
 #include "../platform/WebNonCopyable.h"
 #include "../platform/WebPrivateOwnPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebGeolocationPermissionRequest;
 class WebGeolocationPermissionRequestManagerPrivate;
@@ -45,13 +45,13 @@ public:
     WebGeolocationPermissionRequestManager() { init(); }
     ~WebGeolocationPermissionRequestManager() { reset(); }
 
-    WEBKIT_EXPORT int add(const WebKit::WebGeolocationPermissionRequest&);
-    WEBKIT_EXPORT bool remove(const WebKit::WebGeolocationPermissionRequest&, int&);
-    WEBKIT_EXPORT bool remove(int, WebKit::WebGeolocationPermissionRequest&);
+    BLINK_EXPORT int add(const blink::WebGeolocationPermissionRequest&);
+    BLINK_EXPORT bool remove(const blink::WebGeolocationPermissionRequest&, int&);
+    BLINK_EXPORT bool remove(int, blink::WebGeolocationPermissionRequest&);
 
 private:
-    WEBKIT_EXPORT void init();
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void init();
+    BLINK_EXPORT void reset();
 
     WebPrivateOwnPtr<WebGeolocationPermissionRequestManagerPrivate> m_private;
     int m_lastId;

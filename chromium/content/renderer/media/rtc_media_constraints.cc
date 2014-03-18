@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 #include "content/renderer/media/rtc_media_constraints.h"
 
+#include <string>
+
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "content/common/media/media_stream_options.h"
@@ -14,7 +16,7 @@ namespace content {
 namespace {
 
 void GetNativeMediaConstraints(
-    const WebKit::WebVector<WebKit::WebMediaConstraint>& constraints,
+    const blink::WebVector<blink::WebMediaConstraint>& constraints,
     webrtc::MediaConstraintsInterface::Constraints* native_constraints) {
   DCHECK(native_constraints);
   for (size_t i = 0; i < constraints.size(); ++i) {
@@ -27,12 +29,17 @@ void GetNativeMediaConstraints(
         new_constraint.key == kMediaStreamSourceId)
       continue;
 
-    // Ignore internal constraints set by JS.
-    // TODO(jiayl): replace the hard coded string with
-    // webrtc::MediaConstraintsInterface::kInternalConstraintPrefix when
-    // the Libjingle change is rolled.
-    if (StartsWithASCII(new_constraint.key, "internal", true))
+    // Ignore sourceId constraint since that has nothing to do with webrtc.
+    if (new_constraint.key == kMediaStreamSourceInfoId)
       continue;
+
+    // Ignore internal constraints set by JS.
+    if (StartsWithASCII(
+        new_constraint.key,
+        webrtc::MediaConstraintsInterface::kInternalConstraintPrefix,
+        true)) {
+      continue;
+    }
 
     DVLOG(3) << "MediaStreamConstraints:" << new_constraint.key
              << " : " <<  new_constraint.value;
@@ -45,13 +52,13 @@ void GetNativeMediaConstraints(
 RTCMediaConstraints::RTCMediaConstraints() {}
 
 RTCMediaConstraints::RTCMediaConstraints(
-      const WebKit::WebMediaConstraints& constraints) {
+      const blink::WebMediaConstraints& constraints) {
   if (constraints.isNull())
     return;  // Will happen in unit tests.
-  WebKit::WebVector<WebKit::WebMediaConstraint> mandatory;
+  blink::WebVector<blink::WebMediaConstraint> mandatory;
   constraints.getMandatoryConstraints(mandatory);
   GetNativeMediaConstraints(mandatory, &mandatory_);
-  WebKit::WebVector<WebKit::WebMediaConstraint> optional;
+  blink::WebVector<blink::WebMediaConstraint> optional;
   constraints.getOptionalConstraints(optional);
   GetNativeMediaConstraints(optional, &optional_);
 }

@@ -5,36 +5,39 @@
 #include "ui/aura/client/default_capture_client.h"
 
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 
 namespace aura {
 namespace client {
 
-DefaultCaptureClient::DefaultCaptureClient(RootWindow* root_window)
+DefaultCaptureClient::DefaultCaptureClient(Window* root_window)
     : root_window_(root_window),
       capture_window_(NULL) {
-  client::SetCaptureClient(root_window_, this);
+  SetCaptureClient(root_window_, this);
 }
 
 DefaultCaptureClient::~DefaultCaptureClient() {
-  client::SetCaptureClient(root_window_, NULL);
+  SetCaptureClient(root_window_, NULL);
 }
 
 void DefaultCaptureClient::SetCapture(Window* window) {
   if (capture_window_ == window)
     return;
-  if (window)
-    root_window_->gesture_recognizer()->
-        TransferEventsTo(capture_window_, window);
+  if (window) {
+    ui::GestureRecognizer::Get()->TransferEventsTo(
+        capture_window_, window);
+  }
 
   Window* old_capture_window = capture_window_;
   capture_window_ = window;
 
+  CaptureDelegate* capture_delegate = root_window_->GetDispatcher();
   if (capture_window_)
-    root_window_->SetNativeCapture();
+    capture_delegate->SetNativeCapture();
   else
-    root_window_->ReleaseNativeCapture();
+    capture_delegate->ReleaseNativeCapture();
 
-  root_window_->UpdateCapture(old_capture_window, capture_window_);
+  capture_delegate->UpdateCapture(old_capture_window, capture_window_);
 }
 
 void DefaultCaptureClient::ReleaseCapture(Window* window) {
@@ -44,6 +47,10 @@ void DefaultCaptureClient::ReleaseCapture(Window* window) {
 }
 
 Window* DefaultCaptureClient::GetCaptureWindow() {
+  return capture_window_;
+}
+
+Window* DefaultCaptureClient::GetGlobalCaptureWindow() {
   return capture_window_;
 }
 

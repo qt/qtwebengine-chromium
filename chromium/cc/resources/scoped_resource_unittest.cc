@@ -19,9 +19,9 @@ TEST(ScopedResourceTest, NewScopedResource) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
   scoped_ptr<ScopedResource> texture =
-      ScopedResource::create(resource_provider.get());
+      ScopedResource::Create(resource_provider.get());
 
   // New scoped textures do not hold a texture yet.
   EXPECT_EQ(0u, texture->id());
@@ -37,9 +37,9 @@ TEST(ScopedResourceTest, CreateScopedResource) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
   scoped_ptr<ScopedResource> texture =
-      ScopedResource::create(resource_provider.get());
+      ScopedResource::Create(resource_provider.get());
   texture->Allocate(gfx::Size(30, 30),
                     ResourceProvider::TextureUsageAny,
                     RGBA_8888);
@@ -59,10 +59,10 @@ TEST(ScopedResourceTest, ScopedResourceIsDeleted) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
   {
     scoped_ptr<ScopedResource> texture =
-        ScopedResource::create(resource_provider.get());
+        ScopedResource::Create(resource_provider.get());
 
     EXPECT_EQ(0u, resource_provider->num_resources());
     texture->Allocate(gfx::Size(30, 30),
@@ -75,7 +75,7 @@ TEST(ScopedResourceTest, ScopedResourceIsDeleted) {
   EXPECT_EQ(0u, resource_provider->num_resources());
   {
     scoped_ptr<ScopedResource> texture =
-        ScopedResource::create(resource_provider.get());
+        ScopedResource::Create(resource_provider.get());
     EXPECT_EQ(0u, resource_provider->num_resources());
     texture->Allocate(gfx::Size(30, 30),
                       ResourceProvider::TextureUsageAny,
@@ -93,10 +93,10 @@ TEST(ScopedResourceTest, LeakScopedResource) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
   {
     scoped_ptr<ScopedResource> texture =
-        ScopedResource::create(resource_provider.get());
+        ScopedResource::Create(resource_provider.get());
 
     EXPECT_EQ(0u, resource_provider->num_resources());
     texture->Allocate(gfx::Size(30, 30),

@@ -20,21 +20,19 @@
 
 #include "config.h"
 
-#include "SVGNames.h"
 #include "core/svg/SVGFEFuncBElement.h"
 
 namespace WebCore {
 
-inline SVGFEFuncBElement::SVGFEFuncBElement(const QualifiedName& tagName, Document& document)
-    : SVGComponentTransferFunctionElement(tagName, document)
+inline SVGFEFuncBElement::SVGFEFuncBElement(Document& document)
+    : SVGComponentTransferFunctionElement(SVGNames::feFuncBTag, document)
 {
-    ASSERT(hasTagName(SVGNames::feFuncBTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFEFuncBElement> SVGFEFuncBElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFEFuncBElement> SVGFEFuncBElement::create(Document& document)
 {
-    return adoptRef(new SVGFEFuncBElement(tagName, document));
+    return adoptRef(new SVGFEFuncBElement(document));
 }
 
 }

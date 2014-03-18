@@ -16,32 +16,32 @@
 #include <utility>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
 #include "sandbox/linux/seccomp-bpf/errorcode.h"
 #include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
-#include "sandbox/linux/seccomp-bpf/port.h"
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy_forward.h"
 
-namespace playground2 {
+namespace sandbox {
 
 struct arch_seccomp_data {
-  int      nr;
+  int nr;
   uint32_t arch;
   uint64_t instruction_pointer;
   uint64_t args[6];
 };
 
 struct arch_sigsys {
-  void         *ip;
-  int          nr;
+  void* ip;
+  int nr;
   unsigned int arch;
 };
 
 class CodeGen;
+class SandboxBPFPolicy;
 class SandboxUnittestHelper;
 struct Instruction;
 
-class Sandbox {
+class SandboxBPF {
  public:
   enum SandboxStatus {
     STATUS_UNKNOWN,      // Status prior to calling supportsSeccompSandbox()
@@ -51,16 +51,15 @@ class Sandbox {
     STATUS_ENABLED       // The sandbox is now active
   };
 
-  // BpfSandboxPolicy is the following type:
-  // ErrorCode (Sandbox *sb, int sysnum, void *aux);
   // When calling setSandboxPolicy(), the caller can provide an arbitrary
   // pointer in |aux|. This pointer will then be forwarded to the sandbox
   // policy each time a call is made through an EvaluateSyscall function
   // pointer.  One common use case would be to pass the "aux" pointer as an
   // argument to Trap() functions.
-  typedef BpfSandboxPolicy* EvaluateSyscall;
-  typedef std::vector<std::pair<EvaluateSyscall, void *> >Evaluators;
-
+  typedef ErrorCode (*EvaluateSyscall)(SandboxBPF* sandbox_compiler,
+                                       int system_call_number,
+                                       void* aux);
+  typedef std::vector<std::pair<EvaluateSyscall, void*> > Evaluators;
   // A vector of BPF instructions that need to be installed as a filter
   // program in the kernel.
   typedef std::vector<struct sock_filter> Program;
@@ -75,8 +74,8 @@ class Sandbox {
   //       should be noted that during its lifetime, the object probably made
   //       irreversible state changes to the runtime environment. These changes
   //       stay in effect even after the destructor has been run.
-  Sandbox();
-  ~Sandbox();
+  SandboxBPF();
+  ~SandboxBPF();
 
   // Checks whether a particular system call number is valid on the current
   // architecture. E.g. on ARM there's a non-contiguous range of private
@@ -108,7 +107,12 @@ class Sandbox {
   // handler. In this case, of course, the data that is pointed to must remain
   // valid for the entire time that Trap() handlers can be called; typically,
   // this would be the lifetime of the program.
-  void SetSandboxPolicy(EvaluateSyscall syscallEvaluator, void *aux);
+  // DEPRECATED: use the policy interface below.
+  void SetSandboxPolicyDeprecated(EvaluateSyscall syscallEvaluator, void* aux);
+
+  // Set the BPF policy as |policy|. Ownership of |policy| is transfered here
+  // to the sandbox object.
+  void SetSandboxPolicy(SandboxBPFPolicy* policy);
 
   // We can use ErrorCode to request calling of a trap handler. This method
   // performs the required wrapping of the callback function into an
@@ -116,7 +120,7 @@ class Sandbox {
   // The "aux" field can carry a pointer to arbitrary data. See EvaluateSyscall
   // for a description of how to pass data from SetSandboxPolicy() to a Trap()
   // handler.
-  ErrorCode Trap(Trap::TrapFnc fnc, const void *aux);
+  ErrorCode Trap(Trap::TrapFnc fnc, const void* aux);
 
   // Calls a user-space trap handler and disables all sandboxing for system
   // calls made from this trap handler.
@@ -128,7 +132,7 @@ class Sandbox {
   //   very useful to diagnose code that is incompatible with the sandbox.
   //   If even a single system call returns "UnsafeTrap", the security of
   //   entire sandbox should be considered compromised.
-  ErrorCode UnsafeTrap(Trap::TrapFnc fnc, const void *aux);
+  ErrorCode UnsafeTrap(Trap::TrapFnc fnc, const void* aux);
 
   // From within an UnsafeTrap() it is often useful to be able to execute
   // the system call that triggered the trap. The ForwardSyscall() method
@@ -150,13 +154,15 @@ class Sandbox {
   // If it is outside this range, the sandbox treats the system call just
   // the same as any other ABI violation (i.e. it aborts with an error
   // message).
-  ErrorCode Cond(int argno, ErrorCode::ArgType is_32bit,
+  ErrorCode Cond(int argno,
+                 ErrorCode::ArgType is_32bit,
                  ErrorCode::Operation op,
-                 uint64_t value, const ErrorCode& passed,
+                 uint64_t value,
+                 const ErrorCode& passed,
                  const ErrorCode& failed);
 
   // Kill the program and print an error message.
-  ErrorCode Kill(const char *msg);
+  ErrorCode Kill(const char* msg);
 
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
@@ -179,7 +185,7 @@ class Sandbox {
   // through the verifier, iff the program was built in debug mode.
   // But by setting "force_verification", the caller can request that the
   // verifier is run unconditionally. This is useful for unittests.
-  Program *AssembleFilter(bool force_verification);
+  Program* AssembleFilter(bool force_verification);
 
   // Returns the fatal ErrorCode that is used to indicate that somebody
   // attempted to pass a 64bit value in a 32bit system call argument.
@@ -193,11 +199,8 @@ class Sandbox {
 
   struct Range {
     Range(uint32_t f, uint32_t t, const ErrorCode& e)
-        : from(f),
-          to(t),
-          err(e) {
-    }
-    uint32_t  from, to;
+        : from(f), to(t), err(e) {}
+    uint32_t from, to;
     ErrorCode err;
   };
   typedef std::vector<Range> Ranges;
@@ -211,7 +214,8 @@ class Sandbox {
   // policy. The caller has to make sure that "this" has not yet been
   // initialized with any other policies.
   bool RunFunctionInPolicy(void (*code_in_sandbox)(),
-                           EvaluateSyscall syscall_evaluator, void *aux);
+                           EvaluateSyscall syscall_evaluator,
+                           void* aux);
 
   // Performs a couple of sanity checks to verify that the kernel supports the
   // features that we need for successful sandboxing.
@@ -220,7 +224,7 @@ class Sandbox {
   bool KernelSupportSeccompBPF();
 
   // Verify that the current policy passes some basic sanity checks.
-  void PolicySanityChecks(EvaluateSyscall syscall_evaluator, void *aux);
+  void PolicySanityChecks(SandboxBPFPolicy* policy);
 
   // Assembles and installs a filter based on the policy that has previously
   // been configured with SetSandboxPolicy().
@@ -235,11 +239,11 @@ class Sandbox {
   // sorted in ascending order of system call numbers. There are no gaps in the
   // ranges. System calls with identical ErrorCodes are coalesced into a single
   // range.
-  void FindRanges(Ranges *ranges);
+  void FindRanges(Ranges* ranges);
 
   // Returns a BPF program snippet that implements a jump table for the
   // given range of system call numbers. This function runs recursively.
-  Instruction *AssembleJumpTable(CodeGen *gen,
+  Instruction* AssembleJumpTable(CodeGen* gen,
                                  Ranges::const_iterator start,
                                  Ranges::const_iterator stop);
 
@@ -248,24 +252,25 @@ class Sandbox {
   // conditional expression; if so, this function will recursively call
   // CondExpression() and possibly RetExpression() to build a complex set of
   // instructions.
-  Instruction *RetExpression(CodeGen *gen, const ErrorCode& err);
+  Instruction* RetExpression(CodeGen* gen, const ErrorCode& err);
 
   // Returns a BPF program that evaluates the conditional expression in
   // "cond" and returns the appropriate value from the BPF filter program.
   // This function recursively calls RetExpression(); it should only ever be
   // called from RetExpression().
-  Instruction *CondExpression(CodeGen *gen, const ErrorCode& cond);
+  Instruction* CondExpression(CodeGen* gen, const ErrorCode& cond);
 
   static SandboxStatus status_;
 
-  bool       quiet_;
-  int        proc_fd_;
-  Evaluators *evaluators_;
-  Conds      *conds_;
+  bool quiet_;
+  int proc_fd_;
+  scoped_ptr<const SandboxBPFPolicy> policy_;
+  Conds* conds_;
+  bool sandbox_has_started_;
 
-  DISALLOW_COPY_AND_ASSIGN(Sandbox);
+  DISALLOW_COPY_AND_ASSIGN(SandboxBPF);
 };
 
-}  // namespace
+}  // namespace sandbox
 
 #endif  // SANDBOX_LINUX_SECCOMP_BPF_SANDBOX_BPF_H__

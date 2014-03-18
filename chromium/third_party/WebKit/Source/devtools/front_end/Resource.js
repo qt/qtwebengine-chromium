@@ -33,9 +33,9 @@
  * @param {?WebInspector.NetworkRequest} request
  * @param {string} url
  * @param {string} documentURL
- * @param {PageAgent.FrameId} frameId
- * @param {NetworkAgent.LoaderId} loaderId
- * @param {WebInspector.ResourceType} type
+ * @param {!PageAgent.FrameId} frameId
+ * @param {!NetworkAgent.LoaderId} loaderId
+ * @param {!WebInspector.ResourceType} type
  * @param {string} mimeType
  * @param {boolean=} isHidden
  */
@@ -99,7 +99,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @return {PageAgent.FrameId}
+     * @return {!PageAgent.FrameId}
      */
     get frameId()
     {
@@ -107,7 +107,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @return {NetworkAgent.LoaderId}
+     * @return {!NetworkAgent.LoaderId}
      */
     get loaderId()
     {
@@ -123,7 +123,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @return {WebInspector.ResourceType}
+     * @return {!WebInspector.ResourceType}
      */
     get type()
     {
@@ -139,7 +139,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @return {Array.<WebInspector.ConsoleMessage>}
+     * @return {!Array.<!WebInspector.ConsoleMessage>}
      */
     get messages()
     {
@@ -147,7 +147,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @param {WebInspector.ConsoleMessage} msg
+     * @param {!WebInspector.ConsoleMessage} msg
      */
     addMessage: function(msg)
     {
@@ -219,7 +219,7 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @return {WebInspector.ResourceType}
+     * @return {!WebInspector.ResourceType}
      */
     contentType: function()
     {
@@ -227,12 +227,12 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @param {function(?string, boolean, string)} callback
+     * @param {function(?string)} callback
      */
     requestContent: function(callback)
     {
         if (typeof this._content !== "undefined") {
-            callback(this._content, !!this._contentEncoded, this.canonicalMimeType());
+            callback(this._content);
             return;
         }
 
@@ -250,13 +250,13 @@ WebInspector.Resource.prototype = {
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
-     * @param {function(Array.<WebInspector.ContentProvider.SearchMatch>)} callback
+     * @param {function(!Array.<!WebInspector.ContentProvider.SearchMatch>)} callback
      */
     searchInContent: function(query, caseSensitive, isRegex, callback)
     {
         /**
          * @param {?Protocol.Error} error
-         * @param {Array.<PageAgent.SearchMatch>} searchMatches
+         * @param {!Array.<!PageAgent.SearchMatch>} searchMatches
          */
         function callbackWrapper(error, searchMatches)
         {
@@ -264,24 +264,22 @@ WebInspector.Resource.prototype = {
         }
 
         if (this.type === WebInspector.resourceTypes.Document) {
-            /**
-             * @param {?string} content
-             * @param {boolean} contentEncoded
-             * @param {string} mimeType
-             */
-            function documentContentLoaded(content, contentEncoded, mimeType)
-            {
-                if (content === null) {
-                    callback([]);
-                    return;
-                }
-
-                var result = WebInspector.ContentProvider.performSearchInContent(content, query, caseSensitive, isRegex);
-                callback(result);
-            }
-
             this.requestContent(documentContentLoaded);
             return;
+        }
+
+        /**
+         * @param {?string} content
+         */
+        function documentContentLoaded(content)
+        {
+            if (content === null) {
+                callback([]);
+                return;
+            }
+
+            var result = WebInspector.ContentProvider.performSearchInContent(content, query, caseSensitive, isRegex);
+            callback(result);
         }
 
         if (this.frameId)
@@ -291,11 +289,15 @@ WebInspector.Resource.prototype = {
     },
 
     /**
-     * @param {Element} image
+     * @param {!Element} image
      */
     populateImageSource: function(image)
     {
-        function onResourceContent()
+        /**
+         * @param {?string} content
+         * @this {WebInspector.Resource}
+         */
+        function onResourceContent(content)
         {
             var imageSrc = WebInspector.contentAsDataURL(this._content, this.mimeType, this._contentEncoded);
             if (imageSrc === null)
@@ -324,6 +326,7 @@ WebInspector.Resource.prototype = {
          * @param {?Protocol.Error} error
          * @param {?string} content
          * @param {boolean} contentEncoded
+         * @this {WebInspector.Resource}
          */
         function contentLoaded(error, content, contentEncoded)
         {
@@ -337,6 +340,7 @@ WebInspector.Resource.prototype = {
         /**
          * @param {?string} content
          * @param {boolean} contentEncoded
+         * @this {WebInspector.Resource}
          */
         function replyWithContent(content, contentEncoded)
         {
@@ -344,7 +348,7 @@ WebInspector.Resource.prototype = {
             this._contentEncoded = contentEncoded;
             var callbacks = this._pendingContentCallbacks.slice();
             for (var i = 0; i < callbacks.length; ++i)
-                callbacks[i](this._content, this._contentEncoded, this.canonicalMimeType());
+                callbacks[i](this._content);
             this._pendingContentCallbacks.length = 0;
             delete this._contentRequested;
         }
@@ -353,6 +357,7 @@ WebInspector.Resource.prototype = {
          * @param {?Protocol.Error} error
          * @param {string} content
          * @param {boolean} contentEncoded
+         * @this {WebInspector.Resource}
          */
         function resourceContentLoaded(error, content, contentEncoded)
         {
@@ -361,6 +366,7 @@ WebInspector.Resource.prototype = {
         
         /**
          * @param {?Protocol.Error} error
+         * @this {WebInspector.Resource}
          */
         function loadFallbackContent(error)
         {
@@ -388,28 +394,27 @@ WebInspector.Resource.prototype = {
 
         /**
          * @param {?string} content
-         * @param {boolean} contentEncoded
-         * @param {string} mimeType
+         * @this {WebInspector.Resource}
          */
-        function fallbackContentLoaded(content, contentEncoded, mimeType)
+        function fallbackContentLoaded(content)
         {
-            replyWithContent.call(this, content, contentEncoded);
+            replyWithContent.call(this, content, false);
         }
 
         if (this.request) {
-            /**
-             * @param {?string} content
-             * @param {boolean} contentEncoded
-             * @param {string} mimeType
-             */
-            function requestContentLoaded(content, contentEncoded, mimeType)
-            {
-                contentLoaded.call(this, null, content, contentEncoded);
-            }
-            
             this.request.requestContent(requestContentLoaded.bind(this));
             return;
         }
+
+        /**
+         * @param {?string} content
+         * @this {WebInspector.Resource}
+         */
+        function requestContentLoaded(content)
+        {
+            contentLoaded.call(this, null, content, this.request.contentEncoded);
+        }
+
         PageAgent.getResourceContent(this.frameId, this.url, resourceContentLoaded.bind(this));
     },
 

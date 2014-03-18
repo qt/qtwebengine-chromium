@@ -59,7 +59,7 @@ class TestObserver : public RenderViewObserver {
  public:
   explicit TestObserver(RenderView* render_view)
       : RenderViewObserver(render_view) {}
-  virtual void DidClearWindowObject(WebKit::WebFrame* frame) OVERRIDE {
+  virtual void DidClearWindowObject(blink::WebFrame* frame) OVERRIDE {
     example_bound_class_.BindToJavascript(frame, "example");
   }
   void set_fallback_method_enabled(bool use_fallback) {
@@ -80,7 +80,7 @@ class CppBoundClassTest : public RenderViewTest {
     observer_.reset(new TestObserver(view_));
     observer_->set_fallback_method_enabled(useFallback());
 
-    WebKit::WebURLRequest url_request;
+    blink::WebURLRequest url_request;
     url_request.initialize();
     url_request.setURL(GURL(kAboutBlankURL));
 
@@ -104,7 +104,7 @@ class CppBoundClassTest : public RenderViewTest {
 
   void CheckTrue(const std::string& expression) {
     int was_page_a = -1;
-    string16 check_page_a =
+    base::string16 check_page_a =
         ASCIIToUTF16(std::string("Number(") + expression + ")");
     EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_a, &was_page_a));
     EXPECT_EQ(1, was_page_a);

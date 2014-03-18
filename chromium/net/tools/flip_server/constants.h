@@ -15,12 +15,7 @@ const int kSSLSegmentSize = (1 * kMSS) - kSSLOverhead;
 const int kSpdySegmentSize = kSSLSegmentSize - kSpdyOverhead;
 
 #define ACCEPTOR_CLIENT_IDENT \
-    acceptor_->listen_ip_ << ":" \
-    << acceptor_->listen_port_ << " "
-
-#define NEXT_PROTO_STRING "\x06spdy/2\x08http/1.1\x08http/1.0"
-
-#define SSL_CIPHER_LIST "!aNULL:!ADH:!eNull:!LOW:!EXP:RC4+RSA:MEDIUM:HIGH"
+  acceptor_->listen_ip_ << ":" << acceptor_->listen_port_ << " "
 
 #define IPV4_PRINTABLE_FORMAT(IP) (((IP)>>0)&0xff), (((IP)>>8)&0xff), \
                                   (((IP)>>16)&0xff), (((IP)>>24)&0xff)

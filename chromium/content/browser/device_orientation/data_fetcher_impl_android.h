@@ -10,25 +10,21 @@
 #include "base/synchronization/lock.h"
 #include "content/browser/device_orientation/device_data.h"
 #include "content/common/content_export.h"
-#include "content/common/device_motion_hardware_buffer.h"
+#include "content/common/device_orientation/device_motion_hardware_buffer.h"
 #include "content/common/device_orientation/device_orientation_hardware_buffer.h"
 
 template<typename T> struct DefaultSingletonTraits;
 
 namespace content {
-class Orientation;
 
-// Android implementation of DeviceOrientation API.
+// Android implementation of Device Orientation API.
+//
+// Android's SensorManager has a push API, so when Got*() methods are called
+// by the system the browser process puts the received data into a shared
+// memory buffer, which is read by the renderer processes.
+//
 
-// Android's SensorManager has a push API, whereas Chrome wants to pull data.
-// To fit them together, we store incoming sensor events in a 1-element buffer.
-// SensorManager calls SetOrientation() which pushes a new value (discarding the
-// previous value if any). Chrome calls GetDeviceData() which reads the most
-// recent value. Repeated calls to GetDeviceData() will return the same value.
-
-// TODO(timvolodine): Simplify this class and remove GetDeviceData() method,
-// once Device Orientation switches to shared memory implementation.
-// Also rename this class to SensorManagerAndroid.
+// TODO(timvolodine): rename this class to SensorManagerAndroid.
 class CONTENT_EXPORT DataFetcherImplAndroid {
  public:
   // Must be called at startup, before GetInstance().
@@ -46,8 +42,6 @@ class CONTENT_EXPORT DataFetcherImplAndroid {
                                        double x, double y, double z);
   void GotRotationRate(JNIEnv*, jobject,
                        double alpha, double beta, double gamma);
-
-  const DeviceData* GetDeviceData(DeviceData::Type type);
 
   virtual bool Start(DeviceData::Type event_type);
   virtual void Stop(DeviceData::Type event_type);
@@ -69,8 +63,6 @@ class CONTENT_EXPORT DataFetcherImplAndroid {
  private:
   friend struct DefaultSingletonTraits<DataFetcherImplAndroid>;
 
-  const Orientation* GetOrientation();
-
   void CheckMotionBufferReadyToRead();
   void SetMotionBufferReadyStatus(bool ready);
   void ClearInternalMotionBuffers();
@@ -83,12 +75,6 @@ class CONTENT_EXPORT DataFetcherImplAndroid {
     RECEIVED_MOTION_DATA_ROTATION_RATE = 2,
     RECEIVED_MOTION_DATA_MAX = 3,
   };
-  // Value returned by GetDeviceData.
-  scoped_refptr<Orientation> current_orientation_;
-
-  // 1-element buffer, written by GotOrientation, read by GetDeviceData.
-  base::Lock next_orientation_lock_;
-  scoped_refptr<Orientation> next_orientation_;
 
   // The Java provider of orientation info.
   base::android::ScopedJavaGlobalRef<jobject> device_orientation_;
@@ -100,6 +86,7 @@ class CONTENT_EXPORT DataFetcherImplAndroid {
   bool is_orientation_buffer_ready_;
 
   base::Lock motion_buffer_lock_;
+  base::Lock orientation_buffer_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(DataFetcherImplAndroid);
 };

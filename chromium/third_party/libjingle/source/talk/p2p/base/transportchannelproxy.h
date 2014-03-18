@@ -75,6 +75,8 @@ class TransportChannelProxy : public TransportChannel,
   virtual bool SetSslRole(talk_base::SSLRole role);
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers);
   virtual bool GetSrtpCipher(std::string* cipher);
+  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const;
+  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const;
   virtual bool ExportKeyingMaterial(const std::string& label,
                             const uint8* context,
                             size_t context_len,
@@ -88,7 +90,7 @@ class TransportChannelProxy : public TransportChannel,
   void OnReadableState(TransportChannel* channel);
   void OnWritableState(TransportChannel* channel);
   void OnReadPacket(TransportChannel* channel, const char* data, size_t size,
-                    int flags);
+                    const talk_base::PacketTime& packet_time, int flags);
   void OnReadyToSend(TransportChannel* channel);
   void OnRouteChange(TransportChannel* channel, const Candidate& candidate);
 

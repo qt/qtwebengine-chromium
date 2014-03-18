@@ -45,7 +45,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 bool WebInputElement::isTextField() const
 {
@@ -130,26 +130,6 @@ void WebInputElement::setSuggestedValue(const WebString& value)
 WebString WebInputElement::suggestedValue() const
 {
     return constUnwrap<HTMLInputElement>()->suggestedValue();
-}
-
-void WebInputElement::setPlaceholder(const WebString& value)
-{
-    unwrap<HTMLInputElement>()->setAttribute(HTMLNames::placeholderAttr, value);
-}
-
-WebString WebInputElement::placeholder() const
-{
-    return constUnwrap<HTMLInputElement>()->fastGetAttribute(HTMLNames::placeholderAttr);
-}
-
-bool WebInputElement::isAutofilled() const
-{
-    return constUnwrap<HTMLInputElement>()->isAutofilled();
-}
-
-void WebInputElement::setAutofilled(bool autofilled)
-{
-    unwrap<HTMLInputElement>()->setAutofilled(autofilled);
 }
 
 void WebInputElement::setSelectionRange(int start, int end)
@@ -287,4 +267,4 @@ WebInputElement* toWebInputElement(WebElement* webElement)
 
     return static_cast<WebInputElement*>(webElement);
 }
-} // namespace WebKit
+} // namespace blink

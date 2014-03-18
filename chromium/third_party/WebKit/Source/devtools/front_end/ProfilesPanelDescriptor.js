@@ -53,75 +53,113 @@ WebInspector.ProfilesPanelDescriptor.ShortcutKeys = {
 
 WebInspector.ProfilesPanelDescriptor.ProfileURLRegExp = /webkit-profile:\/\/(.+)\/(.+)/;
 
-WebInspector.ProfilesPanelDescriptor.UserInitiatedProfileName = "org.webkit.profiles.user-initiated";
+/** @interface */
+WebInspector.CPUProfilerModelDelegate = function() {};
 
-/**
- * @param {string} title
- * @return {boolean}
- */
-WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile = function(title)
-{
-    return title.startsWith(WebInspector.ProfilesPanelDescriptor.UserInitiatedProfileName);
+WebInspector.CPUProfilerModelDelegate.prototype = {
+    /**
+     * @param {string} protocolId
+     * @param {!DebuggerAgent.Location} scriptLocation
+     * @param {string=} title
+     */
+    consoleProfile: function(protocolId, scriptLocation, title) {},
+
+    /**
+     * @param {string} protocolId
+     * @param {!DebuggerAgent.Location} scriptLocation
+     * @param {!ProfilerAgent.CPUProfile} cpuProfile
+     * @param {string=} title
+     */
+    consoleProfileEnd: function(protocolId, scriptLocation, cpuProfile, title) {},
+
+    resetProfiles: function() {}
 }
 
 /**
- * @param {string} title
- * @return {number}
- * @throws {string}
+ * @constructor
+ * @extends {WebInspector.Object}
+ * @implements {ProfilerAgent.Dispatcher}
  */
-WebInspector.ProfilesPanelDescriptor.userInitiatedProfileIndex = function(title)
+WebInspector.CPUProfilerModel = function()
 {
-    if (!WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile(title))
-        throw "Not user-initiated profile title.";
-    var suffix = title.substring(WebInspector.ProfilesPanelDescriptor.UserInitiatedProfileName.length + 1);
-    return parseInt(suffix, 10);
+    /** @type {?WebInspector.CPUProfilerModelDelegate} */
+    this._delegate = null;
+    this._isRecording = false;
+    InspectorBackend.registerProfilerDispatcher(this);
+    ProfilerAgent.enable();
+}
+
+WebInspector.CPUProfilerModel.EventTypes = {
+    ProfileStarted: "profile-started",
+    ProfileStopped: "profile-stopped"
+};
+
+WebInspector.CPUProfilerModel.prototype = {
+    /**
+      * @param {!WebInspector.CPUProfilerModelDelegate} delegate
+      */
+    setDelegate: function(delegate)
+    {
+        this._delegate = delegate;
+    },
+
+    /**
+     * @param {string} id
+     * @param {!DebuggerAgent.Location} scriptLocation
+     * @param {!ProfilerAgent.CPUProfile} cpuProfile
+     * @param {string=} title
+     */
+    addProfileHeader: function(id, scriptLocation, cpuProfile, title)
+    {
+        // Make sure ProfilesPanel is initialized and CPUProfileType is created.
+        WebInspector.inspectorView.panel("profiles");
+        this._delegate.consoleProfileEnd(id, scriptLocation, cpuProfile, title);
+    },
+
+    /**
+     * @param {string} id
+     * @param {!DebuggerAgent.Location} scriptLocation
+     * @param {string=} title
+     */
+    consoleProfile: function(id, scriptLocation, title)
+    {
+        // Make sure ProfilesPanel is initialized and CPUProfileType is created.
+        WebInspector.inspectorView.panel("profiles");
+        this._delegate.consoleProfile(id, scriptLocation, title);
+    },
+
+    /**
+     * @override
+     */
+    resetProfiles: function()
+    {
+        if (this._delegate)
+            this._delegate.resetProfiles();
+    },
+
+    /**
+      * @param {boolean} isRecording
+      */
+    setRecording: function(isRecording)
+    {
+        this._isRecording = isRecording;
+        this.dispatchEventToListeners(isRecording ?
+            WebInspector.CPUProfilerModel.EventTypes.ProfileStarted :
+            WebInspector.CPUProfilerModel.EventTypes.ProfileStopped);
+    },
+
+    /**
+      * @return {boolean}
+      */
+    isRecordingProfile: function()
+    {
+        return this._isRecording;
+    },
+
+    __proto__: WebInspector.Object.prototype
 }
 
 /**
- * @param {string} title
- * @return {string}
+ * @type {!WebInspector.CPUProfilerModel}
  */
-WebInspector.ProfilesPanelDescriptor.resolveProfileTitle = function(title)
-{
-    if (!WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile(title))
-        return title;
-    return WebInspector.UIString("Profile %d", WebInspector.ProfilesPanelDescriptor.userInitiatedProfileIndex(title));
-}
-
-/**
- * @param {Event} event
- */
-WebInspector.ProfilesPanelDescriptor._openCPUProfile = function(event)
-{
-    event.preventDefault();
-    var panel = WebInspector.showPanel("profiles");
-    var link = /** @type {!Element} */ (event.target);
-    var view = /** @type {WebInspector.CPUProfileView} */ (panel.showProfile("CPU", link.profileUID));
-    if (!view)
-        return;
-    if (typeof link.timeLeft === "number" && typeof link.timeRight === "number")
-        view.selectRange(link.timeLeft, link.timeRight);
-}
-
-/**
- * @param {number} uid
- * @param {string} linkText
- * @param {number=} timeLeft
- * @param {number=} timeRight
- * @param {string=} tooltipText
- * @return {!Element}
- */
-WebInspector.ProfilesPanelDescriptor.linkifyCPUProfile = function(uid, linkText, timeLeft, timeRight, tooltipText)
-{
-    var link = document.createElement("a");
-    link.innerText = linkText;
-    link.href = WebInspector.UIString("show CPU profile");
-    link.target = "_blank";
-    if (tooltipText)
-        link.title = tooltipText;
-    link.timeLeft = timeLeft;
-    link.timeRight = timeRight;
-    link.profileUID = uid;
-    link.addEventListener("click", WebInspector.ProfilesPanelDescriptor._openCPUProfile, true);
-    return link;
-}
+WebInspector.cpuProfilerModel;

@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace ui {
 
@@ -284,6 +285,8 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
       return VKEY_MENU;
     case XK_ISO_Level3_Shift:
       return VKEY_ALTGR;
+    case XK_Multi_key:
+      return VKEY_COMPOSE;
     case XK_Pause:
       return VKEY_PAUSE;
     case XK_Caps_Lock:
@@ -437,12 +440,17 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
   return VKEY_UNKNOWN;
 }
 
+const char* CodeFromXEvent(XEvent* xev) {
+  return KeycodeConverter::GetInstance()->NativeKeycodeToCode(
+      xev->xkey.keycode);
+}
+
 uint16 GetCharacterFromXEvent(XEvent* xev) {
   char buf[6];
   int bytes_written = XLookupString(&xev->xkey, buf, 6, NULL, NULL);
   DCHECK_LE(bytes_written, 6);
 
-  string16 result;
+  base::string16 result;
   return (bytes_written > 0 && UTF8ToUTF16(buf, bytes_written, &result) &&
           result.length() == 1) ? result[0] : 0;
 }
@@ -586,6 +594,8 @@ int XKeysymForWindowsKeyCode(KeyboardCode keycode, bool shift) {
       return XK_Menu;
     case VKEY_ALTGR:
       return XK_ISO_Level3_Shift;
+    case VKEY_COMPOSE:
+      return XK_Multi_key;
 
     case VKEY_PAUSE:
       return XK_Pause;

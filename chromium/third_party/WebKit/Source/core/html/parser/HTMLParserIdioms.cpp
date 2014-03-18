@@ -26,12 +26,10 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 
 #include <limits>
-#include "core/dom/QualifiedName.h"
-#include "core/html/parser/HTMLIdentifier.h"
-#include "core/platform/Decimal.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -115,11 +113,6 @@ Decimal parseToDecimalForNumberType(const String& string, const Decimal& fallbac
     return value.isZero() ? Decimal(0) : value;
 }
 
-Decimal parseToDecimalForNumberType(const String& string)
-{
-    return parseToDecimalForNumberType(string, Decimal::nan());
-}
-
 double parseToDoubleForNumberType(const String& string, double fallbackValue)
 {
     // See HTML5 2.5.4.3 `Real numbers.'
@@ -145,11 +138,6 @@ double parseToDoubleForNumberType(const String& string, double fallbackValue)
 
     // The following expression converts -0 to +0.
     return value ? value : 0;
-}
-
-double parseToDoubleForNumberType(const String& string)
-{
-    return parseToDoubleForNumberType(string, std::numeric_limits<double>::quiet_NaN());
 }
 
 template <typename CharacterType>
@@ -291,9 +279,31 @@ bool threadSafeMatch(const QualifiedName& a, const QualifiedName& b)
     return threadSafeEqual(a.localName().impl(), b.localName().impl());
 }
 
-bool threadSafeMatch(const HTMLIdentifier& localName, const QualifiedName& qName)
+bool threadSafeMatch(const String& localName, const QualifiedName& qName)
 {
-    return threadSafeEqual(localName.asStringImpl(), qName.localName().impl());
+    return threadSafeEqual(localName.impl(), qName.localName().impl());
+}
+
+StringImpl* findStringIfStatic(const UChar* characters, unsigned length)
+{
+    // We don't need to try hashing if we know the string is too long.
+    if (length > StringImpl::highestStaticStringLength())
+        return 0;
+    // computeHashAndMaskTop8Bits is the function StringImpl::hash() uses.
+    unsigned hash = StringHasher::computeHashAndMaskTop8Bits(characters, length);
+    const WTF::StaticStringsTable& table = StringImpl::allStaticStrings();
+    ASSERT(!table.isEmpty());
+
+    WTF::StaticStringsTable::const_iterator it = table.find(hash);
+    if (it == table.end())
+        return 0;
+    // It's possible to have hash collisions between arbitrary strings and
+    // known identifiers (e.g. "bvvfg" collides with "script").
+    // However ASSERTs in StringImpl::createStatic guard against there ever being collisions
+    // between static strings.
+    if (!equal(it->value, characters, length))
+        return 0;
+    return it->value;
 }
 
 }

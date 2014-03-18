@@ -92,14 +92,12 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
 #include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Maximum length of data buffer which is used to temporary save generated
 // html content data. This is a soft limit which might be passed if a very large
@@ -526,4 +524,4 @@ bool WebPageSerializerImpl::serialize()
     return didSerialization;
 }
 
-}  // namespace WebKit
+}  // namespace blink

@@ -24,8 +24,8 @@
 #include "modules/geolocation/NavigatorGeolocation.h"
 
 #include "core/dom/Document.h"
-#include "core/page/Frame.h"
-#include "core/page/Navigator.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Navigator.h"
 #include "modules/geolocation/Geolocation.h"
 
 namespace WebCore {

@@ -5,6 +5,7 @@
 #include "content/zygote/zygote_main.h"
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -15,11 +16,12 @@
 #include <unistd.h>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/linux_util.h"
 #include "base/native_library.h"
 #include "base/pickle.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/rand_util.h"
 #include "base/sys_info.h"
@@ -27,7 +29,7 @@
 #include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/pepper_plugin_list.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -260,9 +262,10 @@ void PreloadPepperPlugins() {
       std::string error;
       base::NativeLibrary library = base::LoadNativeLibrary(plugins[i].path,
                                                             &error);
-      DLOG_IF(WARNING, !library) << "Unable to load plugin "
-                                 << plugins[i].path.value() << " "
-                                 << error;
+      VLOG_IF(1, !library) << "Unable to load plugin "
+                           << plugins[i].path.value() << " "
+                           << error;
+
       (void)library;  // Prevent release-mode warning.
     }
   }
@@ -274,7 +277,9 @@ void PreloadPepperPlugins() {
 static void PreSandboxInit() {
   base::RandUint64();
 
+  base::SysInfo::AmountOfPhysicalMemory();
   base::SysInfo::MaxSharedMemorySize();
+  base::SysInfo::NumberOfProcessors();
 
   // ICU DateFormat class (used in base/time_format.cc) needs to get the
   // Olson timezone ID by accessing the zoneinfo files on disk. After
@@ -306,80 +311,8 @@ static void PreSandboxInit() {
       new FontConfigIPC(GetSandboxFD()))->unref();
 }
 
-// Do nothing here
-static void SIGCHLDHandler(int signal) {
-}
-
-// The current process will become a process reaper like init.
-// We fork a child that will continue normally, when it dies, we can safely
-// exit.
-// We need to be careful we close the magic kZygoteIdFd properly in the parent
-// before this function returns.
-static bool CreateInitProcessReaper() {
-  int sync_fds[2];
-  // We want to use send, so we can't use a pipe
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sync_fds)) {
-    LOG(ERROR) << "Failed to create socketpair";
-    return false;
-  }
-
-  // We use normal fork, not the ForkDelegate in this case since we are not a
-  // true Zygote yet.
-  pid_t child_pid = fork();
-  if (child_pid == -1) {
-    (void) HANDLE_EINTR(close(sync_fds[0]));
-    (void) HANDLE_EINTR(close(sync_fds[1]));
-    return false;
-  }
-  if (child_pid) {
-    // We are the parent, assuming the role of an init process.
-    // The disposition for SIGCHLD cannot be SIG_IGN or wait() will only return
-    // once all of our childs are dead. Since we're init we need to reap childs
-    // as they come.
-    struct sigaction action;
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = &SIGCHLDHandler;
-    CHECK(sigaction(SIGCHLD, &action, NULL) == 0);
-
-    (void) HANDLE_EINTR(close(sync_fds[0]));
-    shutdown(sync_fds[1], SHUT_RD);
-    // This "magic" socket must only appear in one process.
-    (void) HANDLE_EINTR(close(kZygoteIdFd));
-    // Tell the child to continue
-    CHECK(HANDLE_EINTR(send(sync_fds[1], "C", 1, MSG_NOSIGNAL)) == 1);
-    (void) HANDLE_EINTR(close(sync_fds[1]));
-
-    for (;;) {
-      // Loop until we have reaped our one natural child
-      siginfo_t reaped_child_info;
-      int wait_ret =
-        HANDLE_EINTR(waitid(P_ALL, 0, &reaped_child_info, WEXITED));
-      if (wait_ret)
-        _exit(1);
-      if (reaped_child_info.si_pid == child_pid) {
-        int exit_code = 0;
-        // We're done waiting
-        if (reaped_child_info.si_code == CLD_EXITED) {
-          exit_code = reaped_child_info.si_status;
-        }
-        // Exit with the same exit code as our parent. This is most likely
-        // useless. _exit with 0 if we got signaled.
-        _exit(exit_code);
-      }
-    }
-  } else {
-    // The child needs to wait for the parent to close kZygoteIdFd to avoid a
-    // race condition
-    (void) HANDLE_EINTR(close(sync_fds[1]));
-    shutdown(sync_fds[0], SHUT_WR);
-    char should_continue;
-    int read_ret = HANDLE_EINTR(read(sync_fds[0], &should_continue, 1));
-    (void) HANDLE_EINTR(close(sync_fds[0]));
-    if (read_ret == 1)
-      return true;
-    else
-      return false;
-  }
+static void CloseFdAndHandleEintr(int fd) {
+  close(fd);
 }
 
 // This will set the *using_suid_sandbox variable to true if the SUID sandbox
@@ -419,7 +352,13 @@ static bool EnterSuidSandbox(LinuxSandbox* linux_sandbox,
     if (getpid() == 1) {
       // The setuid sandbox has created a new PID namespace and we need
       // to assume the role of init.
-      if (!CreateInitProcessReaper()) {
+      // This "magic" socket must only appear in one process, so make sure
+      // it gets closed in the parent after fork().
+      base::Closure zygoteid_fd_closer =
+          base::Bind(CloseFdAndHandleEintr, kZygoteIdFd);
+      const bool init_created =
+          setuid_sandbox->CreateInitProcessReaper(&zygoteid_fd_closer);
+      if (!init_created) {
         LOG(ERROR) << "Error creating an init process to reap zombies";
         return false;
       }

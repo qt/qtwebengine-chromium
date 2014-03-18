@@ -30,7 +30,7 @@
 #include "config.h"
 #include "modules/filesystem/Entry.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/fileapi/FileError.h"
 #include "core/html/VoidCallback.h"
 #include "modules/filesystem/DirectoryEntry.h"
@@ -38,7 +38,7 @@
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
 #include "modules/filesystem/MetadataCallback.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -49,39 +49,29 @@ Entry::Entry(PassRefPtr<DOMFileSystemBase> fileSystem, const String& fullPath)
     ScriptWrappable::init(this);
 }
 
-void Entry::getMetadata(PassRefPtr<MetadataCallback> successCallback, PassRefPtr<ErrorCallback> errorCallbackRef)
+void Entry::getMetadata(PassOwnPtr<MetadataCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
-    RefPtr<ErrorCallback> errorCallback(errorCallbackRef);
-    if (!m_fileSystem->getMetadata(this, successCallback, errorCallback))
-        filesystem()->scheduleCallback(errorCallback.release(), FileError::create(FileError::INVALID_MODIFICATION_ERR));
+    m_fileSystem->getMetadata(this, successCallback, errorCallback);
 }
 
-void Entry::moveTo(PassRefPtr<DirectoryEntry> parent, const String& name, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallbackRef) const
+void Entry::moveTo(PassRefPtr<DirectoryEntry> parent, const String& name, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback) const
 {
-    RefPtr<ErrorCallback> errorCallback(errorCallbackRef);
-    if (!m_fileSystem->move(this, parent.get(), name, successCallback, errorCallback))
-        filesystem()->scheduleCallback(errorCallback.release(), FileError::create(FileError::INVALID_MODIFICATION_ERR));
+    m_fileSystem->move(this, parent.get(), name, successCallback, errorCallback);
 }
 
-void Entry::copyTo(PassRefPtr<DirectoryEntry> parent, const String& name, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallbackRef) const
+void Entry::copyTo(PassRefPtr<DirectoryEntry> parent, const String& name, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback) const
 {
-    RefPtr<ErrorCallback> errorCallback(errorCallbackRef);
-    if (!m_fileSystem->copy(this, parent.get(), name, successCallback, errorCallback))
-        filesystem()->scheduleCallback(errorCallback.release(), FileError::create(FileError::INVALID_MODIFICATION_ERR));
+    m_fileSystem->copy(this, parent.get(), name, successCallback, errorCallback);
 }
 
-void Entry::remove(PassRefPtr<VoidCallback> successCallback, PassRefPtr<ErrorCallback> errorCallbackRef) const
+void Entry::remove(PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback) const
 {
-    RefPtr<ErrorCallback> errorCallback(errorCallbackRef);
-    if (!m_fileSystem->remove(this, successCallback, errorCallback))
-        filesystem()->scheduleCallback(errorCallback.release(), FileError::create(FileError::INVALID_MODIFICATION_ERR));
+    m_fileSystem->remove(this, successCallback, errorCallback);
 }
 
-void Entry::getParent(PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallbackRef) const
+void Entry::getParent(PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback) const
 {
-    RefPtr<ErrorCallback> errorCallback(errorCallbackRef);
-    if (!m_fileSystem->getParent(this, successCallback, errorCallback))
-        filesystem()->scheduleCallback(errorCallback.release(), FileError::create(FileError::INVALID_MODIFICATION_ERR));
+    m_fileSystem->getParent(this, successCallback, errorCallback);
 }
 
 } // namespace WebCore

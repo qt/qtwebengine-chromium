@@ -32,14 +32,12 @@
 #define WebGraphicsContext3D_h
 
 #include "WebCommon.h"
-#include "WebGraphicsMemoryAllocation.h"
-#include "WebGraphicsMemoryStats.h"
 #include "WebNonCopyable.h"
 #include "WebString.h"
 
 struct GrGLInterface;
 
-namespace WebKit {
+namespace blink {
 
 // WGC3D types match the corresponding GL types as defined in OpenGL ES 2.0
 // header file gl2.h from khronos.org.
@@ -94,6 +92,7 @@ public:
             , shareResources(true)
             , preferDiscreteGPU(false)
             , noAutomaticFlushes(false)
+            , failIfMajorPerformanceCaveat(false)
         {
         }
 
@@ -107,6 +106,7 @@ public:
         bool shareResources;
         bool preferDiscreteGPU;
         bool noAutomaticFlushes;
+        bool failIfMajorPerformanceCaveat;
         // FIXME: ideally this would be a WebURL, but it is currently not
         // possible to pass a WebURL by value across the WebKit API boundary.
         // See https://bugs.webkit.org/show_bug.cgi?id=103793#c13 .
@@ -137,21 +137,6 @@ public:
         virtual ~WebGraphicsSwapBuffersCompleteCallbackCHROMIUM() { }
     };
 
-    class WebGraphicsMemoryAllocationChangedCallbackCHROMIUM {
-    public:
-        virtual void onMemoryAllocationChanged(WebGraphicsMemoryAllocation) = 0;
-
-    protected:
-        virtual ~WebGraphicsMemoryAllocationChangedCallbackCHROMIUM() { }
-    };
-
-    class WebGraphicsSyncPointCallback {
-    public:
-        virtual ~WebGraphicsSyncPointCallback() { }
-
-        virtual void onSyncPointReached() = 0;
-    };
-
     // This destructor needs to be public so that using classes can destroy instances if initialization fails.
     virtual ~WebGraphicsContext3D() { }
 
@@ -163,21 +148,11 @@ public:
     // the ID number, the more recently the context has been flushed.
     virtual uint32_t lastFlushID() { return 0; }
 
-    // The size of the region into which this WebGraphicsContext3D is rendering.
-    // Returns the last values passed to reshape().
-    virtual int width() = 0;
-    virtual int height() = 0;
-
     // Resizes the region into which this WebGraphicsContext3D is drawing.
-    virtual void reshape(int width, int height) = 0;
     virtual void reshapeWithScaleFactor(int width, int height, float scaleFactor) { }
 
     // GL_CHROMIUM_setVisibility - Changes the visibility of the backbuffer
     virtual void setVisibilityCHROMIUM(bool visible) = 0;
-
-    // GL_CHROMIUM_gpu_memory_manager - sets callback to observe changes to memory allocation limits.
-    virtual void setMemoryAllocationChangedCallbackCHROMIUM(WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback) { }
-    virtual void sendManagedMemoryStatsCHROMIUM(const WebGraphicsManagedMemoryStats* stats) { }
 
     // GL_EXT_discard_framebuffer - makes specified attachments of currently bound framebuffer undefined.
     virtual void discardFramebufferEXT(WGC3Denum target, WGC3Dsizei numAttachments, const WGC3Denum* attachments) { }
@@ -188,9 +163,6 @@ public:
 
     virtual unsigned insertSyncPoint() { return 0; }
     virtual void waitSyncPoint(unsigned) { }
-    // This call passes ownership of the WebGraphicsSyncPointCallback to the
-    // WebGraphicsContext3D implementation.
-    virtual void signalSyncPoint(unsigned syncPoint, WebGraphicsSyncPointCallback* callback) { delete callback; }
 
     // Copies the contents of the off-screen render target used by the WebGL
     // context to the corresponding texture used by the compositor.
@@ -390,19 +362,31 @@ public:
     virtual void viewport(WGC3Dint x, WGC3Dint y, WGC3Dsizei width, WGC3Dsizei height) = 0;
 
     // Support for buffer creation and deletion.
+    virtual void genBuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void genFramebuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void genRenderbuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void genTextures(WGC3Dsizei count, WebGLId* ids) { }
+
+    virtual void deleteBuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void deleteFramebuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void deleteRenderbuffers(WGC3Dsizei count, WebGLId* ids) { }
+    virtual void deleteTextures(WGC3Dsizei count, WebGLId* ids) { }
+
     virtual WebGLId createBuffer() = 0;
     virtual WebGLId createFramebuffer() = 0;
-    virtual WebGLId createProgram() = 0;
     virtual WebGLId createRenderbuffer() = 0;
-    virtual WebGLId createShader(WGC3Denum) = 0;
     virtual WebGLId createTexture() = 0;
 
     virtual void deleteBuffer(WebGLId) = 0;
     virtual void deleteFramebuffer(WebGLId) = 0;
-    virtual void deleteProgram(WebGLId) = 0;
     virtual void deleteRenderbuffer(WebGLId) = 0;
-    virtual void deleteShader(WebGLId) = 0;
     virtual void deleteTexture(WebGLId) = 0;
+
+    virtual WebGLId createProgram() = 0;
+    virtual WebGLId createShader(WGC3Denum) = 0;
+
+    virtual void deleteShader(WebGLId) = 0;
+    virtual void deleteProgram(WebGLId) = 0;
 
     virtual void setContextLostCallback(WebGraphicsContextLostCallback* callback) { }
     virtual void setErrorMessageCallback(WebGraphicsErrorMessageCallback* callback) { }
@@ -432,10 +416,6 @@ public:
     virtual void endQueryEXT(WGC3Denum target) { }
     virtual void getQueryivEXT(WGC3Denum target, WGC3Denum pname, WGC3Dint* params) { }
     virtual void getQueryObjectuivEXT(WebGLId query, WGC3Denum pname, WGC3Duint* params) { }
-
-    // This call passes ownership of the WebGraphicsSyncPointCallback to the
-    // WebGraphicsContext3D implementation.
-    virtual void signalQuery(WebGLId query, WebGraphicsSyncPointCallback* callback) { delete callback; }
 
     // GL_CHROMIUM_bind_uniform_location
     virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location, const WGC3Dchar* uniform) { }
@@ -480,8 +460,7 @@ public:
     // GL_EXT_draw_buffers
     virtual void drawBuffersEXT(WGC3Dsizei n, const WGC3Denum* bufs) { }
 
-    // FIXME: Make implementations of this class override this method instead and then remove onCreateGrGLInterface().
-    virtual GrGLInterface* createGrGLInterface() { return onCreateGrGLInterface(); }
+    virtual GrGLInterface* createGrGLInterface() { return 0; }
 
     // GL_CHROMIUM_map_image
     virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat) { return 0; }
@@ -494,12 +473,8 @@ public:
     virtual void drawArraysInstancedANGLE(WGC3Denum mode, WGC3Dint first, WGC3Dsizei count, WGC3Dsizei primcount) { }
     virtual void drawElementsInstancedANGLE(WGC3Denum mode, WGC3Dsizei count, WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount) { }
     virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor) { }
-
-protected:
-    virtual GrGLInterface* onCreateGrGLInterface() { return 0; }
-
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

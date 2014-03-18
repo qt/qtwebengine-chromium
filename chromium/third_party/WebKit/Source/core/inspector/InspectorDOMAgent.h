@@ -34,8 +34,8 @@
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/platform/JSONValues.h"
 #include "core/rendering/RenderLayer.h"
+#include "platform/JSONValues.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -150,6 +150,7 @@ public:
     virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<JSONArray>& files);
     virtual void getBoxModel(ErrorString*, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>&);
     virtual void getNodeForLocation(ErrorString*, int x, int y, int* nodeId);
+    virtual void getRelayoutBoundary(ErrorString*, int nodeId, int* relayoutBoundaryNodeId);
 
     static void getEventListeners(Node*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
@@ -158,7 +159,6 @@ public:
     void releaseDanglingNodes();
 
     void domContentLoadedEventFired(Frame*);
-    void loadEventFired(Frame*);
     void didCommitLoad(Frame*, DocumentLoader*);
 
     void didInsertDOMNode(Node*);
@@ -204,9 +204,6 @@ public:
     Element* assertElement(ErrorString*, int nodeId);
     Document* assertDocument(ErrorString*, int nodeId);
 
-    // Methods called from other agents.
-    InspectorPageAgent* pageAgent() { return m_pageAgent; }
-
 private:
     enum SearchMode { NotSearching, SearchingForNormal, SearchingForShadow };
 
@@ -228,6 +225,8 @@ private:
     int pushNodePathToFrontend(Node*);
     void pushChildNodesToFrontend(int nodeId, int depth = 1);
 
+    void invalidateFrameOwnerElement(Frame*);
+
     bool hasBreakpoint(Node*, int type);
     void updateSubtreeBreakpoints(Node* root, uint32_t rootMask, bool value);
     void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, PassRefPtr<JSONObject> description);
@@ -244,6 +243,8 @@ private:
     void discardFrontendBindings();
 
     void innerHighlightQuad(PassOwnPtr<FloatQuad>, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
+
+    bool pushDocumentUponHandlelessOperation(ErrorString*);
 
     InspectorPageAgent* m_pageAgent;
     InjectedScriptManager* m_injectedScriptManager;

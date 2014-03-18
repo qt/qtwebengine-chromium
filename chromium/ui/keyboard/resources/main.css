@@ -21,52 +21,9 @@ kb-keyboard {
   width: 1280px;
 }
 
-kb-shift-key,
-kb-hide-keyboard-key,
-kb-layout-selector,
-kb-key {
-  background-color: #3b3b3e;
-  background-position: center center;
-  background-repeat: no-repeat;
-  background-size: contain;
-  border-top: 2px solid #4b4b4e;
-  border-radius: 2px;
-  color: #ffffff;
-  display: -webkit-box;
-  font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
-  font-weight: 300;
-  margin-left: 0.25em;
-  position: relative;
-}
-
-kb-shift-key::x-key,
-kb-layout-selector::x-key,
-kb-key::x-key {
-  bottom: 0;
-  height: 1.2em;
-  left: 0;
-  margin: auto;
-  padding-left: 0.7em;
-  padding-right: 0.7em;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-kb-key::x-hinttext {
-  color: #7c7c7c;
-  font-size: 70%;
-  position: absolute;
-  right: 7%;
-  top: 5%;
-}
-
-kb-key::x-key[inverted] {
-  color: #7c7c7c;
-}
-
-kb-key::x-hinttext[inverted] {
-  color: #ffffff;
+kb-keyboard.ctrl-active kb-modifier-key[char=Ctrl],
+kb-keyboard.alt-active kb-modifier-key[char=Alt] {
+  color: lightblue;
 }
 
 /**
@@ -80,19 +37,10 @@ kb-keyboard:not(.caps-locked)[keyset=upper] kb-shift-key {
 *.dark {
   background-color: #2a2a2c;
   border-top: 2px solid #3a3a3c;
+  font-size: 70%;
+  margin-left: 0.35em;
 }
 
-/* TODO(stevet): We can probably share most of this with kb-key::x-key. */
-kb-altkey::x-key {
-  bottom: 0;
-  height: 1.2em;
-  left: 0;
-  margin: auto;
-  position: absolute;
-  right: 0;
-  top: 0;
-  text-align: center;
-}
 
 .caps-locked kb-shift-key,
 .active {
@@ -105,69 +53,15 @@ kb-altkey::x-key {
 }
 
 /**
- * TODO(kevers): Use weight attribute for kb-key rather than CSS rules to
- * enable special keys to be used for multiple layouts when the weights
- * need to vary.
+ * The microphone key is handled separately from other images since the image
+ * displayed changes depending on whether it's pressed or not.
  */
-.at,
-.com,
-.comma,
-.period,
-.tab {
-  -webkit-box-flex: 1.3 !important;
-}
-
-.return {
-  -webkit-box-flex: 2.1 !important;
-}
-
-.microphone {
-  -webkit-box-flex: 1.5 !important;
-}
-
-.symbol {
-  -webkit-box-flex: 1.25 !important;
-}
-
-.backspace {
-  -webkit-box-flex: 1.7 !important;
-}
-
-.left-more {
-  -webkit-box-flex: 1.8 !important;
-}
-
-.right-more {
-  -webkit-box-flex: 1.8 !important;
-}
-
-.bar {
-  -webkit-box-flex: 0.6 !important;
-}
-
-kb-shift-key.shift,
-kb-key:-webkit-any(.backspace,
-                   .dotcom,
-                   .left-more,
-                   .return,
-                   .symbol,
-                   .tab) {
-  font-size: 70%;
-  /* Adjust margin for consistent spacing with the smaller font size. */
-  margin-left: 0.35em;
-}
-
 .microphone {
   background-image: url('images/microphone.svg');
   background-position: 4%;
-  background-size: 25%;
+  background-size: 25% !important;
 }
 
 .audio .microphone {
   background-image: url('images/microphone-green.svg');
-}
-
-.hide-keyboard,
-.layout-selector {
-  background-image: url('images/keyboard.svg');
 }

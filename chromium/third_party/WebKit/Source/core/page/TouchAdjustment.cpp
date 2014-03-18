@@ -27,17 +27,16 @@
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntSize.h"
-#include "core/platform/text/TextBreakIterator.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/text/TextBreakIterator.h"
 
 namespace WebCore {
 
@@ -151,18 +150,18 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
     if (!node->isTextNode())
         return appendBasicSubtargetsForNode(node, subtargets);
 
-    Text* textNode = static_cast<WebCore::Text*>(node);
-    RenderText* textRenderer = static_cast<RenderText*>(textNode->renderer());
+    Text* textNode = toText(node);
+    RenderText* textRenderer = toRenderText(textNode->renderer());
 
     if (textRenderer->frame()->editor().behavior().shouldSelectOnContextualMenuClick()) {
         // Make subtargets out of every word.
         String textValue = textNode->data();
         TextBreakIterator* wordIterator = wordBreakIterator(textValue, 0, textValue.length());
-        int lastOffset = textBreakFirst(wordIterator);
+        int lastOffset = wordIterator->first();
         if (lastOffset == -1)
             return;
         int offset;
-        while ((offset = textBreakNext(wordIterator)) != -1) {
+        while ((offset = wordIterator->next()) != -1) {
             if (isWordTextBreak(wordIterator)) {
                 Vector<FloatQuad> quads;
                 textRenderer->absoluteQuadsForRange(quads, lastOffset, offset);

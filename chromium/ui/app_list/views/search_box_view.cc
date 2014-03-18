@@ -8,11 +8,14 @@
 
 #include "grit/ui_resources.h"
 #include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/views/app_list_menu_views.h"
 #include "ui/app_list/views/search_box_view_delegate.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
+#include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -25,7 +28,9 @@ const int kPadding = 14;
 const int kIconDimension = 32;
 const int kPreferredWidth = 360;
 const int kPreferredHeight = 48;
+#if !defined(OS_CHROMEOS)
 const int kMenuButtonDimension = 29;
+#endif
 
 const SkColor kHintTextColor = SkColorSetRGB(0xA0, 0xA0, 0xA0);
 
@@ -36,15 +41,14 @@ const int kMenuXOffsetFromButton = -7;
 }  // namespace
 
 SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
-                             AppListViewDelegate* view_delegate,
-                             AppListModel* model)
+                             AppListViewDelegate* view_delegate)
     : delegate_(delegate),
       view_delegate_(view_delegate),
-      model_(model),
+      model_(NULL),
       icon_view_(new views::ImageView),
+      speech_button_(NULL),
       search_box_(new views::Textfield),
       contents_view_(NULL) {
-  DCHECK(model_);
   AddChildView(icon_view_);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -65,13 +69,23 @@ SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
   search_box_->SetController(this);
   AddChildView(search_box_);
 
-  model_->search_box()->AddObserver(this);
-  IconChanged();
-  HintTextChanged();
+  ModelChanged();
 }
 
 SearchBoxView::~SearchBoxView() {
   model_->search_box()->RemoveObserver(this);
+}
+
+void SearchBoxView::ModelChanged() {
+  if (model_)
+    model_->search_box()->RemoveObserver(this);
+
+  model_ = view_delegate_->GetModel();
+  DCHECK(model_);
+  model_->search_box()->AddObserver(this);
+  IconChanged();
+  SpeechRecognitionButtonPropChanged();
+  HintTextChanged();
 }
 
 bool SearchBoxView::HasSearch() const {
@@ -103,6 +117,18 @@ void SearchBoxView::Layout() {
   icon_frame.set_width(kIconDimension + 2 * kPadding);
   icon_view_->SetBoundsRect(icon_frame);
 
+  // Places |speech_button_| if exists. |speech_button_frame| holds its bounds
+  // to calculate the search box bounds.
+  gfx::Rect speech_button_frame;
+  if (speech_button_) {
+    speech_button_frame = icon_frame;
+    speech_button_frame.set_x(rect.right() - icon_frame.width());
+    gfx::Size button_size = speech_button_->GetPreferredSize();
+    gfx::Point button_origin = speech_button_frame.CenterPoint();
+    button_origin.Offset(-button_size.width() / 2, -button_size.height() / 2);
+    speech_button_->SetBoundsRect(gfx::Rect(button_origin, button_size));
+  }
+
   gfx::Rect menu_button_frame(rect);
 #if !defined(OS_CHROMEOS)
   menu_button_frame.set_width(kMenuButtonDimension);
@@ -116,8 +142,11 @@ void SearchBoxView::Layout() {
 
   gfx::Rect edit_frame(rect);
   edit_frame.set_x(icon_frame.right());
-  edit_frame.set_width(
-      rect.width() - icon_frame.width() - kPadding - menu_button_frame.width());
+  int edit_frame_width =
+      rect.width() - icon_frame.width() - kPadding - menu_button_frame.width();
+  if (!speech_button_frame.IsEmpty())
+    edit_frame_width -= speech_button_frame.width() + kPadding;
+  edit_frame.set_width(edit_frame_width);
   edit_frame.ClampToCenteredSize(
       gfx::Size(edit_frame.width(), search_box_->GetPreferredSize().height()));
   search_box_->SetBoundsRect(edit_frame);
@@ -158,9 +187,15 @@ bool SearchBoxView::HandleKeyEvent(views::Textfield* sender,
   return handled;
 }
 
+void SearchBoxView::ButtonPressed(views::Button* sender,
+                                  const ui::Event& event) {
+  DCHECK(!speech_button_ && sender == speech_button_);
+  view_delegate_->ToggleSpeechRecognition();
+}
+
 void SearchBoxView::OnMenuButtonClicked(View* source, const gfx::Point& point) {
   if (!menu_)
-    menu_.reset(new AppListMenuViews(view_delegate_, model_));
+    menu_.reset(new AppListMenuViews(view_delegate_));
 
   const gfx::Point menu_location =
       menu_button_->GetBoundsInScreen().bottom_right() +
@@ -170,6 +205,26 @@ void SearchBoxView::OnMenuButtonClicked(View* source, const gfx::Point& point) {
 
 void SearchBoxView::IconChanged() {
   icon_view_->SetImage(model_->search_box()->icon());
+}
+
+void SearchBoxView::SpeechRecognitionButtonPropChanged() {
+  const SearchBoxModel::ButtonProperty* speech_button_prop =
+      model_->search_box()->speech_button();
+  if (speech_button_prop) {
+    if (!speech_button_) {
+      speech_button_ = new views::ImageButton(this);
+      AddChildView(speech_button_);
+    }
+    speech_button_->SetImage(views::Button::STATE_NORMAL,
+                            &speech_button_prop->icon);
+    speech_button_->SetTooltipText(speech_button_prop->tooltip);
+  } else {
+    if (speech_button_) {
+      // Deleting a view will detach it from its parent.
+      delete speech_button_;
+      speech_button_ = NULL;
+    }
+  }
 }
 
 void SearchBoxView::HintTextChanged() {

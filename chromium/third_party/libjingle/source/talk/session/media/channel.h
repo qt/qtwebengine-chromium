@@ -31,6 +31,7 @@
 #include <string>
 #include <vector>
 
+#include "talk/app/webrtc/datachannelinterface.h"
 #include "talk/base/asyncudpsocket.h"
 #include "talk/base/criticalsection.h"
 #include "talk/base/network.h"
@@ -66,6 +67,12 @@ enum SinkType {
 // BaseChannel contains logic common to voice and video, including
 // enable/mute, marshaling calls to a worker thread, and
 // connection and media monitors.
+//
+// WARNING! SUBCLASSES MUST CALL Deinit() IN THEIR DESTRUCTORS!
+// This is required to avoid a data race between the destructor modifying the
+// vtable, and the media channel's thread using BaseChannel as the
+// NetworkInterface.
+
 class BaseChannel
     : public talk_base::MessageHandler, public sigslot::has_slots<>,
       public MediaChannel::NetworkInterface {
@@ -76,6 +83,9 @@ class BaseChannel
   virtual ~BaseChannel();
   bool Init(TransportChannel* transport_channel,
             TransportChannel* rtcp_transport_channel);
+  // Deinit may be called multiple times and is simply ignored if it's alreay
+  // done.
+  void Deinit();
 
   talk_base::Thread* worker_thread() const { return worker_thread_; }
   BaseSession* session() const { return session_; }
@@ -87,10 +97,6 @@ class BaseChannel
     return rtcp_transport_channel_;
   }
   bool enabled() const { return enabled_; }
-  // Set to true to have the channel optimistically allow data to be sent even
-  // when the channel isn't fully writable.
-  void set_optimistic_data_send(bool value) { optimistic_data_send_ = value; }
-  bool optimistic_data_send() const { return optimistic_data_send_; }
 
   // This function returns true if we are using SRTP.
   bool secure() const { return srtp_filter_.IsActive(); }
@@ -259,8 +265,11 @@ class BaseChannel
 
   // From TransportChannel
   void OnWritableState(TransportChannel* channel);
-  virtual void OnChannelRead(TransportChannel* channel, const char* data,
-                             size_t len, int flags);
+  virtual void OnChannelRead(TransportChannel* channel,
+                             const char* data,
+                             size_t len,
+                             const talk_base::PacketTime& packet_time,
+                             int flags);
   void OnReadyToSend(TransportChannel* channel);
 
   bool PacketIsRtcp(const TransportChannel* channel, const char* data,
@@ -268,7 +277,8 @@ class BaseChannel
   bool SendPacket(bool rtcp, talk_base::Buffer* packet,
                   talk_base::DiffServCodePoint dscp);
   virtual bool WantsPacket(bool rtcp, talk_base::Buffer* packet);
-  void HandlePacket(bool rtcp, talk_base::Buffer* packet);
+  void HandlePacket(bool rtcp, talk_base::Buffer* packet,
+                    const talk_base::PacketTime& packet_time);
 
   // Apply the new local/remote session description.
   void OnNewLocalDescription(BaseSession* session, ContentAction action);
@@ -309,6 +319,7 @@ class BaseChannel
   virtual bool SetRemoteContent_w(const MediaContentDescription* content,
                                   ContentAction action) = 0;
 
+  bool CheckSrtpConfig(const std::vector<CryptoParams>& cryptos, bool* dtls);
   bool SetSrtp_w(const std::vector<CryptoParams>& params, ContentAction action,
                  ContentSource src);
   bool SetRtcpMux_w(bool enable, ContentAction action, ContentSource src);
@@ -351,7 +362,6 @@ class BaseChannel
   bool writable_;
   bool rtp_ready_to_send_;
   bool rtcp_ready_to_send_;
-  bool optimistic_data_send_;
   bool was_ever_writable_;
   MediaContentDirection local_content_direction_;
   MediaContentDirection remote_content_direction_;
@@ -435,7 +445,9 @@ class VoiceChannel : public BaseChannel {
  private:
   // overrides from BaseChannel
   virtual void OnChannelRead(TransportChannel* channel,
-                             const char* data, size_t len, int flags);
+                             const char* data, size_t len,
+                             const talk_base::PacketTime& packet_time,
+                             int flags);
   virtual void ChangeState();
   virtual const ContentInfo* GetFirstContent(const SessionDescription* sdesc);
   virtual bool SetLocalContent_w(const MediaContentDescription* content,
@@ -604,6 +616,11 @@ class DataChannel : public BaseChannel {
   void StartMediaMonitor(int cms);
   void StopMediaMonitor();
 
+  // Should be called on the signaling thread only.
+  bool ready_to_send_data() const {
+    return ready_to_send_data_;
+  }
+
   sigslot::signal2<DataChannel*, const DataMediaInfo&> SignalMediaMonitor;
   sigslot::signal2<DataChannel*, const std::vector<ConnectionInfo>&>
       SignalConnectionMonitor;
@@ -617,6 +634,11 @@ class DataChannel : public BaseChannel {
   // That occurs when the channel is enabled, the transport is writable,
   // both local and remote descriptions are set, and the channel is unblocked.
   sigslot::signal1<bool> SignalReadyToSendData;
+  // Signal for notifying when a new stream is added from the remote side. Used
+  // for the in-band negotioation through the OPEN message for SCTP data
+  // channel.
+  sigslot::signal2<const std::string&, const webrtc::DataChannelInit&>
+      SignalNewStreamReceived;
 
  protected:
   // downcasts a MediaChannel.
@@ -656,6 +678,17 @@ class DataChannel : public BaseChannel {
 
   typedef talk_base::TypedMessageData<bool> DataChannelReadyToSendMessageData;
 
+  struct DataChannelNewStreamReceivedMessageData
+      : public talk_base::MessageData {
+    DataChannelNewStreamReceivedMessageData(
+        const std::string& label, const webrtc::DataChannelInit& init)
+        : label(label),
+          init(init) {
+    }
+    const std::string label;
+    const webrtc::DataChannelInit init;
+  };
+
   // overrides from BaseChannel
   virtual const ContentInfo* GetFirstContent(const SessionDescription* sdesc);
   // If data_channel_type_ is DCT_NONE, set it.  Otherwise, check that
@@ -684,12 +717,15 @@ class DataChannel : public BaseChannel {
       const ReceiveDataParams& params, const char* data, size_t len);
   void OnDataChannelError(uint32 ssrc, DataMediaChannel::Error error);
   void OnDataChannelReadyToSend(bool writable);
+  void OnDataChannelNewStreamReceived(const std::string& label,
+                                      const webrtc::DataChannelInit& init);
   void OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode, SrtpFilter::Error error);
 
   talk_base::scoped_ptr<DataMediaMonitor> media_monitor_;
   // TODO(pthatcher): Make a separate SctpDataChannel and
   // RtpDataChannel instead of using this.
   DataChannelType data_channel_type_;
+  bool ready_to_send_data_;
 };
 
 }  // namespace cricket

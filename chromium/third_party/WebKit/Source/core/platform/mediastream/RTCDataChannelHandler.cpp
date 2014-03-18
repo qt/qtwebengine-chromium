@@ -23,21 +23,16 @@
  */
 
 #include "config.h"
-
 #include "core/platform/mediastream/RTCDataChannelHandler.h"
-
-#include "core/platform/mediastream/RTCDataChannelHandlerClient.h"
-#include "public/platform/WebRTCDataChannelHandler.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-PassOwnPtr<RTCDataChannelHandler> RTCDataChannelHandler::create(WebKit::WebRTCDataChannelHandler* webHandler)
+PassOwnPtr<RTCDataChannelHandler> RTCDataChannelHandler::create(blink::WebRTCDataChannelHandler* webHandler)
 {
     return adoptPtr(new RTCDataChannelHandler(webHandler));
 }
 
-RTCDataChannelHandler::RTCDataChannelHandler(WebKit::WebRTCDataChannelHandler* webHandler)
+RTCDataChannelHandler::RTCDataChannelHandler(blink::WebRTCDataChannelHandler* webHandler)
     : m_webHandler(adoptPtr(webHandler))
     , m_client(0)
 {
@@ -119,7 +114,7 @@ void RTCDataChannelHandler::didChangeReadyState(WebRTCDataChannelHandlerClient::
         m_client->didChangeReadyState(static_cast<RTCDataChannelHandlerClient::ReadyState>(state));
 }
 
-void RTCDataChannelHandler::didReceiveStringData(const WebKit::WebString& data) const
+void RTCDataChannelHandler::didReceiveStringData(const blink::WebString& data) const
 {
     if (m_client)
         m_client->didReceiveStringData(data);

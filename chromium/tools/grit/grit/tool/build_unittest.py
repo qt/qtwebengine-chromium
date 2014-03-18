@@ -33,6 +33,29 @@ class BuildUnittest(unittest.TestCase):
         self.extra_verbose = False
     builder.Run(DummyOpts(), ['-o', output_dir])
 
+  def testGenerateDepFile(self):
+    output_dir = tempfile.mkdtemp()
+    builder = build.RcBuilder()
+    class DummyOpts(object):
+      def __init__(self):
+        self.input = util.PathFromRoot('grit/testdata/substitute.grd')
+        self.verbose = False
+        self.extra_verbose = False
+    builder.Run(DummyOpts(), ['-o', output_dir, '--dep-dir', output_dir])
+
+    expected_dep_file = os.path.join(output_dir, 'substitute.grd.d')
+    self.failUnless(os.path.isfile(expected_dep_file))
+    with open(expected_dep_file) as f:
+      line = f.readline()
+      (dep_file_name, deps_string) = line.split(': ')
+      deps = deps_string.split(' ')
+      self.failUnlessEqual(os.path.abspath(expected_dep_file),
+          os.path.abspath(os.path.join(output_dir, dep_file_name)),
+          "depfile should refer to itself as the depended upon file")
+      self.failUnlessEqual(1, len(deps))
+      self.failUnlessEqual(deps[0],
+          util.PathFromRoot('grit/testdata/substitute.xmb'))
+
 
 if __name__ == '__main__':
   unittest.main()

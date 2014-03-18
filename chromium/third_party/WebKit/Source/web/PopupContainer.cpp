@@ -31,25 +31,23 @@
 #include "config.h"
 #include "PopupContainer.h"
 
-#include "PopupListBox.h"
 #include "core/dom/Document.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformKeyboardEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/PlatformTouchEvent.h"
-#include "core/platform/PlatformWheelEvent.h"
-#include "core/platform/PopupMenuClient.h"
-#include "core/platform/chromium/FramelessScrollView.h"
-#include "core/platform/chromium/FramelessScrollViewClient.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformKeyboardEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformScreen.h"
+#include "platform/PlatformTouchEvent.h"
+#include "platform/PlatformWheelEvent.h"
+#include "platform/PopupMenuClient.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/scroll/FramelessScrollViewClient.h"
 #include <limits>
 
 namespace WebCore {
@@ -190,7 +188,10 @@ IntRect PopupContainer::layoutAndCalculateWidgetRect(int targetControlHeight, co
     FloatRect screen = screenAvailableRect(m_frameView.get());
     // Use popupInitialCoordinate.x() + rightOffset because RTL position
     // needs to be considered.
-    widgetRectInScreen = chromeClient().rootViewToScreen(IntRect(popupInitialCoordinate.x() + rightOffset, popupInitialCoordinate.y() + verticalForRTLOffset, targetSize.width(), targetSize.height()));
+    float pageScaleFactor = m_frameView->frame().page()->pageScaleFactor();
+    int popupX = round((popupInitialCoordinate.x() + rightOffset) * pageScaleFactor);
+    int popupY = round((popupInitialCoordinate.y() + verticalForRTLOffset) * pageScaleFactor);
+    widgetRectInScreen = chromeClient().rootViewToScreen(IntRect(popupX, popupY, targetSize.width(), targetSize.height()));
 
     // If we have multiple screens and the browser rect is in one screen, we
     // have to clip the window width to the screen width.
@@ -306,6 +307,7 @@ bool PopupContainer::handleGestureEvent(const PlatformGestureEvent& gestureEvent
     case PlatformEvent::GestureScrollBegin:
     case PlatformEvent::GestureScrollEnd:
     case PlatformEvent::GestureTapDown:
+    case PlatformEvent::GestureShowPress:
         break;
     default:
         ASSERT_NOT_REACHED();

@@ -15,6 +15,7 @@
 
 class GrTexture;
 class GrRenderTarget;
+struct SkImageInfo;
 
 class GrSurface : public GrResource {
 public:
@@ -57,6 +58,8 @@ public:
      * Return the descriptor describing the surface
      */
     const GrTextureDesc& desc() const { return fDesc; }
+
+    void asImageInfo(SkImageInfo*) const;
 
     /**
      * @return the texture associated with the surface, may be NULL.
@@ -125,6 +128,12 @@ public:
                              const void* buffer,
                              size_t rowBytes = 0,
                              uint32_t pixelOpsFlags = 0) = 0;
+
+    /**
+     * Write the contents of the surface to a PNG. Returns true if successful.
+     * @param filename      Full path to desired file
+     */
+    bool savePixels(const char* filename);
 
 protected:
     GrSurface(GrGpu* gpu, bool isWrapped, const GrTextureDesc& desc)

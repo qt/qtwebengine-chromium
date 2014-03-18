@@ -38,7 +38,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
@@ -52,7 +52,7 @@ int area(const RectType& rect) {
 
 Node* findNonEmptyAnchorNode(const IntPoint& point, const IntRect& viewRect, EventHandler* eventHandler)
 {
-    Node* node = eventHandler->hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent).innerNode();
+    Node* node = eventHandler->hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
 
     // If the node bounding box is sufficiently large, make a single attempt to
     // find a smaller node; the larger the node bounds, the greater the
@@ -61,7 +61,7 @@ Node* findNonEmptyAnchorNode(const IntPoint& point, const IntRect& viewRect, Eve
     if (node && area(node->boundingBox()) > maxNodeArea) {
         IntSize pointOffset = viewRect.size();
         pointOffset.scale(viewportAnchorRelativeEpsilon);
-        node = eventHandler->hitTestResultAtPoint(point + pointOffset, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent).innerNode();
+        node = eventHandler->hitTestResultAtPoint(point + pointOffset, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
     }
 
     while (node && node->boundingBox().isEmpty())
@@ -124,4 +124,4 @@ IntPoint ViewportAnchor::computeOrigin(const IntSize& currentViewSize) const
     return flooredIntPoint(anchorPoint - anchorOffsetFromOrigin);
 }
 
-} // namespace WebKit
+} // namespace blink

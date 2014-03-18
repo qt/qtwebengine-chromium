@@ -37,7 +37,6 @@
 #include "WebAXEnums.h"
 #include "WebContentDetectionResult.h"
 #include "WebDragOperation.h"
-#include "WebEditingAction.h"
 #include "WebFileChooserCompletion.h"
 #include "WebFileChooserParams.h"
 #include "WebPageVisibilityState.h"
@@ -46,14 +45,13 @@
 #include "WebTextDirection.h"
 #include "WebWidgetClient.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebAXObject;
 class WebColorChooser;
 class WebColorChooserClient;
 class WebCompositorOutputSurface;
 class WebDateTimeChooserCompletion;
-class WebDeviceOrientationClient;
 class WebDragData;
 class WebElement;
 class WebExternalPopupMenu;
@@ -81,6 +79,7 @@ class WebURLRequest;
 class WebUserMediaClient;
 class WebView;
 class WebWidget;
+struct WebColorSuggestion;
 struct WebConsoleMessage;
 struct WebContextMenuData;
 struct WebDateTimeChooserParams;
@@ -108,7 +107,8 @@ public:
                                 const WebURLRequest& request,
                                 const WebWindowFeatures& features,
                                 const WebString& name,
-                                WebNavigationPolicy policy) {
+                                WebNavigationPolicy policy,
+                                bool suppressOpener) {
         return 0;
     }
 
@@ -151,7 +151,6 @@ public:
     // Called by WebHelperPlugin to provide the WebFrameClient interface for the WebFrame.
     virtual void initializeHelperPluginWebFrame(WebHelperPlugin*) { }
 
-
     // Navigational --------------------------------------------------------
 
     // These notifications bracket any loading that occurs in the WebView.
@@ -167,25 +166,10 @@ public:
 
     // These methods allow the client to intercept and overrule editing
     // operations.
-    virtual bool shouldBeginEditing(const WebRange&) { return true; }
-    virtual bool shouldEndEditing(const WebRange&) { return true; }
-    virtual bool shouldInsertNode(
-        const WebNode&, const WebRange&, WebEditingAction) { return true; }
-    virtual bool shouldInsertText(
-        const WebString&, const WebRange&, WebEditingAction) { return true; }
-    virtual bool shouldChangeSelectedRange(
-        const WebRange& from, const WebRange& to, WebTextAffinity,
-        bool stillSelecting) { return true; }
-    virtual bool shouldDeleteRange(const WebRange&) { return true; }
-    virtual bool shouldApplyStyle(const WebString& style, const WebRange&) { return true; }
-
-    virtual void didBeginEditing() { }
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void didChangeSelection(bool isSelectionEmpty) { }
     virtual void didChangeContents() { }
     virtual void didExecuteCommand(const WebString& commandName) { }
-    virtual void didEndEditing() { }
-    virtual void didChangeFormState(const WebNode&) { }
 
     // This method is called in response to WebView's handleInputEvent()
     // when the default action for the current keyboard event is not
@@ -201,9 +185,17 @@ public:
     // This method opens the color chooser and returns a new WebColorChooser
     // instance. If there is a WebColorChooser already from the last time this
     // was called, it ends the color chooser by calling endChooser, and replaces
-    // it with the new one.
+    // it with the new one. The given list of suggestions can be used to show a
+    // simple interface with a limited set of choices.
+
+    // FIXME: Should be removed when the chromium side change lands.
     virtual WebColorChooser* createColorChooser(WebColorChooserClient*,
                                                 const WebColor&) { return 0; }
+
+    virtual WebColorChooser* createColorChooser(
+        WebColorChooserClient*,
+        const WebColor&,
+        const WebVector<WebColorSuggestion>&) { return 0; }
 
     // This method returns immediately after showing the dialog. When the
     // dialog is closed, it should call the WebFileChooserCompletion to
@@ -349,11 +341,6 @@ public:
     // Access the embedder API for speech recognition services.
     virtual WebSpeechRecognizer* speechRecognizer() { return 0; }
 
-    // Device Orientation --------------------------------------------------
-
-    // Access the embedder API for device orientation services.
-    virtual WebDeviceOrientationClient* deviceOrientationClient() { return 0; }
-
     // Zoom ----------------------------------------------------------------
 
     // Informs the browser that the zoom levels for this frame have changed from
@@ -409,6 +396,6 @@ protected:
     ~WebViewClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

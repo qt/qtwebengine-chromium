@@ -32,7 +32,7 @@
 #define RTCVoidRequestImpl_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/platform/mediastream/RTCVoidRequest.h"
+#include "platform/mediastream/RTCVoidRequest.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ class VoidCallback;
 
 class RTCVoidRequestImpl : public RTCVoidRequest, public ActiveDOMObject {
 public:
-    static PassRefPtr<RTCVoidRequestImpl> create(ScriptExecutionContext*, PassRefPtr<VoidCallback>, PassRefPtr<RTCErrorCallback>);
+    static PassRefPtr<RTCVoidRequestImpl> create(ExecutionContext*, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
     virtual ~RTCVoidRequestImpl();
 
     virtual void requestSucceeded();
@@ -51,12 +51,12 @@ public:
     virtual void stop() OVERRIDE;
 
 private:
-    RTCVoidRequestImpl(ScriptExecutionContext*, PassRefPtr<VoidCallback>, PassRefPtr<RTCErrorCallback>);
+    RTCVoidRequestImpl(ExecutionContext*, PassOwnPtr<VoidCallback>, PassOwnPtr<RTCErrorCallback>);
 
     void clear();
 
-    RefPtr<VoidCallback> m_successCallback;
-    RefPtr<RTCErrorCallback> m_errorCallback;
+    OwnPtr<VoidCallback> m_successCallback;
+    OwnPtr<RTCErrorCallback> m_errorCallback;
 };
 
 } // namespace WebCore

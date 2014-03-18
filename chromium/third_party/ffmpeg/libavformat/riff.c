@@ -40,6 +40,8 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H264,         MKTAG('V', 'S', 'S', 'H') },
     { AV_CODEC_ID_H264,         MKTAG('Q', '2', '6', '4') }, /* QNAP surveillance system */
     { AV_CODEC_ID_H264,         MKTAG('V', '2', '6', '4') },
+    { AV_CODEC_ID_H264,         MKTAG('G', 'A', 'V', 'C') }, /* GeoVision camera */
+    { AV_CODEC_ID_H264,         MKTAG('U', 'M', 'S', 'V') },
     { AV_CODEC_ID_H263,         MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_H263,         MKTAG('X', '2', '6', '3') },
     { AV_CODEC_ID_H263,         MKTAG('T', '2', '6', '3') },
@@ -83,9 +85,12 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_MPEG4,        MKTAG('M', '4', 'T', '3') },
     { AV_CODEC_ID_MPEG4,        MKTAG('G', 'E', 'O', 'X') },
     /* flipped video */
+    { AV_CODEC_ID_MPEG4,        MKTAG('G', '2', '6', '4') },
+    /* flipped video */
     { AV_CODEC_ID_MPEG4,        MKTAG('H', 'D', 'X', '4') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'M', '4', 'V') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'M', 'K', '2') },
+    { AV_CODEC_ID_MPEG4,        MKTAG('D', 'Y', 'M', '4') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'I', 'G', 'I') },
     { AV_CODEC_ID_MPEG4,        MKTAG('I', 'N', 'M', 'C') },
     /* Ephv MPEG-4 */
@@ -250,9 +255,11 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_VP6,          MKTAG('V', 'P', '6', '0') },
     { AV_CODEC_ID_VP6,          MKTAG('V', 'P', '6', '1') },
     { AV_CODEC_ID_VP6,          MKTAG('V', 'P', '6', '2') },
+    { AV_CODEC_ID_VP6A,         MKTAG('V', 'P', '6', 'A') },
     { AV_CODEC_ID_VP6F,         MKTAG('V', 'P', '6', 'F') },
     { AV_CODEC_ID_VP6F,         MKTAG('F', 'L', 'V', '4') },
     { AV_CODEC_ID_VP8,          MKTAG('V', 'P', '8', '0') },
+    { AV_CODEC_ID_VP9,          MKTAG('V', 'P', '9', '0') },
     { AV_CODEC_ID_ASV1,         MKTAG('A', 'S', 'V', '1') },
     { AV_CODEC_ID_ASV2,         MKTAG('A', 'S', 'V', '2') },
     { AV_CODEC_ID_VCR1,         MKTAG('V', 'C', 'R', '1') },
@@ -385,9 +392,11 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_ADPCM_IMA_DK4,   0x0061 },
     /* rogue format number */
     { AV_CODEC_ID_ADPCM_IMA_DK3,   0x0062 },
+    { AV_CODEC_ID_ADPCM_G726,      0x0064 },
     { AV_CODEC_ID_ADPCM_IMA_WAV,   0x0069 },
     { AV_CODEC_ID_METASOUND,       0x0075 },
     { AV_CODEC_ID_AAC,             0x00ff },
+    { AV_CODEC_ID_G723_1,          0x0111 },
     { AV_CODEC_ID_SIPR,            0x0130 },
     { AV_CODEC_ID_WMAV1,           0x0160 },
     { AV_CODEC_ID_WMAV2,           0x0161 },
@@ -410,6 +419,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_PCM_MULAW,       0x6c75 },
     { AV_CODEC_ID_AAC,             0x706d },
     { AV_CODEC_ID_AAC,             0x4143 },
+    { AV_CODEC_ID_XAN_DPCM,        0x594a },
     { AV_CODEC_ID_G723_1,          0xA100 },
     { AV_CODEC_ID_AAC,             0xA106 },
     { AV_CODEC_ID_SPEEX,           0xA109 },

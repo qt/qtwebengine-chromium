@@ -61,7 +61,6 @@
 #include "ui/base/ime/win/imm32_manager.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/base/sequential_id_generator.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
@@ -74,6 +73,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/sequential_id_generator.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
@@ -83,9 +83,9 @@
 using base::TimeDelta;
 using base::TimeTicks;
 using ui::ViewProp;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebTextDirection;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
+using blink::WebTextDirection;
 
 namespace content {
 namespace {
@@ -202,10 +202,10 @@ bool DecodeScrollGesture(const GESTUREINFO& gi,
   return true;
 }
 
-WebKit::WebMouseWheelEvent MakeFakeScrollWheelEvent(HWND hwnd,
+blink::WebMouseWheelEvent MakeFakeScrollWheelEvent(HWND hwnd,
                                                     POINT start,
                                                     POINT delta) {
-  WebKit::WebMouseWheelEvent result;
+  blink::WebMouseWheelEvent result;
   result.type = WebInputEvent::MouseWheel;
   result.timeStampSeconds = ::GetMessageTime() / 1000.0;
   result.button = WebMouseEvent::ButtonNone;
@@ -236,17 +236,17 @@ inline void SetTouchType(TOUCHINPUT* point, int type) {
   point->dwFlags = (point->dwFlags & kTouchMask) | type;
 }
 
-ui::EventType ConvertToUIEvent(WebKit::WebTouchPoint::State t) {
+ui::EventType ConvertToUIEvent(blink::WebTouchPoint::State t) {
   switch (t) {
-    case WebKit::WebTouchPoint::StatePressed:
+    case blink::WebTouchPoint::StatePressed:
       return ui::ET_TOUCH_PRESSED;
-    case WebKit::WebTouchPoint::StateMoved:
+    case blink::WebTouchPoint::StateMoved:
       return ui::ET_TOUCH_MOVED;
-    case WebKit::WebTouchPoint::StateStationary:
+    case blink::WebTouchPoint::StateStationary:
       return ui::ET_TOUCH_STATIONARY;
-    case WebKit::WebTouchPoint::StateReleased:
+    case blink::WebTouchPoint::StateReleased:
       return ui::ET_TOUCH_RELEASED;
-    case WebKit::WebTouchPoint::StateCancelled:
+    case blink::WebTouchPoint::StateCancelled:
       return ui::ET_TOUCH_CANCELLED;
     default:
       DCHECK(false) << "Unexpected ui type. " << t;
@@ -255,9 +255,9 @@ ui::EventType ConvertToUIEvent(WebKit::WebTouchPoint::State t) {
 }
 
 // Creates a WebGestureEvent corresponding to the given |gesture|
-WebKit::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
+blink::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
                                               const ui::GestureEvent& gesture) {
-  WebKit::WebGestureEvent gesture_event =
+  blink::WebGestureEvent gesture_event =
       MakeWebGestureEventFromUIEvent(gesture);
 
   POINT client_point = gesture.location().ToPOINT();
@@ -272,17 +272,17 @@ WebKit::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
   return gesture_event;
 }
 
-WebKit::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
-  WebKit::WebGestureEvent gesture_event;
+blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
+  blink::WebGestureEvent gesture_event;
   gesture_event.timeStampSeconds = time_stamp;
-  gesture_event.type = WebKit::WebGestureEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
+  gesture_event.type = blink::WebGestureEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
   return gesture_event;
 }
 
 class TouchEventFromWebTouchPoint : public ui::TouchEvent {
  public:
-  TouchEventFromWebTouchPoint(const WebKit::WebTouchPoint& touch_point,
+  TouchEventFromWebTouchPoint(const blink::WebTouchPoint& touch_point,
                               base::TimeDelta& timestamp)
       : ui::TouchEvent(ConvertToUIEvent(touch_point.state),
                        touch_point.position,
@@ -307,7 +307,7 @@ bool ShouldSendPinchGesture() {
 }
 
 void GetScreenInfoForWindow(gfx::NativeViewId id,
-                            WebKit::WebScreenInfo* results) {
+                            blink::WebScreenInfo* results) {
   HWND window = gfx::NativeViewFromId(id);
 
   HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
@@ -322,9 +322,9 @@ void GetScreenInfoForWindow(gfx::NativeViewId id,
   dev_mode.dmDriverExtra = 0;
   EnumDisplaySettings(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &dev_mode);
 
-  WebKit::WebScreenInfo screen_info;
+  blink::WebScreenInfo screen_info;
   screen_info.depth = dev_mode.dmBitsPerPel;
-  screen_info.depthPerComponent = dev_mode.dmBitsPerPel / 3;  // Assumes RGB
+  screen_info.depthPerComponent = 8;
   screen_info.deviceScaleFactor = gfx::win::GetDeviceScaleFactor();
   screen_info.isMonochrome = dev_mode.dmColor == DMCOLOR_MONOCHROME;
   screen_info.rect = gfx::Rect(monitor_info.rcMonitor);
@@ -351,18 +351,18 @@ class WebTouchState {
   bool ReleaseTouchPoints();
 
   // The contained WebTouchEvent.
-  const WebKit::WebTouchEvent& touch_event() { return touch_event_; }
+  const blink::WebTouchEvent& touch_event() { return touch_event_; }
 
   // Returns if any touches are modified in the event.
   bool is_changed() { return touch_event_.changedTouchesLength != 0; }
 
  private:
   // Adds a touch point or returns NULL if there's not enough space.
-  WebKit::WebTouchPoint* AddTouchPoint(TOUCHINPUT* touch_input);
+  blink::WebTouchPoint* AddTouchPoint(TOUCHINPUT* touch_input);
 
   // Copy details from a TOUCHINPUT to an existing WebTouchPoint, returning
   // true if the resulting point is a stationary move.
-  bool UpdateTouchPoint(WebKit::WebTouchPoint* touch_point,
+  bool UpdateTouchPoint(blink::WebTouchPoint* touch_point,
                         TOUCHINPUT* touch_input);
 
   // Find (or create) a mapping for _os_touch_id_.
@@ -371,7 +371,7 @@ class WebTouchState {
   // Remove any mappings that are no longer in use.
   void RemoveExpiredMappings();
 
-  WebKit::WebTouchEvent touch_event_;
+  blink::WebTouchEvent touch_event_;
   const RenderWidgetHostViewWin* const window_;
 
   ui::SequentialIDGenerator id_generator_;
@@ -393,7 +393,6 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       imm32_manager_(new ui::IMM32Manager),
       ime_notification_(false),
       capture_enter_key_(false),
-      is_hidden_(render_widget_host_->is_hidden()),
       about_to_validate_and_paint_(false),
       close_on_deactivate_(false),
       being_destroyed_(false),
@@ -411,14 +410,16 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       pointer_down_context_(false),
       last_touch_location_(-1, -1),
       touch_events_enabled_(ui::AreTouchEventsEnabled()),
-      gesture_recognizer_(ui::GestureRecognizer::Create(this)) {
+      gesture_recognizer_(ui::GestureRecognizer::Create()) {
   render_widget_host_->SetView(this);
   registrar_.Add(this,
                  NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  NotificationService::AllBrowserContextsAndSources());
+  gesture_recognizer_->AddGestureEventHelper(this);
 }
 
 RenderWidgetHostViewWin::~RenderWidgetHostViewWin() {
+  gesture_recognizer_->RemoveGestureEventHelper(this);
   UnlockMouse();
   ResetTooltip();
 }
@@ -456,34 +457,34 @@ RenderWidgetHost* RenderWidgetHostViewWin::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewWin::WasShown() {
-  if (!is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
+    return;
+
+  if (!render_widget_host_->is_hidden())
     return;
 
   if (web_contents_switch_paint_time_.is_null())
     web_contents_switch_paint_time_ = TimeTicks::Now();
-  is_hidden_ = false;
 
-  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
-  // of closing.
-  if (render_widget_host_)
-    render_widget_host_->WasShown();
+  render_widget_host_->WasShown();
 }
 
 void RenderWidgetHostViewWin::WasHidden() {
-  if (is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
     return;
 
-  // If we receive any more paint messages while we are hidden, we want to
-  // ignore them so we don't re-allocate the backing store.  We will paint
-  // everything again when we become selected again.
-  is_hidden_ = true;
+  if (render_widget_host_->is_hidden())
+    return;
 
   ResetTooltip();
 
-  // If we have a renderer, then inform it that we are being hidden so it can
-  // reduce its resource utilization.
-  if (render_widget_host_)
-    render_widget_host_->WasHidden();
+  // Inform the renderer that we are being hidden so it can reduce its resource
+  // utilization.
+  render_widget_host_->WasHidden();
 
   if (accelerated_surface_)
     accelerated_surface_->WasHidden();
@@ -594,7 +595,7 @@ void RenderWidgetHostViewWin::CleanupCompositorWindow() {
 
 bool RenderWidgetHostViewWin::IsActivatable() const {
   // Popups should not be activated.
-  return popup_type_ == WebKit::WebPopupTypeNone;
+  return popup_type_ == blink::WebPopupTypeNone;
 }
 
 void RenderWidgetHostViewWin::Focus() {
@@ -762,7 +763,7 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("content", "RenderWidgetHostViewWin::DidUpdateBackingStore");
   software_latency_info_.MergeWith(latency_info);
-  if (is_hidden_)
+  if (render_widget_host_->is_hidden())
     return;
 
   // Schedule invalidations first so that the ScrollWindowEx call is closer to
@@ -835,14 +836,15 @@ void RenderWidgetHostViewWin::Destroy() {
   DestroyWindow();
 }
 
-void RenderWidgetHostViewWin::SetTooltipText(const string16& tooltip_text) {
-  if (!is_hidden_)
+void RenderWidgetHostViewWin::SetTooltipText(
+    const base::string16& tooltip_text) {
+  if (!render_widget_host_->is_hidden())
     EnsureTooltip();
 
   // Clamp the tooltip length to kMaxTooltipLength so that we don't
   // accidentally DOS the user with a mega tooltip (since Windows doesn't seem
   // to do this itself).
-  const string16 new_tooltip_text =
+  const base::string16 new_tooltip_text =
       gfx::TruncateString(tooltip_text, kMaxTooltipLength);
 
   if (new_tooltip_text != tooltip_text_) {
@@ -944,24 +946,29 @@ void RenderWidgetHostViewWin::UpdateDesiredTouchMode() {
   }
 }
 
-bool RenderWidgetHostViewWin::DispatchLongPressGestureEvent(
-    ui::GestureEvent* event) {
-  return ForwardGestureEventToRenderer(event);
+bool RenderWidgetHostViewWin::CanDispatchToConsumer(
+    ui::GestureConsumer* consumer) {
+  CHECK_EQ(static_cast<RenderWidgetHostViewWin*>(consumer), this);
+  return true;
 }
 
-bool RenderWidgetHostViewWin::DispatchCancelTouchEvent(
+void RenderWidgetHostViewWin::DispatchPostponedGestureEvent(
+    ui::GestureEvent* event) {
+  ForwardGestureEventToRenderer(event);
+}
+
+void RenderWidgetHostViewWin::DispatchCancelTouchEvent(
     ui::TouchEvent* event) {
   if (!render_widget_host_ || !touch_events_enabled_ ||
       !render_widget_host_->ShouldForwardTouchEvent()) {
-    return false;
+    return;
   }
-  DCHECK(event->type() == WebKit::WebInputEvent::TouchCancel);
-  WebKit::WebTouchEvent cancel_event;
-  cancel_event.type = WebKit::WebInputEvent::TouchCancel;
+  DCHECK(event->type() == blink::WebInputEvent::TouchCancel);
+  blink::WebTouchEvent cancel_event;
+  cancel_event.type = blink::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   render_widget_host_->ForwardTouchEventWithLatencyInfo(
       cancel_event, *event->latency());
-  return true;
 }
 
 void RenderWidgetHostViewWin::SetHasHorizontalScrollbar(
@@ -981,12 +988,12 @@ void RenderWidgetHostViewWin::SetCompositionText(
   if (!render_widget_host_)
      return;
   // ui::CompositionUnderline should be identical to
-  // WebKit::WebCompositionUnderline, so that we can do reinterpret_cast safely.
+  // blink::WebCompositionUnderline, so that we can do reinterpret_cast safely.
   COMPILE_ASSERT(sizeof(ui::CompositionUnderline) ==
-                 sizeof(WebKit::WebCompositionUnderline),
+                 sizeof(blink::WebCompositionUnderline),
                  ui_CompositionUnderline__WebKit_WebCompositionUnderline_diff);
-  const std::vector<WebKit::WebCompositionUnderline>& underlines =
-      reinterpret_cast<const std::vector<WebKit::WebCompositionUnderline>&>(
+  const std::vector<blink::WebCompositionUnderline>& underlines =
+      reinterpret_cast<const std::vector<blink::WebCompositionUnderline>&>(
           composition.underlines);
   render_widget_host_->ImeSetComposition(composition.text, underlines,
                                          composition.selection.end(),
@@ -1011,7 +1018,7 @@ void RenderWidgetHostViewWin::ClearCompositionText() {
   NOTIMPLEMENTED();
 }
 
-void RenderWidgetHostViewWin::InsertText(const string16& text) {
+void RenderWidgetHostViewWin::InsertText(const base::string16& text) {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return;
@@ -1061,7 +1068,7 @@ bool RenderWidgetHostViewWin::CanComposeInline() const {
   return false;
 }
 
-gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
+gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return gfx::Rect(0, 0, 0, 0);
@@ -1072,7 +1079,7 @@ gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
 }
 
 bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
-    uint32 index, gfx::Rect* rect) {
+    uint32 index, gfx::Rect* rect) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1086,7 +1093,7 @@ bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
   return true;
 }
 
-bool RenderWidgetHostViewWin::HasCompositionText() {
+bool RenderWidgetHostViewWin::HasCompositionText() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1096,7 +1103,7 @@ bool RenderWidgetHostViewWin::HasCompositionText() {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1106,7 +1113,7 @@ bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1116,7 +1123,7 @@ bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetSelectionRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetSelectionRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1147,7 +1154,7 @@ bool RenderWidgetHostViewWin::DeleteRange(const gfx::Range& range) {
 }
 
 bool RenderWidgetHostViewWin::GetTextFromRange(const gfx::Range& range,
-                                               string16* text) {
+                                               base::string16* text) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1203,6 +1210,15 @@ void RenderWidgetHostViewWin::ExtendSelectionAndDelete(
 void RenderWidgetHostViewWin::EnsureCaretInRect(const gfx::Rect& rect) {
   // TODO(nona): Implement this function.
   NOTIMPLEMENTED();
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowShown() {
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowUpdated() {
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowHidden() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1396,7 +1412,8 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
       web_contents_switch_paint_time_ = TimeTicks();
     }
 
-    software_latency_info_.swap_timestamp = TimeTicks::HighResNow();
+    software_latency_info_.AddLatencyNumber(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
     render_widget_host_->FrameSwapped(software_latency_info_);
     software_latency_info_.Clear();
   } else {
@@ -1410,7 +1427,7 @@ void RenderWidgetHostViewWin::DrawBackground(const RECT& dirty_rect,
                                              CPaintDC* dc) {
   if (!background_.empty()) {
     gfx::Rect dirty_area(dirty_rect);
-    gfx::Canvas canvas(dirty_area.size(), ui::SCALE_FACTOR_100P, true);
+    gfx::Canvas canvas(dirty_area.size(), 1.0f, true);
     canvas.Translate(-dirty_area.OffsetFromOrigin());
 
     gfx::Rect dc_rect(dc->m_ps.rcPaint);
@@ -1657,9 +1674,9 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
   imm32_manager_->UpdateImeWindow(m_hWnd);
 
   // ui::CompositionUnderline should be identical to
-  // WebKit::WebCompositionUnderline, so that we can do reinterpret_cast safely.
+  // blink::WebCompositionUnderline, so that we can do reinterpret_cast safely.
   COMPILE_ASSERT(sizeof(ui::CompositionUnderline) ==
-                 sizeof(WebKit::WebCompositionUnderline),
+                 sizeof(blink::WebCompositionUnderline),
                  ui_CompositionUnderline__WebKit_WebCompositionUnderline_diff);
 
   // Retrieve the result string and its attributes of the ongoing composition
@@ -1683,8 +1700,8 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
 
     // TODO(suzhe): convert both renderer_host and renderer to use
     // ui::CompositionText.
-    const std::vector<WebKit::WebCompositionUnderline>& underlines =
-        reinterpret_cast<const std::vector<WebKit::WebCompositionUnderline>&>(
+    const std::vector<blink::WebCompositionUnderline>& underlines =
+        reinterpret_cast<const std::vector<blink::WebCompositionUnderline>&>(
             composition.underlines);
     render_widget_host_->ImeSetComposition(
         composition.text, underlines,
@@ -1921,8 +1938,8 @@ LRESULT RenderWidgetHostViewWin::OnKeyEvent(UINT message, WPARAM wparam,
         if (ui::IMM32Manager::IsCtrlShiftPressed(&dir)) {
           render_widget_host_->UpdateTextDirection(
               dir == base::i18n::RIGHT_TO_LEFT ?
-              WebKit::WebTextDirectionRightToLeft :
-              WebKit::WebTextDirectionLeftToRight);
+              blink::WebTextDirectionRightToLeft :
+              blink::WebTextDirectionLeftToRight);
         }
       } else if (wparam != VK_CONTROL) {
         // Bug 9762: http://crbug.com/9762 A user pressed a key except shift
@@ -1999,7 +2016,7 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
   }
 
   if (render_widget_host_) {
-    WebKit::WebMouseWheelEvent wheel_event =
+    blink::WebMouseWheelEvent wheel_event =
         WebMouseWheelEventBuilder::Build(m_hWnd, message, wparam, lparam);
     float scale = gfx::win::GetDeviceScaleFactor();
     wheel_event.x /= scale;
@@ -2025,14 +2042,14 @@ size_t WebTouchState::UpdateTouchPoints(
   // and alter/add any touchpoints (from the touch input buffer) that we can
   // coalesce into a single message. The return value is the number of consumed
   // input message.
-  WebKit::WebTouchPoint* point = touch_event_.touches;
-  WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
+  blink::WebTouchPoint* point = touch_event_.touches;
+  blink::WebTouchPoint* end = point + touch_event_.touchesLength;
   while (point < end) {
-    if (point->state == WebKit::WebTouchPoint::StateReleased) {
+    if (point->state == blink::WebTouchPoint::StateReleased) {
       *point = *(--end);
       --touch_event_.touchesLength;
     } else {
-      point->state = WebKit::WebTouchPoint::StateStationary;
+      point->state = blink::WebTouchPoint::StateStationary;
       point++;
     }
   }
@@ -2045,7 +2062,7 @@ size_t WebTouchState::UpdateTouchPoints(
   for (size_t i = 0; i < count; ++i) {
     unsigned int mapped_id = GetMappedTouch(points[i].dwID);
 
-    WebKit::WebTouchPoint* point = NULL;
+    blink::WebTouchPoint* point = NULL;
     for (unsigned j = 0; j < touch_event_.touchesLength; ++j) {
       if (static_cast<DWORD>(touch_event_.touches[j].id) == mapped_id) {
         point =  &touch_event_.touches[j];
@@ -2069,26 +2086,26 @@ size_t WebTouchState::UpdateTouchPoints(
       case TOUCHEVENTF_DOWN: {
         if (!(point = AddTouchPoint(&points[i])))
           continue;
-        touch_event_.type = WebKit::WebInputEvent::TouchStart;
+        touch_event_.type = blink::WebInputEvent::TouchStart;
         break;
       }
 
       case TOUCHEVENTF_UP: {
         if (!point)  // Just throw away a stray up.
           continue;
-        point->state = WebKit::WebTouchPoint::StateReleased;
+        point->state = blink::WebTouchPoint::StateReleased;
         UpdateTouchPoint(point, &points[i]);
-        touch_event_.type = WebKit::WebInputEvent::TouchEnd;
+        touch_event_.type = blink::WebInputEvent::TouchEnd;
         break;
       }
 
       case TOUCHEVENTF_MOVE: {
         if (point) {
-          point->state = WebKit::WebTouchPoint::StateMoved;
+          point->state = blink::WebTouchPoint::StateMoved;
           // Don't update the message if the point didn't really move.
           if (UpdateTouchPoint(point, &points[i]))
             continue;
-          touch_event_.type = WebKit::WebInputEvent::TouchMove;
+          touch_event_.type = blink::WebInputEvent::TouchMove;
         } else if (touch_event_.changedTouchesLength) {
           RemoveExpiredMappings();
           // Can't add a point if we're already handling move events.
@@ -2099,7 +2116,7 @@ size_t WebTouchState::UpdateTouchPoints(
             continue;
           last_type = TOUCHEVENTF_DOWN;
           SetTouchType(&points[i], TOUCHEVENTF_DOWN);
-          touch_event_.type = WebKit::WebInputEvent::TouchStart;
+          touch_event_.type = blink::WebInputEvent::TouchStart;
         }
         break;
       }
@@ -2116,10 +2133,10 @@ size_t WebTouchState::UpdateTouchPoints(
 }
 
 void WebTouchState::RemoveExpiredMappings() {
-  WebKit::WebTouchPoint* point = touch_event_.touches;
-  WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
+  blink::WebTouchPoint* point = touch_event_.touches;
+  blink::WebTouchPoint* end = point + touch_event_.touchesLength;
   for (; point < end; ++point) {
-    if (point->state == WebKit::WebTouchPoint::StateReleased)
+    if (point->state == blink::WebTouchPoint::StateReleased)
       id_generator_.ReleaseGeneratedID(point->id);
   }
 }
@@ -2129,34 +2146,34 @@ bool WebTouchState::ReleaseTouchPoints() {
   if (touch_event_.touchesLength == 0)
     return false;
   // Mark every active touchpoint as released.
-  touch_event_.type = WebKit::WebInputEvent::TouchEnd;
+  touch_event_.type = blink::WebInputEvent::TouchEnd;
   touch_event_.changedTouchesLength = touch_event_.touchesLength;
   for (unsigned int i = 0; i < touch_event_.touchesLength; ++i) {
-    touch_event_.touches[i].state = WebKit::WebTouchPoint::StateReleased;
+    touch_event_.touches[i].state = blink::WebTouchPoint::StateReleased;
     touch_event_.changedTouches[i].state =
-        WebKit::WebTouchPoint::StateReleased;
+        blink::WebTouchPoint::StateReleased;
   }
 
   return true;
 }
 
-WebKit::WebTouchPoint* WebTouchState::AddTouchPoint(
+blink::WebTouchPoint* WebTouchState::AddTouchPoint(
     TOUCHINPUT* touch_input) {
   DCHECK(touch_event_.touchesLength <
-      WebKit::WebTouchEvent::touchesLengthCap);
+      blink::WebTouchEvent::touchesLengthCap);
   if (touch_event_.touchesLength >=
-      WebKit::WebTouchEvent::touchesLengthCap)
+      blink::WebTouchEvent::touchesLengthCap)
     return NULL;
-  WebKit::WebTouchPoint* point =
+  blink::WebTouchPoint* point =
       &touch_event_.touches[touch_event_.touchesLength++];
-  point->state = WebKit::WebTouchPoint::StatePressed;
+  point->state = blink::WebTouchPoint::StatePressed;
   point->id = GetMappedTouch(touch_input->dwID);
   UpdateTouchPoint(point, touch_input);
   return point;
 }
 
 bool WebTouchState::UpdateTouchPoint(
-    WebKit::WebTouchPoint* touch_point,
+    blink::WebTouchPoint* touch_point,
     TOUCHINPUT* touch_input) {
   CPoint coordinates(
       TOUCH_COORD_TO_PIXEL(touch_input->x) /
@@ -2181,7 +2198,7 @@ bool WebTouchState::UpdateTouchPoint(
       touch_point->screenPosition.y == coordinates.y &&
       touch_point->radiusX == radius_x &&
       touch_point->radiusY == radius_y) {
-    touch_point->state = WebKit::WebTouchPoint::StateStationary;
+    touch_point->state = blink::WebTouchPoint::StateStationary;
     return true;
   }
 
@@ -2216,8 +2233,8 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
 
   // TODO(jschuh): Add support for an arbitrary number of touchpoints.
   size_t total = std::min(static_cast<int>(LOWORD(wparam)),
-      static_cast<int>(WebKit::WebTouchEvent::touchesLengthCap));
-  TOUCHINPUT points[WebKit::WebTouchEvent::touchesLengthCap];
+      static_cast<int>(blink::WebTouchEvent::touchesLengthCap));
+  TOUCHINPUT points[blink::WebTouchEvent::touchesLengthCap];
 
   if (!total || !ui::GetTouchInputInfoWrapper((HTOUCHINPUT)lparam, total,
                                               points, sizeof(TOUCHINPUT))) {
@@ -2245,7 +2262,7 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
         render_widget_host_->ForwardTouchEventWithLatencyInfo(
             touch_state_->touch_event(), ui::LatencyInfo());
     } else {
-      const WebKit::WebTouchEvent& touch_event = touch_state_->touch_event();
+      const blink::WebTouchEvent& touch_event = touch_state_->touch_event();
       base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(
           touch_event.timeStampSeconds * 1000);
       for (size_t i = 0; i < touch_event.touchesLength; ++i) {
@@ -2476,7 +2493,7 @@ void RenderWidgetHostViewWin::AcceleratedPaint(HDC dc) {
     accelerated_surface_->Present(dc);
 }
 
-void RenderWidgetHostViewWin::GetScreenInfo(WebKit::WebScreenInfo* results) {
+void RenderWidgetHostViewWin::GetScreenInfo(blink::WebScreenInfo* results) {
   GetScreenInfoForWindow(GetNativeViewId(), results);
 }
 
@@ -2554,6 +2571,18 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
   return surface_handle;
 }
 
+void RenderWidgetHostViewWin::ResizeCompositingSurface(const gfx::Size& size) {
+  // Ensure window does not have zero area because D3D cannot create a zero
+  // area swap chain.
+  ::SetWindowPos(compositor_host_window_,
+      NULL,
+      0, 0,
+      std::max(1, size.width()),
+      std::max(1, size.height()),
+      SWP_NOSENDCHANGING | SWP_NOCOPYBITS | SWP_NOZORDER |
+          SWP_NOACTIVATE | SWP_DEFERERASE | SWP_NOMOVE);
+}
+
 void RenderWidgetHostViewWin::OnAcceleratedCompositingStateChange() {
   bool show = render_widget_host_->is_accelerated_compositing_active();
   // When we first create the compositor, we will get a show request from
@@ -2600,6 +2629,10 @@ void RenderWidgetHostViewWin::OnAcceleratedCompositingStateChange() {
       accelerated_surface_->Suspend();
     hide_compositor_window_at_next_paint_ = true;
   }
+}
+
+void RenderWidgetHostViewWin::AcceleratedSurfaceInitialized(int host_id,
+                                                            int route_id) {
 }
 
 void RenderWidgetHostViewWin::AcceleratedSurfaceBuffersSwapped(
@@ -2764,7 +2797,7 @@ LRESULT RenderWidgetHostViewWin::OnSessionChange(UINT message,
       break;
     case WTS_SESSION_UNLOCK:
       // Force a repaint to update the window contents.
-      if (!is_hidden_)
+      if (!render_widget_host_->is_hidden())
         InvalidateRect(NULL, FALSE);
       accelerated_surface_->SetIsSessionLocked(false);
       break;
@@ -2856,10 +2889,10 @@ bool RenderWidgetHostViewWin::ForwardGestureEventToRenderer(
     return true;
   }
 
-  WebKit::WebGestureEvent web_gesture = CreateWebGestureEvent(m_hWnd, *gesture);
-  if (web_gesture.type == WebKit::WebGestureEvent::Undefined)
+  blink::WebGestureEvent web_gesture = CreateWebGestureEvent(m_hWnd, *gesture);
+  if (web_gesture.type == blink::WebGestureEvent::Undefined)
     return false;
-  if (web_gesture.type == WebKit::WebGestureEvent::GestureTapDown) {
+  if (web_gesture.type == blink::WebGestureEvent::GestureTapDown) {
     render_widget_host_->ForwardGestureEvent(
         CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
   }
@@ -3185,7 +3218,7 @@ RenderWidgetHostView* RenderWidgetHostView::CreateViewForWidget(
 
 // static
 void RenderWidgetHostViewPort::GetDefaultScreenInfo(
-      WebKit::WebScreenInfo* results) {
+      blink::WebScreenInfo* results) {
   GetScreenInfoForWindow(0, results);
 }
 

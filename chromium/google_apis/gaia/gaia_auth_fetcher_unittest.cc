@@ -30,33 +30,21 @@
 using ::testing::Invoke;
 using ::testing::_;
 
-namespace {
-static const char kGetAuthCodeValidCookie[] =
+const char kGetAuthCodeValidCookie[] =
     "oauth_code=test-code; Path=/test; Secure; HttpOnly";
-static const char kGetAuthCodeCookieNoSecure[] =
+const char kGetAuthCodeCookieNoSecure[] =
     "oauth_code=test-code; Path=/test; HttpOnly";
-static const char kGetAuthCodeCookieNoHttpOnly[] =
+const char kGetAuthCodeCookieNoHttpOnly[] =
     "oauth_code=test-code; Path=/test; Secure";
-static const char kGetAuthCodeCookieNoOAuthCode[] =
+const char kGetAuthCodeCookieNoOAuthCode[] =
     "Path=/test; Secure; HttpOnly";
-static const char kGetTokenPairValidResponse[] =
+const char kGetTokenPairValidResponse[] =
     "{"
     "  \"refresh_token\": \"rt1\","
     "  \"access_token\": \"at1\","
     "  \"expires_in\": 3600,"
     "  \"token_type\": \"Bearer\""
     "}";
-static const char kClientOAuthValidResponse[] =
-    "{"
-    "  \"oauth2\": {"
-    "    \"refresh_token\": \"rt1\","
-    "    \"access_token\": \"at1\","
-    "    \"expires_in\": 3600,"
-    "    \"token_type\": \"Bearer\""
-    "  }"
-    "}";
-
-}  // namespace
 
 MockFetcher::MockFetcher(bool success,
                          const GURL& url,
@@ -199,6 +187,7 @@ class MockGaiaConsumer : public GaiaAuthConsumer {
       const GoogleServiceAuthError& error));
   MOCK_METHOD1(OnUberAuthTokenFailure, void(
       const GoogleServiceAuthError& error));
+  MOCK_METHOD1(OnListAccountsSuccess, void(const std::string& data));
 };
 
 #if defined(OS_WIN)
@@ -799,5 +788,19 @@ TEST_F(GaiaAuthFetcherTest, StartOAuthLogin) {
   MockFetcher mock_fetcher(
       oauth_login_gurl_, status, net::HTTP_OK, cookies_, data,
       net::URLFetcher::GET, &auth);
+  auth.OnURLFetchComplete(&mock_fetcher);
+}
+
+TEST_F(GaiaAuthFetcherTest, ListAccounts) {
+  std::string data("[\"gaia.l.a.r\", ["
+      "[\"gaia.l.a\", 1, \"First Last\", \"user@gmail.com\", "
+      "\"//googleusercontent.com/A/B/C/D/photo.jpg\", 1, 1, 0]]]");
+  MockGaiaConsumer consumer;
+  EXPECT_CALL(consumer, OnListAccountsSuccess(data)).Times(1);
+
+  GaiaAuthFetcher auth(&consumer, std::string(), GetRequestContext());
+  net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
+  MockFetcher mock_fetcher(GaiaUrls::GetInstance()->list_accounts_url(),
+      status, net::HTTP_OK, cookies_, data, net::URLFetcher::GET, &auth);
   auth.OnURLFetchComplete(&mock_fetcher);
 }

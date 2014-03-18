@@ -60,7 +60,9 @@ BaseTestServer::SSLOptions::SSLOptions()
       request_client_certificate(false),
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
-      tls_intolerant(TLS_INTOLERANT_NONE) {}
+      tls_intolerant(TLS_INTOLERANT_NONE),
+      fallback_scsv_enabled(false),
+      staple_ocsp_response(false) {}
 
 BaseTestServer::SSLOptions::SSLOptions(
     BaseTestServer::SSLOptions::ServerCertificate cert)
@@ -70,7 +72,9 @@ BaseTestServer::SSLOptions::SSLOptions(
       request_client_certificate(false),
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
-      tls_intolerant(TLS_INTOLERANT_NONE) {}
+      tls_intolerant(TLS_INTOLERANT_NONE),
+      fallback_scsv_enabled(false),
+      staple_ocsp_response(false) {}
 
 BaseTestServer::SSLOptions::~SSLOptions() {}
 
@@ -226,10 +230,8 @@ bool BaseTestServer::GetFilePathWithReplacements(
     const std::string& new_text = it->second;
     std::string base64_old;
     std::string base64_new;
-    if (!base::Base64Encode(old_text, &base64_old))
-      return false;
-    if (!base::Base64Encode(new_text, &base64_new))
-      return false;
+    base::Base64Encode(old_text, &base64_old);
+    base::Base64Encode(new_text, &base64_new);
     if (first_query_parameter) {
       new_file_path += "?";
       first_query_parameter = false;
@@ -398,6 +400,16 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
       arguments->Set("tls-intolerant",
                      new base::FundamentalValue(ssl_options_.tls_intolerant));
     }
+    if (ssl_options_.fallback_scsv_enabled)
+      arguments->Set("fallback-scsv", base::Value::CreateNullValue());
+    if (!ssl_options_.signed_cert_timestamps_tls_ext.empty()) {
+      std::string b64_scts_tls_ext;
+      base::Base64Encode(ssl_options_.signed_cert_timestamps_tls_ext,
+                         &b64_scts_tls_ext);
+      arguments->SetString("signed-cert-timestamps-tls-ext", b64_scts_tls_ext);
+    }
+    if (ssl_options_.staple_ocsp_response)
+      arguments->Set("staple-ocsp-response", base::Value::CreateNullValue());
   }
 
   return GenerateAdditionalArguments(arguments);

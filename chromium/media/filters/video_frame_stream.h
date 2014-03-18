@@ -27,7 +27,7 @@ class DecryptingDemuxerStream;
 class VideoDecoderSelector;
 
 // Wraps a DemuxerStream and a list of VideoDecoders and provides decoded
-// VideoFrames to its client (e.g. VideoRendererBase).
+// VideoFrames to its client (e.g. VideoRendererImpl).
 class MEDIA_EXPORT VideoFrameStream {
  public:
   // Indicates completion of VideoFrameStream initialization.
@@ -136,7 +136,6 @@ class MEDIA_EXPORT VideoFrameStream {
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   base::WeakPtrFactory<VideoFrameStream> weak_factory_;
-  base::WeakPtr<VideoFrameStream> weak_this_;
 
   State state_;
 

@@ -9,7 +9,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "content/child/child_process.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/worker/worker_thread.h"
@@ -29,6 +29,7 @@ int WorkerMain(const MainFunctionParams& parameters) {
   // The main message loop of the worker process.
   base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrWorkerMain");
+  base::debug::TraceLog::GetInstance()->SetProcessName("Shared Web Worker");
 
 #if defined(OS_WIN)
   sandbox::TargetServices* target_services =

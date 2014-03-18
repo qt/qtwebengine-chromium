@@ -65,13 +65,13 @@ bool SafeCreateDirectory(const base::FilePath& path) {
   // Now create the full path
   return CreateDirectoryW(path.value().c_str(), NULL) == TRUE;
 #else
-  return file_util::CreateDirectory(path);
+  return base::CreateDirectory(path);
 #endif
 }
 
 DiskDumper::DiskDumper(const base::FilePath& path)
     : path_(path), entry_(NULL) {
-  file_util::CreateDirectory(path);
+  base::CreateDirectory(path);
 }
 
 int DiskDumper::CreateEntry(const std::string& key,
@@ -108,7 +108,7 @@ int DiskDumper::CreateEntry(const std::string& key,
     wprintf(L"CreateFileW (%s) failed: %d\n", file.c_str(), GetLastError());
   return (entry_ != INVALID_HANDLE_VALUE) ? net::OK : net::ERR_FAILED;
 #else
-  entry_ = file_util::OpenFile(entry_path_, "w+");
+  entry_ = base::OpenFile(entry_path_, "w+");
   return (entry_ != NULL) ? net::OK : net::ERR_FAILED;
 #endif
 }
@@ -218,6 +218,6 @@ void DiskDumper::CloseEntry(disk_cache::Entry* entry, base::Time last_used,
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   CloseHandle(entry_);
 #else
-  file_util::CloseFile(entry_);
+  base::CloseFile(entry_);
 #endif
 }

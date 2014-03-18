@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,17 +16,23 @@
 #include "base/basictypes.h"
 #include "base/environment.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_piece.h"
 
 #if defined(OS_POSIX)
 #include "base/posix/file_descriptor_shuffle.h"
 #elif defined(OS_WIN)
 #include <windows.h>
+#include "base/win/scoped_handle.h"
 #endif
 
 class CommandLine;
 
 namespace base {
 
+#if defined(OS_WIN)
+typedef std::vector<HANDLE> HandlesToInheritVector;
+#endif
+// TODO(viettrungluu): Only define this on POSIX?
 typedef std::vector<std::pair<int, int> > FileHandleMappingVector;
 
 // Options for launching a subprocess that are passed to LaunchProcess().
@@ -41,13 +47,19 @@ struct BASE_EXPORT LaunchOptions {
 #if defined(OS_WIN)
   bool start_hidden;
 
+  // If non-null, inherit exactly the list of handles in this vector (these
+  // handles must be inheritable). This is only supported on Vista and higher.
+  HandlesToInheritVector* handles_to_inherit;
+
   // If true, the new process inherits handles from the parent. In production
   // code this flag should be used only when running short-lived, trusted
   // binaries, because open handles from other libraries and subsystems will
   // leak to the child process, causing errors such as open socket hangs.
+  // Note: If |handles_to_inherit| is non-null, this flag is ignored and only
+  // those handles will be inherited (on Vista and higher).
   bool inherit_handles;
 
-  // If non-NULL, runs as if the user represented by the token had launched it.
+  // If non-null, runs as if the user represented by the token had launched it.
   // Whether the application is visible on the interactive desktop depends on
   // the token belonging to an interactive logon session.
   //
@@ -59,7 +71,7 @@ struct BASE_EXPORT LaunchOptions {
   // If true, use an empty string for the desktop name.
   bool empty_desktop_name;
 
-  // If non-NULL, launches the application in that job object. The process will
+  // If non-null, launches the application in that job object. The process will
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
@@ -81,7 +93,7 @@ struct BASE_EXPORT LaunchOptions {
   // the same environment. See AlterEnvironment().
   EnvironmentMap environ;
 
-  // If non-NULL, remap file descriptors according to the mapping of
+  // If non-null, remap file descriptors according to the mapping of
   // src fd->dest fd to propagate FDs into the child process.
   // This pointer is owned by the caller and must live through the
   // call to LaunchProcess().
@@ -116,7 +128,7 @@ struct BASE_EXPORT LaunchOptions {
 //
 // Returns true upon success.
 //
-// Upon success, if |process_handle| is non-NULL, it will be filled in with the
+// Upon success, if |process_handle| is non-null, it will be filled in with the
 // handle of the launched process.  NOTE: In this case, the caller is
 // responsible for closing the handle so that it doesn't leak!
 // Otherwise, the process handle will be implicitly closed.
@@ -146,7 +158,7 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
 //  cmdline = "c:\windows\explorer.exe" -foo "c:\bar\"
 BASE_EXPORT bool LaunchProcess(const string16& cmdline,
                                const LaunchOptions& options,
-                               ProcessHandle* process_handle);
+                               win::ScopedHandle* process_handle);
 
 #elif defined(OS_POSIX)
 // A POSIX-specific version of LaunchProcess that takes an argv array
@@ -178,6 +190,13 @@ BASE_EXPORT void RouteStdioToConsole();
 // on success (application launched and exited cleanly, with exit code
 // indicating success).
 BASE_EXPORT bool GetAppOutput(const CommandLine& cl, std::string* output);
+
+#if defined(OS_WIN)
+// A Windows-specific version of GetAppOutput that takes a command line string
+// instead of a CommandLine object. Useful for situations where you need to
+// control the command line arguments directly.
+BASE_EXPORT bool GetAppOutput(const StringPiece16& cl, std::string* output);
+#endif
 
 #if defined(OS_POSIX)
 // A POSIX-specific version of GetAppOutput that takes an argv array

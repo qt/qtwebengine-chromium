@@ -20,6 +20,7 @@ class AutofillType {
   AutofillType(const AutofillType& autofill_type);
   AutofillType& operator=(const AutofillType& autofill_type);
 
+  ServerFieldType server_type() const { return server_type_; }
   HtmlFieldType html_type() const { return html_type_; }
 
   FieldTypeGroup group() const;
@@ -32,8 +33,8 @@ class AutofillType {
   // data model (in the sense that it makes sense to call
   // |AutofillDataModel::SetRawInfo()| with the returned field type as the first
   // parameter).  Note that the returned type might not be exactly equivalent to
-  // |this| type.  For example, there is no exact analogue to the
-  // 'street-address' HTML type hint among the storable field types.
+  // |this| type.  For example, the HTML types 'country' and 'country-name' both
+  // map to ADDRESS_HOME_COUNTRY.
   ServerFieldType GetStorableType() const;
 
   // Serializes |this| type to a string.

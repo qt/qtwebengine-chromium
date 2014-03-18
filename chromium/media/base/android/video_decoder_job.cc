@@ -30,9 +30,9 @@ VideoDecoderJob* VideoDecoderJob::Create(const VideoCodec video_codec,
                                          jobject surface,
                                          jobject media_crypto,
                                          const base::Closure& request_data_cb) {
-  scoped_ptr<VideoCodecBridge> codec(
-      VideoCodecBridge::Create(video_codec, is_secure));
-  if (codec && codec->Start(video_codec, size, surface, media_crypto))
+  scoped_ptr<VideoCodecBridge> codec(VideoCodecBridge::CreateDecoder(
+      video_codec, is_secure, size, surface, media_crypto));
+  if (codec)
     return new VideoDecoderJob(codec.Pass(), request_data_cb);
 
   LOG(ERROR) << "Failed to create VideoDecoderJob.";
@@ -51,14 +51,12 @@ VideoDecoderJob::~VideoDecoderJob() {
 }
 
 void VideoDecoderJob::ReleaseOutputBuffer(
-    int outputBufferIndex, size_t size,
-    const base::TimeDelta& presentation_timestamp,
-    const MediaDecoderJob::DecoderCallback& callback,
-    MediaCodecStatus status) {
-  if (status != MEDIA_CODEC_OUTPUT_END_OF_STREAM || size != 0u)
-    video_codec_bridge_->ReleaseOutputBuffer(outputBufferIndex, true);
-
-  callback.Run(status, presentation_timestamp, 0);
+    int output_buffer_index,
+    size_t size,
+    bool render_output,
+    const ReleaseOutputCompletionCallback& callback) {
+  video_codec_bridge_->ReleaseOutputBuffer(output_buffer_index, render_output);
+  callback.Run(0u);
 }
 
 bool VideoDecoderJob::ComputeTimeToRender() const {

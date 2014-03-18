@@ -17,7 +17,7 @@
 namespace {
 
 // The maximum number of threads for this pool.
-const int kMaxThreads = 5;
+const int kMaxThreads = 20;
 
 class FileWorkerPool : public base::SequencedWorkerPool {
  public:
@@ -166,6 +166,11 @@ void File::WaitForPendingIO(int* num_pending_io) {
   s_worker_pool.Get().FlushForTesting();
   base::RunLoop().RunUntilIdle();
 }
+
+// Static.
+void File::DropPendingIO() {
+}
+
 
 File::~File() {
   if (IsValid())

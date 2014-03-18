@@ -11,8 +11,11 @@
 #include "ui/views/widget/tooltip_manager.h"
 
 namespace aura {
-class RootWindow;
 class Window;
+}
+
+namespace gfx {
+class FontList;
 }
 
 namespace views {
@@ -22,22 +25,32 @@ class Widget;
 // TooltipManager implementation for Aura.
 class TooltipManagerAura : public TooltipManager {
  public:
-  TooltipManagerAura(aura::Window* window, Widget* widget);
+  explicit TooltipManagerAura(Widget* widget);
   virtual ~TooltipManagerAura();
 
-  // TooltipManager.
+  // If |source| has capture this finds the Widget under the mouse and invokes
+  // UpdateTooltip() on it's TooltipManager. This is necessary as when capture
+  // is held mouse events are only delivered to the Window that has capture even
+  // though we may show tooltips for the Window under the mouse.
+  static void UpdateTooltipManagerForCapture(Widget* source);
+
+  // Returns the FontList used by all TooltipManagerAuras.
+  static const gfx::FontList& GetDefaultFontList();
+
+  // TooltipManager:
+  virtual const gfx::FontList& GetFontList() const OVERRIDE;
   virtual void UpdateTooltip() OVERRIDE;
   virtual void TooltipTextChanged(View* view) OVERRIDE;
-  virtual void ShowKeyboardTooltip(View* view) OVERRIDE;
-  virtual void HideKeyboardTooltip() OVERRIDE;
 
  private:
   View* GetViewUnderPoint(const gfx::Point& point);
   void UpdateTooltipForTarget(View* target,
                               const gfx::Point& point,
-                              aura::RootWindow* root_window);
+                              aura::Window* root_window);
 
-  aura::Window* window_;
+  // Returns the Window the tooltip text is installed on.
+  aura::Window* GetWindow();
+
   Widget* widget_;
   string16 tooltip_text_;
 

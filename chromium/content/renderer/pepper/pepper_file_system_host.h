@@ -5,9 +5,12 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_FILE_SYSTEM_HOST_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_FILE_SYSTEM_HOST_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "ppapi/c/pp_file_info.h"
+#include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "url/gurl.h"
@@ -16,13 +19,24 @@ namespace content {
 
 class RendererPpapiHost;
 
-class PepperFileSystemHost :
-    public ppapi::host::ResourceHost,
-    public base::SupportsWeakPtr<PepperFileSystemHost> {
+class PepperFileSystemHost
+    : public ppapi::host::ResourceHost,
+      public base::SupportsWeakPtr<PepperFileSystemHost> {
  public:
+  // Creates a new PepperFileSystemHost for a file system of a given |type|. The
+  // host will not be connected to any specific file system, and will need to
+  // subsequently be opened before use.
   PepperFileSystemHost(RendererPpapiHost* host,
                        PP_Instance instance,
                        PP_Resource resource,
+                       PP_FileSystemType type);
+  // Creates a new PepperFileSystemHost with an existing file system at the
+  // given |root_url| and of the given |type|. The file system must already be
+  // opened. Once created, the PepperFileSystemHost is already opened for use.
+  PepperFileSystemHost(RendererPpapiHost* host,
+                       PP_Instance instance,
+                       PP_Resource resource,
+                       const GURL& root_url,
                        PP_FileSystemType type);
   virtual ~PepperFileSystemHost();
 
@@ -46,7 +60,8 @@ class PepperFileSystemHost :
                         int64_t expected_size);
   int32_t OnHostMsgInitIsolatedFileSystem(
       ppapi::host::HostMessageContext* context,
-      const std::string& fsid);
+      const std::string& fsid,
+      PP_IsolatedFileSystemType_Private type);
 
   RendererPpapiHost* renderer_ppapi_host_;
   ppapi::host::ReplyMessageContext reply_context_;

@@ -27,9 +27,9 @@
 #include "core/dom/WheelController.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/WheelEvent.h"
-#include "core/page/Frame.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/events/WheelEvent.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 
@@ -52,10 +52,10 @@ const char* WheelController::supplementName()
 
 WheelController* WheelController::from(Document* document)
 {
-    WheelController* controller = static_cast<WheelController*>(Supplement<ScriptExecutionContext>::from(document, supplementName()));
+    WheelController* controller = static_cast<WheelController*>(DocumentSupplement::from(document, supplementName()));
     if (!controller) {
         controller = new WheelController(document);
-        Supplement<ScriptExecutionContext>::provideTo(document, supplementName(), adoptPtr(controller));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(controller));
     }
     return controller;
 }
@@ -102,7 +102,7 @@ void WheelController::didRemoveWheelEventHandler(Document* document)
 
 void WheelController::didAddEventListener(DOMWindow* window, const AtomicString& eventType)
 {
-    if (eventType != eventNames().wheelEvent && eventType != eventNames().mousewheelEvent)
+    if (eventType != EventTypeNames::wheel && eventType != EventTypeNames::mousewheel)
         return;
 
     Document* document = window->document();
@@ -111,7 +111,7 @@ void WheelController::didAddEventListener(DOMWindow* window, const AtomicString&
 
 void WheelController::didRemoveEventListener(DOMWindow* window, const AtomicString& eventType)
 {
-    if (eventType != eventNames().wheelEvent && eventType != eventNames().mousewheelEvent)
+    if (eventType != EventTypeNames::wheel && eventType != EventTypeNames::mousewheel)
         return;
 
     Document* document = window->document();

@@ -1281,8 +1281,8 @@ class TypeBindings:
                                     for prop_data in resolve_data.main_properties + resolve_data.optional_properties:
                                         prop_name = prop_data.p["name"]
                                         prop_field_name = Capitalizer.lower_camel_case_to_upper(prop_name)
-                                        writer.newline("    static const char* %s;\n" % (prop_field_name))
-                                        cpp_writer.newline("const char* %s%s::%s = \"%s\";\n" % (helper.full_name_prefix_for_impl, class_name, prop_field_name, prop_name))
+                                        writer.newline("    static const char %s[];\n" % (prop_field_name))
+                                        cpp_writer.newline("const char %s%s::%s[] = \"%s\";\n" % (helper.full_name_prefix_for_impl, class_name, prop_field_name, prop_name))
 
 
                                 writer.newline("};\n\n")
@@ -1773,6 +1773,8 @@ class Generator:
     backend_method_declaration_list = []
     backend_method_implementation_list = []
     backend_method_name_declaration_list = []
+    backend_method_name_declaration_index_list = []
+    backend_method_name_declaration_current_index = 0
     method_handler_list = []
     frontend_method_list = []
 
@@ -1796,6 +1798,7 @@ class Generator:
             Generator.backend_method_declaration_list,
             Generator.backend_method_implementation_list,
             Generator.backend_method_name_declaration_list,
+            Generator.backend_method_name_declaration_index_list,
             Generator.backend_agent_interface_list,
             Generator.frontend_class_field_lines,
             Generator.frontend_constructor_init_list,
@@ -1921,8 +1924,10 @@ class Generator:
 
         if "parameters" in json_command:
             json_params = json_command["parameters"]
-            method_in_code += Templates.param_container_access_code
             request_message_param = " requestMessageObject"
+
+            if json_params:
+                method_in_code += Templates.param_container_access_code
 
             for json_parameter in json_params:
                 json_param_name = json_parameter["name"]
@@ -2063,7 +2068,10 @@ class Generator:
             responseCook=normal_response_cook_text,
             errorCook=error_response_cook_text,
             commandNameIndex=cmd_enum_name))
-        Generator.backend_method_name_declaration_list.append("    \"%s.%s\"," % (domain_name, json_command_name))
+        declaration_command_name = "%s.%s\\0" % (domain_name, json_command_name)
+        Generator.backend_method_name_declaration_list.append("    \"%s\"" % declaration_command_name)
+        Generator.backend_method_name_declaration_index_list.append("    %d," % Generator.backend_method_name_declaration_current_index)
+        Generator.backend_method_name_declaration_current_index += len(declaration_command_name) - 1
 
         Generator.backend_agent_interface_list.append(") = 0;\n")
 
@@ -2307,6 +2315,7 @@ backend_cpp_file.write(Templates.backend_cpp.substitute(None,
     setters="\n".join(Generator.backend_setters_list),
     fieldDeclarations="\n".join(Generator.backend_field_list),
     methodNameDeclarations="\n".join(Generator.backend_method_name_declaration_list),
+    methodNameDeclarationsIndex="\n".join(Generator.backend_method_name_declaration_index_list),
     methods="\n".join(Generator.backend_method_implementation_list),
     methodDeclarations="\n".join(Generator.backend_method_declaration_list),
     messageHandlers="\n".join(Generator.method_handler_list)))

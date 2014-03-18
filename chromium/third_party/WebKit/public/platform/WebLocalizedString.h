@@ -31,7 +31,7 @@
 #ifndef WebLocalizedString_h
 #define WebLocalizedString_h
 
-namespace WebKit {
+namespace blink {
 
 struct WebLocalizedString {
     enum Name {
@@ -40,12 +40,12 @@ struct WebLocalizedString {
         AXCheckedCheckBoxActionVerb,
         AXDateTimeFieldEmptyValueText,
         AXDayOfMonthFieldText,
-        AXHeadingText,
+        AXHeadingText, // Deprecated.
         AXHourFieldText,
-        AXImageMapText,
+        AXImageMapText, // Deprecated.
         AXLinkActionVerb,
-        AXLinkText,
-        AXListMarkerText,
+        AXLinkText, // Deprecated.
+        AXListMarkerText, // Deprecated.
         AXMediaAudioElement,
         AXMediaAudioElementHelp,
         AXMediaCurrentTimeDisplay,
@@ -73,10 +73,10 @@ struct WebLocalizedString {
         AXMediaSeekForwardButtonHelp,
         AXMediaShowClosedCaptionsButton,
         AXMediaShowClosedCaptionsButtonHelp,
-        AXMediaSlider,
+        AXMediaSlider, // Deprecated.
         AXMediaSliderHelp,
-        AXMediaSliderThumb,
-        AXMediaSliderThumbHelp,
+        AXMediaSliderThumb, // Deprecated.
+        AXMediaSliderThumbHelp, // Deprecated.
         AXMediaStatusDisplay,
         AXMediaStatusDisplayHelp,
         AXMediaTimeRemainingDisplay,
@@ -92,9 +92,10 @@ struct WebLocalizedString {
         AXSecondFieldText,
         AXTextFieldActionVerb,
         AXUncheckedCheckBoxActionVerb,
-        AXWebAreaText,
+        AXWebAreaText, // Deprecated.
         AXWeekOfYearFieldText,
         AXYearFieldText,
+        BlockedPluginText,
         CalendarClear,
         CalendarToday,
         DateFormatDayInMonthLabel,
@@ -114,14 +115,23 @@ struct WebLocalizedString {
         OtherMonthLabel,
         OtherTimeLabel,
         OtherWeekLabel,
+        // PlaceholderForDayOfMonthField is for day placeholder text, e.g.
+        // "dd", for date field used in multiple fields "date", "datetime", and
+        // "datetime-local" input UI instead of "--".
         PlaceholderForDayOfMonthField,
+        // PlaceholderForfMonthField is for month placeholder text, e.g.
+        // "mm", for month field used in multiple fields "date", "datetime", and
+        // "datetime-local" input UI instead of "--".
         PlaceholderForMonthField,
+        // PlaceholderForYearField is for year placeholder text, e.g. "yyyy",
+        // for year field used in multiple fields "date", "datetime", and
+        // "datetime-local" input UI instead of "----".
         PlaceholderForYearField,
         ResetButtonDefaultLabel,
         SearchableIndexIntroduction,
-        SearchMenuClearRecentSearchesText,
-        SearchMenuNoRecentSearchesText,
-        SearchMenuRecentSearchesText,
+        SearchMenuClearRecentSearchesText, // Deprecated.
+        SearchMenuNoRecentSearchesText, // Deprecated.
+        SearchMenuRecentSearchesText, // Deprecated.
         SubmitButtonDefaultLabel,
         ThisMonthButtonLabel,
         ThisWeekButtonLabel,
@@ -157,6 +167,6 @@ struct WebLocalizedString {
     };
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

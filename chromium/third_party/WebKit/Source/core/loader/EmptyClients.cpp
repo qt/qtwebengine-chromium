@@ -31,10 +31,12 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormState.h"
-#include "core/page/Frame.h"
-#include "core/platform/ColorChooser.h"
-#include "core/platform/DateTimeChooser.h"
-#include "core/platform/FileChooser.h"
+#include "core/frame/Frame.h"
+#include "platform/ColorChooser.h"
+#include "platform/DateTimeChooser.h"
+#include "platform/FileChooser.h"
+#include "public/platform/WebServiceWorkerProvider.h"
+#include "public/platform/WebServiceWorkerProviderClient.h"
 
 namespace WebCore {
 
@@ -57,6 +59,9 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
     static BackForwardClient* dummyBackForwardClient = adoptPtr(new EmptyBackForwardClient).leakPtr();
     pageClients.backForwardClient = dummyBackForwardClient;
+
+    static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
+    pageClients.spellCheckerClient = dummySpellCheckerClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -80,6 +85,10 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClien
 PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
     return PassRefPtr<DateTimeChooser>();
+}
+
+void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
+{
 }
 
 void EmptyChromeClient::runOpenPanel(Frame*, PassRefPtr<FileChooser>)
@@ -128,16 +137,13 @@ void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequ
 {
 }
 
-void EmptyEditorClient::registerUndoStep(PassRefPtr<UndoStep>)
-{
-}
-
-void EmptyEditorClient::registerRedoStep(PassRefPtr<UndoStep>)
-{
-}
-
 void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)
 {
+}
+
+PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>)
+{
+    return nullptr;
 }
 
 }

@@ -120,18 +120,17 @@ void TestURLRequestContext::Init() {
   }
   if (!http_user_agent_settings()) {
     context_storage_.set_http_user_agent_settings(
-        new StaticHttpUserAgentSettings("en-us,fr", EmptyString()));
+        new StaticHttpUserAgentSettings("en-us,fr", std::string()));
   }
   if (!job_factory())
     context_storage_.set_job_factory(new URLRequestJobFactoryImpl);
 }
 
 TestURLRequest::TestURLRequest(const GURL& url,
+                               RequestPriority priority,
                                Delegate* delegate,
-                               TestURLRequestContext* context,
-                               NetworkDelegate* network_delegate)
-    : URLRequest(url, delegate, context, network_delegate) {
-}
+                               TestURLRequestContext* context)
+    : URLRequest(url, priority, delegate, context) {}
 
 TestURLRequest::~TestURLRequest() {
 }
@@ -306,12 +305,15 @@ TestNetworkDelegate::TestNetworkDelegate()
       created_requests_(0),
       destroyed_requests_(0),
       completed_requests_(0),
+      canceled_requests_(0),
       cookie_options_bit_mask_(0),
       blocked_get_cookies_count_(0),
       blocked_set_cookie_count_(0),
       set_cookie_count_(0),
       has_load_timing_info_before_redirect_(false),
-      has_load_timing_info_before_auth_(false) {
+      has_load_timing_info_before_auth_(false),
+      can_access_files_(true),
+      can_throttle_requests_(true) {
 }
 
 TestNetworkDelegate::~TestNetworkDelegate() {
@@ -336,7 +338,11 @@ bool TestNetworkDelegate::GetLoadTimingInfoBeforeAuth(
 
 void TestNetworkDelegate::InitRequestStatesIfNew(int request_id) {
   if (next_states_.find(request_id) == next_states_.end()) {
-    next_states_[request_id] = kStageBeforeURLRequest;
+    // TODO(davidben): Although the URLRequest documentation does not allow
+    // calling Cancel() before Start(), the ResourceLoader does so. URLRequest's
+    // destructor also calls Cancel. Either officially support this or fix the
+    // ResourceLoader code.
+    next_states_[request_id] = kStageBeforeURLRequest | kStageCompletedError;
     event_order_[request_id] = "";
   }
 }
@@ -476,6 +482,10 @@ void TestNetworkDelegate::OnCompleted(URLRequest* request, bool started) {
   if (request->status().status() == URLRequestStatus::FAILED) {
     error_count_++;
     last_error_ = request->status().error();
+  } else if (request->status().status() == URLRequestStatus::CANCELED) {
+    canceled_requests_++;
+  } else {
+    DCHECK_EQ(URLRequestStatus::SUCCESS, request->status().status());
   }
 }
 
@@ -550,12 +560,12 @@ bool TestNetworkDelegate::OnCanSetCookie(const URLRequest& request,
 
 bool TestNetworkDelegate::OnCanAccessFile(const URLRequest& request,
                                           const base::FilePath& path) const {
-  return true;
+  return can_access_files_;
 }
 
 bool TestNetworkDelegate::OnCanThrottleRequest(
     const URLRequest& request) const {
-  return true;
+  return can_throttle_requests_;
 }
 
 int TestNetworkDelegate::OnBeforeSocketStreamConnect(

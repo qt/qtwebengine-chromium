@@ -5,8 +5,15 @@
 #include "ui/app_list/views/apps_grid_view.h"
 
 #include <algorithm>
+#include <set>
+#include <string>
 
+#include "base/guid.h"
+#include "content/public/browser/web_contents.h"
+#include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item_model.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_drag_and_drop_host.h"
 #include "ui/app_list/views/app_list_item_view.h"
@@ -17,14 +24,19 @@
 #include "ui/events/event.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/views/border.h"
+#include "ui/views/controls/webview/webview.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
-#endif
+#include "ui/aura/window.h"
+#if defined(OS_WIN)
+#include "ui/views/win/hwnd_util.h"
+#endif  // defined(OS_WIN)
+#endif  // defined(USE_AURA)
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/win/shortcut.h"
@@ -67,8 +79,21 @@ const int kPrerenderPages = 1;
 // The drag and drop proxy should get scaled by this factor.
 const float kDragAndDropProxyScale = 1.5f;
 
-// For testing we remember the last created grid view.
-AppsGridView* last_created_grid_view_for_test = NULL;
+// Delays in milliseconds to show folder dropping preview circle.
+const int kFolderDroppingDelay = 250;
+
+// Delays in milliseconds to show re-order preview.
+const int kReorderDelay = 50;
+
+// Radius of the circle, in which if entered, show folder dropping preview
+// UI.
+const int kFolderDroppingCircleRadius = 15;
+
+// Radius of the circle, in which if entered, show re-order preview.
+const int kReorderDroppingCircleRadius = 30;
+
+// Max items allowed in a folder.
+size_t kMaxFolderItems = 16;
 
 // RowMoveAnimationDelegate is used when moving an item into a different row.
 // Before running the animation, the item's layer is re-created and kept in
@@ -79,8 +104,8 @@ class RowMoveAnimationDelegate
     : public views::BoundsAnimator::OwnedAnimationDelegate {
  public:
   RowMoveAnimationDelegate(views::View* view,
-                            ui::Layer* layer,
-                            const gfx::Rect& layer_target)
+                           ui::Layer* layer,
+                           const gfx::Rect& layer_target)
       : view_(view),
         layer_(layer),
         layer_start_(layer ? layer->bounds() : gfx::Rect()),
@@ -120,9 +145,78 @@ class RowMoveAnimationDelegate
   DISALLOW_COPY_AND_ASSIGN(RowMoveAnimationDelegate);
 };
 
+// ItemRemoveAnimationDelegate is used to show animation for removing an item.
+// This happens when user drags an item into a folder. The dragged item will
+// be removed from the original list after it is dropped into the folder.
+class ItemRemoveAnimationDelegate
+    : public views::BoundsAnimator::OwnedAnimationDelegate {
+ public:
+  explicit ItemRemoveAnimationDelegate(views::View* view)
+      : view_(view) {
+  }
+
+  virtual ~ItemRemoveAnimationDelegate() {
+  }
+
+  // gfx::AnimationDelegate overrides:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
+    view_->layer()->SetOpacity(1 - animation->GetCurrentValue());
+    view_->layer()->ScheduleDraw();
+  }
+
+ private:
+  scoped_ptr<views::View> view_;
+
+  DISALLOW_COPY_AND_ASSIGN(ItemRemoveAnimationDelegate);
+};
+
+// Gets the distance between the centers of the |rect_1| and |rect_2|.
+int GetDistanceBetweenRects(gfx::Rect rect_1,
+                            gfx::Rect rect_2) {
+  return (rect_1.CenterPoint() - rect_2.CenterPoint()).Length();
+}
+
+// Returns true if the |item| is an folder item.
+bool IsFolderItem(AppListItemModel* item) {
+  return (item->GetAppType() == AppListFolderItem::kAppType);
+}
+
+// Merges |source_item| into the folder containing the target item specified
+// by |target_item_id|. Both |source_item| and target item belongs to
+// |item_list|.
+// Returns the index of the target folder.
+size_t MergeItems(AppListItemList* item_list,
+                  const std::string& target_item_id,
+                  AppListItemModel* source_item) {
+  scoped_ptr<AppListItemModel> source_item_ptr =
+      item_list->RemoveItem(source_item->id());
+  DCHECK_EQ(source_item, source_item_ptr.get());
+  size_t target_index;
+  bool found_target_item = item_list->FindItemIndex(target_item_id,
+                                                    &target_index);
+  DCHECK(found_target_item);
+  AppListItemModel* target_item = item_list->item_at(target_index);
+  if (IsFolderItem(target_item)) {
+    AppListFolderItem* target_folder =
+        static_cast<AppListFolderItem*>(target_item);
+    target_folder->item_list()->AddItem(source_item_ptr.release());
+  } else {
+    scoped_ptr<AppListItemModel> target_item_ptr =
+        item_list->RemoveItemAt(target_index);
+    DCHECK_EQ(target_item, target_item_ptr.get());
+    AppListFolderItem* new_folder =
+        new AppListFolderItem(base::GenerateGUID());
+    new_folder->item_list()->AddItem(target_item_ptr.release());
+    new_folder->item_list()->AddItem(source_item_ptr.release());
+    item_list->InsertItemAt(new_folder, target_index);
+  }
+
+  return target_index;
+}
+
 }  // namespace
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 // Interprets drag events sent from Windows via the drag/drop API and forwards
 // them to AppsGridView.
 // On Windows, in order to have the OS perform the drag properly we need to
@@ -172,6 +266,7 @@ class SynchronousDrag : public ui::DragSourceWin {
 
     // Restore the dragged view to its original size.
     drag_view_->SetSize(drag_view_size);
+    drag_view_->OnSyncDragEnd();
 
     grid_view_->EndDrag(canceled_ || !IsCursorWithinGridView());
   }
@@ -196,12 +291,12 @@ class SynchronousDrag : public ui::DragSourceWin {
     drag_utils::SetDragImageOnDataObject(
         image,
         image.size(),
-        gfx::Vector2d(drag_view_offset_.x(), drag_view_offset_.y()),
+        drag_view_offset_ - drag_view_->GetDragImageOffset(),
         data);
   }
 
   HWND GetGridViewHWND() {
-    return grid_view_->GetWidget()->GetTopLevelWidget()->GetNativeView();
+    return views::HWNDForView(grid_view_);
   }
 
   bool IsCursorWithinGridView() {
@@ -229,28 +324,41 @@ class SynchronousDrag : public ui::DragSourceWin {
 
   DISALLOW_COPY_AND_ASSIGN(SynchronousDrag);
 };
-#endif // defined(OS_WIN) && !defined(USE_AURA)
+#endif  // defined(OS_WIN)
 
 AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
-                           PaginationModel* pagination_model)
+                           PaginationModel* pagination_model,
+                           content::WebContents* start_page_contents)
     : model_(NULL),
+      item_list_(NULL),
       delegate_(delegate),
       pagination_model_(pagination_model),
       page_switcher_view_(new PageSwitcher(pagination_model)),
+      start_page_view_(NULL),
       cols_(0),
       rows_per_page_(0),
       selected_view_(NULL),
       drag_view_(NULL),
       drag_start_page_(-1),
       drag_pointer_(NONE),
+      drop_attempt_(DROP_FOR_NONE),
       drag_and_drop_host_(NULL),
       forward_events_to_drag_and_drop_host_(false),
       page_flip_target_(-1),
       page_flip_delay_in_ms_(kPageFlipDelayInMs),
-      bounds_animator_(this) {
-  last_created_grid_view_for_test = this;
+      bounds_animator_(this),
+      is_root_level_(true) {
   pagination_model_->AddObserver(this);
   AddChildView(page_switcher_view_);
+
+  if (start_page_contents) {
+    start_page_view_ =
+        new views::WebView(start_page_contents->GetBrowserContext());
+    start_page_view_->SetWebContents(start_page_contents);
+    AddChildView(start_page_view_);
+    start_page_contents->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListShown");
+  }
 }
 
 AppsGridView::~AppsGridView() {
@@ -261,11 +369,17 @@ AppsGridView::~AppsGridView() {
   if (drag_view_)
     EndDrag(true);
 
-  if (model_) {
+  if (model_)
     model_->RemoveObserver(this);
-    model_->apps()->RemoveObserver(this);
-  }
   pagination_model_->RemoveObserver(this);
+
+  if (item_list_)
+    item_list_->RemoveObserver(this);
+
+  if (start_page_view_) {
+    start_page_view_->GetWebContents()->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListHidden");
+  }
 }
 
 void AppsGridView::SetLayout(int icon_size, int cols, int rows_per_page) {
@@ -280,16 +394,22 @@ void AppsGridView::SetLayout(int icon_size, int cols, int rows_per_page) {
 }
 
 void AppsGridView::SetModel(AppListModel* model) {
-  if (model_) {
+  if (model_)
     model_->RemoveObserver(this);
-    model_->apps()->RemoveObserver(this);
-  }
 
   model_ = model;
-  if (model_) {
+  if (model_)
     model_->AddObserver(this);
-    model_->apps()->AddObserver(this);
-  }
+
+  Update();
+}
+
+void AppsGridView::SetItemList(AppListItemList* item_list) {
+  if (item_list_)
+    item_list_->RemoveObserver(this);
+
+  item_list_ = item_list;
+  item_list_->AddObserver(this);
   Update();
 }
 
@@ -304,6 +424,13 @@ void AppsGridView::SetSelectedView(views::View* view) {
 
 void AppsGridView::ClearSelectedView(views::View* view) {
   if (view && IsSelectedView(view)) {
+    selected_view_->SchedulePaint();
+    selected_view_ = NULL;
+  }
+}
+
+void AppsGridView::ClearAnySelectedView() {
+  if (selected_view_) {
     selected_view_->SchedulePaint();
     selected_view_ = NULL;
   }
@@ -337,7 +464,7 @@ void AppsGridView::InitiateDrag(AppListItemView* view,
 }
 
 void AppsGridView::OnGotShortcutPath(const base::FilePath& path) {
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Drag may have ended before we get the shortcut path.
   if (!synchronous_drag_)
     return;
@@ -351,19 +478,24 @@ void AppsGridView::OnGotShortcutPath(const base::FilePath& path) {
 }
 
 void AppsGridView::StartSettingUpSynchronousDrag() {
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   if (!delegate_)
     return;
 
+  // Favor the drag and drop host over native win32 drag. For the Win8/ash
+  // launcher we want to have ashes drag and drop over win32's.
+  if (drag_and_drop_host_)
+    return;
+
   delegate_->GetShortcutPathForApp(
-      drag_view_->model()->app_id(),
+      drag_view_->model()->id(),
       base::Bind(&AppsGridView::OnGotShortcutPath, base::Unretained(this)));
   synchronous_drag_ = new SynchronousDrag(this, drag_view_, drag_view_offset_);
 #endif
 }
 
 bool AppsGridView::RunSynchronousDrag() {
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   if (synchronous_drag_ && synchronous_drag_->CanRun()) {
     synchronous_drag_->Run();
     synchronous_drag_ = NULL;
@@ -374,13 +506,15 @@ bool AppsGridView::RunSynchronousDrag() {
 }
 
 void AppsGridView::CleanUpSynchronousDrag() {
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   synchronous_drag_ = NULL;
 #endif
 }
 
 void AppsGridView::UpdateDragFromItem(Pointer pointer,
                                       const ui::LocatedEvent& event) {
+  DCHECK(drag_view_);
+
   gfx::Point drag_point_in_grid_view;
   ExtractDragLocation(event, &drag_point_in_grid_view);
   UpdateDrag(pointer, drag_point_in_grid_view);
@@ -389,9 +523,11 @@ void AppsGridView::UpdateDragFromItem(Pointer pointer,
 
   // If a drag and drop host is provided, see if the drag operation needs to be
   // forwarded.
-  DispatchDragEventToDragAndDropHost(event.root_location());
+  gfx::Point location_in_screen = drag_point_in_grid_view;
+  views::View::ConvertPointToScreen(this, &location_in_screen);
+  DispatchDragEventToDragAndDropHost(location_in_screen);
   if (drag_and_drop_host_)
-    drag_and_drop_host_->UpdateDragIconProxy(event.root_location());
+    drag_and_drop_host_->UpdateDragIconProxy(location_in_screen);
 }
 
 void AppsGridView::UpdateDrag(Pointer pointer, const gfx::Point& point) {
@@ -417,6 +553,7 @@ void AppsGridView::UpdateDrag(Pointer pointer, const gfx::Point& point) {
 
   last_drag_point_ = point;
   const Index last_drop_target = drop_target_;
+  DropAttempt last_drop_attempt = drop_attempt_;
   CalculateDropTarget(last_drag_point_, false);
 
   if (IsPointWithinDragBuffer(last_drag_point_))
@@ -429,8 +566,31 @@ void AppsGridView::UpdateDrag(Pointer pointer, const gfx::Point& point) {
                                     &page_switcher_point);
   page_switcher_view_->UpdateUIForDragPoint(page_switcher_point);
 
-  if (last_drop_target != drop_target_)
-    AnimateToIdealBounds();
+  if (!EnableFolderDragDropUI()) {
+    if (last_drop_target != drop_target_)
+      AnimateToIdealBounds();
+    drag_view_->SetPosition(drag_view_start_ + drag_vector);
+    return;
+  }
+
+  // Update drag with folder UI enabled.
+  if (last_drop_target != drop_target_ ||
+      last_drop_attempt != drop_attempt_) {
+    if (drop_attempt_ == DROP_FOR_REORDER) {
+      folder_dropping_timer_.Stop();
+      reorder_timer_.Start(FROM_HERE,
+          base::TimeDelta::FromMilliseconds(kReorderDelay),
+          this, &AppsGridView::OnReorderTimer);
+    } else if (drop_attempt_ == DROP_FOR_FOLDER) {
+      reorder_timer_.Stop();
+      folder_dropping_timer_.Start(FROM_HERE,
+          base::TimeDelta::FromMilliseconds(kFolderDroppingDelay),
+          this, &AppsGridView::OnFolderDroppingTimer);
+    }
+
+    // Reset the previous drop target.
+    SetAsFolderDroppingTarget(last_drop_target, false);
+  }
 
   drag_view_->SetPosition(drag_view_start_ + drag_vector);
 }
@@ -446,8 +606,16 @@ void AppsGridView::EndDrag(bool cancel) {
     drag_and_drop_host_->EndDrag(cancel);
   } else if (!cancel && dragging()) {
     CalculateDropTarget(last_drag_point_, true);
-    if (IsValidIndex(drop_target_))
-      MoveItemInModel(drag_view_, drop_target_);
+    if (IsValidIndex(drop_target_)) {
+      if (!EnableFolderDragDropUI()) {
+          MoveItemInModel(drag_view_, drop_target_);
+      } else {
+        if (drop_attempt_ == DROP_FOR_REORDER)
+          MoveItemInModel(drag_view_, drop_target_);
+        else if (drop_attempt_ == DROP_FOR_FOLDER)
+          MoveItemToFolder(drag_view_, drop_target_);
+      }
+    }
   }
 
   if (drag_and_drop_host_) {
@@ -471,8 +639,11 @@ void AppsGridView::EndDrag(bool cancel) {
   // is Run().
   CleanUpSynchronousDrag();
 
+  SetAsFolderDroppingTarget(drop_target_, false);
+  drop_attempt_ = DROP_FOR_NONE;
   drag_pointer_ = NONE;
   drop_target_ = Index();
+  drag_view_->OnDragEnded();
   drag_view_ = NULL;
   drag_start_grid_view_ = gfx::Point();
   drag_start_page_ = -1;
@@ -553,6 +724,8 @@ void AppsGridView::Layout() {
   rect.set_y(rect.bottom() - page_switcher_height);
   rect.set_height(page_switcher_height);
   page_switcher_view_->SetBoundsRect(rect);
+
+  LayoutStartPage();
 }
 
 bool AppsGridView::OnKeyPressed(const ui::KeyEvent& event) {
@@ -612,32 +785,37 @@ void AppsGridView::ViewHierarchyChanged(
   }
 }
 
-// static
-AppsGridView* AppsGridView::GetLastGridViewForTest() {
-  return last_created_grid_view_for_test;
-}
-
 void AppsGridView::Update() {
   DCHECK(!selected_view_ && !drag_view_);
+  if (!item_list_)
+    return;
 
   view_model_.Clear();
-  if (model_ && model_->apps()->item_count())
-    ListItemsAdded(0, model_->apps()->item_count());
+  if (!item_list_->item_count())
+    return;
+  for (size_t i = 0; i < item_list_->item_count(); ++i) {
+    views::View* view = CreateViewForItemAtIndex(i);
+    view_model_.Add(view, i);
+    AddChildView(view);
+  }
+  UpdatePaging();
+  UpdatePulsingBlockViews();
+  Layout();
+  SchedulePaint();
 }
 
 void AppsGridView::UpdatePaging() {
-  if (!view_model_.view_size() || !tiles_per_page()) {
-    pagination_model_->SetTotalPages(0);
-    return;
-  }
+  int total_page = start_page_view_ ? 1 : 0;
+  if (view_model_.view_size() && tiles_per_page())
+    total_page += (view_model_.view_size() - 1) / tiles_per_page() + 1;
 
-  pagination_model_->SetTotalPages(
-      (view_model_.view_size() - 1) / tiles_per_page() + 1);
+  pagination_model_->SetTotalPages(total_page);
 }
 
 void AppsGridView::UpdatePulsingBlockViews() {
+  const int existing_items = item_list_ ? item_list_->item_count() : 0;
   const int available_slots =
-      tiles_per_page() - model_->apps()->item_count() % tiles_per_page();
+      tiles_per_page() - existing_items % tiles_per_page();
   const int desired = model_->status() == AppListModel::STATUS_SYNCING ?
       available_slots : 0;
 
@@ -659,15 +837,34 @@ void AppsGridView::UpdatePulsingBlockViews() {
 }
 
 views::View* AppsGridView::CreateViewForItemAtIndex(size_t index) {
-  DCHECK_LT(index, model_->apps()->item_count());
+  // The drag_view_ might be pending for deletion, therefore view_model_
+  // may have one more item than item_list_.
+  DCHECK_LE(index, item_list_->item_count());
   AppListItemView* view = new AppListItemView(this,
-                                              model_->apps()->GetItemAt(index));
+                                              item_list_->item_at(index));
   view->SetIconSize(icon_size_);
 #if defined(USE_AURA)
   view->SetPaintToLayer(true);
   view->SetFillsBoundsOpaquely(false);
 #endif
   return view;
+}
+
+AppsGridView::Index AppsGridView::GetIndexFromModelIndex(
+    int model_index) const {
+  int page = model_index / tiles_per_page();
+  if (start_page_view_)
+    ++page;
+
+  return Index(page, model_index % tiles_per_page());
+}
+
+int AppsGridView::GetModelIndexFromIndex(const Index& index) const {
+  int model_index = index.page * tiles_per_page() + index.slot;
+  if (start_page_view_)
+    model_index -= tiles_per_page();
+
+  return model_index;
 }
 
 void AppsGridView::SetSelectedItemByIndex(const Index& index) {
@@ -689,9 +886,12 @@ void AppsGridView::SetSelectedItemByIndex(const Index& index) {
 }
 
 bool AppsGridView::IsValidIndex(const Index& index) const {
-  return index.page >= 0 && index.page < pagination_model_->total_pages() &&
-      index.slot >= 0 && index.slot < tiles_per_page() &&
-      index.page * tiles_per_page() + index.slot < view_model_.view_size();
+  const int item_page_start = start_page_view_ ? 1 : 0;
+  return index.page >= item_page_start &&
+         index.page < pagination_model_->total_pages() &&
+         index.slot >= 0 &&
+         index.slot < tiles_per_page() &&
+         GetModelIndexFromIndex(index) < view_model_.view_size();
 }
 
 AppsGridView::Index AppsGridView::GetIndexOfView(
@@ -700,14 +900,14 @@ AppsGridView::Index AppsGridView::GetIndexOfView(
   if (model_index == -1)
     return Index();
 
-  return Index(model_index / tiles_per_page(), model_index % tiles_per_page());
+  return GetIndexFromModelIndex(model_index);
 }
 
 views::View* AppsGridView::GetViewAtIndex(const Index& index) const {
   if (!IsValidIndex(index))
     return NULL;
 
-  const int model_index = index.page * tiles_per_page() + index.slot;
+  const int model_index = GetModelIndexFromIndex(index);
   return view_model_.view_at(model_index);
 }
 
@@ -784,32 +984,39 @@ void AppsGridView::CalculateIdealBounds() {
       view_model_.view_size() + pulsing_blocks_model_.view_size();
   int slot_index = 0;
   for (int i = 0; i < total_views; ++i) {
-    if (i < view_model_.view_size() && view_model_.view_at(i) == drag_view_)
+    if (i < view_model_.view_size() && view_model_.view_at(i) == drag_view_) {
+      if (EnableFolderDragDropUI() && drop_attempt_ == DROP_FOR_FOLDER)
+        ++slot_index;
       continue;
+    }
 
-    int page = slot_index / tiles_per_page();
-    int slot = slot_index % tiles_per_page();
+    Index view_index = GetIndexFromModelIndex(slot_index);
 
-    if (drop_target_.page == page && drop_target_.slot == slot) {
-      ++slot_index;
-      page = slot_index / tiles_per_page();
-      slot = slot_index % tiles_per_page();
+    if (drop_target_ == view_index) {
+      if (EnableFolderDragDropUI() && drop_attempt_ == DROP_FOR_FOLDER) {
+        view_index = GetIndexFromModelIndex(slot_index);
+      } else {
+        ++slot_index;
+        view_index = GetIndexFromModelIndex(slot_index);
+      }
     }
 
     // Decides an x_offset for current item.
     int x_offset = 0;
-    if (page < current_page)
+    if (view_index.page < current_page)
       x_offset = -page_width;
-    else if (page > current_page)
+    else if (view_index.page > current_page)
       x_offset = page_width;
 
     if (is_valid) {
-      if (page == current_page || page == transition.target_page)
+      if (view_index.page == current_page ||
+          view_index.page == transition.target_page) {
         x_offset += transition_offset;
+      }
     }
 
-    const int row = slot / cols_;
-    const int col = slot % cols_;
+    const int row = view_index.slot / cols_;
+    const int col = view_index.slot % cols_;
     gfx::Rect tile_slot(
         gfx::Point(grid_rect.x() + col * tile_size.width() + x_offset,
                    grid_rect.y() + row * tile_size.height()),
@@ -901,7 +1108,7 @@ void AppsGridView::AnimationBetweenRows(views::View* view,
 
 void AppsGridView::ExtractDragLocation(const ui::LocatedEvent& event,
                                        gfx::Point* drag_point) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(OS_WIN)
   // Use root location of |event| instead of location in |drag_view_|'s
   // coordinates because |drag_view_| has a scale transform and location
   // could have integer round error and causes jitter.
@@ -927,6 +1134,11 @@ void AppsGridView::ExtractDragLocation(const ui::LocatedEvent& event,
 
 void AppsGridView::CalculateDropTarget(const gfx::Point& drag_point,
                                        bool use_page_button_hovering) {
+  if (EnableFolderDragDropUI()) {
+    CalculateDropTargetWithFolderEnabled(drag_point, use_page_button_hovering);
+    return;
+  }
+
   int current_page = pagination_model_->selected_page();
   gfx::Point point(drag_point);
   if (!IsPointWithinDragBuffer(drag_point)) {
@@ -964,6 +1176,48 @@ void AppsGridView::CalculateDropTarget(const gfx::Point& drag_point,
   }
 }
 
+
+void AppsGridView::CalculateDropTargetWithFolderEnabled(
+    const gfx::Point& drag_point,
+    bool use_page_button_hovering) {
+  gfx::Point point(drag_point);
+  if (!IsPointWithinDragBuffer(drag_point)) {
+    point = drag_start_grid_view_;
+  }
+
+  if (use_page_button_hovering &&
+      page_switcher_view_->bounds().Contains(point)) {
+    gfx::Point page_switcher_point(point);
+    views::View::ConvertPointToTarget(this, page_switcher_view_,
+                                      &page_switcher_point);
+    int page = page_switcher_view_->GetPageForPoint(page_switcher_point);
+    if (pagination_model_->is_valid_page(page)) {
+      drop_target_.page = page;
+      drop_target_.slot = tiles_per_page() - 1;
+    }
+    if (drop_target_.page == pagination_model_->total_pages() - 1) {
+      drop_target_.slot = std::min(
+          (view_model_.view_size() - 1) % tiles_per_page(),
+          drop_target_.slot);
+    }
+    drop_attempt_ = DROP_FOR_REORDER;
+  } else {
+    DCHECK(drag_view_);
+    // Try to find the nearest target for folder dropping or re-ordering.
+    drop_target_ = GetNearestTileForDragView();
+  }
+}
+
+void AppsGridView::OnReorderTimer() {
+  if (drop_attempt_ == DROP_FOR_REORDER)
+    AnimateToIdealBounds();
+}
+
+void AppsGridView::OnFolderDroppingTimer() {
+  if (drop_attempt_ == DROP_FOR_FOLDER)
+    SetAsFolderDroppingTarget(drop_target_, true);
+}
+
 void AppsGridView::StartDragAndDropHostDrag(const gfx::Point& grid_location) {
   // When a drag and drop host is given, the item can be dragged out of the app
   // list window. In that case a proxy widget needs to be used.
@@ -994,7 +1248,7 @@ void AppsGridView::StartDragAndDropHostDrag(const gfx::Point& grid_location) {
 }
 
 void AppsGridView::DispatchDragEventToDragAndDropHost(
-    const gfx::Point& point) {
+    const gfx::Point& location_in_screen_coordinates) {
   if (!drag_view_ || !drag_and_drop_host_)
     return;
   if (bounds().Contains(last_drag_point_)) {
@@ -1009,14 +1263,14 @@ void AppsGridView::DispatchDragEventToDragAndDropHost(
     // The event happened outside our app menu and we might need to dispatch.
     if (forward_events_to_drag_and_drop_host_) {
       // Dispatch since we have already started.
-      if (!drag_and_drop_host_->Drag(point)) {
+      if (!drag_and_drop_host_->Drag(location_in_screen_coordinates)) {
         // The host is not active any longer and we cancel the operation.
         forward_events_to_drag_and_drop_host_ = false;
         drag_and_drop_host_->EndDrag(true);
       }
     } else {
-      if (drag_and_drop_host_->StartDrag(drag_view_->model()->app_id(),
-                                         point)) {
+      if (drag_and_drop_host_->StartDrag(drag_view_->model()->id(),
+                                         location_in_screen_coordinates)) {
         // From now on we forward the drag events.
         forward_events_to_drag_and_drop_host_ = true;
         // Any flip operations are stopped.
@@ -1073,17 +1327,53 @@ void AppsGridView::MoveItemInModel(views::View* item_view,
   int current_model_index = view_model_.GetIndexOfView(item_view);
   DCHECK_GE(current_model_index, 0);
 
-  int target_model_index = target.page * tiles_per_page() + target.slot;
+  int target_model_index = GetModelIndexFromIndex(target);
   if (target_model_index == current_model_index)
     return;
 
-  model_->apps()->RemoveObserver(this);
-  model_->apps()->Move(current_model_index, target_model_index);
+  item_list_->RemoveObserver(this);
+  item_list_->MoveItem(current_model_index, target_model_index);
   view_model_.Move(current_model_index, target_model_index);
-  model_->apps()->AddObserver(this);
+  item_list_->AddObserver(this);
 
   if (pagination_model_->selected_page() != target.page)
     pagination_model_->SelectPage(target.page, false);
+}
+
+void AppsGridView::MoveItemToFolder(views::View* item_view,
+                                    const Index& target) {
+  AppListItemModel* source_item =
+      static_cast<AppListItemView*>(item_view)->model();
+  AppListItemView* target_view =
+      static_cast<AppListItemView*>(GetViewAtSlotOnCurrentPage(target.slot));
+  AppListItemModel* target_item = target_view->model();
+  bool target_is_folder = IsFolderItem(target_item);
+
+  // Make change to data model.
+  item_list_->RemoveObserver(this);
+  int folder_index = MergeItems(item_list_, target_item->id(), source_item);
+  item_list_->AddObserver(this);
+
+  if (!target_is_folder) {
+    // Change view_model_ to replace the old target view with new folder
+    // item view.
+    int target_index = view_model_.GetIndexOfView(target_view);
+    view_model_.Remove(target_index);
+    delete target_view;
+
+    views::View* target_folder_view = CreateViewForItemAtIndex(folder_index);
+    view_model_.Add(target_folder_view, target_index);
+    AddChildView(target_folder_view);
+  }
+
+  // Fade out the drag_view_ and delete it when animation ends.
+  int drag_view_index = view_model_.GetIndexOfView(drag_view_);
+  view_model_.Remove(drag_view_index);
+  bounds_animator_.AnimateViewTo(drag_view_, drag_view_->bounds());
+  bounds_animator_.SetAnimationDelegate(
+      drag_view_, new ItemRemoveAnimationDelegate(drag_view_), true);
+
+  UpdatePaging();
 }
 
 void AppsGridView::CancelContextMenusOnCurrentPage() {
@@ -1116,14 +1406,35 @@ void AppsGridView::ButtonPressed(views::Button* sender,
   }
 }
 
-void AppsGridView::ListItemsAdded(size_t start, size_t count) {
+void AppsGridView::LayoutStartPage() {
+  if (!start_page_view_)
+    return;
+
+  gfx::Rect start_page_bounds(GetLocalBounds());
+  start_page_bounds.set_height(start_page_bounds.height() -
+                               page_switcher_view_->height());
+
+  const int page_width = width() + kPagePadding;
+  const int current_page = pagination_model_->selected_page();
+  if (current_page > 0)
+    start_page_bounds.Offset(-page_width, 0);
+
+  const PaginationModel::Transition& transition =
+      pagination_model_->transition();
+  if (current_page == 0 || transition.target_page == 0) {
+    const int dir = transition.target_page > current_page ? -1 : 1;
+    start_page_bounds.Offset(transition.progress * page_width * dir, 0);
+  }
+
+  start_page_view_->SetBoundsRect(start_page_bounds);
+}
+
+void AppsGridView::OnListItemAdded(size_t index, AppListItemModel* item) {
   EndDrag(true);
 
-  for (size_t i = start; i < start + count; ++i) {
-    views::View* view = CreateViewForItemAtIndex(i);
-    view_model_.Add(view, i);
-    AddChildView(view);
-  }
+  views::View* view = CreateViewForItemAtIndex(index);
+  view_model_.Add(view, index);
+  AddChildView(view);
 
   UpdatePaging();
   UpdatePulsingBlockViews();
@@ -1131,14 +1442,12 @@ void AppsGridView::ListItemsAdded(size_t start, size_t count) {
   SchedulePaint();
 }
 
-void AppsGridView::ListItemsRemoved(size_t start, size_t count) {
+void AppsGridView::OnListItemRemoved(size_t index, AppListItemModel* item) {
   EndDrag(true);
 
-  for (size_t i = 0; i < count; ++i) {
-    views::View* view = view_model_.view_at(start);
-    view_model_.Remove(start);
-    delete view;
-  }
+  views::View* view = view_model_.view_at(index);
+  view_model_.Remove(index);
+  delete view;
 
   UpdatePaging();
   UpdatePulsingBlockViews();
@@ -1146,16 +1455,14 @@ void AppsGridView::ListItemsRemoved(size_t start, size_t count) {
   SchedulePaint();
 }
 
-void AppsGridView::ListItemMoved(size_t index, size_t target_index) {
+void AppsGridView::OnListItemMoved(size_t from_index,
+                                   size_t to_index,
+                                   AppListItemModel* item) {
   EndDrag(true);
-  view_model_.Move(index, target_index);
+  view_model_.Move(from_index, to_index);
 
   UpdatePaging();
   AnimateToIdealBounds();
-}
-
-void AppsGridView::ListItemsChanged(size_t start, size_t count) {
-  NOTREACHED();
 }
 
 void AppsGridView::TotalPagesChanged() {
@@ -1199,6 +1506,166 @@ void AppsGridView::SetViewHidden(views::View* view, bool hide, bool immediate) {
                   ui::LayerAnimator::BLEND_WITH_CURRENT_ANIMATION);
   view->layer()->SetOpacity(hide ? 0 : 1);
 #endif
+}
+
+bool AppsGridView::EnableFolderDragDropUI() {
+  // Enable drag and drop folder UI only if it is at the app list root level
+  // and the switch is on and the target folder can still accept new items.
+  return switches::IsFolderUIEnabled() && is_root_level_ &&
+      CanDropIntoTarget(drop_target_);
+}
+
+bool AppsGridView::CanDropIntoTarget(const Index& drop_target) {
+  views::View* target_view = GetViewAtSlotOnCurrentPage(drop_target.slot);
+  if (!target_view)
+    return true;
+
+  AppListItemModel* target_item =
+      static_cast<AppListItemView*>(target_view)->model();
+  if (!IsFolderItem(target_item))
+    return true;
+
+  return static_cast<AppListFolderItem*>(target_item)->item_list()->
+      item_count() < kMaxFolderItems;
+}
+
+// TODO(jennyz): Optimize the calculation for finding nearest tile.
+AppsGridView::Index AppsGridView::GetNearestTileForDragView() {
+  Index nearest_tile;
+  nearest_tile.page = -1;
+  nearest_tile.slot = -1;
+  int d_min = -1;
+
+  // Calculate the top left tile |drag_view| intersects.
+  gfx::Point pt = drag_view_->bounds().origin();
+  CalculateNearestTileForVertex(pt, &nearest_tile, &d_min);
+
+  // Calculate the top right tile |drag_view| intersects.
+  pt = drag_view_->bounds().top_right();
+  CalculateNearestTileForVertex(pt, &nearest_tile, &d_min);
+
+  // Calculate the bottom left tile |drag_view| intersects.
+  pt = drag_view_->bounds().bottom_left();
+  CalculateNearestTileForVertex(pt, &nearest_tile, &d_min);
+
+  // Calculate the bottom right tile |drag_view| intersects.
+  pt = drag_view_->bounds().bottom_right();
+  CalculateNearestTileForVertex(pt, &nearest_tile, &d_min);
+
+  const int d_folder_dropping =
+      kFolderDroppingCircleRadius + kPreferredIconDimension / 2;
+  const int d_reorder =
+      kReorderDroppingCircleRadius + kPreferredIconDimension / 2;
+
+  if (IsValidIndex(nearest_tile)) {
+    if (d_min < d_folder_dropping) {
+      views::View* target_view = GetViewAtSlotOnCurrentPage(nearest_tile.slot);
+      if (target_view &&
+          !IsFolderItem(static_cast<AppListItemView*>(drag_view_)->model())) {
+        // If a non-folder item is dragged to the target slot with an item
+        // sitting on it, attempt to drop the dragged item into the folder
+        // containing the item on nearest_tile.
+        drop_attempt_ = DROP_FOR_FOLDER;
+        return nearest_tile;
+      } else {
+        // If the target slot is blank, or the dragged item is a folder, attempt
+        // to re-order.
+        drop_attempt_ = DROP_FOR_REORDER;
+        return nearest_tile;
+      }
+    } else if (d_min < d_reorder) {
+      // Entering the re-order circle of the slot.
+      drop_attempt_ = DROP_FOR_REORDER;
+      return nearest_tile;
+    }
+  }
+
+  // If |drag_view| is not entering the re-order or fold dropping region of
+  // any items, cancel any previous re-order or folder dropping timer, and
+  // return itself.
+  drop_attempt_ = DROP_FOR_NONE;
+  reorder_timer_.Stop();
+  folder_dropping_timer_.Stop();
+  return GetIndexOfView(drag_view_);
+}
+
+void AppsGridView::CalculateNearestTileForVertex(const gfx::Point& vertex,
+                                                Index* nearest_tile,
+                                                int* d_min) {
+  Index target_index;
+  gfx::Rect target_bounds = GetTileBoundsForPoint(vertex, &target_index);
+
+  if (target_bounds.IsEmpty() || target_index == *nearest_tile)
+    return;
+
+  int d_center = GetDistanceBetweenRects(drag_view_->bounds(), target_bounds);
+  if (*d_min < 0 || d_center < *d_min) {
+    *d_min = d_center;
+    *nearest_tile = target_index;
+  }
+}
+
+gfx::Rect AppsGridView::GetTileBoundsForPoint(const gfx::Point& point,
+                                              Index *tile_index) {
+  // Check if |point| is outside of contents bounds.
+  gfx::Rect bounds(GetContentsBounds());
+  if (!bounds.Contains(point))
+    return gfx::Rect();
+
+  // Calculate which tile |point| is enclosed in.
+  int x = point.x();
+  int y = point.y();
+  int col = (x - bounds.x()) / kPreferredTileWidth;
+  int row = (y - bounds.y()) / kPreferredTileHeight;
+  gfx::Rect tile_rect = GetTileBounds(row, col);
+
+  // Check if |point| is outside a valid item's tile.
+  Index index(pagination_model_->selected_page(), row * cols_ + col);
+  if (!IsValidIndex(index))
+    return gfx::Rect();
+
+  // |point| is inside of the valid item's tile.
+  *tile_index = index;
+  return tile_rect;
+}
+
+gfx::Rect AppsGridView::GetTileBounds(int row, int col) const {
+  gfx::Rect bounds(GetContentsBounds());
+  gfx::Size tile_size(kPreferredTileWidth, kPreferredTileHeight);
+  gfx::Rect grid_rect(gfx::Size(tile_size.width() * cols_,
+                                tile_size.height() * rows_per_page_));
+  grid_rect.Intersect(bounds);
+  gfx::Rect tile_rect(
+      gfx::Point(grid_rect.x() + col * tile_size.width(),
+                 grid_rect.y() + row * tile_size.height()),
+      tile_size);
+  return tile_rect;
+}
+
+views::View* AppsGridView::GetViewAtSlotOnCurrentPage(int slot) {
+  if (slot < 0)
+    return NULL;
+
+  // Calculate the original bound of the tile at |index|.
+  int row = slot / cols_;
+  int col = slot % cols_;
+  gfx::Rect tile_rect = GetTileBounds(row, col);
+
+  for (int i = 0; i < view_model_.view_size(); ++i) {
+    views::View* view = view_model_.view_at(i);
+    if (view->bounds() == tile_rect)
+      return view;
+  }
+  return NULL;
+}
+
+void AppsGridView::SetAsFolderDroppingTarget(const Index& target_index,
+                                             bool is_target_folder) {
+  AppListItemView* target_view =
+      static_cast<AppListItemView*>(
+          GetViewAtSlotOnCurrentPage(target_index.slot));
+  if (target_view)
+    target_view->SetAsAttemptedFolderTarget(is_target_folder);
 }
 
 }  // namespace app_list

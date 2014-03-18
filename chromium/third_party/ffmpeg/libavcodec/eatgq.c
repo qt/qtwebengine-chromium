@@ -219,9 +219,10 @@ static int tgq_decode_frame(AVCodecContext *avctx,
         s->height = bytestream2_get_le16u(&s->gb);
     }
 
-    if (s->avctx->width!=s->width || s->avctx->height!=s->height) {
-        avcodec_set_dimensions(s->avctx, s->width, s->height);
-    }
+    ret = ff_set_dimensions(s->avctx, s->width, s->height);
+    if (ret < 0)
+        return ret;
+
     tgq_calculate_qtable(s, bytestream2_get_byteu(&s->gb));
     bytestream2_skip(&s->gb, 3);
 
@@ -242,11 +243,11 @@ static int tgq_decode_frame(AVCodecContext *avctx,
 
 AVCodec ff_eatgq_decoder = {
     .name           = "eatgq",
+    .long_name      = NULL_IF_CONFIG_SMALL("Electronic Arts TGQ video"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_TGQ,
     .priv_data_size = sizeof(TgqContext),
     .init           = tgq_decode_init,
     .decode         = tgq_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Electronic Arts TGQ video"),
 };

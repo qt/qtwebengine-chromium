@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/css/CSSFontFaceSource.h"
 
+#include "RuntimeEnabledFeatures.h"
+#include "core/css/CSSCustomFontData.h"
 #include "core/css/CSSFontFace.h"
-#include "core/css/CSSFontSelector.h"
-#include "core/fetch/FontResource.h"
-#include "core/platform/HistogramSupport.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/FontDescription.h"
-#include "core/platform/graphics/SimpleFontData.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/SimpleFontData.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
 #if ENABLE(SVG_FONTS)
@@ -69,8 +69,9 @@ void CSSFontFaceSource::pruneTable()
         return;
 
     for (FontDataTable::iterator it = m_fontDataTable.begin(); it != m_fontDataTable.end(); ++it) {
-        if (SimpleFontData* fontData = it->value.get())
-            fontData->clearCSSFontFaceSource();
+        SimpleFontData* fontData = it->value.get();
+        if (fontData && fontData->customFontData())
+            fontData->customFontData()->clearCSSFontFaceSource();
     }
     m_fontDataTable.clear();
 }
@@ -125,7 +126,7 @@ void CSSFontFaceSource::fontLoaded(FontResource*)
         m_face->fontLoaded(this);
 }
 
-PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription& fontDescription, bool syntheticBold, bool syntheticItalic, CSSFontSelector* fontSelector)
+PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription& fontDescription)
 {
     // If the font hasn't loaded or an error occurred, then we've got nothing.
     if (!isValid())
@@ -134,16 +135,16 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
     if (isLocal()) {
         // We're local. Just return a SimpleFontData from the normal cache.
         // We don't want to check alternate font family names here, so pass true as the checkingAlternateName parameter.
-        RefPtr<SimpleFontData> fontData = fontCache()->getFontResourceData(fontDescription, m_string, true);
+        RefPtr<SimpleFontData> fontData = FontCache::fontCache()->getFontData(fontDescription, m_string, true);
         m_histograms.recordLocalFont(fontData);
         return fontData;
     }
 
     // See if we have a mapping in our FontData cache.
-    unsigned hashKey = (fontDescription.computedPixelSize() + 1) << 5 | fontDescription.widthVariant() << 3
-                       | (fontDescription.orientation() == Vertical ? 4 : 0) | (syntheticBold ? 2 : 0) | (syntheticItalic ? 1 : 0);
+    AtomicString emptyFontFamily = "";
+    FontCacheKey key = fontDescription.cacheKey(emptyFontFamily);
 
-    RefPtr<SimpleFontData>& fontData = m_fontDataTable.add(hashKey, 0).iterator->value;
+    RefPtr<SimpleFontData>& fontData = m_fontDataTable.add(key.hash(), 0).iterator->value;
     if (fontData)
         return fontData; // No release, because fontData is a reference to a RefPtr that is held in the m_fontDataTable.
 
@@ -184,7 +185,11 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
                         m_svgFontFaceElement = fontFaceElement;
                     }
 
-                    fontData = SimpleFontData::create(SVGFontData::create(fontFaceElement), fontDescription.computedPixelSize(), syntheticBold, syntheticItalic);
+                    fontData = SimpleFontData::create(
+                        SVGFontData::create(fontFaceElement),
+                        fontDescription.effectiveFontSize(),
+                        fontDescription.isSyntheticBold(),
+                        fontDescription.isSyntheticItalic());
                 }
             } else
 #endif
@@ -193,22 +198,30 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
                 if (!m_font->ensureCustomFontData())
                     return 0;
 
-                fontData = SimpleFontData::create(m_font->platformDataFromCustomData(fontDescription.computedPixelSize(), syntheticBold, syntheticItalic,
-                    fontDescription.orientation(), fontDescription.widthVariant()), true, false);
+                fontData = SimpleFontData::create(
+                    m_font->platformDataFromCustomData(fontDescription.effectiveFontSize(),
+                        fontDescription.isSyntheticBold(), fontDescription.isSyntheticItalic(),
+                        fontDescription.orientation(), fontDescription.widthVariant()), CustomFontData::create(false));
             }
         } else {
 #if ENABLE(SVG_FONTS)
             // In-Document SVG Fonts
-            if (m_svgFontFaceElement)
-                fontData = SimpleFontData::create(SVGFontData::create(m_svgFontFaceElement.get()), fontDescription.computedPixelSize(), syntheticBold, syntheticItalic);
+            if (m_svgFontFaceElement) {
+                fontData = SimpleFontData::create(
+                    SVGFontData::create(m_svgFontFaceElement.get()),
+                    fontDescription.effectiveFontSize(),
+                    fontDescription.isSyntheticBold(),
+                    fontDescription.isSyntheticItalic());
+            }
 #endif
         }
     } else {
         // This temporary font is not retained and should not be returned.
         FontCachePurgePreventer fontCachePurgePreventer;
-        SimpleFontData* temporaryFont = fontCache()->getNonRetainedLastResortFallbackFont(fontDescription);
-        fontData = SimpleFontData::create(temporaryFont->platformData(), true, true);
-        fontData->setCSSFontFaceSource(this);
+        SimpleFontData* temporaryFont = FontCache::fontCache()->getNonRetainedLastResortFallbackFont(fontDescription);
+        RefPtr<CSSCustomFontData> cssFontData = CSSCustomFontData::create(true);
+        cssFontData->setCSSFontFaceSource(this);
+        fontData = SimpleFontData::create(temporaryFont->platformData(), cssFontData);
     }
 
     return fontData; // No release, because fontData is a reference to a RefPtr that is held in the m_fontDataTable.
@@ -231,13 +244,6 @@ bool CSSFontFaceSource::isSVGFontFaceSource() const
 }
 #endif
 
-bool CSSFontFaceSource::isDecodeError() const
-{
-    if (m_font)
-        return m_font->status() == Resource::DecodeError;
-    return false;
-}
-
 bool CSSFontFaceSource::ensureFontData()
 {
     if (!m_font)
@@ -253,20 +259,13 @@ bool CSSFontFaceSource::isLocalFontAvailable(const FontDescription& fontDescript
 {
     if (!isLocal())
         return false;
-    return fontCache()->isPlatformFontAvailable(fontDescription, m_string, true);
+    return FontCache::fontCache()->isPlatformFontAvailable(fontDescription, m_string);
 }
 
-void CSSFontFaceSource::willUseFontData()
+void CSSFontFaceSource::beginLoadIfNeeded()
 {
-    if (m_font)
-        m_font->willUseFontData();
-}
-
-void CSSFontFaceSource::beginLoadingFontSoon()
-{
-    ASSERT(m_face);
-    ASSERT(m_font);
-    m_face->beginLoadingFontSoon(m_font.get());
+    if (m_face && m_font)
+        m_face->beginLoadIfNeeded(this);
 }
 
 void CSSFontFaceSource::FontLoadHistograms::loadStarted()
@@ -278,7 +277,7 @@ void CSSFontFaceSource::FontLoadHistograms::loadStarted()
 void CSSFontFaceSource::FontLoadHistograms::recordLocalFont(bool loadSuccess)
 {
     if (!m_loadStartTime) {
-        HistogramSupport::histogramEnumeration("WebFont.LocalFontUsed", loadSuccess ? 1 : 0, 2);
+        blink::Platform::current()->histogramEnumeration("WebFont.LocalFontUsed", loadSuccess ? 1 : 0, 2);
         m_loadStartTime = -1; // Do not count this font again.
     }
 }
@@ -287,8 +286,14 @@ void CSSFontFaceSource::FontLoadHistograms::recordRemoteFont(const FontResource*
 {
     if (m_loadStartTime > 0 && font && !font->isLoading()) {
         int duration = static_cast<int>(currentTimeMS() - m_loadStartTime);
-        HistogramSupport::histogramCustomCounts(histogramName(font), duration, 0, 10000, 50);
+        blink::Platform::current()->histogramCustomCounts(histogramName(font), duration, 0, 10000, 50);
         m_loadStartTime = -1;
+
+        enum { Miss, Hit, DataUrl, CacheHitEnumMax };
+        int histogramValue = font->url().protocolIsData() ? DataUrl
+            : font->response().wasCached() ? Hit
+            : Miss;
+        blink::Platform::current()->histogramEnumeration("WebFont.CacheHit", histogramValue, CacheHitEnumMax);
     }
 }
 

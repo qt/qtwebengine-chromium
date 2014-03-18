@@ -34,11 +34,11 @@ public:
     RenderCounter(Document*, const CounterContent&);
     virtual ~RenderCounter();
 
-    static void destroyCounterNodes(RenderObject*);
-    static void destroyCounterNode(RenderObject*, const AtomicString& identifier);
+    static void destroyCounterNodes(RenderObject&);
+    static void destroyCounterNode(RenderObject&, const AtomicString& identifier);
     static void rendererSubtreeAttached(RenderObject*);
     static void rendererRemovedFromTree(RenderObject*);
-    static void rendererStyleChanged(RenderObject*, const RenderStyle* oldStyle, const RenderStyle* newStyle);
+    static void rendererStyleChanged(RenderObject&, const RenderStyle* oldStyle, const RenderStyle* newStyle);
 
     void updateCounter();
 
@@ -60,14 +60,7 @@ private:
     friend class CounterNode;
 };
 
-inline RenderCounter* toRenderCounter(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isCounter());
-    return static_cast<RenderCounter*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderCounter(const RenderCounter*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderCounter, isCounter());
 
 } // namespace WebCore
 

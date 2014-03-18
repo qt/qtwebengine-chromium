@@ -27,13 +27,12 @@
 #include "config.h"
 #include "core/fetch/FontResource.h"
 
-#include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/TextResourceDecoder.h"
-#include "core/platform/HistogramSupport.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/graphics/FontCustomPlatformData.h"
-#include "core/platform/graphics/FontPlatformData.h"
+#include "platform/SharedBuffer.h"
+#include "platform/fonts/FontCustomPlatformData.h"
+#include "platform/fonts/FontPlatformData.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
 #if ENABLE(SVG_FONTS)
@@ -79,14 +78,14 @@ void FontResource::beginLoadIfNeeded(ResourceFetcher* dl)
         ResourceClientWalker<FontResourceClient> walker(m_clients);
         while (FontResourceClient* client = walker.next())
             client->didStartFontLoad(this);
-        m_histograms.loadStarted();
     }
 }
 
 bool FontResource::ensureCustomFontData()
 {
-    if (!m_fontData && !errorOccurred() && !isLoading() && m_data) {
-        m_fontData = FontCustomPlatformData::create(m_data.get());
+    if (!m_fontData && !errorOccurred() && !isLoading()) {
+        if (m_data)
+            m_fontData = FontCustomPlatformData::create(m_data.get());
         if (!m_fontData)
             setStatus(DecodeError);
     }
@@ -100,23 +99,27 @@ FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold,
         return FontPlatformData(size, bold, italic);
 #endif
     ASSERT(m_fontData);
-    return m_fontData->fontPlatformData(static_cast<int>(size), bold, italic, orientation, widthVariant);
+    return m_fontData->fontPlatformData(size, bold, italic, orientation, widthVariant);
 }
 
 #if ENABLE(SVG_FONTS)
 bool FontResource::ensureSVGFontData()
 {
-    if (!m_externalSVGDocument && !errorOccurred() && !isLoading() && m_data) {
-        m_externalSVGDocument = SVGDocument::create();
+    if (!m_externalSVGDocument && !errorOccurred() && !isLoading()) {
+        if (m_data) {
+            m_externalSVGDocument = SVGDocument::create();
 
-        RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
-        String svgSource = decoder->decode(m_data->data(), m_data->size());
-        svgSource.append(decoder->flush());
+            OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
+            String svgSource = decoder->decode(m_data->data(), m_data->size());
+            svgSource.append(decoder->flush());
 
-        m_externalSVGDocument->setContent(svgSource);
+            m_externalSVGDocument->setContent(svgSource);
 
-        if (decoder->sawError())
-            m_externalSVGDocument = 0;
+            if (decoder->sawError())
+                m_externalSVGDocument = 0;
+        }
+        if (!m_externalSVGDocument)
+            setStatus(DecodeError);
     }
 
     return m_externalSVGDocument;
@@ -163,38 +166,6 @@ void FontResource::checkNotify()
     ResourceClientWalker<FontResourceClient> w(m_clients);
     while (FontResourceClient* c = w.next())
         c->fontLoaded(this);
-}
-
-void FontResource::willUseFontData()
-{
-    if (!isLoaded())
-        m_histograms.willUseFontData();
-}
-
-FontResource::FontResourceHistograms::~FontResourceHistograms()
-{
-    if (m_styledTime > 0)
-        HistogramSupport::histogramEnumeration("WebFont.Resource.UsageType", StyledButNotUsed, UsageTypeMax);
-}
-
-void FontResource::FontResourceHistograms::willUseFontData()
-{
-    if (!m_styledTime)
-        m_styledTime = currentTimeMS();
-}
-
-void FontResource::FontResourceHistograms::loadStarted()
-{
-    if (m_styledTime < 0)
-        return;
-    if (!m_styledTime) {
-        HistogramSupport::histogramEnumeration("WebFont.Resource.UsageType", NotStyledButUsed, UsageTypeMax);
-    } else {
-        int duration = static_cast<int>(currentTimeMS() - m_styledTime);
-        HistogramSupport::histogramCustomCounts("WebFont.Resource.StyleRecalcToDownloadLatency", duration, 0, 10000, 50);
-        HistogramSupport::histogramEnumeration("WebFont.Resource.UsageType", StyledAndUsed, UsageTypeMax);
-    }
-    m_styledTime = -1;
 }
 
 }

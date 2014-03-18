@@ -26,17 +26,20 @@
 #ifndef ScriptedAnimationController_h
 #define ScriptedAnimationController_h
 
+#include "wtf/ListHashSet.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringImpl.h"
 
 namespace WebCore {
 
 class Document;
+class Event;
+class EventTarget;
 class RequestAnimationFrameCallback;
 
-class ScriptedAnimationController : public RefCounted<ScriptedAnimationController>
-{
+class ScriptedAnimationController : public RefCounted<ScriptedAnimationController> {
 public:
     static PassRefPtr<ScriptedAnimationController> create(Document* document)
     {
@@ -47,9 +50,12 @@ public:
 
     typedef int CallbackId;
 
-    CallbackId registerCallback(PassRefPtr<RequestAnimationFrameCallback>);
+    int registerCallback(PassOwnPtr<RequestAnimationFrameCallback>);
     void cancelCallback(CallbackId);
     void serviceScriptedAnimations(double monotonicTimeNow);
+
+    void enqueueEvent(PassRefPtr<Event>);
+    void enqueuePerFrameEvent(PassRefPtr<Event>);
 
     void suspend();
     void resume();
@@ -57,14 +63,20 @@ public:
 private:
     explicit ScriptedAnimationController(Document*);
 
-    typedef Vector<RefPtr<RequestAnimationFrameCallback> > CallbackList;
+    void scheduleAnimationIfNeeded();
+
+    void dispatchEvents();
+    void executeCallbacks(double monotonicTimeNow);
+
+    typedef Vector<OwnPtr<RequestAnimationFrameCallback> > CallbackList;
     CallbackList m_callbacks;
+    CallbackList m_callbacksToInvoke; // only non-empty while inside executeCallbacks
 
     Document* m_document;
     CallbackId m_nextCallbackId;
     int m_suspendCount;
-
-    void scheduleAnimation();
+    Vector<RefPtr<Event> > m_eventQueue;
+    ListHashSet<std::pair<const EventTarget*, const StringImpl*> > m_perFrameEvents;
 };
 
 }

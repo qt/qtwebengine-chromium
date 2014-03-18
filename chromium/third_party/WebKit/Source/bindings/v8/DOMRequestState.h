@@ -28,7 +28,7 @@
 
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/V8Binding.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "v8.h"
 #include "wtf/RefPtr.h"
 
@@ -36,16 +36,17 @@ namespace WebCore {
 
 class DOMRequestState {
 public:
-    explicit DOMRequestState(ScriptExecutionContext* scriptExecutionContext)
-        : m_scriptExecutionContext(scriptExecutionContext)
+    explicit DOMRequestState(ExecutionContext* executionContext)
+        : m_executionContext(executionContext)
         , m_world(DOMWrapperWorld::current())
-        , m_isolate(toIsolate(scriptExecutionContext))
+        , m_isolate(toIsolate(executionContext))
     {
+        ASSERT(m_executionContext);
     }
 
     void clear()
     {
-        m_scriptExecutionContext = 0;
+        m_executionContext = 0;
         m_world.clear();
     }
 
@@ -63,7 +64,8 @@ public:
 
     v8::Local<v8::Context> context()
     {
-        return toV8Context(m_scriptExecutionContext, m_world.get());
+        ASSERT(m_executionContext);
+        return toV8Context(m_executionContext, m_world.get());
     }
 
     v8::Isolate* isolate() const
@@ -71,8 +73,10 @@ public:
         return m_isolate;
     }
 
+    bool isValid() const { return m_executionContext; }
+
 private:
-    ScriptExecutionContext* m_scriptExecutionContext;
+    ExecutionContext* m_executionContext;
     RefPtr<DOMWrapperWorld> m_world;
     v8::Isolate* m_isolate;
 };

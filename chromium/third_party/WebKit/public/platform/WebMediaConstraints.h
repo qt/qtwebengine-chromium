@@ -42,7 +42,7 @@ struct MediaConstraint;
 class MediaConstraints;
 }
 
-namespace WebKit {
+namespace blink {
 
 struct WebMediaConstraint {
     WebMediaConstraint()
@@ -55,8 +55,8 @@ struct WebMediaConstraint {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
-    WebMediaConstraint(const WebCore::MediaConstraint&);
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebMediaConstraint(const WebCore::MediaConstraint&);
 #endif
 
     WebString m_name;
@@ -75,26 +75,26 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebMediaConstraints&);
+    BLINK_PLATFORM_EXPORT void assign(const WebMediaConstraints&);
 
-    WEBKIT_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT void getMandatoryConstraints(WebVector<WebMediaConstraint>&) const;
-    WEBKIT_EXPORT void getOptionalConstraints(WebVector<WebMediaConstraint>&) const;
+    BLINK_PLATFORM_EXPORT void getMandatoryConstraints(WebVector<WebMediaConstraint>&) const;
+    BLINK_PLATFORM_EXPORT void getOptionalConstraints(WebVector<WebMediaConstraint>&) const;
 
-    WEBKIT_EXPORT bool getMandatoryConstraintValue(const WebString& name, WebString& value) const;
-    WEBKIT_EXPORT bool getOptionalConstraintValue(const WebString& name, WebString& value) const;
+    BLINK_PLATFORM_EXPORT bool getMandatoryConstraintValue(const WebString& name, WebString& value) const;
+    BLINK_PLATFORM_EXPORT bool getOptionalConstraintValue(const WebString& name, WebString& value) const;
 
-#if WEBKIT_IMPLEMENTATION
-    WebMediaConstraints(const WTF::PassRefPtr<WebCore::MediaConstraints>&);
-    WebMediaConstraints(WebCore::MediaConstraints*);
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebMediaConstraints(const WTF::PassRefPtr<WebCore::MediaConstraints>&);
+    BLINK_PLATFORM_EXPORT WebMediaConstraints(WebCore::MediaConstraints*);
 #endif
 
 private:
     WebPrivatePtr<WebCore::MediaConstraints> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMediaConstraints_h

@@ -31,7 +31,7 @@ FileDescriptorSet::~FileDescriptorSet() {
   for (unsigned i = consumed_descriptor_highwater_;
        i < descriptors_.size(); ++i) {
     if (descriptors_[i].auto_close)
-      if (HANDLE_EINTR(close(descriptors_[i].fd)) < 0)
+      if (IGNORE_EINTR(close(descriptors_[i].fd)) < 0)
         PLOG(ERROR) << "close";
   }
 }
@@ -119,8 +119,18 @@ void FileDescriptorSet::CommitAll() {
   for (std::vector<base::FileDescriptor>::iterator
        i = descriptors_.begin(); i != descriptors_.end(); ++i) {
     if (i->auto_close)
-      if (HANDLE_EINTR(close(i->fd)) < 0)
+      if (IGNORE_EINTR(close(i->fd)) < 0)
         PLOG(ERROR) << "close";
+  }
+  descriptors_.clear();
+  consumed_descriptor_highwater_ = 0;
+}
+
+void FileDescriptorSet::ReleaseFDsToClose(std::vector<int>* fds) {
+  for (std::vector<base::FileDescriptor>::iterator
+       i = descriptors_.begin(); i != descriptors_.end(); ++i) {
+    if (i->auto_close)
+      fds->push_back(i->fd);
   }
   descriptors_.clear();
   consumed_descriptor_highwater_ = 0;

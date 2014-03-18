@@ -48,16 +48,24 @@ WebInspector.TimelineManager.EventTypes = {
 
 WebInspector.TimelineManager.prototype = {
     /**
+     * @return {boolean}
+     */
+    isStarted: function()
+    {
+        return this._dispatcher.isStarted();
+    },
+
+    /**
      * @param {number=} maxCallStackDepth
      * @param {boolean=} includeDomCounters
-     * @param {boolean=} includeNativeMemoryStatistics
+     * @param {boolean=} includeGPUEvents
      * @param {function(?Protocol.Error)=} callback
      */
-    start: function(maxCallStackDepth, includeDomCounters, includeNativeMemoryStatistics, callback)
+    start: function(maxCallStackDepth, includeDomCounters, includeGPUEvents, callback)
     {
         this._enablementCount++;
         if (this._enablementCount === 1)
-            TimelineAgent.start(maxCallStackDepth, /* bufferEvents */false, includeDomCounters, includeNativeMemoryStatistics, callback);
+            TimelineAgent.start(maxCallStackDepth, /* bufferEvents */false, includeDomCounters, includeGPUEvents, callback);
         else if (callback)
             callback(null);
     },
@@ -93,11 +101,19 @@ WebInspector.TimelineDispatcher = function(manager)
 
 WebInspector.TimelineDispatcher.prototype = {
     /**
-     * @param {TimelineAgent.TimelineEvent} record
+     * @param {!TimelineAgent.TimelineEvent} record
      */
     eventRecorded: function(record)
     {
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineEventRecorded, record);
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isStarted: function()
+    {
+        return !!this._started;
     },
 
     /**
@@ -109,6 +125,7 @@ WebInspector.TimelineDispatcher.prototype = {
             // Wake up timeline panel module.
             WebInspector.panel("timeline");
         }
+        this._started = true;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStarted, consoleTimeline);
     },
 
@@ -117,11 +134,12 @@ WebInspector.TimelineDispatcher.prototype = {
      */
     stopped: function(consoleTimeline)
     {
+        this._started = false;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStopped, consoleTimeline);
     }
 }
 
 /**
- * @type {WebInspector.TimelineManager}
+ * @type {!WebInspector.TimelineManager}
  */
 WebInspector.timelineManager;

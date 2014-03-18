@@ -28,6 +28,7 @@ class MediaTransferProtocolDaemonClientImpl
       : proxy_(bus->GetObjectProxy(
           mtpd::kMtpdServiceName,
           dbus::ObjectPath(mtpd::kMtpdServicePath))),
+        listen_for_changes_called_(false),
         weak_ptr_factory_(this) {
   }
 
@@ -212,8 +213,11 @@ class MediaTransferProtocolDaemonClientImpl
   }
 
   // MediaTransferProtocolDaemonClient override.
-  virtual void SetUpConnections(
+  virtual void ListenForChanges(
       const MTPStorageEventHandler& handler) OVERRIDE {
+    DCHECK(!listen_for_changes_called_);
+    listen_for_changes_called_ = true;
+
     static const SignalEventTuple kSignalEventTuples[] = {
       { mtpd::kMTPStorageAttached, true },
       { mtpd::kMTPStorageDetached, false },
@@ -401,72 +405,13 @@ class MediaTransferProtocolDaemonClientImpl
 
   dbus::ObjectProxy* proxy_;
 
+  bool listen_for_changes_called_;
+
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<MediaTransferProtocolDaemonClientImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaTransferProtocolDaemonClientImpl);
-};
-
-// A stub implementaion of MediaTransferProtocolDaemonClient.
-class MediaTransferProtocolDaemonClientStubImpl
-    : public MediaTransferProtocolDaemonClient {
- public:
-  MediaTransferProtocolDaemonClientStubImpl() {}
-  virtual ~MediaTransferProtocolDaemonClientStubImpl() {}
-
-  virtual void EnumerateStorages(
-      const EnumerateStoragesCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void GetStorageInfo(
-      const std::string& storage_name,
-      const GetStorageInfoCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void OpenStorage(const std::string& storage_name,
-                           const std::string& mode,
-                           const OpenStorageCallback& callback,
-                           const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void CloseStorage(const std::string& handle,
-                            const CloseStorageCallback& callback,
-                            const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void ReadDirectoryByPath(
-      const std::string& handle,
-      const std::string& path,
-      const ReadDirectoryCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void ReadDirectoryById(
-      const std::string& handle,
-      uint32 file_id,
-      const ReadDirectoryCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void ReadFileChunkByPath(
-      const std::string& handle,
-      const std::string& path,
-      uint32 offset,
-      uint32 length,
-      const ReadFileCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void ReadFileChunkById(
-      const std::string& handle,
-      uint32 file_id,
-      uint32 offset,
-      uint32 length,
-      const ReadFileCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void GetFileInfoByPath(
-      const std::string& handle,
-      const std::string& path,
-      const GetFileInfoCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void GetFileInfoById(const std::string& handle,
-                               uint32 file_id,
-                               const GetFileInfoCallback& callback,
-                               const ErrorCallback& error_callback) OVERRIDE {}
-  virtual void SetUpConnections(
-      const MTPStorageEventHandler& handler) OVERRIDE {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MediaTransferProtocolDaemonClientStubImpl);
 };
 
 }  // namespace
@@ -479,10 +424,8 @@ MediaTransferProtocolDaemonClient::MediaTransferProtocolDaemonClient() {}
 MediaTransferProtocolDaemonClient::~MediaTransferProtocolDaemonClient() {}
 
 // static
-MediaTransferProtocolDaemonClient*
-MediaTransferProtocolDaemonClient::Create(dbus::Bus* bus, bool is_stub) {
-  if (is_stub)
-    return new MediaTransferProtocolDaemonClientStubImpl();
+MediaTransferProtocolDaemonClient* MediaTransferProtocolDaemonClient::Create(
+    dbus::Bus* bus) {
   return new MediaTransferProtocolDaemonClientImpl(bus);
 }
 

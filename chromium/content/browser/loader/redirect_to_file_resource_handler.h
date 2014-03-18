@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "content/browser/loader/layered_resource_handler.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 
 namespace net {
@@ -31,7 +32,7 @@ class RedirectToFileResourceHandler : public LayeredResourceHandler {
  public:
   RedirectToFileResourceHandler(
       scoped_ptr<ResourceHandler> next_handler,
-      int process_id,
+      net::URLRequest* request,
       ResourceDispatcherHostImpl* resource_dispatcher_host);
   virtual ~RedirectToFileResourceHandler();
 
@@ -43,15 +44,16 @@ class RedirectToFileResourceHandler : public LayeredResourceHandler {
                            const GURL& url,
                            bool* defer) OVERRIDE;
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
   virtual bool OnReadCompleted(int request_id,
                                int bytes_read,
                                bool* defer) OVERRIDE;
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
 
  private:
   void DidCreateTemporaryFile(base::PlatformFileError error_code,
@@ -65,8 +67,6 @@ class RedirectToFileResourceHandler : public LayeredResourceHandler {
   base::WeakPtrFactory<RedirectToFileResourceHandler> weak_factory_;
 
   ResourceDispatcherHostImpl* host_;
-  int process_id_;
-  int request_id_;
 
   // We allocate a single, fixed-size IO buffer (buf_) used to read from the
   // network (buf_write_pending_ is true while the system is copying data into

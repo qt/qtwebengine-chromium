@@ -32,6 +32,7 @@ class UnrecoverableErrorHandler;
 namespace syncable {
 
 class BaseTransaction;
+class BaseWriteTransaction;
 class DirectoryChangeDelegate;
 class DirectoryBackingStore;
 class NigoriHandler;
@@ -48,6 +49,7 @@ enum InvariantCheckLevel {
 class SYNC_EXPORT Directory {
   friend class BaseTransaction;
   friend class Entry;
+  friend class ModelNeutralMutableEntry;
   friend class MutableEntry;
   friend class ReadTransaction;
   friend class ScopedKernelLock;
@@ -313,11 +315,8 @@ class SYNC_EXPORT Directory {
   void GetUnsyncedMetaHandles(BaseTransaction* trans,
                               Metahandles* result);
 
-  // Returns all server types with unapplied updates.  A subset of
-  // those types can then be passed into
-  // GetUnappliedUpdateMetaHandles() below.
-  FullModelTypeSet GetServerTypesWithUnappliedUpdates(
-      BaseTransaction* trans) const;
+  // Returns whether or not this |type| has unapplied updates.
+  bool TypeHasUnappliedUpdates(ModelType type);
 
   // Get all the metahandles for unapplied updates for a given set of
   // server types.
@@ -340,7 +339,7 @@ class SYNC_EXPORT Directory {
   // and may be used in release code.
   bool CheckInvariantsOnTransactionClose(
       syncable::BaseTransaction* trans,
-      const EntryKernelMutationMap& mutations);
+      const MetahandleSet& modified_handles);
 
   // Forces a full check of the directory.  This operation may be slow and
   // should not be invoked outside of tests.
@@ -376,9 +375,9 @@ class SYNC_EXPORT Directory {
   EntryKernel* GetEntryByServerTag(const std::string& tag);
   virtual EntryKernel* GetEntryByClientTag(const std::string& tag);
   EntryKernel* GetRootEntry();
-  bool ReindexId(WriteTransaction* trans, EntryKernel* const entry,
+  bool ReindexId(BaseWriteTransaction* trans, EntryKernel* const entry,
                  const Id& new_id);
-  bool ReindexParentId(WriteTransaction* trans, EntryKernel* const entry,
+  bool ReindexParentId(BaseWriteTransaction* trans, EntryKernel* const entry,
                        const Id& new_parent_id);
   void ClearDirtyMetahandles();
 
@@ -505,9 +504,9 @@ class SYNC_EXPORT Directory {
   void HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot);
 
   // For new entry creation only
-  bool InsertEntry(WriteTransaction* trans,
+  bool InsertEntry(BaseWriteTransaction* trans,
                    EntryKernel* entry, ScopedKernelLock* lock);
-  bool InsertEntry(WriteTransaction* trans, EntryKernel* entry);
+  bool InsertEntry(BaseWriteTransaction* trans, EntryKernel* entry);
 
   // Used by CheckTreeInvariants
   void GetAllMetaHandles(BaseTransaction* trans, MetahandleSet* result);

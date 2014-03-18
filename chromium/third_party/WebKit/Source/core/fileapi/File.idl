@@ -23,9 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-interface File : Blob {
+[
+    CustomConstructor(sequence<any> blobParts, DOMString fileName, optional BlobPropertyBag options),
+    GlobalContext=Window&WorkerGlobalScope,
+] interface File : Blob {
     readonly attribute DOMString name;
-    readonly attribute Date lastModifiedDate;
-    [EnabledAtRuntime=DirectoryUpload] readonly attribute DOMString webkitRelativePath;
+    [Custom=Getter, MeasureAs=FileGetLastModifiedDate] readonly attribute Date lastModifiedDate;
+    [Custom=Getter, RuntimeEnabled=FileConstructor] readonly attribute long long lastModified;
+    [RuntimeEnabled=DirectoryUpload] readonly attribute DOMString webkitRelativePath;
 };
-

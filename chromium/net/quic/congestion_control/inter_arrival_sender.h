@@ -32,36 +32,35 @@ class NET_EXPORT_PRIVATE InterArrivalSender : public SendAlgorithmInterface {
       QuicTime feedback_receive_time);
 
   // Start implementation of SendAlgorithmInterface.
+  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
+  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
       QuicTime feedback_receive_time,
       const SentPacketsMap& sent_packets) OVERRIDE;
-
-  virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
+  virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
                              QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) OVERRIDE;
-
-  virtual void OnIncomingLoss(QuicTime ack_receive_time) OVERRIDE;
-
-  virtual bool SentPacket(
+  virtual void OnPacketLost(QuicPacketSequenceNumber sequence_number,
+                            QuicTime ack_receive_time) OVERRIDE;
+  virtual bool OnPacketSent(
       QuicTime sent_time,
       QuicPacketSequenceNumber sequence_number,
       QuicByteCount bytes,
-      Retransmission is_retransmit,
+      TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data) OVERRIDE;
-
-  virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number,
-                                QuicByteCount abandoned_bytes) OVERRIDE;
-
+  virtual void OnRetransmissionTimeout() OVERRIDE;
+  virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
+                                 QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
-      Retransmission is_retransmission,
+      TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) OVERRIDE;
-
-  virtual QuicBandwidth BandwidthEstimate() OVERRIDE;
-  virtual QuicTime::Delta SmoothedRtt() OVERRIDE;
-  virtual QuicTime::Delta RetransmissionDelay() OVERRIDE;
+  virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
+  virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
+  virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:
@@ -81,6 +80,7 @@ class NET_EXPORT_PRIVATE InterArrivalSender : public SendAlgorithmInterface {
   bool ProbingPhase(QuicTime feedback_receive_time);
 
   bool probing_;  // Are we currently in the probing phase?
+  QuicByteCount max_segment_size_;
   QuicBandwidth current_bandwidth_;
   QuicTime::Delta smoothed_rtt_;
   scoped_ptr<ChannelEstimator> channel_estimator_;

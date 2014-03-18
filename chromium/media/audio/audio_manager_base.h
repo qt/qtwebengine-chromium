@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
-#include "base/synchronization/lock.h"
+#include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
 
 #include "media/audio/audio_output_dispatcher.h"
@@ -20,10 +20,6 @@
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #endif
-
-namespace base {
-class Thread;
-}
 
 namespace media {
 
@@ -55,7 +51,7 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetWorkerLoop() OVERRIDE;
 
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
 
   virtual void ShowAudioInputSettings() OVERRIDE;
 
@@ -119,9 +115,13 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) OVERRIDE;
 
- protected:
-  AudioManagerBase();
+  virtual scoped_ptr<AudioLog> CreateAudioLog(
+      AudioLogFactory::AudioComponent component) OVERRIDE;
 
+  virtual void FixWedgedAudio() OVERRIDE;
+
+ protected:
+  AudioManagerBase(AudioLogFactory* audio_log_factory);
 
   // Shuts down the audio thread and releases all the audio output dispatchers
   // on the audio thread.  All audio streams should be freed before Shutdown()
@@ -135,6 +135,10 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // listeners that a state change has occurred.  Must be called from the audio
   // thread.
   void NotifyAllOutputDeviceChangeListeners();
+
+  // Returns user buffer size as specified on the command line or 0 if no buffer
+  // size has been specified.
+  int GetUserBufferSize();
 
   // Returns the preferred hardware audio output parameters for opening output
   // streams. If the users inject a valid |input_params|, each AudioManager
@@ -181,8 +185,7 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   ObserverList<AudioDeviceListener> output_listeners_;
 
   // Thread used to interact with audio streams created by this audio manager.
-  scoped_ptr<base::Thread> audio_thread_;
-  mutable base::Lock audio_thread_lock_;
+  base::Thread audio_thread_;
 
   // The message loop of the audio thread this object runs on. Used for internal
   // tasks which run on the audio thread even after Shutdown() has been started
@@ -192,6 +195,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // Map of cached AudioOutputDispatcher instances.  Must only be touched
   // from the audio thread (no locking).
   AudioOutputDispatchers output_dispatchers_;
+
+  // Proxy for creating AudioLog objects.
+  AudioLogFactory* const audio_log_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerBase);
 };

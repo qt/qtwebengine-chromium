@@ -33,7 +33,6 @@
 #include "core/xml/XPathEvaluator.h"
 #include "core/xml/XPathNSResolver.h"
 #include "core/xml/XPathPath.h"
-#include "core/xml/XPathStep.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringHash.h"
 
@@ -448,7 +447,7 @@ int Parser::lex(void* data)
     return tok.type;
 }
 
-bool Parser::expandQName(const String& qName, String& localName, String& namespaceURI)
+bool Parser::expandQName(const String& qName, AtomicString& localName, AtomicString& namespaceURI)
 {
     size_t colon = qName.find(':');
     if (colon != kNotFound) {
@@ -457,14 +456,15 @@ bool Parser::expandQName(const String& qName, String& localName, String& namespa
         namespaceURI = m_resolver->lookupNamespaceURI(qName.left(colon));
         if (namespaceURI.isNull())
             return false;
-        localName = qName.substring(colon + 1);
-    } else
-        localName = qName;
+        localName = AtomicString(qName.substring(colon + 1));
+    } else {
+        localName = AtomicString(qName);
+    }
 
     return true;
 }
 
-Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSResolver> resolver, ExceptionState& es)
+Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSResolver> resolver, ExceptionState& exceptionState)
 {
     reset(statement);
 
@@ -479,18 +479,14 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
         deleteAllValues(m_parseNodes);
         m_parseNodes.clear();
 
-        HashSet<Vector<Predicate*>*>::iterator pend = m_predicateVectors.end();
-        for (HashSet<Vector<Predicate*>*>::iterator it = m_predicateVectors.begin(); it != pend; ++it) {
-            deleteAllValues(**it);
+        HashSet<Vector<OwnPtr<Predicate> >*>::iterator pend = m_predicateVectors.end();
+        for (HashSet<Vector<OwnPtr<Predicate> >*>::iterator it = m_predicateVectors.begin(); it != pend; ++it)
             delete *it;
-        }
         m_predicateVectors.clear();
 
-        HashSet<Vector<Expression*>*>::iterator eend = m_expressionVectors.end();
-        for (HashSet<Vector<Expression*>*>::iterator it = m_expressionVectors.begin(); it != eend; ++it) {
-            deleteAllValues(**it);
+        HashSet<Vector<OwnPtr<Expression> >*>::iterator eend = m_expressionVectors.end();
+        for (HashSet<Vector<OwnPtr<Expression> >*>::iterator it = m_expressionVectors.begin(); it != eend; ++it)
             delete *it;
-        }
         m_expressionVectors.clear();
 
         deleteAllValues(m_strings);
@@ -502,9 +498,9 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
         m_topExpr = 0;
 
         if (m_gotNamespaceError)
-            es.throwDOMException(NamespaceError);
+            exceptionState.throwDOMException(NamespaceError, "The string '" + statement + "' contains unresolvable namespaces.");
         else
-            es.throwDOMException(SyntaxError);
+            exceptionState.throwDOMException(SyntaxError, "The string '" + statement + "' is not a valid XPath expression.");
         return 0;
     }
 
@@ -542,7 +538,7 @@ void Parser::unregisterParseNode(ParseNode* node)
     m_parseNodes.remove(node);
 }
 
-void Parser::registerPredicateVector(Vector<Predicate*>* vector)
+void Parser::registerPredicateVector(Vector<OwnPtr<Predicate> >* vector)
 {
     if (vector == 0)
         return;
@@ -552,7 +548,7 @@ void Parser::registerPredicateVector(Vector<Predicate*>* vector)
     m_predicateVectors.add(vector);
 }
 
-void Parser::deletePredicateVector(Vector<Predicate*>* vector)
+void Parser::deletePredicateVector(Vector<OwnPtr<Predicate> >* vector)
 {
     if (vector == 0)
         return;
@@ -564,7 +560,7 @@ void Parser::deletePredicateVector(Vector<Predicate*>* vector)
 }
 
 
-void Parser::registerExpressionVector(Vector<Expression*>* vector)
+void Parser::registerExpressionVector(Vector<OwnPtr<Expression> >* vector)
 {
     if (vector == 0)
         return;
@@ -574,7 +570,7 @@ void Parser::registerExpressionVector(Vector<Expression*>* vector)
     m_expressionVectors.add(vector);
 }
 
-void Parser::deleteExpressionVector(Vector<Expression*>* vector)
+void Parser::deleteExpressionVector(Vector<OwnPtr<Expression> >* vector)
 {
     if (vector == 0)
         return;

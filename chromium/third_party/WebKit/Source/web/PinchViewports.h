@@ -31,8 +31,8 @@
 #ifndef PinchViewports_h
 #define PinchViewports_h
 
-#include "core/platform/graphics/GraphicsLayerClient.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/GraphicsLayerClient.h"
 #include "public/platform/WebScrollbar.h"
 #include "public/platform/WebSize.h"
 #include "wtf/OwnPtr.h"
@@ -45,7 +45,7 @@ class IntRect;
 class IntSize;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebLayerTreeView;
 class WebScrollbarLayer;
@@ -67,7 +67,7 @@ public:
     void clearViewportLayersForTreeView(WebLayerTreeView*) const;
 
     // GraphicsLayerClient implementation.
-    virtual void notifyAnimationStarted(const WebCore::GraphicsLayer*, double time) OVERRIDE;
+    virtual void notifyAnimationStarted(const WebCore::GraphicsLayer*, double wallClockTime, double monotonicTime) OVERRIDE;
     virtual void paintContents(const WebCore::GraphicsLayer*, WebCore::GraphicsContext&, WebCore::GraphicsLayerPaintingPhase, const WebCore::IntRect& inClip) OVERRIDE;
 
     virtual String debugName(const WebCore::GraphicsLayer*) OVERRIDE;
@@ -75,7 +75,7 @@ public:
 private:
     explicit PinchViewports(WebViewImpl* owner);
 
-    void setupScrollbar(WebKit::WebScrollbar::Orientation);
+    void setupScrollbar(blink::WebScrollbar::Orientation);
 
     WebViewImpl* m_owner;
     OwnPtr<WebCore::GraphicsLayer> m_innerViewportContainerLayer;
@@ -87,6 +87,6 @@ private:
     OwnPtr<WebScrollbarLayer> m_webOverlayScrollbarVertical;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // PinchViewports_h

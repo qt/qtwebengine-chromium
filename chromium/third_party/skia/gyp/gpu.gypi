@@ -9,11 +9,13 @@
   'variables': {
     'skgpu_sources': [
       '<(skia_include_path)/gpu/GrBackendEffectFactory.h',
+      '<(skia_include_path)/gpu/GrBitmapTextContext.h',
       '<(skia_include_path)/gpu/GrClipData.h',
       '<(skia_include_path)/gpu/GrColor.h',
       '<(skia_include_path)/gpu/GrConfig.h',
       '<(skia_include_path)/gpu/GrContext.h',
       '<(skia_include_path)/gpu/GrContextFactory.h',
+      '<(skia_include_path)/gpu/GrCoordTransform.h',
       '<(skia_include_path)/gpu/GrEffect.h',
       '<(skia_include_path)/gpu/GrEffectStage.h',
       '<(skia_include_path)/gpu/GrEffectUnitTest.h',
@@ -52,6 +54,7 @@
       '<(skia_src_path)/gpu/GrAtlas.cpp',
       '<(skia_src_path)/gpu/GrAtlas.h',
       '<(skia_src_path)/gpu/GrBinHashKey.h',
+      '<(skia_src_path)/gpu/GrBitmapTextContext.cpp',
       '<(skia_src_path)/gpu/GrBlend.cpp',
       '<(skia_src_path)/gpu/GrBlend.h',
       '<(skia_src_path)/gpu/GrBufferAllocPool.cpp',
@@ -67,7 +70,6 @@
       '<(skia_src_path)/gpu/GrDrawTarget.h',
       '<(skia_src_path)/gpu/GrDrawTargetCaps.h',
       '<(skia_src_path)/gpu/GrEffect.cpp',
-      '<(skia_src_path)/gpu/GrGeometryBuffer.cpp',
       '<(skia_src_path)/gpu/GrGeometryBuffer.h',
       '<(skia_src_path)/gpu/GrClipMaskCache.h',
       '<(skia_src_path)/gpu/GrClipMaskCache.cpp',
@@ -79,7 +81,6 @@
       '<(skia_src_path)/gpu/GrIndexBuffer.h',
       '<(skia_src_path)/gpu/GrInOrderDrawBuffer.cpp',
       '<(skia_src_path)/gpu/GrInOrderDrawBuffer.h',
-      '<(skia_src_path)/gpu/GrMemory.cpp',
       '<(skia_src_path)/gpu/GrMemoryPool.cpp',
       '<(skia_src_path)/gpu/GrMemoryPool.h',
       '<(skia_src_path)/gpu/GrOvalRenderer.cpp',
@@ -95,6 +96,7 @@
       '<(skia_src_path)/gpu/GrPlotMgr.h',
       '<(skia_src_path)/gpu/GrRectanizer.cpp',
       '<(skia_src_path)/gpu/GrRectanizer.h',
+      '<(skia_src_path)/gpu/GrRectanizer_skyline.cpp',
       '<(skia_src_path)/gpu/GrRedBlackTree.h',
       '<(skia_src_path)/gpu/GrRenderTarget.cpp',
       '<(skia_src_path)/gpu/GrReducedClip.cpp',
@@ -121,9 +123,8 @@
       '<(skia_src_path)/gpu/GrTextStrike_impl.h',
       '<(skia_src_path)/gpu/GrTexture.cpp',
       '<(skia_src_path)/gpu/GrTextureAccess.cpp',
-      '<(skia_src_path)/gpu/GrTHashCache.h',
+      '<(skia_src_path)/gpu/GrTHashTable.h',
       '<(skia_src_path)/gpu/GrVertexBuffer.h',
-      '<(skia_src_path)/gpu/gr_unittests.cpp',
 
       '<(skia_src_path)/gpu/effects/Gr1DKernelEffect.h',
       '<(skia_src_path)/gpu/effects/GrConfigConversionEffect.cpp',
@@ -134,12 +135,14 @@
       '<(skia_src_path)/gpu/effects/GrConvolutionEffect.h',
       '<(skia_src_path)/gpu/effects/GrBicubicEffect.cpp',
       '<(skia_src_path)/gpu/effects/GrBicubicEffect.h',
+      '<(skia_src_path)/gpu/effects/GrCustomCoordsTextureEffect.cpp',
+      '<(skia_src_path)/gpu/effects/GrCustomCoordsTextureEffect.h',
       '<(skia_src_path)/gpu/effects/GrSimpleTextureEffect.cpp',
       '<(skia_src_path)/gpu/effects/GrSimpleTextureEffect.h',
       '<(skia_src_path)/gpu/effects/GrSingleTextureEffect.cpp',
       '<(skia_src_path)/gpu/effects/GrSingleTextureEffect.h',
-      '<(skia_src_path)/gpu/effects/GrTextureDomainEffect.cpp',
-      '<(skia_src_path)/gpu/effects/GrTextureDomainEffect.h',
+      '<(skia_src_path)/gpu/effects/GrTextureDomain.cpp',
+      '<(skia_src_path)/gpu/effects/GrTextureDomain.h',
       '<(skia_src_path)/gpu/effects/GrTextureStripAtlas.cpp',
       '<(skia_src_path)/gpu/effects/GrTextureStripAtlas.h',
 
@@ -152,11 +155,9 @@
       '<(skia_src_path)/gpu/gl/GrGLCreateNativeInterface_none.cpp',
       '<(skia_src_path)/gpu/gl/GrGLDefaultInterface_none.cpp',
       '<(skia_src_path)/gpu/gl/GrGLDefines.h',
-      '<(skia_src_path)/gpu/gl/GrGLEffect.cpp',
       '<(skia_src_path)/gpu/gl/GrGLEffect.h',
+      '<(skia_src_path)/gpu/gl/GrGLVertexEffect.h',
       '<(skia_src_path)/gpu/gl/GrGLExtensions.cpp',
-      '<(skia_src_path)/gpu/gl/GrGLEffectMatrix.cpp',
-      '<(skia_src_path)/gpu/gl/GrGLEffectMatrix.h',
       '<(skia_src_path)/gpu/gl/GrGLIndexBuffer.cpp',
       '<(skia_src_path)/gpu/gl/GrGLIndexBuffer.h',
       '<(skia_src_path)/gpu/gl/GrGLInterface.cpp',
@@ -169,6 +170,8 @@
       '<(skia_src_path)/gpu/gl/GrGLProgram.h',
       '<(skia_src_path)/gpu/gl/GrGLProgramDesc.cpp',
       '<(skia_src_path)/gpu/gl/GrGLProgramDesc.h',
+      '<(skia_src_path)/gpu/gl/GrGLProgramEffects.cpp',
+      '<(skia_src_path)/gpu/gl/GrGLProgramEffects.h',
       '<(skia_src_path)/gpu/gl/GrGLRenderTarget.cpp',
       '<(skia_src_path)/gpu/gl/GrGLRenderTarget.h',
       '<(skia_src_path)/gpu/gl/GrGLShaderBuilder.cpp',
@@ -278,9 +281,3 @@
     ],
   },
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

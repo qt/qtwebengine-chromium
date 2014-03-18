@@ -33,11 +33,7 @@
 
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
 
-#include "core/platform/UUID.h"
-#include "core/platform/mediastream/MediaStreamComponent.h"
-#include "core/platform/mediastream/MediaStreamSource.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
+#include "platform/UUID.h"
 
 namespace WebCore {
 
@@ -125,6 +121,15 @@ MediaStreamDescriptor::MediaStreamDescriptor(const String& id, const MediaStream
         (*iter)->setStream(this);
         m_videoComponents.append((*iter));
     }
+}
+
+MediaStreamDescriptor::~MediaStreamDescriptor()
+{
+    for (MediaStreamComponentVector::iterator iter = m_audioComponents.begin(); iter != m_audioComponents.end(); ++iter)
+        (*iter)->setStream(0);
+
+    for (MediaStreamComponentVector::iterator iter = m_videoComponents.begin(); iter != m_videoComponents.end(); ++iter)
+        (*iter)->setStream(0);
 }
 
 } // namespace WebCore

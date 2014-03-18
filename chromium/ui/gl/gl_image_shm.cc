@@ -10,11 +10,61 @@
 
 namespace gfx {
 
+namespace {
+
+bool ValidFormat(unsigned internalformat) {
+  switch (internalformat) {
+    case GL_BGRA8_EXT:
+    case GL_RGBA8_OES:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GLenum TextureFormat(unsigned internalformat) {
+  switch (internalformat) {
+    case GL_BGRA8_EXT:
+      return GL_BGRA_EXT;
+    case GL_RGBA8_OES:
+      return GL_RGBA;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
+GLenum DataFormat(unsigned internalformat) {
+  return TextureFormat(internalformat);
+}
+
+GLenum DataType(unsigned internalformat) {
+  switch (internalformat) {
+    case GL_BGRA8_EXT:
+    case GL_RGBA8_OES:
+      return GL_UNSIGNED_BYTE;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
+GLenum BytesPerPixel(unsigned internalformat) {
+  switch (internalformat) {
+    case GL_BGRA8_EXT:
+    case GL_RGBA8_OES:
+      return 4;
+    default:
+      NOTREACHED();
+      return 0;
+  }
+}
+
+}  // namespace
+
 GLImageShm::GLImageShm(gfx::Size size, unsigned internalformat)
     : size_(size),
       internalformat_(internalformat) {
-  // GL_RGBA8_OES is currently the only supported internalformat.
-  DCHECK_EQ(static_cast<GLenum>(GL_RGBA8_OES), internalformat);
 }
 
 GLImageShm::~GLImageShm() {
@@ -22,6 +72,11 @@ GLImageShm::~GLImageShm() {
 }
 
 bool GLImageShm::Initialize(gfx::GpuMemoryBufferHandle buffer) {
+  if (!ValidFormat(internalformat_)) {
+    DVLOG(0) << "Invalid format: " << internalformat_;
+    return false;
+  }
+
   if (!base::SharedMemory::IsHandleValid(buffer.handle))
     return false;
 
@@ -40,27 +95,19 @@ bool GLImageShm::Initialize(gfx::GpuMemoryBufferHandle buffer) {
   return true;
 }
 
-bool GLImageShm::BindTexImage() {
+void GLImageShm::Destroy() {
+}
+
+gfx::Size GLImageShm::GetSize() {
+  return size_;
+}
+
+bool GLImageShm::BindTexImage(unsigned target) {
   TRACE_EVENT0("gpu", "GLImageShm::BindTexImage");
   DCHECK(shared_memory_);
+  DCHECK(ValidFormat(internalformat_));
 
-  GLenum internalformat;
-  GLenum format;
-  GLenum type;
-  int bytes_per_pixel;
-  switch (internalformat_) {
-    case GL_RGBA8_OES:
-      internalformat = GL_RGBA;
-      format = GL_RGBA;
-      type = GL_UNSIGNED_BYTE;
-      bytes_per_pixel = 4;
-      break;
-    default:
-      DVLOG(0) << "Invalid format: " << internalformat_;
-      return false;
-  }
-
-  size_t size = size_.GetArea() * bytes_per_pixel;
+  size_t size = size_.GetArea() * BytesPerPixel(internalformat_);
   DCHECK(!shared_memory_->memory());
   if (!shared_memory_->Map(size)) {
     DVLOG(0) << "Failed to map shared memory.";
@@ -68,28 +115,27 @@ bool GLImageShm::BindTexImage() {
   }
 
   DCHECK(shared_memory_->memory());
-  glTexImage2D(GL_TEXTURE_2D,
+  glTexImage2D(target,
                0,  // mip level
-               internalformat,
+               TextureFormat(internalformat_),
                size_.width(),
                size_.height(),
                0,  // border
-               format,
-               type,
+               DataFormat(internalformat_),
+               DataType(internalformat_),
                shared_memory_->memory());
 
   shared_memory_->Unmap();
   return true;
 }
 
-gfx::Size GLImageShm::GetSize() {
-  return size_;
+void GLImageShm::ReleaseTexImage(unsigned target) {
 }
 
-void GLImageShm::Destroy() {
+void GLImageShm::WillUseTexImage() {
 }
 
-void GLImageShm::ReleaseTexImage() {
+void GLImageShm::DidUseTexImage() {
 }
 
 }  // namespace gfx

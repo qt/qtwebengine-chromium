@@ -89,11 +89,6 @@ void DebugInfoEventListener::OnStopSyncingPermanently() {
   CreateAndAddEvent(sync_pb::DebugEventInfo::STOP_SYNCING_PERMANENTLY);
 }
 
-void DebugInfoEventListener::OnUpdatedToken(const std::string& token) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::UPDATED_TOKEN);
-}
-
 void DebugInfoEventListener::OnEncryptedTypesChanged(
     ModelTypeSet encrypted_types,
     bool encrypt_everything) {
@@ -135,40 +130,42 @@ void DebugInfoEventListener::OnNudgeFromDatatype(ModelType datatype) {
 }
 
 void DebugInfoEventListener::OnIncomingNotification(
-    const ObjectIdInvalidationMap& invalidations) {
+    const ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
   sync_pb::DebugEventInfo event_info;
-  ModelTypeSet types = ObjectIdSetToModelTypeSet(ObjectIdInvalidationMapToSet(
-          invalidations));
+  ModelTypeSet types =
+      ObjectIdSetToModelTypeSet(invalidation_map.GetObjectIds());
 
-  for (ObjectIdInvalidationMap::const_iterator it = invalidations.begin();
-       it != invalidations.end(); ++it) {
-    ModelType type = UNSPECIFIED;
-    if (ObjectIdToRealModelType(it->first, &type)) {
-      event_info.add_datatypes_notified_from_server(
-          GetSpecificsFieldNumberFromModelType(type));
-    }
+  for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
+    event_info.add_datatypes_notified_from_server(
+        GetSpecificsFieldNumberFromModelType(it.Get()));
   }
 
   AddEventToQueue(event_info);
 }
 
-void DebugInfoEventListener::GetAndClearDebugInfo(
-    sync_pb::DebugInfo* debug_info) {
+void DebugInfoEventListener::GetDebugInfo(sync_pb::DebugInfo* debug_info) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_LE(events_.size(), kMaxEntries);
-  while (!events_.empty()) {
+
+  for (DebugEventInfoQueue::const_iterator iter = events_.begin();
+       iter != events_.end();
+       ++iter) {
     sync_pb::DebugEventInfo* event_info = debug_info->add_events();
-    const sync_pb::DebugEventInfo& debug_event_info = events_.front();
-    event_info->CopyFrom(debug_event_info);
-    events_.pop();
+    event_info->CopyFrom(*iter);
   }
 
   debug_info->set_events_dropped(events_dropped_);
   debug_info->set_cryptographer_ready(cryptographer_ready_);
   debug_info->set_cryptographer_has_pending_keys(
       cryptographer_has_pending_keys_);
+}
 
+void DebugInfoEventListener::ClearDebugInfo() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_LE(events_.size(), kMaxEntries);
+
+  events_.clear();
   events_dropped_ = false;
 }
 
@@ -264,10 +261,10 @@ void DebugInfoEventListener::AddEventToQueue(
     DVLOG(1) << "DebugInfoEventListener::AddEventToQueue Dropping an old event "
              << "because of full queue";
 
-    events_.pop();
+    events_.pop_front();
     events_dropped_ = true;
   }
-  events_.push(event_info);
+  events_.push_back(event_info);
 }
 
 }  // namespace syncer

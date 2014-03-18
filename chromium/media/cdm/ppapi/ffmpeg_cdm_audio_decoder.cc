@@ -12,6 +12,7 @@
 #include "media/base/buffers.h"
 #include "media/base/data_buffer.h"
 #include "media/base/limits.h"
+#include "media/ffmpeg/ffmpeg_common.h"
 
 // Include FFmpeg header files.
 extern "C" {
@@ -79,12 +80,59 @@ static void CdmAudioDecoderConfigToAVCodecContext(
   }
 }
 
-FFmpegCdmAudioDecoder::FFmpegCdmAudioDecoder(cdm::Host* host)
+static cdm::AudioFormat AVSampleFormatToCdmAudioFormat(
+    AVSampleFormat sample_format) {
+  switch (sample_format) {
+    case AV_SAMPLE_FMT_U8:
+      return cdm::kAudioFormatU8;
+    case AV_SAMPLE_FMT_S16:
+      return cdm::kAudioFormatS16;
+    case AV_SAMPLE_FMT_S32:
+      return cdm::kAudioFormatS32;
+    case AV_SAMPLE_FMT_FLT:
+      return cdm::kAudioFormatF32;
+    case AV_SAMPLE_FMT_S16P:
+      return cdm::kAudioFormatPlanarS16;
+    case AV_SAMPLE_FMT_FLTP:
+      return cdm::kAudioFormatPlanarF32;
+    default:
+      DVLOG(1) << "Unknown AVSampleFormat: " << sample_format;
+  }
+  return cdm::kUnknownAudioFormat;
+}
+
+static void CopySamples(cdm::AudioFormat cdm_format,
+                        int decoded_audio_size,
+                        const AVFrame& av_frame,
+                        uint8_t* output_buffer) {
+  switch (cdm_format) {
+    case cdm::kAudioFormatU8:
+    case cdm::kAudioFormatS16:
+    case cdm::kAudioFormatS32:
+    case cdm::kAudioFormatF32:
+      memcpy(output_buffer, av_frame.data[0], decoded_audio_size);
+      break;
+    case cdm::kAudioFormatPlanarS16:
+    case cdm::kAudioFormatPlanarF32: {
+      const int decoded_size_per_channel =
+          decoded_audio_size / av_frame.channels;
+      for (int i = 0; i < av_frame.channels; ++i) {
+        memcpy(output_buffer,
+               av_frame.extended_data[i],
+               decoded_size_per_channel);
+        output_buffer += decoded_size_per_channel;
+      }
+      break;
+    }
+    default:
+      NOTREACHED() << "Unsupported CDM Audio Format!";
+      memset(output_buffer, 0, decoded_audio_size);
+  }
+}
+
+FFmpegCdmAudioDecoder::FFmpegCdmAudioDecoder(ClearKeyCdmHost* host)
     : is_initialized_(false),
       host_(host),
-      codec_context_(NULL),
-      av_frame_(NULL),
-      bits_per_channel_(0),
       samples_per_second_(0),
       channels_(0),
       av_sample_format_(0),
@@ -99,7 +147,6 @@ FFmpegCdmAudioDecoder::~FFmpegCdmAudioDecoder() {
 
 bool FFmpegCdmAudioDecoder::Initialize(const cdm::AudioDecoderConfig& config) {
   DVLOG(1) << "Initialize()";
-
   if (!IsValidConfig(config)) {
     LOG(ERROR) << "Initialize(): invalid audio decoder configuration.";
     return false;
@@ -111,15 +158,15 @@ bool FFmpegCdmAudioDecoder::Initialize(const cdm::AudioDecoderConfig& config) {
   }
 
   // Initialize AVCodecContext structure.
-  codec_context_ = avcodec_alloc_context3(NULL);
-  CdmAudioDecoderConfigToAVCodecContext(config, codec_context_);
+  codec_context_.reset(avcodec_alloc_context3(NULL));
+  CdmAudioDecoderConfigToAVCodecContext(config, codec_context_.get());
 
   // MP3 decodes to S16P which we don't support, tell it to use S16 instead.
   if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
     codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
-  if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
+  if (!codec || avcodec_open2(codec_context_.get(), codec, NULL) < 0) {
     DLOG(ERROR) << "Could not initialize audio decoder: "
                 << codec_context_->codec_id;
     return false;
@@ -132,27 +179,12 @@ bool FFmpegCdmAudioDecoder::Initialize(const cdm::AudioDecoderConfig& config) {
     return false;
   }
 
-  // Some codecs will only output float data, so we need to convert to integer
-  // before returning the decoded buffer.
-  if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP ||
-      codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
-    // Preallocate the AudioBus for float conversions.  We can treat interleaved
-    // float data as a single planar channel since our output is expected in an
-    // interleaved format anyways.
-    int channels = codec_context_->channels;
-    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT)
-      channels = 1;
-    converter_bus_ = AudioBus::CreateWrapper(channels);
-  }
-
   // Success!
-  av_frame_ = avcodec_alloc_frame();
-  bits_per_channel_ = config.bits_per_channel;
+  av_frame_.reset(av_frame_alloc());
   samples_per_second_ = config.samples_per_second;
-  bytes_per_frame_ = codec_context_->channels * bits_per_channel_ / 8;
+  bytes_per_frame_ = codec_context_->channels * config.bits_per_channel / 8;
   output_timestamp_helper_.reset(
       new AudioTimestampHelper(config.samples_per_second));
-  serialized_audio_frames_.reserve(bytes_per_frame_ * samples_per_second_);
   is_initialized_ = true;
 
   // Store initial values to guard against midstream configuration changes.
@@ -171,7 +203,7 @@ void FFmpegCdmAudioDecoder::Deinitialize() {
 
 void FFmpegCdmAudioDecoder::Reset() {
   DVLOG(1) << "Reset()";
-  avcodec_flush_buffers(codec_context_);
+  avcodec_flush_buffers(codec_context_.get());
   ResetTimestampState();
 }
 
@@ -227,17 +259,23 @@ cdm::Status FFmpegCdmAudioDecoder::DecodeBuffer(
   packet.data = const_cast<uint8_t*>(compressed_buffer);
   packet.size = compressed_buffer_size;
 
+  // Tell the CDM what AudioFormat we're using.
+  const cdm::AudioFormat cdm_format = AVSampleFormatToCdmAudioFormat(
+      static_cast<AVSampleFormat>(av_sample_format_));
+  DCHECK_NE(cdm_format, cdm::kUnknownAudioFormat);
+  decoded_frames->SetFormat(cdm_format);
+
   // Each audio packet may contain several frames, so we must call the decoder
   // until we've exhausted the packet.  Regardless of the packet size we always
   // want to hand it to the decoder at least once, otherwise we would end up
   // skipping end of stream packets since they have a size of zero.
   do {
     // Reset frame to default values.
-    avcodec_get_frame_defaults(av_frame_);
+    avcodec_get_frame_defaults(av_frame_.get());
 
     int frame_decoded = 0;
     int result = avcodec_decode_audio4(
-        codec_context_, av_frame_, &frame_decoded, &packet);
+        codec_context_.get(), av_frame_.get(), &frame_decoded, &packet);
 
     if (result < 0) {
       DCHECK(!is_end_of_stream)
@@ -290,76 +328,63 @@ cdm::Status FFmpegCdmAudioDecoder::DecodeBuffer(
       decoded_audio_size = av_samples_get_buffer_size(
           NULL, codec_context_->channels, av_frame_->nb_samples,
           codec_context_->sample_fmt, 1);
-      // If we're decoding into float, adjust audio size.
-      if (converter_bus_ && bits_per_channel_ / 8 != sizeof(float)) {
-        DCHECK(codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT ||
-               codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP);
-        decoded_audio_size *=
-            static_cast<float>(bits_per_channel_ / 8) / sizeof(float);
-      }
     }
 
-    int start_sample = 0;
     if (decoded_audio_size > 0 && output_bytes_to_drop_ > 0) {
       DCHECK_EQ(decoded_audio_size % bytes_per_frame_, 0)
           << "Decoder didn't output full frames";
 
       int dropped_size = std::min(decoded_audio_size, output_bytes_to_drop_);
-      start_sample = dropped_size / bytes_per_frame_;
       decoded_audio_size -= dropped_size;
       output_bytes_to_drop_ -= dropped_size;
     }
 
-    scoped_refptr<DataBuffer> output;
     if (decoded_audio_size > 0) {
       DCHECK_EQ(decoded_audio_size % bytes_per_frame_, 0)
           << "Decoder didn't output full frames";
-
-      // Convert float data using an AudioBus.
-      if (converter_bus_) {
-        // Setup the AudioBus as a wrapper of the AVFrame data and then use
-        // AudioBus::ToInterleaved() to convert the data as necessary.
-        int skip_frames = start_sample;
-        int total_frames = av_frame_->nb_samples;
-        int frames_to_interleave = decoded_audio_size / bytes_per_frame_;
-        if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
-          DCHECK_EQ(converter_bus_->channels(), 1);
-          total_frames *= codec_context_->channels;
-          skip_frames *= codec_context_->channels;
-          frames_to_interleave *= codec_context_->channels;
-        }
-
-        converter_bus_->set_frames(total_frames);
-        for (int i = 0; i < converter_bus_->channels(); ++i) {
-          converter_bus_->SetChannelData(i, reinterpret_cast<float*>(
-              av_frame_->extended_data[i]));
-        }
-
-        output = new DataBuffer(decoded_audio_size);
-        output->set_data_size(decoded_audio_size);
-
-        DCHECK_EQ(frames_to_interleave, converter_bus_->frames() - skip_frames);
-        converter_bus_->ToInterleavedPartial(
-            skip_frames, frames_to_interleave, bits_per_channel_ / 8,
-            output->writable_data());
-      } else {
-        output = DataBuffer::CopyFrom(
-            av_frame_->extended_data[0] + start_sample * bytes_per_frame_,
-            decoded_audio_size);
-      }
 
       base::TimeDelta output_timestamp =
           output_timestamp_helper_->GetTimestamp();
       output_timestamp_helper_->AddFrames(decoded_audio_size /
                                           bytes_per_frame_);
 
-      // Serialize the audio samples into |serialized_audio_frames_|.
+      // If we've exhausted the packet in the first decode we can write directly
+      // into the frame buffer instead of a multistep serialization approach.
+      if (serialized_audio_frames_.empty() && !packet.size) {
+        const uint32_t buffer_size = decoded_audio_size + sizeof(int64) * 2;
+        decoded_frames->SetFrameBuffer(host_->Allocate(buffer_size));
+        if (!decoded_frames->FrameBuffer()) {
+          LOG(ERROR) << "DecodeBuffer() ClearKeyCdmHost::Allocate failed.";
+          return cdm::kDecodeError;
+        }
+        decoded_frames->FrameBuffer()->SetSize(buffer_size);
+        uint8_t* output_buffer = decoded_frames->FrameBuffer()->Data();
+
+        const int64 timestamp = output_timestamp.InMicroseconds();
+        memcpy(output_buffer, &timestamp, sizeof(timestamp));
+        output_buffer += sizeof(timestamp);
+
+        const int64 output_size = decoded_audio_size;
+        memcpy(output_buffer, &output_size, sizeof(output_size));
+        output_buffer += sizeof(output_size);
+
+        // Copy the samples and return success.
+        CopySamples(
+            cdm_format, decoded_audio_size, *av_frame_, output_buffer);
+        return cdm::kSuccess;
+      }
+
+      // There are still more frames to decode, so we need to serialize them in
+      // a secondary buffer since we don't know their sizes ahead of time (which
+      // is required to allocate the FrameBuffer object).
       SerializeInt64(output_timestamp.InMicroseconds());
-      SerializeInt64(output->data_size());
-      serialized_audio_frames_.insert(
-          serialized_audio_frames_.end(),
-          output->data(),
-          output->data() + output->data_size());
+      SerializeInt64(decoded_audio_size);
+
+      const size_t previous_size = serialized_audio_frames_.size();
+      serialized_audio_frames_.resize(previous_size + decoded_audio_size);
+      uint8_t* output_buffer = &serialized_audio_frames_[0] + previous_size;
+      CopySamples(
+          cdm_format, decoded_audio_size, *av_frame_, output_buffer);
     }
   } while (packet.size > 0);
 
@@ -367,7 +392,7 @@ cdm::Status FFmpegCdmAudioDecoder::DecodeBuffer(
     decoded_frames->SetFrameBuffer(
         host_->Allocate(serialized_audio_frames_.size()));
     if (!decoded_frames->FrameBuffer()) {
-      LOG(ERROR) << "DecodeBuffer() cdm::Host::Allocate failed.";
+      LOG(ERROR) << "DecodeBuffer() ClearKeyCdmHost::Allocate failed.";
       return cdm::kDecodeError;
     }
     memcpy(decoded_frames->FrameBuffer()->Data(),
@@ -391,20 +416,12 @@ void FFmpegCdmAudioDecoder::ResetTimestampState() {
 void FFmpegCdmAudioDecoder::ReleaseFFmpegResources() {
   DVLOG(1) << "ReleaseFFmpegResources()";
 
-  if (codec_context_) {
-    av_free(codec_context_->extradata);
-    avcodec_close(codec_context_);
-    av_free(codec_context_);
-    codec_context_ = NULL;
-  }
-  if (av_frame_) {
-    av_free(av_frame_);
-    av_frame_ = NULL;
-  }
+  codec_context_.reset();
+  av_frame_.reset();
 }
 
 void FFmpegCdmAudioDecoder::SerializeInt64(int64 value) {
-  int previous_size = serialized_audio_frames_.size();
+  const size_t previous_size = serialized_audio_frames_.size();
   serialized_audio_frames_.resize(previous_size + sizeof(value));
   memcpy(&serialized_audio_frames_[0] + previous_size, &value, sizeof(value));
 }

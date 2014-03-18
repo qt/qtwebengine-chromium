@@ -39,9 +39,11 @@ WebInspector.AuditsPanel = function()
     this.registerRequiredCSS("auditsPanel.css");
 
     this.createSidebarViewWithTree();
+    this.splitView.mainElement.classList.add("vbox");
+
     this.auditsTreeElement = new WebInspector.SidebarSectionTreeElement("", {}, true);
     this.sidebarTree.appendChild(this.auditsTreeElement);
-    this.auditsTreeElement.listItemElement.addStyleClass("hidden");
+    this.auditsTreeElement.listItemElement.classList.add("hidden");
 
     this.auditsItemTreeElement = new WebInspector.AuditsSidebarTreeElement(this);
     this.auditsTreeElement.appendChild(this.auditsItemTreeElement);
@@ -49,9 +51,6 @@ WebInspector.AuditsPanel = function()
     this.auditResultsTreeElement = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("RESULTS"), {}, true);
     this.sidebarTree.appendChild(this.auditResultsTreeElement);
     this.auditResultsTreeElement.expand();
-
-    this.clearResultsButton = new WebInspector.StatusBarButton(WebInspector.UIString("Clear audit results."), "clear-status-bar-item");
-    this.clearResultsButton.addEventListener("click", this._clearButtonClicked, this);
 
     this.viewsContainerElement = this.splitView.mainElement;
 
@@ -64,9 +63,12 @@ WebInspector.AuditsPanel = function()
 }
 
 WebInspector.AuditsPanel.prototype = {
-    get statusBarItems()
+    /**
+     * @return {boolean}
+     */
+    canSearch: function()
     {
-        return [this.clearResultsButton.element];
+        return false;
     },
 
     /**
@@ -88,7 +90,7 @@ WebInspector.AuditsPanel.prototype = {
 
     /**
      * @param {string} id
-     * @return {WebInspector.AuditCategory}
+     * @return {!WebInspector.AuditCategory}
      */
     getCategory: function(id)
     {
@@ -165,7 +167,7 @@ WebInspector.AuditsPanel.prototype = {
             this.auditsItemTreeElement.select();
     },
 
-    _clearButtonClicked: function()
+    clearResults: function()
     {
         this.auditsItemTreeElement.revealAndSelect();
         this.auditResultsTreeElement.removeChildren();
@@ -214,7 +216,7 @@ WebInspector.AuditCategory.prototype = {
 
     /**
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
-     * @param {function(WebInspector.AuditRuleResult)} ruleResultCallback
+     * @param {function(!WebInspector.AuditRuleResult)} ruleResultCallback
      * @param {function()} categoryDoneCallback
      * @param {!WebInspector.Progress} progress
      */
@@ -265,7 +267,7 @@ WebInspector.AuditRule.Severity = {
 }
 
 /**
- * @type {Object.<WebInspector.AuditRule.Severity, number>}
+ * @enum {number}
  */
 WebInspector.AuditRule.SeverityOrder = {
     "info": 3,
@@ -285,7 +287,7 @@ WebInspector.AuditRule.prototype = {
     },
 
     /**
-     * @param {WebInspector.AuditRule.Severity} severity
+     * @param {!WebInspector.AuditRule.Severity} severity
      */
     set severity(severity)
     {
@@ -294,7 +296,7 @@ WebInspector.AuditRule.prototype = {
 
     /**
      * @param {!Array.<!WebInspector.NetworkRequest>} requests
-     * @param {function(WebInspector.AuditRuleResult)} callback
+     * @param {function(!WebInspector.AuditRuleResult)} callback
      * @param {!WebInspector.Progress} progress
      */
     run: function(requests, callback, progress)
@@ -308,10 +310,10 @@ WebInspector.AuditRule.prototype = {
     },
 
     /**
-     * @param {Array.<WebInspector.NetworkRequest>} requests
-     * @param {WebInspector.AuditRuleResult} result
-     * @param {function(WebInspector.AuditRuleResult)} callback
-     * @param {WebInspector.Progress} progress
+     * @param {!Array.<!WebInspector.NetworkRequest>} requests
+     * @param {!WebInspector.AuditRuleResult} result
+     * @param {function(!WebInspector.AuditRuleResult)} callback
+     * @param {!WebInspector.Progress} progress
      */
     doRun: function(requests, result, callback, progress)
     {
@@ -331,7 +333,7 @@ WebInspector.AuditCategoryResult = function(category)
 
 WebInspector.AuditCategoryResult.prototype = {
     /**
-     * @param {!WebInspector.AuditCategoryResult} ruleResult
+     * @param {!WebInspector.AuditRuleResult} ruleResult
      */
     addRuleResult: function(ruleResult)
     {
@@ -341,7 +343,7 @@ WebInspector.AuditCategoryResult.prototype = {
 
 /**
  * @constructor
- * @param {(string|boolean|number|Object)} value
+ * @param {(string|boolean|number|!Object)} value
  * @param {boolean=} expanded
  * @param {string=} className
  */
@@ -375,7 +377,7 @@ WebInspector.AuditRuleResult.resourceDomain = function(domain)
 
 WebInspector.AuditRuleResult.prototype = {
     /**
-     * @param {(string|boolean|number|Object)} value
+     * @param {(string|boolean|number|!Object)} value
      * @param {boolean=} expanded
      * @param {string=} className
      * @return {!WebInspector.AuditRuleResult}
@@ -442,7 +444,7 @@ WebInspector.AuditRuleResult.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.SidebarTreeElement}
- * @param {WebInspector.AuditsPanel} panel
+ * @param {!WebInspector.AuditsPanel} panel
  */
 WebInspector.AuditsSidebarTreeElement = function(panel)
 {
@@ -510,7 +512,7 @@ WebInspector.AuditRules = {};
 
 /**
  * Contributed audit categories should go into this namespace.
- * @type {Object.<string, function(new:WebInspector.AuditCategory)>}
+ * @type {!Object.<string, function(new:WebInspector.AuditCategory)>}
  */
 WebInspector.AuditCategories = {};
 

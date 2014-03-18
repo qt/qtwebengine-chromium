@@ -661,6 +661,20 @@ const char *CRYPTO_get_lock_name(int type)
 		return(sk_OPENSSL_STRING_value(app_locks,type-CRYPTO_NUM_LOCKS));
 	}
 
+#if __arm__
+static int global_arm_neon_enabled = 0;
+
+void CRYPTO_set_NEON_capable(int on)
+	{
+	global_arm_neon_enabled = on != 0;
+	}
+
+int CRYPTO_is_NEON_capable()
+	{
+	return global_arm_neon_enabled;
+	}
+#endif
+
 #if	defined(__i386)   || defined(__i386__)   || defined(_M_IX86) || \
 	defined(__INTEL__) || \
 	defined(__x86_64) || defined(__x86_64__) || defined(_M_AMD64) || defined(_M_X64)

@@ -39,7 +39,7 @@ namespace WebCore {
 
 class ExceptionState;
 
-class InspectorHistory {
+class InspectorHistory FINAL {
     WTF_MAKE_NONCOPYABLE(InspectorHistory); WTF_MAKE_FAST_ALLOCATED;
 public:
     class Action {
@@ -63,7 +63,6 @@ public:
     };
 
     InspectorHistory();
-    virtual ~InspectorHistory();
 
     bool perform(PassOwnPtr<Action>, ExceptionState&);
     void markUndoableState();

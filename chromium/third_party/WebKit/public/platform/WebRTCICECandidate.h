@@ -39,7 +39,7 @@ namespace WebCore {
 class RTCIceCandidateDescriptor;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 class WebRTCICECandidatePrivate;
@@ -56,17 +56,17 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void assign(const WebRTCICECandidate&);
+    BLINK_PLATFORM_EXPORT void assign(const WebRTCICECandidate&);
 
-    WEBKIT_EXPORT void initialize(const WebString& candidate, const WebString& sdpMid, unsigned short sdpMLineIndex);
-    WEBKIT_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void initialize(const WebString& candidate, const WebString& sdpMid, unsigned short sdpMLineIndex);
+    BLINK_PLATFORM_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT WebString candidate() const;
-    WEBKIT_EXPORT WebString sdpMid() const;
-    WEBKIT_EXPORT unsigned short sdpMLineIndex() const;
+    BLINK_PLATFORM_EXPORT WebString candidate() const;
+    BLINK_PLATFORM_EXPORT WebString sdpMid() const;
+    BLINK_PLATFORM_EXPORT unsigned short sdpMLineIndex() const;
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WebRTCICECandidate(WebString candidate, WebString sdpMid, unsigned short sdpMLineIndex)
     {
         this->initialize(candidate, sdpMid, sdpMLineIndex);
@@ -77,6 +77,6 @@ private:
     WebPrivatePtr<WebRTCICECandidatePrivate> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebRTCICECandidate_h

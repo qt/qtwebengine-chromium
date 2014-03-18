@@ -39,17 +39,15 @@
 #include "core/css/CSSFontSelector.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/page/Chrome.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderTheme.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 AutofillPopupMenuClient::AutofillPopupMenuClient()
     : m_selectedIndex(-1)
@@ -226,7 +224,7 @@ void AutofillPopupMenuClient::setTextFromItem(unsigned listIndex)
 
 FontSelector* AutofillPopupMenuClient::fontSelector() const
 {
-    return m_textField->document().styleResolver()->fontSelector();
+    return m_textField->document().styleEngine()->fontSelector();
 }
 
 HostWindow* AutofillPopupMenuClient::hostWindow() const
@@ -285,7 +283,7 @@ void AutofillPopupMenuClient::initialize(
     regularFontDescription.setComputedSize(style->fontDescription().computedSize());
 
     Font regularFont(regularFontDescription, 0, 0);
-    regularFont.update(textField->document().styleResolver()->fontSelector());
+    regularFont.update(textField->document().styleEngine()->fontSelector());
     // The direction of text in popup menu is set the same as the direction of
     // the input element: textField.
     m_regularStyle = adoptPtr(new PopupMenuStyle(Color::black, Color::white, regularFont, true, false,
@@ -347,4 +345,4 @@ RenderStyle* AutofillPopupMenuClient::textFieldStyle() const
     return style;
 }
 
-} // namespace WebKit
+} // namespace blink

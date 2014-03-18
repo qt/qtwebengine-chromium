@@ -26,9 +26,10 @@
 #ifndef IDBAny_h
 #define IDBAny_h
 
-#include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyPath.h"
+#include "platform/SharedBuffer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -40,7 +41,6 @@ class DOMStringList;
 class IDBCursor;
 class IDBCursorWithValue;
 class IDBDatabase;
-class IDBFactory;
 class IDBIndex;
 class IDBKeyPath;
 class IDBObjectStore;
@@ -48,7 +48,7 @@ class IDBTransaction;
 
 class IDBAny : public RefCounted<IDBAny> {
 public:
-    static PassRefPtr<IDBAny> createInvalid();
+    static PassRefPtr<IDBAny> createUndefined();
     static PassRefPtr<IDBAny> createNull();
     static PassRefPtr<IDBAny> createString(const String&);
     template<typename T>
@@ -70,6 +70,10 @@ public:
     {
         return adoptRef(new IDBAny(value));
     }
+    static PassRefPtr<IDBAny> create(PassRefPtr<SharedBuffer> value, PassRefPtr<IDBKey> key, const IDBKeyPath& keyPath)
+    {
+        return adoptRef(new IDBAny(value, key, keyPath));
+    }
     ~IDBAny();
 
     enum Type {
@@ -79,43 +83,45 @@ public:
         IDBCursorType,
         IDBCursorWithValueType,
         IDBDatabaseType,
-        IDBFactoryType,
         IDBIndexType,
         IDBObjectStoreType,
         IDBTransactionType,
-        ScriptValueType,
+        BufferType,
         IntegerType,
         StringType,
         KeyPathType,
+        KeyType,
+        BufferKeyAndKeyPathType,
     };
 
     Type type() const { return m_type; }
     // Use type() to figure out which one of these you're allowed to call.
-    DOMStringList* domStringList();
-    IDBCursor* idbCursor();
-    IDBCursorWithValue* idbCursorWithValue();
-    IDBDatabase* idbDatabase();
-    IDBFactory* idbFactory();
-    IDBIndex* idbIndex();
-    IDBObjectStore* idbObjectStore();
-    IDBTransaction* idbTransaction();
-    const ScriptValue& scriptValue();
-    int64_t integer();
-    const String& string();
-    const IDBKeyPath& keyPath() { return m_idbKeyPath; };
+    DOMStringList* domStringList() const;
+    IDBCursor* idbCursor() const;
+    IDBCursorWithValue* idbCursorWithValue() const;
+    IDBDatabase* idbDatabase() const;
+    IDBIndex* idbIndex() const;
+    IDBObjectStore* idbObjectStore() const;
+    IDBTransaction* idbTransaction() const;
+    SharedBuffer* buffer() const;
+    int64_t integer() const;
+    const String& string() const;
+    const IDBKey* key() const;
+    const IDBKeyPath& keyPath() const;
 
 private:
     explicit IDBAny(Type);
     explicit IDBAny(PassRefPtr<DOMStringList>);
     explicit IDBAny(PassRefPtr<IDBCursor>);
     explicit IDBAny(PassRefPtr<IDBDatabase>);
-    explicit IDBAny(PassRefPtr<IDBFactory>);
     explicit IDBAny(PassRefPtr<IDBIndex>);
     explicit IDBAny(PassRefPtr<IDBObjectStore>);
     explicit IDBAny(PassRefPtr<IDBTransaction>);
+    explicit IDBAny(PassRefPtr<IDBKey>);
     explicit IDBAny(const IDBKeyPath&);
     explicit IDBAny(const String&);
-    explicit IDBAny(const ScriptValue&);
+    explicit IDBAny(PassRefPtr<SharedBuffer>);
+    explicit IDBAny(PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&);
     explicit IDBAny(int64_t);
 
     const Type m_type;
@@ -124,12 +130,12 @@ private:
     const RefPtr<DOMStringList> m_domStringList;
     const RefPtr<IDBCursor> m_idbCursor;
     const RefPtr<IDBDatabase> m_idbDatabase;
-    const RefPtr<IDBFactory> m_idbFactory;
     const RefPtr<IDBIndex> m_idbIndex;
     const RefPtr<IDBObjectStore> m_idbObjectStore;
     const RefPtr<IDBTransaction> m_idbTransaction;
+    const RefPtr<IDBKey> m_idbKey;
     const IDBKeyPath m_idbKeyPath;
-    const ScriptValue m_scriptValue;
+    const RefPtr<SharedBuffer> m_buffer;
     const String m_string;
     const int64_t m_integer;
 };

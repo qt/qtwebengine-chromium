@@ -93,7 +93,7 @@ protected:
 
     void insertedInto(ContainerNode*);
     void removedFrom(ContainerNode*);
-    void didMoveToNewDocument(Document* oldDocument);
+    void didMoveToNewDocument(Document& oldDocument);
 
     void setForm(HTMLFormElement*);
     void formAttributeChanged();
@@ -119,7 +119,9 @@ private:
 };
 
 HTMLElement* toHTMLElement(FormAssociatedElement*);
+HTMLElement& toHTMLElement(FormAssociatedElement&);
 const HTMLElement* toHTMLElement(const FormAssociatedElement*);
+const HTMLElement& toHTMLElement(const FormAssociatedElement&);
 
 } // namespace
 

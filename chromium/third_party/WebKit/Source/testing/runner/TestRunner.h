@@ -37,6 +37,7 @@
 #include "TestCommon.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebURL.h"
+#include "public/testing/WebScopedPtr.h"
 #include "public/testing/WebTask.h"
 #include "public/testing/WebTestRunner.h"
 #include "public/web/WebArrayBufferView.h"
@@ -44,11 +45,10 @@
 #include "public/web/WebTextDirection.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include <deque>
-#include <memory>
 #include <set>
 #include <string>
 
-namespace WebKit {
+namespace blink {
 class WebArrayBufferView;
 class WebNotificationPresenter;
 class WebPageOverlay;
@@ -70,7 +70,7 @@ public:
     virtual ~TestRunner();
 
     void setDelegate(WebTestDelegate*);
-    void setWebView(WebKit::WebView*, WebTestProxyBase*);
+    void setWebView(blink::WebView*, WebTestProxyBase*);
 
     void reset();
 
@@ -82,9 +82,9 @@ public:
     // WebTestRunner implementation.
     virtual bool shouldGeneratePixelResults() OVERRIDE;
     virtual bool shouldDumpAsAudio() const OVERRIDE;
-    virtual const WebKit::WebArrayBufferView* audioData() const OVERRIDE;
+    virtual const blink::WebArrayBufferView* audioData() const OVERRIDE;
     virtual bool shouldDumpBackForwardList() const OVERRIDE;
-    virtual WebKit::WebPermissionClient* webPermissions() const OVERRIDE;
+    virtual blink::WebPermissionClient* webPermissions() const OVERRIDE;
 
     // Methods used by WebTestProxyBase.
     bool shouldDumpSelectionRect() const;
@@ -92,13 +92,17 @@ public:
     bool sweepHorizontally() const;
     bool isPrinting() const;
     bool shouldDumpAsText();
+    bool shouldDumpAsTextWithPixelResults();
+    bool shouldDumpAsMarkup();
     bool shouldDumpChildFrameScrollPositions() const;
     bool shouldDumpChildFramesAsText() const;
     void showDevTools();
     void setShouldDumpAsText(bool);
+    void setShouldDumpAsMarkup(bool);
     void setShouldGeneratePixelResults(bool);
     void setShouldDumpFrameLoadCallbacks(bool);
     void setShouldDumpPingLoaderCallbacks(bool);
+    void setShouldEnableViewSource(bool);
     bool shouldDumpEditingCallbacks() const;
     bool shouldDumpFrameLoadCallbacks() const;
     bool shouldDumpPingLoaderCallbacks() const;
@@ -112,22 +116,23 @@ public:
     bool shouldDumpResourceResponseMIMETypes() const;
     bool shouldDumpStatusCallbacks() const;
     bool shouldDumpProgressFinishedCallback() const;
+    bool shouldDumpSpellCheckCallbacks() const;
     bool deferMainResourceDataLoad() const;
     bool shouldStayOnPageAfterHandlingBeforeUnload() const;
     const std::set<std::string>* httpHeadersToClear() const;
-    void setTopLoadingFrame(WebKit::WebFrame*, bool);
-    WebKit::WebFrame* topLoadingFrame() const;
+    void setTopLoadingFrame(blink::WebFrame*, bool);
+    blink::WebFrame* topLoadingFrame() const;
     void policyDelegateDone();
     bool policyDelegateEnabled() const;
     bool policyDelegateIsPermissive() const;
     bool policyDelegateShouldNotifyDone() const;
     bool shouldInterceptPostMessage() const;
     bool shouldDumpResourcePriorities() const;
-    WebKit::WebNotificationPresenter* notificationPresenter() const;
+    blink::WebNotificationPresenter* notificationPresenter() const;
     bool requestPointerLock();
     void requestPointerUnlock();
     bool isPointerLocked();
-    void setToolTipText(const WebKit::WebString&);
+    void setToolTipText(const blink::WebString&);
 
     bool midiAccessorResult();
 
@@ -137,7 +142,7 @@ public:
         virtual ~WorkItem() { }
 
         // Returns true if this started a load.
-        virtual bool run(WebTestDelegate*, WebKit::WebView*) = 0;
+        virtual bool run(WebTestDelegate*, blink::WebView*) = 0;
     };
 
 private:
@@ -237,8 +242,8 @@ private:
     // Forces the selection colors for testing under Linux.
     void forceRedSelectionColors(const CppArgumentList&, CppVariant*);
 
-    // Adds a user style sheet to be injected into new documents.
-    void addUserStyleSheet(const CppArgumentList&, CppVariant*);
+    // Adds a style sheet to be injected into new documents.
+    void injectStyleSheet(const CppArgumentList&, CppVariant*);
 
     void startSpeechInput(const CppArgumentList&, CppVariant*);
 
@@ -247,9 +252,6 @@ private:
     // Expects the first argument to be an input element and the second argument to be a string value.
     // Forwards the setValueForUser() call to the element.
     void setValueForUser(const CppArgumentList&, CppVariant*);
-
-    void enableFixedLayoutMode(const CppArgumentList&, CppVariant*);
-    void setFixedLayoutSize(const CppArgumentList&, CppVariant*);
 
     void selectionAsMarkup(const CppArgumentList&, CppVariant*);
 
@@ -272,6 +274,14 @@ private:
     // length to retrieve.
     void textSurroundingNode(const CppArgumentList&, CppVariant*);
 
+    // After this function is called, all window-sizing machinery is
+    // short-circuited inside the renderer. This mode is necessary for
+    // some tests that were written before browsers had multi-process architecture
+    // and rely on window resizes to happen synchronously.
+    // The function has "unfortunate" it its name because we must strive to remove all tests
+    // that rely on this... well, unfortunate behavior. See http://crbug.com/309760 for the plan.
+    void useUnfortunateSynchronousResizeMode(const CppArgumentList&, CppVariant*);
+
     void enableAutoResizeMode(const CppArgumentList&, CppVariant*);
     void disableAutoResizeMode(const CppArgumentList&, CppVariant*);
 
@@ -287,14 +297,6 @@ private:
 
     ///////////////////////////////////////////////////////////////////////////
     // Methods modifying WebPreferences.
-
-    // Passes through to WebPreferences which allows the user to have a custom
-    // style sheet.
-    void setUserStyleSheetEnabled(const CppArgumentList&, CppVariant*);
-    void setUserStyleSheetLocation(const CppArgumentList&, CppVariant*);
-
-    // Passes this preference through to WebSettings.
-    void setAuthorAndUserStylesEnabled(const CppArgumentList&, CppVariant*);
 
     // Set the WebPreference that controls webkit's popup blocking.
     void setPopupBlockingEnabled(const CppArgumentList&, CppVariant*);
@@ -318,8 +320,13 @@ private:
 
     // This function sets a flag that tells the test_shell to dump pages as
     // plain text, rather than as a text representation of the renderer's state.
-    // It takes an optional argument, whether to dump pixels results or not.
+    // The pixel results will not be generated for this test.
     void dumpAsText(const CppArgumentList&, CppVariant*);
+
+    // This function sets a flag that tells the test_shell to dump pages as
+    // plain text, rather than as a text representation of the renderer's state.
+    // It will also generate a pixel dump for the test.
+    void dumpAsTextWithPixelResults(const CppArgumentList&, CppVariant*);
 
     // This function sets a flag that tells the test_shell to print out the
     // scroll offsets of the child frames. It ignores all.
@@ -394,6 +401,10 @@ private:
     // descriptive text for the progress finished callback. It takes no
     // arguments, and ignores any that may be present.
     void dumpProgressFinishedCallback(const CppArgumentList&, CppVariant*);
+
+    // This function sets a flag that tells the test_shell to dump all
+    // the lines of descriptive text about spellcheck execution.
+    void dumpSpellCheckCallbacks(const CppArgumentList&, CppVariant*);
 
     // This function sets a flag that tells the test_shell to print out a text
     // representation of the back/forward list. It ignores all arguments.
@@ -518,13 +529,13 @@ private:
     private:
         CallbackMethodType m_callback;
     };
-    class TestPageOverlay : public WebKit::WebPageOverlay {
+    class TestPageOverlay : public blink::WebPageOverlay {
     public:
-        explicit TestPageOverlay(WebKit::WebView*);
-        virtual void paintPageOverlay(WebKit::WebCanvas*) OVERRIDE;
+        explicit TestPageOverlay(blink::WebView*);
+        virtual void paintPageOverlay(blink::WebCanvas*) OVERRIDE;
         virtual ~TestPageOverlay();
     private:
-        WebKit::WebView* m_webView;
+        blink::WebView* m_webView;
     };
     void didAcquirePointerLockInternal();
     void didNotAcquirePointerLockInternal();
@@ -532,7 +543,7 @@ private:
 
     bool cppVariantToBool(const CppVariant&);
     int32_t cppVariantToInt32(const CppVariant&);
-    WebKit::WebString cppVariantToWebString(const CppVariant&);
+    blink::WebString cppVariantToWebString(const CppVariant&);
 
     void printErrorMessage(const std::string&);
 
@@ -564,8 +575,6 @@ private:
     bool m_policyDelegateShouldNotifyDone;
 
     WorkQueue m_workQueue;
-
-    WebKit::WebURL m_userStyleSheetLocation;
 
     // globalFlag is used by a number of layout tests in http/tests/security/dataURL.
     CppVariant m_globalFlag;
@@ -602,6 +611,10 @@ private:
     // If true and if dump_as_text_ is true, the test_shell will recursively
     // dump all frames as plain text.
     bool m_dumpChildFramesAsText;
+
+    // If true, the test_shell will produce a dump of the DOM rather than a text
+    // representation of the renderer.
+    bool m_dumpAsMarkup;
 
     // If true, the test_shell will print out the child frame scroll offsets as
     // well.
@@ -656,6 +669,10 @@ private:
     // finished callback.
     bool m_dumpProgressFinishedCallback;
 
+    // If true, the test_shell will output descriptive test for spellcheck
+    // execution.
+    bool m_dumpSpellCheckCallbacks;
+
     // If true, the test_shell will produce a dump of the back forward list as
     // well.
     bool m_dumpBackForwardList;
@@ -688,24 +705,24 @@ private:
     std::set<std::string> m_httpHeadersToClear;
 
     // WAV audio data is stored here.
-    WebKit::WebArrayBufferView m_audioData;
+    blink::WebArrayBufferView m_audioData;
 
     // Used for test timeouts.
     WebTaskList m_taskList;
 
     TestInterfaces* m_testInterfaces;
     WebTestDelegate* m_delegate;
-    WebKit::WebView* m_webView;
+    blink::WebView* m_webView;
     TestPageOverlay* m_pageOverlay;
     WebTestProxyBase* m_proxy;
 
     // This is non-0 IFF a load is in progress.
-    WebKit::WebFrame* m_topLoadingFrame;
+    blink::WebFrame* m_topLoadingFrame;
 
     // WebPermissionClient mock object.
-    std::auto_ptr<WebPermissions> m_webPermissions;
+    WebScopedPtr<WebPermissions> m_webPermissions;
 
-    std::auto_ptr<NotificationPresenter> m_notificationPresenter;
+    WebScopedPtr<NotificationPresenter> m_notificationPresenter;
 
     bool m_pointerLocked;
     enum {

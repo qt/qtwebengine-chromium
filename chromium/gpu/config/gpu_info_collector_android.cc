@@ -11,6 +11,9 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_surface.h"
 
 namespace {
 
@@ -41,6 +44,46 @@ std::string GetDriverVersionFromString(const std::string& version_string) {
   return pieces[0] + "." + pieces[1];
 }
 
+class ScopedRestoreNonOwnedEGLContext {
+ public:
+  ScopedRestoreNonOwnedEGLContext();
+  ~ScopedRestoreNonOwnedEGLContext();
+
+ private:
+  EGLContext context_;
+  EGLDisplay display_;
+  EGLSurface draw_surface_;
+  EGLSurface read_surface_;
+};
+
+ScopedRestoreNonOwnedEGLContext::ScopedRestoreNonOwnedEGLContext()
+  : context_(EGL_NO_CONTEXT),
+    display_(EGL_NO_DISPLAY),
+    draw_surface_(EGL_NO_SURFACE),
+    read_surface_(EGL_NO_SURFACE) {
+  // This should only used to restore a context that is not created or owned by
+  // Chromium native code, but created by Android system itself.
+  DCHECK(!gfx::GLContext::GetCurrent());
+
+  if (gfx::GLSurface::InitializeOneOff()) {
+    context_ = eglGetCurrentContext();
+    display_ = eglGetCurrentDisplay();
+    draw_surface_ = eglGetCurrentSurface(EGL_DRAW);
+    read_surface_ = eglGetCurrentSurface(EGL_READ);
+  }
+}
+
+ScopedRestoreNonOwnedEGLContext::~ScopedRestoreNonOwnedEGLContext() {
+  if (context_ == EGL_NO_CONTEXT || display_ == EGL_NO_DISPLAY ||
+      draw_surface_ == EGL_NO_SURFACE || read_surface_ == EGL_NO_SURFACE) {
+    return;
+  }
+
+  if (!eglMakeCurrent(display_, draw_surface_, read_surface_, context_)) {
+    LOG(WARNING) << "Failed to restore EGL context";
+  }
+}
+
 }
 
 namespace gpu {
@@ -63,18 +106,31 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   gpu_info->machine_model = base::android::BuildInfo::GetInstance()->model();
 
   // Create a short-lived context on the UI thread to collect the GL strings.
+  // Make sure we restore the existing context if there is one.
+  ScopedRestoreNonOwnedEGLContext restore_context;
   return CollectGraphicsInfoGL(gpu_info);
 }
 
 bool CollectDriverInfoGL(GPUInfo* gpu_info) {
   gpu_info->driver_version = GetDriverVersionFromString(
       gpu_info->gl_version_string);
+  gpu_info->gpu.vendor_string = gpu_info->gl_vendor;
+  gpu_info->gpu.device_string = gpu_info->gl_renderer;
   return true;
 }
 
 void MergeGPUInfo(GPUInfo* basic_gpu_info,
                   const GPUInfo& context_gpu_info) {
   MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
+}
+
+bool DetermineActiveGPU(GPUInfo* gpu_info) {
+  DCHECK(gpu_info);
+  if (gpu_info->secondary_gpus.size() == 0)
+    return true;
+  // TODO(zmo): implement this when Android starts to support more
+  // than one GPUs.
+  return false;
 }
 
 }  // namespace gpu

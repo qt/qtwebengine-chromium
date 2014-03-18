@@ -31,14 +31,14 @@
 #include "config.h"
 #include "core/html/parser/HTMLParserThread.h"
 
-#include "core/platform/Task.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/Task.h"
 #include "public/platform/Platform.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
 HTMLParserThread::HTMLParserThread()
-    : m_thread(adoptPtr(WebKit::Platform::current()->createThread("HTMLParserThread")))
+    : m_thread(adoptPtr(blink::Platform::current()->createThread("HTMLParserThread")))
 {
 }
 

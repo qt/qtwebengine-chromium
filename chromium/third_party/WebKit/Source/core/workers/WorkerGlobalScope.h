@@ -29,13 +29,14 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "bindings/v8/WorkerScriptController.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/ContentSecurityPolicy.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/ContentSecurityPolicy.h"
 #include "core/workers/WorkerConsole.h"
 #include "core/workers/WorkerEventQueue.h"
+#include "core/workers/WorkerSupplementable.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
@@ -57,22 +58,23 @@ namespace WebCore {
     class WorkerNavigator;
     class WorkerThread;
 
-    class WorkerGlobalScope : public RefCounted<WorkerGlobalScope>, public ScriptWrappable, public ScriptExecutionContext, public EventTarget {
+    class WorkerGlobalScope : public RefCounted<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WorkerSupplementable, public EventTargetWithInlineData {
+        REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     public:
         virtual ~WorkerGlobalScope();
 
         virtual bool isWorkerGlobalScope() const OVERRIDE { return true; }
 
-        virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+        virtual ExecutionContext* executionContext() const OVERRIDE;
 
         virtual bool isSharedWorkerGlobalScope() const { return false; }
         virtual bool isDedicatedWorkerGlobalScope() const { return false; }
+        virtual bool isServiceWorkerGlobalScope() const { return false; }
 
         const KURL& url() const { return m_url; }
         KURL completeURL(const String&) const;
 
         virtual String userAgent(const KURL&) const;
-
         virtual void disableEval(const String& errorMessage) OVERRIDE;
 
         WorkerScriptController* script() { return m_script.get(); }
@@ -81,7 +83,7 @@ namespace WebCore {
 
         WorkerThread* thread() const { return m_thread; }
 
-        virtual void postTask(PassOwnPtr<Task>) OVERRIDE; // Executes the task on context's thread asynchronously.
+        virtual void postTask(PassOwnPtr<ExecutionContextTask>) OVERRIDE; // Executes the task on context's thread asynchronously.
 
         // WorkerGlobalScope
         WorkerGlobalScope* self() { return this; }
@@ -95,11 +97,14 @@ namespace WebCore {
         virtual void importScripts(const Vector<String>& urls, ExceptionState&);
         WorkerNavigator* navigator() const;
 
-        // ScriptExecutionContext
+        // ExecutionContextClient
         virtual WorkerEventQueue* eventQueue() const OVERRIDE;
+        virtual SecurityContext& securityContext() OVERRIDE { return *this; }
 
         virtual bool isContextThread() const OVERRIDE;
         virtual bool isJSExecutionForbidden() const OVERRIDE;
+
+        virtual double timerAlignmentInterval() const OVERRIDE;
 
         WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
         // These methods are used for GC marking. See JSWorkerGlobalScope::visitChildrenVirtual(SlotVisitor&) in
@@ -107,9 +112,6 @@ namespace WebCore {
         WorkerConsole* optionalConsole() const { return m_console.get(); }
         WorkerNavigator* optionalNavigator() const { return m_navigator.get(); }
         WorkerLocation* optionalLocation() const { return m_location.get(); }
-
-        using RefCounted<WorkerGlobalScope>::ref;
-        using RefCounted<WorkerGlobalScope>::deref;
 
         bool isClosing() { return m_closing; }
 
@@ -135,6 +137,9 @@ namespace WebCore {
 
         WorkerClients* clients() { return m_workerClients.get(); }
 
+        using SecurityContext::securityOrigin;
+        using SecurityContext::contentSecurityPolicy;
+
     protected:
         WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtr<WorkerClients>);
         void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType);
@@ -143,20 +148,17 @@ namespace WebCore {
         void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState*);
 
     private:
-        virtual void refScriptExecutionContext() OVERRIDE { ref(); }
-        virtual void derefScriptExecutionContext() OVERRIDE { deref(); }
-
-        virtual void refEventTarget() OVERRIDE { ref(); }
-        virtual void derefEventTarget() OVERRIDE { deref(); }
-        virtual EventTargetData* eventTargetData() OVERRIDE;
-        virtual EventTargetData* ensureEventTargetData() OVERRIDE;
+        virtual void refExecutionContext() OVERRIDE { ref(); }
+        virtual void derefExecutionContext() OVERRIDE { deref(); }
 
         virtual const KURL& virtualURL() const OVERRIDE;
         virtual KURL virtualCompleteURL(const String&) const;
 
+        virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE;
         virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0) OVERRIDE;
 
         virtual EventTarget* errorEventTarget() OVERRIDE;
+        virtual void didUpdateSecurityOrigin() OVERRIDE { }
 
         KURL m_url;
         String m_userAgent;
@@ -171,7 +173,6 @@ namespace WebCore {
         mutable RefPtr<DOMURL> m_domURL;
         OwnPtr<WorkerInspectorController> m_workerInspectorController;
         bool m_closing;
-        EventTargetData m_eventTargetData;
 
         HashSet<Observer*> m_workerObservers;
 
@@ -182,11 +183,7 @@ namespace WebCore {
         double m_timeOrigin;
     };
 
-inline WorkerGlobalScope* toWorkerGlobalScope(ScriptExecutionContext* context)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!context || context->isWorkerGlobalScope());
-    return static_cast<WorkerGlobalScope*>(context);
-}
+DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());
 
 } // namespace WebCore
 

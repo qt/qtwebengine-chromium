@@ -11,9 +11,20 @@
 #ifndef UNIT_TEST_UNIT_TEST_H_  // NOLINT
 #define UNIT_TEST_UNIT_TEST_H_
 
+#ifdef WIN32
+#include <windows.h>
+#else
+#include <sys/time.h>
+#include <sys/resource.h>
+#endif
+
 #include <gtest/gtest.h>
 
 #include "libyuv/basic_types.h"
+
+static __inline int Abs(int v) {
+  return v >= 0 ? v : -v;
+}
 
 #define align_buffer_64(var, size)                                             \
   uint8* var;                                                                  \
@@ -38,7 +49,6 @@
   var = 0;
 
 #ifdef WIN32
-#include <windows.h>
 static inline double get_time() {
   LARGE_INTEGER t, f;
   QueryPerformanceCounter(&t);
@@ -49,10 +59,6 @@ static inline double get_time() {
 #define random rand
 #define srandom srand
 #else
-
-#include <sys/time.h>
-#include <sys/resource.h>
-
 static inline double get_time() {
   struct timeval t;
   struct timezone tzp;
@@ -63,9 +69,9 @@ static inline double get_time() {
 
 static inline void MemRandomize(uint8* dst, int len) {
   int i;
-  for (i = 0; i < len - 3; i += 4) {
-    *reinterpret_cast<uint32*>(dst) = random();
-    dst += 4;
+  for (i = 0; i < len - 1; i += 2) {
+    *reinterpret_cast<uint16*>(dst) = random();
+    dst += 2;
   }
   for (; i < len; ++i) {
     *dst++ = random();
@@ -83,6 +89,7 @@ class libyuvTest : public ::testing::Test {
   int benchmark_width_;  // Default 1280.  Use 640 for benchmarking VGA.
   int benchmark_height_;  // Default 720.  Use 360 for benchmarking VGA.
   int benchmark_pixels_div256_;  // Total pixels to benchmark / 256.
+  int benchmark_pixels_div1280_;  // Total pixels to benchmark / 1280.
 };
 
 #endif  // UNIT_TEST_UNIT_TEST_H_  NOLINT

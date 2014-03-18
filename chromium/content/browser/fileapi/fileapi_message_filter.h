@@ -12,7 +12,6 @@
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_util_proxy.h"
-#include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "base/platform_file.h"
@@ -89,11 +88,9 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
  private:
   typedef fileapi::FileSystemOperationRunner::OperationID OperationID;
 
-  void OnOpen(int request_id,
-              const GURL& origin_url,
-              fileapi::FileSystemType type,
-              int64 requested_size,
-              bool create);
+  void OnOpenFileSystem(int request_id,
+                        const GURL& origin_url,
+                        fileapi::FileSystemType type);
   void OnResolveURL(int request_id,
                     const GURL& filesystem_url);
   void OnDeleteFileSystem(int request_id,
@@ -118,23 +115,12 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                const GURL& path,
                const std::string& blob_uuid,
                int64 offset);
-  void OnWriteDeprecated(
-               int request_id,
-               const GURL& path,
-               const GURL& blob_url,
-               int64 offset);
   void OnTruncate(int request_id, const GURL& path, int64 length);
   void OnTouchFile(int request_id,
                    const GURL& path,
                    const base::Time& last_access_time,
                    const base::Time& last_modified_time);
   void OnCancel(int request_id, int request_to_cancel);
-#if defined(ENABLE_PLUGINS)
-  void OnOpenPepperFile(int request_id, const GURL& path, int pp_open_flags);
-#endif  // defined(ENABLE_PLUGINS)
-  void OnNotifyCloseFile(int file_open_id);
-  void OnWillUpdate(const GURL& path);
-  void OnDidUpdate(const GURL& path, int64 delta);
   void OnSyncGetPlatformPath(const GURL& path,
                              base::FilePath* platform_path);
   void OnCreateSnapshotFile(int request_id,
@@ -156,13 +142,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   void OnDecrementBlobRefCount(const std::string& uuid);
   void OnRegisterPublicBlobURL(const GURL& public_url, const std::string& uuid);
   void OnRevokePublicBlobURL(const GURL& public_url);
-
-  // Extra methods to establish a mapping from old-style blobURLs to uuids,
-  // and to clone them. These won't be here for long, just during a
-  // transition period. See crbug/174200
-  void OnDeprecatedRegisterBlobURL(const GURL& url, const std::string& uuid);
-  void OnDeprecatedCloneBlobURL(const GURL& url, const GURL& existing_url);
-  void OnDeprecatedRevokeBlobURL(const GURL& url);
 
   // Handlers for StreamHostMsg_ family messages.
   //
@@ -192,20 +171,14 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                         base::PlatformFileError result,
                         const std::vector<fileapi::DirectoryEntry>& entries,
                         bool has_more);
-  void DidOpenFile(int request_id,
-                   quota::QuotaLimitType quota_policy,
-                   base::PlatformFileError result,
-                   base::PlatformFile file,
-                   const base::Closure& on_close_callback,
-                   base::ProcessHandle peer_handle);
   void DidWrite(int request_id,
                 base::PlatformFileError result,
                 int64 bytes,
                 bool complete);
   void DidOpenFileSystem(int request_id,
-                         base::PlatformFileError result,
+                         const GURL& root,
                          const std::string& filesystem_name,
-                         const GURL& root);
+                         base::PlatformFileError result);
   void DidResolveURL(int request_id,
                      base::PlatformFileError result,
                      const fileapi::FileSystemInfo& info,
@@ -265,11 +238,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   // is being sent to the renderer.
   std::map<int, scoped_refptr<webkit_blob::ShareableFileReference> >
       in_transit_snapshot_files_;
-
-  // Keep track of file system file opened by OpenFile() in this process.
-  // Need to close all of them when the renderer process dies.
-  typedef IDMap<base::Closure, IDMapOwnPointer> OnCloseCallbackMap;
-  OnCloseCallbackMap on_close_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(FileAPIMessageFilter);
 };

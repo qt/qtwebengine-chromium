@@ -115,7 +115,7 @@ public:
 
     enum { IterationCountInfinite = -1 };
     double iterationCount() const { return m_iterationCount; }
-    const String& name() const { return m_name; }
+    const AtomicString& name() const { return m_name; }
     EAnimPlayState playState() const { return static_cast<EAnimPlayState>(m_playState); }
     CSSPropertyID property() const { return m_property; }
     TimingFunction* timingFunction() const { return m_timingFunction.get(); }
@@ -137,7 +137,7 @@ public:
     CSSAnimationData& operator=(const CSSAnimationData& o);
 
     // return true every CSSAnimationData in the chain (defined by m_next) match
-    bool operator==(const CSSAnimationData& o) const { return animationsMatch(&o); }
+    bool operator==(const CSSAnimationData& o) const { return animationsMatchForStyleRecalc(&o); }
     bool operator!=(const CSSAnimationData& o) const { return !(*this == o); }
 
     bool fillsBackwards() const { return m_fillModeSet && (m_fillMode == AnimationFillModeBackwards || m_fillMode == AnimationFillModeBoth); }
@@ -147,8 +147,9 @@ private:
     CSSAnimationData();
     explicit CSSAnimationData(const CSSAnimationData&);
 
-    // return true if all members of this class match (excluding m_next)
-    bool animationsMatch(const CSSAnimationData*, bool matchPlayStates = true) const;
+    // Return whether this object matches another CSSAnimationData object for
+    // the purposes of style recalc. This excludes some properties.
+    bool animationsMatchForStyleRecalc(const CSSAnimationData*) const;
 
     AtomicString m_name;
     CSSPropertyID m_property;
@@ -180,7 +181,7 @@ public:
     static double initialAnimationDuration() { return 0; }
     static unsigned initialAnimationFillMode() { return AnimationFillModeNone; }
     static double initialAnimationIterationCount() { return 1.0; }
-    static const String& initialAnimationName();
+    static const AtomicString& initialAnimationName();
     static EAnimPlayState initialAnimationPlayState() { return AnimPlayStatePlaying; }
     static CSSPropertyID initialAnimationProperty() { return CSSPropertyInvalid; }
     static const PassRefPtr<TimingFunction> initialAnimationTimingFunction() { return CubicBezierTimingFunction::preset(CubicBezierTimingFunction::Ease); }

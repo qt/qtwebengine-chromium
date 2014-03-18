@@ -5,6 +5,7 @@
 #include "content/public/app/android_library_loader_hooks.h"
 
 #include "base/android/base_jni_registrar.h"
+#include "base/android/command_line_android.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/android/jni_string.h"
@@ -14,31 +15,76 @@
 #include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/tracked_objects.h"
 #include "content/app/android/app_jni_registrar.h"
 #include "content/browser/android/browser_jni_registrar.h"
 #include "content/child/android/child_jni_registrar.h"
-#include "content/common/android/command_line.h"
 #include "content/common/android/common_jni_registrar.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "jni/LibraryLoader_jni.h"
 #include "media/base/android/media_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
-#include "ui/android/ui_jni_registrar.h"
+#include "ui/base/android/ui_base_jni_registrar.h"
+#include "ui/gfx/android/gfx_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
 #include "ui/shell_dialogs/android/shell_dialogs_jni_registrar.h"
 
+namespace content {
+
 namespace {
 base::AtExitManager* g_at_exit_manager = NULL;
+const char* g_library_version_number = "";
 }
 
-namespace content {
+bool EnsureJniRegistered(JNIEnv* env) {
+  static bool g_jni_init_done = false;
+
+  if (!g_jni_init_done) {
+    if (!base::android::RegisterJni(env))
+      return false;
+
+    if (!gfx::android::RegisterJni(env))
+      return false;
+
+    if (!net::android::RegisterJni(env))
+      return false;
+
+    if (!ui::android::RegisterJni(env))
+      return false;
+
+    if (!ui::gl::android::RegisterJni(env))
+      return false;
+
+    if (!ui::shell_dialogs::RegisterJni(env))
+      return false;
+
+    if (!content::android::RegisterChildJni(env))
+      return false;
+
+    if (!content::android::RegisterCommonJni(env))
+      return false;
+
+    if (!content::android::RegisterBrowserJni(env))
+      return false;
+
+    if (!content::android::RegisterAppJni(env))
+      return false;
+
+    if (!media::RegisterJni(env))
+      return false;
+
+    g_jni_init_done = true;
+  }
+
+  return true;
+}
 
 static jint LibraryLoaded(JNIEnv* env, jclass clazz,
                           jobjectArray init_command_line) {
-  InitNativeCommandLineFromJavaArray(env, init_command_line);
+  base::android::InitNativeCommandLineFromJavaArray(env, init_command_line);
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
@@ -70,37 +116,21 @@ static jint LibraryLoaded(JNIEnv* env, jclass clazz,
   VLOG(0) << "Chromium logging enabled: level = " << logging::GetMinLogLevel()
           << ", default verbosity = " << logging::GetVlogVerbosity();
 
-  if (!base::android::RegisterJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!net::android::RegisterJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!ui::android::RegisterJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!ui::gl::android::RegisterJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!ui::shell_dialogs::RegisterJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!content::android::RegisterChildJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!content::android::RegisterCommonJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!content::android::RegisterBrowserJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!content::android::RegisterAppJni(env))
-    return RESULT_CODE_FAILED_TO_REGISTER_JNI;
-
-  if (!media::RegisterJni(env))
+  if (!EnsureJniRegistered(env))
     return RESULT_CODE_FAILED_TO_REGISTER_JNI;
 
   return 0;
+}
+
+static void RecordContentAndroidLinkerHistogram(
+    JNIEnv* env,
+    jclass clazz,
+    jboolean loaded_at_fixed_address_failed,
+    jboolean is_low_memory_device) {
+  UMA_HISTOGRAM_BOOLEAN("ContentAndroidLinker.LoadedAtFixedAddressFailed",
+                        loaded_at_fixed_address_failed);
+  UMA_HISTOGRAM_BOOLEAN("ContentAndroidLinker.IsLowMemoryDevice",
+                        is_low_memory_device);
 }
 
 void LibraryLoaderExitHook() {
@@ -115,6 +145,14 @@ bool RegisterLibraryLoaderEntryHook(JNIEnv* env) {
   g_at_exit_manager = new base::AtExitManager();
 
   return RegisterNativesImpl(env);
+}
+
+void SetVersionNumber(const char* version_number) {
+  g_library_version_number = strdup(version_number);
+}
+
+jstring GetVersionNumber(JNIEnv* env, jclass clazz) {
+  return env->NewStringUTF(g_library_version_number);
 }
 
 }  // namespace content

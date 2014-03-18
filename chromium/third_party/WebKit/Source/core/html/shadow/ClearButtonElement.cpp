@@ -26,10 +26,10 @@
 #include "config.h"
 #include "core/html/shadow/ClearButtonElement.h"
 
-#include "core/dom/MouseEvent.h"
+#include "core/events/MouseEvent.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -37,7 +37,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 inline ClearButtonElement::ClearButtonElement(Document& document, ClearButtonOwner& clearButtonOwner)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_clearButtonOwner(&clearButtonOwner)
     , m_capturing(false)
 {
@@ -46,7 +46,7 @@ inline ClearButtonElement::ClearButtonElement(Document& document, ClearButtonOwn
 PassRefPtr<ClearButtonElement> ClearButtonElement::create(Document& document, ClearButtonOwner& clearButtonOwner)
 {
     RefPtr<ClearButtonElement> element = adoptRef(new ClearButtonElement(document, clearButtonOwner));
-    element->setPart(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::clearButton());
     return element.release();
 }
@@ -55,7 +55,7 @@ void ClearButtonElement::detach(const AttachContext& context)
 {
     if (m_capturing) {
         if (Frame* frame = document().frame())
-            frame->eventHandler()->setCapturingMouseEventsNode(0);
+            frame->eventHandler().setCapturingMouseEventsNode(0);
     }
     HTMLDivElement::detach(context);
 }
@@ -66,7 +66,7 @@ void ClearButtonElement::releaseCapture()
         return;
 
     if (Frame* frame = document().frame()) {
-        frame->eventHandler()->setCapturingMouseEventsNode(0);
+        frame->eventHandler().setCapturingMouseEventsNode(0);
         m_capturing = false;
     }
 }
@@ -85,20 +85,20 @@ void ClearButtonElement::defaultEventHandler(Event* event)
         return;
     }
 
-    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
+    if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (renderer() && renderer()->visibleToHitTesting()) {
             if (Frame* frame = document().frame()) {
-                frame->eventHandler()->setCapturingMouseEventsNode(this);
+                frame->eventHandler().setCapturingMouseEventsNode(this);
                 m_capturing = true;
             }
         }
         m_clearButtonOwner->focusAndSelectClearButtonOwner();
         event->setDefaultHandled();
     }
-    if (event->type() == eventNames().mouseupEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
+    if (event->type() == EventTypeNames::mouseup && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (m_capturing) {
             if (Frame* frame = document().frame()) {
-                frame->eventHandler()->setCapturingMouseEventsNode(0);
+                frame->eventHandler().setCapturingMouseEventsNode(0);
                 m_capturing = false;
             }
             if (hovered()) {

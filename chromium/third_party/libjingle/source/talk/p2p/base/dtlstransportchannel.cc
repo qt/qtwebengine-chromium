@@ -42,6 +42,7 @@ namespace cricket {
 static const size_t kDtlsRecordHeaderLen = 13;
 static const size_t kMaxDtlsPacketLen = 2048;
 static const size_t kMinRtpPacketLen = 12;
+static const size_t kDefaultVideoAndDataCryptos = 1;
 
 static bool IsDtlsPacket(const char* data, size_t len) {
   const uint8* u = reinterpret_cast<const uint8*>(data);
@@ -173,6 +174,15 @@ bool DtlsTransportChannelWrapper::SetLocalIdentity(
   return true;
 }
 
+bool DtlsTransportChannelWrapper::GetLocalIdentity(
+    talk_base::SSLIdentity** identity) const {
+  if (!local_identity_)
+    return false;
+
+  *identity = local_identity_->GetReference();
+  return true;
+}
+
 bool DtlsTransportChannelWrapper::SetSslRole(talk_base::SSLRole role) {
   if (dtls_state_ == STATE_OPEN) {
     if (ssl_role_ != role) {
@@ -230,6 +240,14 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   return true;
 }
 
+bool DtlsTransportChannelWrapper::GetRemoteCertificate(
+    talk_base::SSLCertificate** cert) const {
+  if (!dtls_)
+    return false;
+
+  return dtls_->GetPeerCertificate(cert);
+}
+
 bool DtlsTransportChannelWrapper::SetupDtls() {
   StreamInterfaceChannel* downward =
       new StreamInterfaceChannel(worker_thread_, channel_);
@@ -269,14 +287,37 @@ bool DtlsTransportChannelWrapper::SetupDtls() {
   return true;
 }
 
-bool DtlsTransportChannelWrapper::SetSrtpCiphers(const std::vector<std::string>&
-                                                 ciphers) {
-  // SRTP ciphers must be set before the DTLS handshake starts.
-  // TODO(juberti): In multiplex situations, we may end up calling this function
-  // once for each muxed channel. Depending on the order of calls, this may
-  // result in slightly undesired results, e.g. 32 vs 80-bit MAC. The right way to
-  // fix this would be for the TransportProxyChannels to intersect the ciphers
-  // instead of overwriting, so that "80" followed by "32, 80" results in "80".
+bool DtlsTransportChannelWrapper::SetSrtpCiphers(
+    const std::vector<std::string>& ciphers) {
+  if (srtp_ciphers_ == ciphers)
+    return true;
+
+  if (dtls_state_ == STATE_OPEN) {
+    // We don't support DTLS renegotiation currently. If new set of srtp ciphers
+    // are different than what's being used currently, we will not use it.
+    // So for now, let's be happy (or sad) with a warning message.
+    std::string current_srtp_cipher;
+    if (!dtls_->GetDtlsSrtpCipher(&current_srtp_cipher)) {
+      LOG(LS_ERROR) << "Failed to get the current SRTP cipher for DTLS channel";
+      return false;
+    }
+    const std::vector<std::string>::const_iterator iter =
+        std::find(ciphers.begin(), ciphers.end(), current_srtp_cipher);
+    if (iter == ciphers.end()) {
+      std::string requested_str;
+      for (size_t i = 0; i < ciphers.size(); ++i) {
+        requested_str.append(" ");
+        requested_str.append(ciphers[i]);
+        requested_str.append(" ");
+      }
+      LOG(LS_WARNING) << "Ignoring new set of SRTP ciphers, as DTLS "
+                      << "renegotiation is not supported currently "
+                      << "current cipher = " << current_srtp_cipher << " and "
+                      << "requested = " << "[" << requested_str << "]";
+    }
+    return true;
+  }
+
   if (dtls_state_ != STATE_NONE &&
       dtls_state_ != STATE_OFFERED &&
       dtls_state_ != STATE_ACCEPTED) {
@@ -405,9 +446,9 @@ void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
   }
 }
 
-void DtlsTransportChannelWrapper::OnReadPacket(TransportChannel* channel,
-                                               const char* data, size_t size,
-                                               int flags) {
+void DtlsTransportChannelWrapper::OnReadPacket(
+    TransportChannel* channel, const char* data, size_t size,
+    const talk_base::PacketTime& packet_time, int flags) {
   ASSERT(talk_base::Thread::Current() == worker_thread_);
   ASSERT(channel == channel_);
   ASSERT(flags == 0);
@@ -415,7 +456,7 @@ void DtlsTransportChannelWrapper::OnReadPacket(TransportChannel* channel,
   switch (dtls_state_) {
     case STATE_NONE:
       // We are not doing DTLS
-      SignalReadPacket(this, data, size, 0);
+      SignalReadPacket(this, data, size, packet_time, 0);
       break;
 
     case STATE_OFFERED:
@@ -459,7 +500,7 @@ void DtlsTransportChannelWrapper::OnReadPacket(TransportChannel* channel,
         ASSERT(!srtp_ciphers_.empty());
 
         // Signal this upwards as a bypass packet.
-        SignalReadPacket(this, data, size, PF_SRTP_BYPASS);
+        SignalReadPacket(this, data, size, packet_time, PF_SRTP_BYPASS);
       }
       break;
     case STATE_CLOSED:
@@ -494,7 +535,7 @@ void DtlsTransportChannelWrapper::OnDtlsEvent(talk_base::StreamInterface* dtls,
     char buf[kMaxDtlsPacketLen];
     size_t read;
     if (dtls_->Read(buf, sizeof(buf), &read, NULL) == talk_base::SR_SUCCESS) {
-      SignalReadPacket(this, buf, read, 0);
+      SignalReadPacket(this, buf, read, talk_base::CreatePacketTime(0), 0);
     }
   }
   if (sig & talk_base::SE_CLOSE) {

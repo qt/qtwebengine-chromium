@@ -63,7 +63,7 @@ void VfsBackend::OpenFile(const base::FilePath& file_path,
   // Verify the flags for consistency and create the database
   // directory if it doesn't exist.
   if (!OpenFileFlagsAreConsistent(desired_flags) ||
-      !file_util::CreateDirectory(file_path.DirName()))
+      !base::CreateDirectory(file_path.DirName()))
     return;
 
   int flags = 0;
@@ -112,7 +112,7 @@ void VfsBackend::OpenTempFileInDirectory(
 
   // Get a unique temp file name in the database directory.
   base::FilePath temp_file_path;
-  if (!file_util::CreateTemporaryFileInDir(dir_path, &temp_file_path))
+  if (!base::CreateTemporaryFileInDir(dir_path, &temp_file_path))
     return;
 
   OpenFile(temp_file_path, desired_flags, file_handle);
@@ -161,7 +161,7 @@ uint32 VfsBackend::GetFileAttributes(const base::FilePath& file_path) {
 // static
 int64 VfsBackend::GetFileSize(const base::FilePath& file_path) {
   int64 size = 0;
-  return (file_util::GetFileSize(file_path, &size) ? size : 0);
+  return (base::GetFileSize(file_path, &size) ? size : 0);
 }
 
 } // namespace webkit_database

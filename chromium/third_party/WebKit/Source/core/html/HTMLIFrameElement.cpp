@@ -34,18 +34,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document& document)
-    : HTMLFrameElementBase(tagName, document)
+inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
+    : HTMLFrameElementBase(iframeTag, document)
     , m_didLoadNonEmptyDocument(false)
 {
-    ASSERT(hasTagName(iframeTag));
     ScriptWrappable::init(this);
     setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(Document& document)
 {
-    return adoptRef(new HTMLIFrameElement(tagName, document));
+    return adoptRef(new HTMLIFrameElement(document));
 }
 
 bool HTMLIFrameElement::isPresentationAttribute(const QualifiedName& name) const
@@ -85,7 +84,7 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_name = value;
     } else if (name == sandboxAttr) {
         String invalidTokens;
-        setSandboxFlags(value.isNull() ? SandboxNone : SecurityContext::parseSandboxPolicy(value, invalidTokens));
+        setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
             document().addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
     } else if (name == seamlessAttr) {

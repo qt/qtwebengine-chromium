@@ -30,14 +30,14 @@ namespace WebCore {
 
 class HTMLFrameElement FINAL : public HTMLFrameElementBase {
 public:
-    static PassRefPtr<HTMLFrameElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLFrameElement> create(Document&);
 
     bool hasFrameBorder() const { return m_frameBorder; }
 
     bool noResize() const;
 
 private:
-    HTMLFrameElement(const QualifiedName&, Document&);
+    explicit HTMLFrameElement(Document&);
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
@@ -52,11 +52,7 @@ private:
     bool m_frameBorderSet;
 };
 
-inline HTMLFrameElement* toHTMLFrameElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::frameTag));
-    return static_cast<HTMLFrameElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLFrameElement, hasTagName(HTMLNames::frameTag));
 
 } // namespace WebCore
 

@@ -78,14 +78,16 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
   virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
   virtual PepperPluginInstance* GetPluginInstance(
       PP_Instance instance) const OVERRIDE;
+  virtual RenderFrame* GetRenderFrameForInstance(
+      PP_Instance instance) const OVERRIDE;
   virtual RenderView* GetRenderViewForInstance(
       PP_Instance instance) const OVERRIDE;
-  virtual WebKit::WebPluginContainer* GetContainerForInstance(
+  virtual blink::WebPluginContainer* GetContainerForInstance(
       PP_Instance instance) const OVERRIDE;
   virtual base::ProcessId GetPluginPID() const OVERRIDE;
   virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
   virtual int GetRoutingIDForWidget(PP_Instance instance) const OVERRIDE;
-  virtual gfx::Point PluginPointToRenderView(
+  virtual gfx::Point PluginPointToRenderFrame(
       PP_Instance instance,
       const gfx::Point& pt) const OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
@@ -97,6 +99,7 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
       const std::vector<IPC::Message>& nested_msgs,
       const base::Callback<void(
           const std::vector<int>&)>& callback) const OVERRIDE;
+  virtual GURL GetDocumentURL(PP_Instance instance) const OVERRIDE;
 
  private:
   RendererPpapiHostImpl(PluginModule* module,

@@ -31,15 +31,14 @@
 #include "config.h"
 #include "EventListenerWrapper.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
+#include "core/events/Event.h"
 
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 EventListenerWrapper::EventListenerWrapper(WebDOMEventListener* webDOMEventListener)
     : EventListener(EventListener::NativeEventListenerType)
@@ -58,7 +57,7 @@ bool EventListenerWrapper::operator==(const EventListener& listener)
     return this == &listener;
 }
 
-void EventListenerWrapper::handleEvent(ScriptExecutionContext* context, Event* event)
+void EventListenerWrapper::handleEvent(ExecutionContext* context, Event* event)
 {
     if (!m_webDOMEventListener)
         return;
@@ -71,4 +70,4 @@ void EventListenerWrapper::webDOMEventListenerDeleted()
     m_webDOMEventListener = 0;
 }
 
-} // namespace WebKit
+} // namespace blink

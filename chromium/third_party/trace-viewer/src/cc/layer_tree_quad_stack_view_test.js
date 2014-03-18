@@ -17,7 +17,8 @@ base.unittest.testSuite('cc.layer_tree_quad_stack_view', function() {
 
     var instance = p.objects.getAllInstancesNamed('cc::LayerTreeHostImpl')[0];
     var lthi = instance.snapshots[0];
-    var layer = lthi.activeTree.renderSurfaceLayerList[0];
+    var numLayers = lthi.activeTree.renderSurfaceLayerList.length;
+    var layer = lthi.activeTree.renderSurfaceLayerList[numLayers - 1];
 
     var view = new cc.LayerTreeQuadStackView();
     view.layerTreeImpl = lthi.activeTree;
@@ -29,9 +30,9 @@ base.unittest.testSuite('cc.layer_tree_quad_stack_view', function() {
 
     // There should be some quads drawn with all "show" checkboxes off,
     // but that number can change with new features added.
-    var aQuads = view.generateQuads();
+    var aQuads = view.generateLayerQuads();
     view.howToShowTiles = 'coverage';
-    var bQuads = view.generateQuads();
+    var bQuads = view.generateLayerQuads();
     var numCoverageRects = bQuads.length - aQuads.length;
 
     // We know we have 5 coverage rects in lthi cats.

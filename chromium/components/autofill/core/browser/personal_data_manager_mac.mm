@@ -177,8 +177,8 @@ void AuxiliaryProfilesImpl::GetAddressBookAddress(const std::string& app_locale,
           [NSCharacterSet newlineCharacterSet]];
       DCHECK([chunks count] > 1);
 
-      NSString* separator = l10n_util::GetNSString(
-            IDS_AUTOFILL_MAC_ADDRESS_LINE_SEPARATOR);
+      NSString* separator =
+          l10n_util::GetNSString(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
 
       NSString* addressField1 = [chunks objectAtIndex:0];
       NSString* addressField2 =
@@ -265,7 +265,7 @@ void AuxiliaryProfilesImpl::GetAddressBookPhoneNumbers(
 }  // namespace
 
 // Populate |auxiliary_profiles_| with the Address Book data.
-void PersonalDataManager::LoadAuxiliaryProfiles() {
+void PersonalDataManager::LoadAuxiliaryProfiles() const {
   AuxiliaryProfilesImpl impl(&auxiliary_profiles_);
   impl.GetAddressBookMeCard(app_locale_);
 }

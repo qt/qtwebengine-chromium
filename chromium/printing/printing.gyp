@@ -17,7 +17,8 @@
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
-        '../ui/ui.gyp:ui',
+        '../ui/gfx/gfx.gyp:gfx',
+        '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../url/url.gyp:url_lib',
       ],
       'defines': [
@@ -37,15 +38,15 @@
         'emf_win.cc',
         'emf_win.h',
         'image.cc',
+        'image.h',
         'image_android.cc',
         'image_linux.cc',
         'image_mac.cc',
         'image_win.cc',
-        'image.h',
         'metafile.h',
         'metafile_impl.h',
-        'metafile_skia_wrapper.h',
         'metafile_skia_wrapper.cc',
+        'metafile_skia_wrapper.h',
         'page_number.cc',
         'page_number.h',
         'page_range.cc',
@@ -56,21 +57,11 @@
         'page_size_margins.h',
         'pdf_metafile_cg_mac.cc',
         'pdf_metafile_cg_mac.h',
-        'pdf_metafile_skia.h',
         'pdf_metafile_skia.cc',
+        'pdf_metafile_skia.h',
         'print_destination_interface.h',
         'print_destination_none.cc',
         'print_destination_win.cc',
-        'printed_document_gtk.cc',
-        'printed_document.cc',
-        'printed_document.h',
-        'printed_document_mac.cc',
-        'printed_document_win.cc',
-        'printed_page.cc',
-        'printed_page.h',
-        'printed_pages_source.h',
-        'printing_context.cc',
-        'printing_context.h',
         'print_dialog_gtk_interface.h',
         'print_job_constants.cc',
         'print_job_constants.h',
@@ -84,6 +75,18 @@
         'print_settings_initializer_mac.h',
         'print_settings_initializer_win.cc',
         'print_settings_initializer_win.h',
+        'printed_document.cc',
+        'printed_document.h',
+        'printed_document_gtk.cc',
+        'printed_document_mac.cc',
+        'printed_document_win.cc',
+        'printed_page.cc',
+        'printed_page.h',
+        'printed_pages_source.h',
+        'printing_context.cc',
+        'printing_context.h',
+        'printing_utils.cc',
+        'printing_utils.h',
         'units.cc',
         'units.h',
       ],
@@ -93,11 +96,6 @@
         ],
       },
       'conditions': [
-        ['enable_printing==0', {
-          'sources/': [
-            ['exclude', '.'],
-          ],
-        }],
         ['use_aura==1', {
           'dependencies': [
             '<(DEPTH)/ui/aura/aura.gyp:aura',
@@ -231,7 +229,14 @@
         }],
         ['OS=="android"', {
           'sources': [
+            'printing_context_android.cc',
             'printing_context_android.h',
+          ],
+	  'dependencies': [
+	    'printing_jni_headers',
+	  ],
+          'include_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)/printing',
           ],
         }],
       ],
@@ -244,33 +249,25 @@
         '../testing/gtest.gyp:gtest',
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
+        '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
       ],
       'sources': [
-        'backend/print_backend_unittest.cc',
         'emf_win_unittest.cc',
-        'printing_test.h',
         'page_number_unittest.cc',
         'page_range_unittest.cc',
         'page_setup_unittest.cc',
         'pdf_metafile_cg_mac_unittest.cc',
         'printed_page_unittest.cc',
+        'printing_context_win_unittest.cc',
+        'printing_test.h',
+        'printing_utils_unittest.cc',
         'units_unittest.cc',
       ],
       'conditions': [
-        ['enable_printing==0', {
-          'sources/': [
-            ['exclude', '.'],
-          ],
-        }],
         ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]}],
-        ['OS=="win" and use_aura == 0', {
-          'sources': [
-            'printing_context_win_unittest.cc',
-          ]
-        }],
         ['use_cups==1', {
           'defines': [
             'USE_CUPS',
@@ -331,4 +328,33 @@
       ],
     },
   ],
+  'conditions': [
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'printing_jni_headers',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/printing/PrintingContext.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'printing',
+            'jni_generator_ptr_type': 'long',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+	{
+	  'target_name': 'printing_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '../printing/android/java',
+          },
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'includes': [ '../build/java.gypi'  ],
+	}
+      ]
+    }],
+  ]
 }

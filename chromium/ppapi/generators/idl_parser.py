@@ -35,7 +35,6 @@ from idl_lexer import IDLLexer
 from idl_node import IDLAttribute, IDLFile, IDLNode
 from idl_option import GetOption, Option, ParseOptions
 from idl_lint import Lint
-from idl_visitor import IDLVisitor
 
 from ply import lex
 from ply import yacc
@@ -310,6 +309,14 @@ class IDLParser(IDLLexer):
   def p_dictionary_block(self, p):
     """dictionary_block : modifiers DICTIONARY SYMBOL '{' struct_list '}' ';'"""
     p[0] = self.BuildNamed('Dictionary', p, 3, ListFromConcat(p[1], p[5]))
+
+  def p_dictionary_errorA(self, p):
+    """dictionary_block : modifiers DICTIONARY error ';'"""
+    p[0] = []
+
+  def p_dictionary_errorB(self, p):
+    """dictionary_block : modifiers DICTIONARY error '{' struct_list '}' ';'"""
+    p[0] = []
 
 #
 # Callback
@@ -732,10 +739,10 @@ class IDLParser(IDLLexer):
     if self.parse_debug: DumpReduction('attribute', p)
 
   def p_member_function(self, p):
-    """member_function : modifiers static SYMBOL SYMBOL param_list"""
+    """member_function : modifiers static SYMBOL arrays SYMBOL param_list"""
     typeref = self.BuildAttribute('TYPEREF', p[3])
-    children = ListFromConcat(p[1], p[2], typeref, p[5])
-    p[0] = self.BuildNamed('Member', p, 4, children)
+    children = ListFromConcat(p[1], p[2], typeref, p[4], p[6])
+    p[0] = self.BuildNamed('Member', p, 5, children)
     if self.parse_debug: DumpReduction('function', p)
 
   def p_static(self, p):
@@ -977,7 +984,7 @@ class IDLParser(IDLLexer):
 def FlattenTree(node):
   add_self = False
   out = []
-  for child in node.children:
+  for child in node.GetChildren():
     if child.IsA('Comment'):
       add_self = True
     else:

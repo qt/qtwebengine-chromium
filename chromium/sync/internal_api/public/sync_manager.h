@@ -53,6 +53,7 @@ class SyncSessionSnapshot;
 
 // Used by SyncManager::OnConnectionStatusChange().
 enum ConnectionStatus {
+  CONNECTION_NOT_ATTEMPTED,
   CONNECTION_OK,
   CONNECTION_AUTH_ERROR,
   CONNECTION_SERVER_ERROR
@@ -175,9 +176,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
     // Called when the status of the connection to the sync server has
     // changed.
     virtual void OnConnectionStatusChange(ConnectionStatus status) = 0;
-
-    // Called when a new auth token is provided by the sync server.
-    virtual void OnUpdatedToken(const std::string& token) = 0;
 
     // Called when initialization is complete to the point that SyncManager can
     // process changes. This does not necessarily mean authentication succeeded
@@ -324,7 +322,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
       Encryptor* encryptor,
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-      bool use_oauth2_token,
       CancelationSignal* cancelation_signal) = 0;
 
   // Throw an unrecoverable error from a transaction (mostly used for

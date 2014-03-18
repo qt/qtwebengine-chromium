@@ -23,10 +23,10 @@
 #ifndef RenderBox_h
 #define RenderBox_h
 
-#include "core/platform/ScrollTypes.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderOverflow.h"
 #include "core/rendering/shapes/ShapeOutsideInfo.h"
+#include "platform/scroll/ScrollTypes.h"
 
 namespace WebCore {
 
@@ -41,6 +41,11 @@ enum OverlayScrollbarSizeRelevancy { IgnoreOverlayScrollbarSize, IncludeOverlayS
 enum ShouldComputePreferred { ComputeActual, ComputePreferred };
 
 enum ContentsClipBehavior { ForceContentsClip, SkipContentsClipIfPossible };
+
+enum ScrollOffsetClamping {
+    ScrollOffsetUnclamped,
+    ScrollOffsetClamped
+};
 
 class RenderBox : public RenderBoxModelObject {
 public:
@@ -171,6 +176,8 @@ public:
     RenderBox* nextSiblingBox() const;
     RenderBox* parentBox() const;
 
+    bool canResize() const;
+
     // Visual and layout overflow are in the coordinate space of the box.  This means that they aren't purely physical directions.
     // For horizontal-tb and vertical-lr they will match physical directions, but for horizontal-bt and vertical-rl, the top/bottom and left/right
     // respectively are flipped when compared to their physical counterparts.  For example minX is on the left in vertical-lr,
@@ -216,7 +223,7 @@ public:
     virtual int pixelSnappedOffsetWidth() const OVERRIDE FINAL;
     virtual int pixelSnappedOffsetHeight() const OVERRIDE FINAL;
 
-    bool requiresLayoutToDetermineWidth() const;
+    bool canDetermineWidthWithoutLayout() const;
     LayoutUnit fixedOffsetWidth() const;
 
     // More IE extensions.  clientWidth and clientHeight represent the interior of an object
@@ -244,6 +251,10 @@ public:
     virtual int scrollHeight() const;
     virtual void setScrollLeft(int);
     virtual void setScrollTop(int);
+
+    void scrollToOffset(const IntSize&);
+    void scrollByRecursively(const IntSize& delta, ScrollOffsetClamping = ScrollOffsetUnclamped);
+    void scrollRectToVisible(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
     virtual LayoutUnit marginTop() const OVERRIDE { return m_marginBox.top(); }
     virtual LayoutUnit marginBottom() const OVERRIDE { return m_marginBox.bottom(); }
@@ -339,24 +350,15 @@ public:
     LayoutUnit adjustContentBoxLogicalHeightForBoxSizing(LayoutUnit height) const;
 
     struct ComputedMarginValues {
-        ComputedMarginValues()
-            : m_before(0)
-            , m_after(0)
-            , m_start(0)
-            , m_end(0)
-        {
-        }
+        ComputedMarginValues() { }
+
         LayoutUnit m_before;
         LayoutUnit m_after;
         LayoutUnit m_start;
         LayoutUnit m_end;
     };
     struct LogicalExtentComputedValues {
-        LogicalExtentComputedValues()
-            : m_extent(0)
-            , m_position(0)
-        {
-        }
+        LogicalExtentComputedValues() { }
 
         LayoutUnit m_extent;
         LayoutUnit m_position;
@@ -419,7 +421,7 @@ public:
     // of a containing block).  HTML4 buttons, <select>s, <input>s, legends, and floating/compact elements do this.
     bool sizesLogicalWidthToFitContent(SizeType) const;
 
-    LayoutUnit shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStart, LayoutUnit childMarginEnd, const RenderBlock* cb, RenderRegion*) const;
+    LayoutUnit shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStart, LayoutUnit childMarginEnd, const RenderBlockFlow* cb, RenderRegion*) const;
 
     LayoutUnit computeLogicalWidthInRegionUsing(SizeType, Length logicalWidth, LayoutUnit availableLogicalWidth, const RenderBlock* containingBlock, RenderRegion*) const;
     LayoutUnit computeLogicalHeightUsing(const Length& height, LayoutUnit intrinsicContentHeight) const;
@@ -450,8 +452,7 @@ public:
     int horizontalScrollbarHeight() const;
     int instrinsicScrollbarLogicalWidth() const;
     int scrollbarLogicalHeight() const { return style()->isHorizontalWritingMode() ? horizontalScrollbarHeight() : verticalScrollbarWidth(); }
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
-    virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1);
     bool canBeScrolledAndHasScrollableArea() const;
     virtual bool canBeProgramaticallyScrolled() const;
     virtual void autoscroll(const IntPoint&);
@@ -491,6 +492,7 @@ public:
     virtual void paintObject(PaintInfo&, const LayoutPoint&) { ASSERT_NOT_REACHED(); }
     virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&);
     virtual void paintMask(PaintInfo&, const LayoutPoint&);
+    virtual void paintClippingMask(PaintInfo&, const LayoutPoint&);
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
 
     // Called when a positioned object moves but doesn't necessarily change size.  A simplified layout is attempted
@@ -597,6 +599,12 @@ public:
         return ShapeOutsideInfo::isEnabledFor(this) ? ShapeOutsideInfo::info(this) : 0;
     }
 
+    void markShapeOutsideDependentsForLayout()
+    {
+        if (isFloating())
+            removeFloatingOrPositionedChildFromBlockLists();
+    }
+
 protected:
     virtual void willBeDestroyed();
 
@@ -608,12 +616,14 @@ protected:
     virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const;
     virtual bool computeBackgroundIsKnownToBeObscured() OVERRIDE;
 
+    virtual void paintBackgroundWithBorderAndBoxShadow(PaintInfo&, const LayoutRect&, BackgroundBleedAvoidance);
     void paintBackground(const PaintInfo&, const LayoutRect&, BackgroundBleedAvoidance = BackgroundBleedNone);
 
     void paintFillLayer(const PaintInfo&, const Color&, const FillLayer*, const LayoutRect&, BackgroundBleedAvoidance, CompositeOperator, RenderObject* backgroundObject);
     void paintFillLayers(const PaintInfo&, const Color&, const FillLayer*, const LayoutRect&, BackgroundBleedAvoidance = BackgroundBleedNone, CompositeOperator = CompositeSourceOver, RenderObject* backgroundObject = 0);
 
     void paintMaskImages(const PaintInfo&, const LayoutRect&);
+    void paintBoxDecorationsWithRect(PaintInfo&, const LayoutPoint&, const LayoutRect&);
 
     BackgroundBleedAvoidance determineBackgroundBleedAvoidance(GraphicsContext*) const;
     bool backgroundHasOpaqueTopLayer() const;
@@ -636,11 +646,11 @@ protected:
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const OVERRIDE;
 
 private:
-    void updateShapeOutsideInfoAfterStyleChange(const ShapeValue* shapeOutside, const ShapeValue* oldShapeOutside);
+    void updateShapeOutsideInfoAfterStyleChange(const RenderStyle&, const RenderStyle* oldStyle);
     void updateGridPositionAfterStyleChange(const RenderStyle*);
 
-    bool includeVerticalScrollbarSize() const;
-    bool includeHorizontalScrollbarSize() const;
+    bool autoWidthShouldFitContent() const;
+    void shrinkToFitWidth(const LayoutUnit availableSpace, const LayoutUnit logicalLeftValue, const LayoutUnit bordersPlusPadding, LogicalExtentComputedValues&) const;
 
     // Returns true if we did a full repaint
     bool repaintLayerRectsForImage(WrappedImagePtr image, const FillLayer* layers, bool drawingBackground);
@@ -677,10 +687,6 @@ private:
 
     virtual LayoutRect frameRectForStickyPositioning() const OVERRIDE FINAL { return frameRect(); }
 
-    // This method performs the actual scroll. Override if scrolling without a RenderLayer. The scroll() and logicalScroll()
-    // are responsible for scroll propagation/bubbling and call this method to do the actual scrolling
-    virtual bool scrollImpl(ScrollDirection, ScrollGranularity, float);
-
 private:
     // The width/height of the contents + borders + padding.  The x/y location is relative to our container (which is not always our parent).
     LayoutRect m_frameRect;
@@ -704,26 +710,9 @@ protected:
 
     // Our overflow information.
     OwnPtr<RenderOverflow> m_overflow;
-
-private:
-    // Used to store state between styleWillChange and styleDidChange
-    static bool s_hadOverflowClip;
 };
 
-inline RenderBox* toRenderBox(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBox());
-    return static_cast<RenderBox*>(object);
-}
-
-inline const RenderBox* toRenderBox(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBox());
-    return static_cast<const RenderBox*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderBox(const RenderBox*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBox, isBox());
 
 inline RenderBox* RenderBox::previousSiblingBox() const
 {

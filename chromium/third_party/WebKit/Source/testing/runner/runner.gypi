@@ -29,10 +29,10 @@
 {
   'variables': {
     'test_runner_files': [
-      'AccessibilityControllerChromium.cpp',
-      'AccessibilityControllerChromium.h',
-      'AccessibilityUIElementChromium.cpp',
-      'AccessibilityUIElementChromium.h',
+      'AccessibilityController.cpp',
+      'AccessibilityController.h',
+      'WebAXObjectProxy.cpp',
+      'WebAXObjectProxy.h',
       'CppBoundClass.cpp',
       'CppBoundClass.h',
       'CppVariant.cpp',
@@ -53,8 +53,6 @@
       'MockSpellCheck.h',
       'MockWebAudioDevice.cpp',
       'MockWebAudioDevice.h',
-      'MockWebCrypto.cpp',
-      'MockWebCrypto.h',
       'MockWebMediaStreamCenter.cpp',
       'MockWebMediaStreamCenter.h',
       'MockWebMIDIAccessor.cpp',
@@ -95,6 +93,8 @@
       'WebTestThemeControlWin.h',
       'WebTestThemeEngineMac.mm',
       'WebTestThemeEngineMac.h',
+      'WebTestThemeEngineMock.cpp',
+      'WebTestThemeEngineMock.h',
       'WebTestThemeEngineWin.cpp',
       'WebTestThemeEngineWin.h',
       'WebUserMediaClientMock.cpp',

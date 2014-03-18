@@ -26,16 +26,14 @@
 #ifndef PositionErrorCallback_h
 #define PositionErrorCallback_h
 
-#include "wtf/RefCounted.h"
-
 namespace WebCore {
 
     class PositionError;
 
-    class PositionErrorCallback : public RefCounted<PositionErrorCallback> {
+    class PositionErrorCallback {
     public:
         virtual ~PositionErrorCallback() { }
-        virtual bool handleEvent(PositionError*) = 0;
+        virtual void handleEvent(PositionError*) = 0;
     };
 
 } // namespace WebCore

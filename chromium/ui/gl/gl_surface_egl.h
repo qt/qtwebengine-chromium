@@ -15,9 +15,9 @@
 #include "base/time/time.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/vsync_provider.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface.h"
-#include "ui/gl/vsync_provider.h"
 
 namespace gfx {
 
@@ -67,6 +67,7 @@ class GL_EXPORT NativeViewGLSurfaceEGL : public GLSurfaceEGL {
   virtual VSyncProvider* GetVSyncProvider() OVERRIDE;
 
   // Create a NativeViewGLSurfaceEGL with an externally provided VSyncProvider.
+  // Takes ownership of the VSyncProvider.
   virtual bool Initialize(VSyncProvider* sync_provider);
 
  protected:
@@ -108,6 +109,32 @@ class GL_EXPORT PbufferGLSurfaceEGL : public GLSurfaceEGL {
   EGLSurface surface_;
 
   DISALLOW_COPY_AND_ASSIGN(PbufferGLSurfaceEGL);
+};
+
+// SurfacelessEGL is used as Offscreen surface when platform supports
+// KHR_surfaceless_context and GL_OES_surfaceless_context. This would avoid the
+// need to create a dummy EGLsurface in case we render to client API targets.
+class GL_EXPORT SurfacelessEGL : public GLSurfaceEGL {
+ public:
+  explicit SurfacelessEGL(const gfx::Size& size);
+
+  // Implement GLSurface.
+  virtual EGLConfig GetConfig() OVERRIDE;
+  virtual bool Initialize() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+  virtual gfx::Size GetSize() OVERRIDE;
+  virtual bool Resize(const gfx::Size& size) OVERRIDE;
+  virtual EGLSurface GetHandle() OVERRIDE;
+  virtual void* GetShareHandle() OVERRIDE;
+
+ protected:
+  virtual ~SurfacelessEGL();
+
+ private:
+  gfx::Size size_;
+  DISALLOW_COPY_AND_ASSIGN(SurfacelessEGL);
 };
 
 }  // namespace gfx

@@ -40,9 +40,9 @@ bool GrabWindowSnapshot(gfx::NativeWindow window,
   // We must take into account the window's position on the desktop.
   read_pixels_bounds.Offset(
       window->GetBoundsInRootWindow().origin().OffsetFromOrigin());
-  aura::RootWindow* root_window = window->GetRootWindow();
-  if (root_window)
-    root_window->GetRootTransform().TransformRect(&read_pixels_bounds);
+  aura::WindowEventDispatcher* dispatcher = window->GetDispatcher();
+  if (dispatcher)
+    dispatcher->GetRootTransform().TransformRect(&read_pixels_bounds);
 
   gfx::Rect read_pixels_bounds_in_pixel =
       gfx::ToEnclosingRect(read_pixels_bounds);
@@ -79,12 +79,12 @@ bool GrabWindowSnapshot(gfx::NativeWindow window,
 
   unsigned char* pixels = reinterpret_cast<unsigned char*>(
       bitmap.pixelRef()->pixels());
-  gfx::PNGCodec::Encode(pixels, gfx::PNGCodec::FORMAT_BGRA,
-                        gfx::Size(bitmap.width(), bitmap.height()),
-                        base::checked_numeric_cast<int>(bitmap.rowBytes()),
-                        true, std::vector<gfx::PNGCodec::Comment>(),
-                        png_representation);
-  return true;
+  return gfx::PNGCodec::Encode(
+      pixels, gfx::PNGCodec::FORMAT_BGRA,
+      gfx::Size(bitmap.width(), bitmap.height()),
+      base::checked_numeric_cast<int>(bitmap.rowBytes()),
+      true, std::vector<gfx::PNGCodec::Comment>(),
+      png_representation);
 }
 
 }  // namespace ui

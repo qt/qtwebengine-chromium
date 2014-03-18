@@ -26,56 +26,56 @@
 #ifndef FrameLoadRequest_h
 #define FrameLoadRequest_h
 
-#include "core/dom/Event.h"
+#include "core/dom/Document.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/SubstituteData.h"
-#include "weborigin/SecurityOrigin.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/network/ResourceRequest.h"
 
 namespace WebCore {
 class Frame;
 
 struct FrameLoadRequest {
 public:
-    explicit FrameLoadRequest(SecurityOrigin* requester)
-        : m_requester(requester)
+    explicit FrameLoadRequest(Document* originDocument)
+        : m_originDocument(originDocument)
         , m_lockBackForwardList(false)
-        , m_clientRedirect(false)
+        , m_clientRedirect(NotClientRedirect)
         , m_shouldSendReferrer(MaybeSendReferrer)
     {
     }
 
-    FrameLoadRequest(SecurityOrigin* requester, const ResourceRequest& resourceRequest)
-        : m_requester(requester)
+    FrameLoadRequest(Document* originDocument, const ResourceRequest& resourceRequest)
+        : m_originDocument(originDocument)
         , m_resourceRequest(resourceRequest)
         , m_lockBackForwardList(false)
-        , m_clientRedirect(false)
+        , m_clientRedirect(NotClientRedirect)
         , m_shouldSendReferrer(MaybeSendReferrer)
     {
     }
 
-    FrameLoadRequest(SecurityOrigin* requester, const ResourceRequest& resourceRequest, const String& frameName)
-        : m_requester(requester)
+    FrameLoadRequest(Document* originDocument, const ResourceRequest& resourceRequest, const String& frameName)
+        : m_originDocument(originDocument)
         , m_resourceRequest(resourceRequest)
         , m_frameName(frameName)
         , m_lockBackForwardList(false)
-        , m_clientRedirect(false)
+        , m_clientRedirect(NotClientRedirect)
         , m_shouldSendReferrer(MaybeSendReferrer)
     {
     }
 
-    FrameLoadRequest(SecurityOrigin* requester, const ResourceRequest& resourceRequest, const SubstituteData& substituteData)
-        : m_requester(requester)
+    FrameLoadRequest(Document* originDocument, const ResourceRequest& resourceRequest, const SubstituteData& substituteData)
+        : m_originDocument(originDocument)
         , m_resourceRequest(resourceRequest)
         , m_substituteData(substituteData)
         , m_lockBackForwardList(false)
-        , m_clientRedirect(false)
+        , m_clientRedirect(NotClientRedirect)
         , m_shouldSendReferrer(MaybeSendReferrer)
     {
     }
 
-    const SecurityOrigin* requester() const { return m_requester.get(); }
+    Document* originDocument() const { return m_originDocument.get(); }
 
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
     const ResourceRequest& resourceRequest() const { return m_resourceRequest; }
@@ -88,8 +88,8 @@ public:
     bool lockBackForwardList() const { return m_lockBackForwardList; }
     void setLockBackForwardList(bool lockBackForwardList) { m_lockBackForwardList = lockBackForwardList; }
 
-    bool clientRedirect() const { return m_clientRedirect; }
-    void setClientRedirect(bool clientRedirect) { m_clientRedirect = clientRedirect; }
+    ClientRedirectPolicy clientRedirect() const { return m_clientRedirect; }
+    void setClientRedirect(ClientRedirectPolicy clientRedirect) { m_clientRedirect = clientRedirect; }
 
     Event* triggeringEvent() const { return m_triggeringEvent.get(); }
     void setTriggeringEvent(PassRefPtr<Event> triggeringEvent) { m_triggeringEvent = triggeringEvent; }
@@ -101,12 +101,12 @@ public:
     void setShouldSendReferrer(ShouldSendReferrer shouldSendReferrer) { m_shouldSendReferrer = shouldSendReferrer; }
 
 private:
-    RefPtr<SecurityOrigin> m_requester;
+    RefPtr<Document> m_originDocument;
     ResourceRequest m_resourceRequest;
     String m_frameName;
     SubstituteData m_substituteData;
     bool m_lockBackForwardList;
-    bool m_clientRedirect;
+    ClientRedirectPolicy m_clientRedirect;
     RefPtr<Event> m_triggeringEvent;
     RefPtr<FormState> m_formState;
     ShouldSendReferrer m_shouldSendReferrer;

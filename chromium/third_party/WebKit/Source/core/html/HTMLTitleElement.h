@@ -28,13 +28,13 @@ namespace WebCore {
 
 class HTMLTitleElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLTitleElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLTitleElement> create(Document&);
 
     String text() const;
     void setText(const String&);
 
 private:
-    HTMLTitleElement(const QualifiedName&, Document&);
+    explicit HTMLTitleElement(Document&);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -51,11 +51,7 @@ inline bool isHTMLTitleElement(const Element* element)
     return element->hasTagName(HTMLNames::titleTag);
 }
 
-inline HTMLTitleElement* toHTMLTitleElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTitleElement(node));
-    return static_cast<HTMLTitleElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLTitleElement, hasTagName(HTMLNames::titleTag));
 
 } //namespace
 

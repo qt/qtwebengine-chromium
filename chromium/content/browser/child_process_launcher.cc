@@ -32,6 +32,7 @@
 #include "base/android/jni_android.h"
 #include "content/browser/android/child_process_launcher_android.h"
 #elif defined(OS_POSIX)
+#include "base/memory/shared_memory.h"
 #include "base/memory/singleton.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
@@ -39,6 +40,7 @@
 #endif
 
 #if defined(OS_POSIX)
+#include "base/metrics/stats_table.h"
 #include "base/posix/global_descriptors.h"
 #endif
 
@@ -197,17 +199,27 @@ class ChildProcessLauncher::Context
 #if defined(OS_WIN)
     scoped_ptr<SandboxedProcessLauncherDelegate> delegate_deleter(delegate);
     base::ProcessHandle handle = StartSandboxedProcess(delegate, cmd_line);
-#elif defined(OS_ANDROID)
-    // Android WebView runs in single process, ensure that we never get here
-    // when running in single process mode.
-    CHECK(!cmd_line->HasSwitch(switches::kSingleProcess));
-
+#elif defined(OS_POSIX)
     std::string process_type =
         cmd_line->GetSwitchValueASCII(switches::kProcessType);
     std::vector<FileDescriptorInfo> files_to_register;
     files_to_register.push_back(
         FileDescriptorInfo(kPrimaryIPCChannel,
-                                    base::FileDescriptor(ipcfd, false)));
+                           base::FileDescriptor(ipcfd, false)));
+    base::StatsTable* stats_table = base::StatsTable::current();
+    if (stats_table &&
+        base::SharedMemory::IsHandleValid(
+            stats_table->GetSharedMemoryHandle())) {
+      files_to_register.push_back(
+          FileDescriptorInfo(kStatsTableSharedMemFd,
+                             stats_table->GetSharedMemoryHandle()));
+    }
+#endif
+
+#if defined(OS_ANDROID)
+    // Android WebView runs in single process, ensure that we never get here
+    // when running in single process mode.
+    CHECK(!cmd_line->HasSwitch(switches::kSingleProcess));
 
     GetContentClient()->browser()->
         GetAdditionalMappedFilesForChildProcess(*cmd_line, child_process_id,
@@ -222,13 +234,6 @@ class ChildProcessLauncher::Context
     // We need to close the client end of the IPC channel to reliably detect
     // child termination.
     file_util::ScopedFD ipcfd_closer(&ipcfd);
-
-    std::string process_type =
-        cmd_line->GetSwitchValueASCII(switches::kProcessType);
-    std::vector<FileDescriptorInfo> files_to_register;
-    files_to_register.push_back(
-        FileDescriptorInfo(kPrimaryIPCChannel,
-                                    base::FileDescriptor(ipcfd, false)));
 
 #if !defined(OS_MACOSX)
     GetContentClient()->browser()->
@@ -368,7 +373,7 @@ class ChildProcessLauncher::Context
 #endif
       base::ProcessHandle handle) {
 #if defined(OS_ANDROID)
-    LOG(INFO) << "ChromeProcess: Stopping process with handle " << handle;
+    VLOG(0) << "ChromeProcess: Stopping process with handle " << handle;
     StopChildProcess(handle);
 #else
     base::Process process(handle);
@@ -464,14 +469,22 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
   if (context_->zygote_) {
     context_->termination_status_ = ZygoteHostImpl::GetInstance()->
         GetTerminationStatus(handle, known_dead, &context_->exit_code_);
-  } else
+  } else if (known_dead) {
+    context_->termination_status_ =
+        base::GetKnownDeadTerminationStatus(handle, &context_->exit_code_);
+  } else {
 #elif defined(OS_MACOSX)
   if (known_dead) {
     context_->termination_status_ =
         base::GetKnownDeadTerminationStatus(handle, &context_->exit_code_);
-  } else
-#endif
+  } else {
+#elif defined(OS_ANDROID)
+  if (IsChildProcessOomProtected(handle)) {
+      context_->termination_status_ = base::TERMINATION_STATUS_OOM_PROTECTED;
+  } else {
+#else
   {
+#endif
     context_->termination_status_ =
         base::GetTerminationStatus(handle, &context_->exit_code_);
   }

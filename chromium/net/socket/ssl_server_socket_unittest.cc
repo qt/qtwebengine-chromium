@@ -56,9 +56,9 @@ class FakeDataChannel {
  public:
   FakeDataChannel()
       : read_buf_len_(0),
-        weak_factory_(this),
         closed_(false),
-        write_called_after_close_(false) {
+        write_called_after_close_(false),
+        weak_factory_(this) {
   }
 
   int Read(IOBuffer* buf, int buf_len, const CompletionCallback& callback) {
@@ -140,8 +140,6 @@ class FakeDataChannel {
 
   std::queue<scoped_refptr<net::DrainableIOBuffer> > data_;
 
-  base::WeakPtrFactory<FakeDataChannel> weak_factory_;
-
   // True if Close() has been called.
   bool closed_;
 
@@ -149,6 +147,8 @@ class FakeDataChannel {
   // After the FakeDataChannel is closed, the first Write() call completes
   // asynchronously.
   bool write_called_after_close_;
+
+  base::WeakPtrFactory<FakeDataChannel> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeDataChannel);
 };
@@ -334,8 +334,6 @@ class SSLServerSocketTest : public PlatformTest {
     ssl_config.cached_info_enabled = false;
     ssl_config.false_start_enabled = false;
     ssl_config.channel_id_enabled = false;
-    ssl_config.version_min = SSL_PROTOCOL_VERSION_SSL3;
-    ssl_config.version_max = SSL_PROTOCOL_VERSION_TLS1_1;
 
     // Certificate provided by the host doesn't need authority.
     net::SSLConfig::CertAndStatus cert_and_status;

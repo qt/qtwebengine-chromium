@@ -29,18 +29,18 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
-class TaskForwarder : public ScriptExecutionContext::Task {
+class TaskForwarder : public ExecutionContextTask {
 public:
     static PassOwnPtr<TaskForwarder> create(PassOwnPtr<WebWorkerRunLoop::Task> task)
     {
         return adoptPtr(new TaskForwarder(task));
     }
 
-    virtual void performTask(ScriptExecutionContext*)
+    virtual void performTask(ExecutionContext*)
     {
         m_task->Run();
     }

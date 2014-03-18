@@ -31,17 +31,15 @@ class PPP_ContentDecryptor_Private_Proxy : public InterfaceProxy {
 
   // Message handlers.
   void OnMsgInitialize(PP_Instance instance,
-                       SerializedVarReceiveInput key_system,
-                       bool can_challenge_platform);
-  void OnMsgGenerateKeyRequest(PP_Instance instance,
-                               SerializedVarReceiveInput type,
-                               SerializedVarReceiveInput init_data);
-  void OnMsgAddKey(PP_Instance instance,
-                   SerializedVarReceiveInput session_id,
-                   SerializedVarReceiveInput key,
-                   SerializedVarReceiveInput init_data);
-  void OnMsgCancelKeyRequest(PP_Instance instance,
-                             SerializedVarReceiveInput session_id);
+                       SerializedVarReceiveInput key_system);
+  void OnMsgCreateSession(PP_Instance instance,
+                          uint32_t session_id,
+                          SerializedVarReceiveInput type,
+                          SerializedVarReceiveInput init_data);
+  void OnMsgUpdateSession(PP_Instance instance,
+                          uint32_t session_id,
+                          SerializedVarReceiveInput response);
+  void OnMsgReleaseSession(PP_Instance instance, uint32_t session_id);
   void OnMsgDecrypt(PP_Instance instance,
                     const PPPDecryptor_Buffer& encrypted_buffer,
                     const std::string& serialized_encrypted_block_info);

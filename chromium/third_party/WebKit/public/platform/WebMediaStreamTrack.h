@@ -33,7 +33,7 @@ namespace WebCore {
 class MediaStreamComponent;
 }
 
-namespace WebKit {
+namespace blink {
 class WebAudioSourceProvider;
 class WebMediaStream;
 class WebMediaStreamSource;
@@ -41,6 +41,11 @@ class WebString;
 
 class WebMediaStreamTrack {
 public:
+    class ExtraData {
+    public:
+        virtual ~ExtraData() { }
+    };
+
     WebMediaStreamTrack() { }
     WebMediaStreamTrack(const WebMediaStreamTrack& other) { assign(other); }
     ~WebMediaStreamTrack() { reset(); }
@@ -50,26 +55,33 @@ public:
         assign(other);
         return *this;
     }
-    WEBKIT_EXPORT void assign(const WebMediaStreamTrack&);
+    BLINK_EXPORT void assign(const WebMediaStreamTrack&);
 
-    WEBKIT_EXPORT void initialize(const WebMediaStreamSource&);
-    WEBKIT_EXPORT void initialize(const WebString& id, const WebMediaStreamSource&);
+    BLINK_EXPORT void initialize(const WebMediaStreamSource&);
+    BLINK_EXPORT void initialize(const WebString& id, const WebMediaStreamSource&);
 
-    WEBKIT_EXPORT void reset();
+    BLINK_EXPORT void reset();
     bool isNull() const { return m_private.isNull(); }
 
-    WEBKIT_EXPORT WebString id() const;
+    BLINK_EXPORT WebString id() const;
 
-    WEBKIT_EXPORT WebMediaStream stream() const;
-    WEBKIT_EXPORT WebMediaStreamSource source() const;
-    WEBKIT_EXPORT bool isEnabled() const;
+    BLINK_EXPORT WebMediaStream stream() const;
+    BLINK_EXPORT WebMediaStreamSource source() const;
+    BLINK_EXPORT bool isEnabled() const;
+
+    // Extra data associated with this WebMediaStream.
+    // If non-null, the extra data pointer will be deleted when the object is destroyed.
+    // Setting the extra data pointer will cause any existing non-null
+    // extra data pointer to be deleted.
+    BLINK_EXPORT ExtraData* extraData() const;
+    BLINK_EXPORT void setExtraData(ExtraData*);
 
     // The lifetime of the WebAudioSourceProvider should outlive the
     // WebMediaStreamTrack, and clients are responsible for calling
     // setSourceProvider(0) before the WebMediaStreamTrack is going away.
-    WEBKIT_EXPORT void setSourceProvider(WebAudioSourceProvider*);
+    BLINK_EXPORT void setSourceProvider(WebAudioSourceProvider*);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebMediaStreamTrack(PassRefPtr<WebCore::MediaStreamComponent>);
     WebMediaStreamTrack(WebCore::MediaStreamComponent*);
     WebMediaStreamTrack& operator=(WebCore::MediaStreamComponent*);
@@ -81,6 +93,6 @@ private:
     WebPrivatePtr<WebCore::MediaStreamComponent> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMediaStreamTrack_h

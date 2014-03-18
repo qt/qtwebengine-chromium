@@ -5,7 +5,6 @@
 #include "base/threading/thread.h"
 
 #include "base/bind.h"
-#include "base/debug/alias.h"
 #include "base/lazy_instance.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread_id_name_manager.h"
@@ -49,6 +48,20 @@ struct Thread::StartupData {
       : options(opt),
         event(false, false) {}
 };
+
+Thread::Options::Options()
+    : message_loop_type(MessageLoop::TYPE_DEFAULT),
+      stack_size(0) {
+}
+
+Thread::Options::Options(MessageLoop::Type type,
+                         size_t size)
+    : message_loop_type(type),
+      stack_size(size) {
+}
+
+Thread::Options::~Options() {
+}
 
 Thread::Thread(const char* name)
     :
@@ -173,23 +186,16 @@ bool Thread::GetThreadWasQuitProperly() {
 
 void Thread::ThreadMain() {
   {
-#if defined(OS_MACOSX)
-    // Store the thread name on the stack to debug <http://crbug.com/274705>.
-    // End with a byte sequence of <EOT><BEL><NUL> to make it easier to grep in
-    // the minidump stack dump.
-    const size_t kThreadNameSize = 50;
-    char thread_name[kThreadNameSize];
-    strncpy(thread_name, name_.c_str(), kThreadNameSize);
-    thread_name[kThreadNameSize - 1] = '\0';
-    thread_name[kThreadNameSize - 2] = '\7';
-    thread_name[kThreadNameSize - 3] = '\3';
-    base::debug::Alias(thread_name);
-#endif
-
     // The message loop for this thread.
     // Allocated on the heap to centralize any leak reports at this line.
-    scoped_ptr<MessageLoop> message_loop(
-        new MessageLoop(startup_data_->options.message_loop_type));
+    scoped_ptr<MessageLoop> message_loop;
+    if (!startup_data_->options.message_pump_factory.is_null()) {
+      message_loop.reset(
+          new MessageLoop(startup_data_->options.message_pump_factory.Run()));
+    } else {
+      message_loop.reset(
+          new MessageLoop(startup_data_->options.message_loop_type));
+    }
 
     // Complete the initialization of our Thread object.
     thread_id_ = PlatformThread::CurrentId();
@@ -231,10 +237,6 @@ void Thread::ThreadMain() {
 
     // We can't receive messages anymore.
     message_loop_ = NULL;
-
-#if defined(OS_MACOSX)
-    base::debug::Alias(thread_name);
-#endif
   }
 }
 

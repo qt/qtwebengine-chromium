@@ -35,11 +35,10 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/graphics/FloatRect.h"
+#include "core/frame/Settings.h"
+#include "platform/geometry/FloatRect.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
@@ -47,7 +46,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 InspectorClientImpl::InspectorClientImpl(WebViewImpl* webView)
     : m_inspectedWebView(webView)
@@ -96,16 +95,10 @@ void InspectorClientImpl::clearBrowserCookies()
         agent->clearBrowserCookies();
 }
 
-void InspectorClientImpl::overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow)
+void InspectorClientImpl::overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->overrideDeviceMetrics(width, height, fontScaleFactor, fitWindow);
-}
-
-void InspectorClientImpl::autoZoomPageToFitWidth()
-{
-    if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->autoZoomPageToFitWidth();
+        agent->overrideDeviceMetrics(width, height, deviceScaleFactor, emulateViewport, fitWindow);
 }
 
 bool InspectorClientImpl::overridesShowPaintRects()
@@ -138,6 +131,11 @@ void InspectorClientImpl::setShowScrollBottleneckRects(bool show)
     m_inspectedWebView->setShowScrollBottleneckRects(show);
 }
 
+void InspectorClientImpl::requestPageScaleFactor(float scale, const IntPoint& origin)
+{
+    m_inspectedWebView->setPageScaleFactor(scale, origin);
+}
+
 void InspectorClientImpl::getAllocatedObjects(HashSet<const void*>& set)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
@@ -168,9 +166,21 @@ void InspectorClientImpl::setTraceEventCallback(TraceEventCallback callback)
         agent->setTraceEventCallback(callback);
 }
 
+void InspectorClientImpl::startGPUEventsRecording()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->startGPUEventsRecording();
+}
+
+void InspectorClientImpl::stopGPUEventsRecording()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->stopGPUEventsRecording();
+}
+
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()
 {
     return static_cast<WebDevToolsAgentImpl*>(m_inspectedWebView->devToolsAgent());
 }
 
-} // namespace WebKit
+} // namespace blink

@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/canvas/WebGLContextEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -59,7 +59,7 @@ WebGLContextEvent::~WebGLContextEvent()
 
 const AtomicString& WebGLContextEvent::interfaceName() const
 {
-    return eventNames().interfaceForWebGLContextEvent;
+    return EventNames::WebGLContextEvent;
 }
 
 } // namespace WebCore

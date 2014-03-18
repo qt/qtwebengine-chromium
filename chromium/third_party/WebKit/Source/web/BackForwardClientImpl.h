@@ -31,10 +31,10 @@
 #ifndef BackForwardClientImpl_h
 #define BackForwardClientImpl_h
 
-#include "core/history/BackForwardClient.h"
 #include "core/history/HistoryItem.h"
+#include "core/page/BackForwardClient.h"
 
-namespace WebKit {
+namespace blink {
 class WebViewImpl;
 
 class BackForwardClientImpl : public WebCore::BackForwardClient {
@@ -44,13 +44,13 @@ public:
 
 private:
     // WebCore::BackForwardList methods:
-    virtual void didAddItem();
     virtual int backListCount();
     virtual int forwardListCount();
+    virtual int backForwardListCount();
 
     WebViewImpl* m_webView;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

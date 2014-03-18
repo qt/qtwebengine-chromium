@@ -292,7 +292,6 @@ static inline unsigned int show_bits(GetBitContext *s, int n)
 static inline void skip_bits(GetBitContext *s, int n)
 {
     OPEN_READER(re, s);
-    UPDATE_CACHE(re, s);
     LAST_SKIP_BITS(re, s, n);
     CLOSE_READER(re, s);
 }
@@ -584,6 +583,20 @@ static inline int decode210(GetBitContext *gb)
 static inline int get_bits_left(GetBitContext *gb)
 {
     return gb->size_in_bits - get_bits_count(gb);
+}
+
+static inline int skip_1stop_8data_bits(GetBitContext *gb)
+{
+    if (get_bits_left(gb) <= 0)
+        return AVERROR_INVALIDDATA;
+
+    while (get_bits1(gb)) {
+        skip_bits(gb, 8);
+        if (get_bits_left(gb) <= 0)
+            return AVERROR_INVALIDDATA;
+    }
+
+    return 0;
 }
 
 //#define TRACE

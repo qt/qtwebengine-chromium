@@ -8,12 +8,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::TimeDelta;
-using WebKit::WebGestureEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
-using WebKit::WebTouchEvent;
-using WebKit::WebTouchPoint;
+using blink::WebGestureEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
 
 namespace content {
 
@@ -34,28 +34,30 @@ void MockInputAckHandler::OnKeyboardEventAck(
 }
 
 void MockInputAckHandler::OnWheelEventAck(
-    const WebMouseWheelEvent& event,
-    InputEventAckState ack_result)  {
+    const MouseWheelEventWithLatencyInfo& event,
+    InputEventAckState ack_result) {
   VLOG(1) << __FUNCTION__ << " called!";
-  acked_wheel_event_ = event;
+  acked_wheel_event_ = event.event;
   RecordAckCalled(ack_result);
 }
 
 void MockInputAckHandler::OnTouchEventAck(
     const TouchEventWithLatencyInfo& event,
-    InputEventAckState ack_result)  {
+    InputEventAckState ack_result) {
   VLOG(1) << __FUNCTION__ << " called!";
   acked_touch_event_ = event;
   RecordAckCalled(ack_result);
   if (touch_followup_event_)
-    input_router_->SendGestureEvent(*touch_followup_event_);
+    input_router_->SendTouchEvent(*touch_followup_event_);
+  if (gesture_followup_event_)
+    input_router_->SendGestureEvent(*gesture_followup_event_);
 }
 
 void MockInputAckHandler::OnGestureEventAck(
-    const WebGestureEvent& event,
-    InputEventAckState ack_result)  {
+    const GestureEventWithLatencyInfo& event,
+    InputEventAckState ack_result) {
   VLOG(1) << __FUNCTION__ << " called!";
-  acked_gesture_event_ = event;
+  acked_gesture_event_ = event.event;
   RecordAckCalled(ack_result);
 }
 
@@ -64,9 +66,10 @@ void MockInputAckHandler::OnUnexpectedEventAck(UnexpectedEventAckType type)  {
   unexpected_event_ack_called_ = true;
 }
 
-void MockInputAckHandler::ExpectAckCalled(int times) {
-  EXPECT_EQ(times, ack_count_);
+size_t MockInputAckHandler::GetAndResetAckCount() {
+  size_t ack_count = ack_count_;
   ack_count_ = 0;
+  return ack_count;
 }
 
 void MockInputAckHandler::RecordAckCalled(InputEventAckState ack_result) {

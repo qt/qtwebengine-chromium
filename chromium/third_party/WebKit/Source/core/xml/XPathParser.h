@@ -62,7 +62,7 @@ public:
     ~Parser();
 
     XPathNSResolver* resolver() const { return m_resolver.get(); }
-    bool expandQName(const String& qName, String& localName, String& namespaceURI);
+    bool expandQName(const String& qName, AtomicString& localName, AtomicString& namespaceURI);
 
     Expression* parseStatement(const String& statement, PassRefPtr<XPathNSResolver>, ExceptionState&);
 
@@ -76,11 +76,11 @@ public:
     void registerParseNode(ParseNode*);
     void unregisterParseNode(ParseNode*);
 
-    void registerPredicateVector(Vector<Predicate*>*);
-    void deletePredicateVector(Vector<Predicate*>*);
+    void registerPredicateVector(Vector<OwnPtr<Predicate> >*);
+    void deletePredicateVector(Vector<OwnPtr<Predicate> >*);
 
-    void registerExpressionVector(Vector<Expression*>*);
-    void deleteExpressionVector(Vector<Expression*>*);
+    void registerExpressionVector(Vector<OwnPtr<Expression> >*);
+    void deleteExpressionVector(Vector<OwnPtr<Expression> >*);
 
     void registerString(String*);
     void deleteString(String*);
@@ -116,8 +116,8 @@ private:
     RefPtr<XPathNSResolver> m_resolver;
 
     HashSet<ParseNode*> m_parseNodes;
-    HashSet<Vector<Predicate*>*> m_predicateVectors;
-    HashSet<Vector<Expression*>*> m_expressionVectors;
+    HashSet<Vector<OwnPtr<Predicate> >*> m_predicateVectors;
+    HashSet<Vector<OwnPtr<Expression> >*> m_expressionVectors;
     HashSet<String*> m_strings;
     HashSet<Step::NodeTest*> m_nodeTests;
 };

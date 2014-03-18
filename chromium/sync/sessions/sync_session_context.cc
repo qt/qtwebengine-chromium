@@ -10,9 +10,6 @@
 namespace syncer {
 namespace sessions {
 
-const unsigned int kMaxMessagesToRecord = 10;
-const unsigned int kMaxMessageSizeToRecord = 5 * 1024;
-
 SyncSessionContext::SyncSessionContext(
     ServerConnectionManager* connection_manager,
     syncable::Directory* directory,
@@ -26,6 +23,8 @@ SyncSessionContext::SyncSessionContext(
     const std::string& invalidator_client_id)
     : connection_manager_(connection_manager),
       directory_(directory),
+      update_handler_deleter_(&update_handler_map_),
+      commit_contributor_deleter_(&commit_contributor_map_),
       extensions_activity_(extensions_activity),
       notifications_enabled_(false),
       max_commit_batch_size_(kDefaultMaxCommitBatchSize),
@@ -36,8 +35,10 @@ SyncSessionContext::SyncSessionContext(
       server_enabled_pre_commit_update_avoidance_(false),
       client_enabled_pre_commit_update_avoidance_(
           client_enabled_pre_commit_update_avoidance) {
-  for (size_t i = 0u; i < workers.size(); ++i)
-    workers_.push_back(workers[i]);
+  for (size_t i = 0u; i < workers.size(); ++i) {
+    workers_.insert(
+        std::make_pair(workers[i]->GetModelSafeGroup(), workers[i]));
+  }
 
   std::vector<SyncEngineEventListener*>::const_iterator it;
   for (it = listeners.begin(); it != listeners.end(); ++it)
@@ -45,6 +46,33 @@ SyncSessionContext::SyncSessionContext(
 }
 
 SyncSessionContext::~SyncSessionContext() {
+}
+
+void SyncSessionContext::set_routing_info(
+    const ModelSafeRoutingInfo& routing_info) {
+  enabled_types_ = GetRoutingInfoTypes(routing_info);
+
+  // TODO(rlarocque): This is not a good long-term solution.  We must find a
+  // better way to initialize the set of CommitContributors and UpdateHandlers.
+  STLDeleteValues<UpdateHandlerMap>(&update_handler_map_);
+  STLDeleteValues<CommitContributorMap>(&commit_contributor_map_);
+  for (ModelSafeRoutingInfo::const_iterator routing_iter = routing_info.begin();
+       routing_iter != routing_info.end(); ++routing_iter) {
+    ModelType type = routing_iter->first;
+    ModelSafeGroup group = routing_iter->second;
+    std::map<ModelSafeGroup, scoped_refptr<ModelSafeWorker> >::iterator
+        worker_it = workers_.find(group);
+    DCHECK(worker_it != workers_.end());
+    scoped_refptr<ModelSafeWorker> worker = worker_it->second;
+
+    SyncDirectoryUpdateHandler* handler =
+        new SyncDirectoryUpdateHandler(directory(), type, worker);
+    update_handler_map_.insert(std::make_pair(type, handler));
+
+    SyncDirectoryCommitContributor* contributor =
+        new SyncDirectoryCommitContributor(directory(), type);
+    commit_contributor_map_.insert(std::make_pair(type, contributor));
+  }
 }
 
 }  // namespace sessions

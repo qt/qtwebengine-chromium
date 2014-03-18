@@ -34,7 +34,7 @@
 #include "WebCommon.h"
 #include "WebPrivatePtr.h"
 
-namespace WebKit {
+namespace blink {
 
 enum WebCryptoKeyType {
     WebCryptoKeyTypeSecret,
@@ -50,7 +50,7 @@ enum WebCryptoKeyUsage {
     WebCryptoKeyUsageDeriveKey = 1 << 4,
     WebCryptoKeyUsageWrapKey = 1 << 5,
     WebCryptoKeyUsageUnwrapKey = 1 << 6,
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     EndOfWebCryptoKeyUsage,
 #endif
 };
@@ -84,6 +84,9 @@ class WebCryptoKeyHandle;
 // safely assume any details regarding the type of the wrapped
 // WebCryptoKeyHandle*.
 //
+// If WebCryptoKey "isNull()" then it is invalid to call any of the other
+// methods on it (other than destruction, assignment, or isNull()).
+//
 // FIXME: Define the interface to use for structured clone.
 //        Cloning across a process boundary will need serialization,
 //        however cloning for in-process workers could just share the same
@@ -103,22 +106,26 @@ public:
     // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html#key-interface-members
     //
     // Note that the caller is passing ownership of the WebCryptoKeyHandle*.
-    WEBKIT_EXPORT static WebCryptoKey create(WebCryptoKeyHandle*, WebCryptoKeyType, bool extractable, const WebCryptoAlgorithm&, WebCryptoKeyUsageMask);
+    BLINK_PLATFORM_EXPORT static WebCryptoKey create(WebCryptoKeyHandle*, WebCryptoKeyType, bool extractable, const WebCryptoAlgorithm&, WebCryptoKeyUsageMask);
+
+    BLINK_PLATFORM_EXPORT static WebCryptoKey createNull();
 
     // Returns the opaque key handle that was set by the embedder.
     //   * Safe to downcast to known type (since embedder creates all the keys)
     //   * Returned pointer's lifetime is bound to |this|
-    WEBKIT_EXPORT WebCryptoKeyHandle* handle() const;
+    BLINK_PLATFORM_EXPORT WebCryptoKeyHandle* handle() const;
 
-    WEBKIT_EXPORT WebCryptoKeyType type() const;
-    WEBKIT_EXPORT bool extractable() const;
-    WEBKIT_EXPORT const WebCryptoAlgorithm& algorithm() const;
-    WEBKIT_EXPORT WebCryptoKeyUsageMask usages() const;
+    BLINK_PLATFORM_EXPORT WebCryptoKeyType type() const;
+    BLINK_PLATFORM_EXPORT bool extractable() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoAlgorithm& algorithm() const;
+    BLINK_PLATFORM_EXPORT WebCryptoKeyUsageMask usages() const;
+
+    BLINK_PLATFORM_EXPORT bool isNull() const;
 
 private:
     WebCryptoKey() { }
-    WEBKIT_EXPORT void assign(const WebCryptoKey& other);
-    WEBKIT_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void assign(const WebCryptoKey& other);
+    BLINK_PLATFORM_EXPORT void reset();
 
     WebPrivatePtr<WebCryptoKeyPrivate> m_private;
 };
@@ -130,6 +137,6 @@ public:
     virtual ~WebCryptoKeyHandle() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

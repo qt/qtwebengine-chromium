@@ -27,25 +27,21 @@
 #include "webkit/common/database/database_identifier.h"
 
 using webkit_database::DatabaseUtil;
-using WebKit::WebIDBKey;
+using blink::WebIDBKey;
 
 namespace content {
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
-    int ipc_process_id,
     IndexedDBContextImpl* indexed_db_context)
     : indexed_db_context_(indexed_db_context),
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
-      cursor_dispatcher_host_(new CursorDispatcherHost(this)),
-      ipc_process_id_(ipc_process_id) {
+      cursor_dispatcher_host_(new CursorDispatcherHost(this)) {
   DCHECK(indexed_db_context_);
 }
 
 IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {}
 
 void IndexedDBDispatcherHost::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
-
   bool success = indexed_db_context_->TaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&IndexedDBDispatcherHost::ResetDispatcherHosts, this));
@@ -223,10 +219,13 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
 
+  GURL origin_url =
+      webkit_database::GetOriginFromIdentifier(params.database_identifier);
+
   Context()->GetIDBFactory()->GetDatabaseNames(
       new IndexedDBCallbacks(
           this, params.ipc_thread_id, params.ipc_callbacks_id),
-      params.database_identifier,
+      origin_url,
       indexed_db_path);
 }
 
@@ -257,19 +256,21 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
                                    host_transaction_id,
                                    callbacks,
                                    database_callbacks,
-                                   params.database_identifier,
+                                   origin_url,
                                    indexed_db_path);
 }
 
 void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
     const IndexedDBHostMsg_FactoryDeleteDatabase_Params& params) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  GURL origin_url =
+      webkit_database::GetOriginFromIdentifier(params.database_identifier);
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
   Context()->GetIDBFactory()->DeleteDatabase(
       params.name,
       new IndexedDBCallbacks(
           this, params.ipc_thread_id, params.ipc_callbacks_id),
-      params.database_identifier,
+      origin_url,
       indexed_db_path);
 }
 
@@ -286,18 +287,9 @@ void IndexedDBDispatcherHost::FinishTransaction(int64 host_transaction_id,
       database_dispatcher_host_->transaction_database_map_;
   if (committed)
     Context()->TransactionComplete(transaction_url_map[host_transaction_id]);
-  // It's unclear if std::map::erase(key) has defined behavior if the
-  // key is not found.
-  // TODO(alecflett): Remove if it is proven that it is safe.
-  if (transaction_url_map.find(host_transaction_id) !=
-      transaction_url_map.end())
-    transaction_url_map.erase(host_transaction_id);
-  if (transaction_size_map.find(host_transaction_id) !=
-      transaction_size_map.end())
-    transaction_size_map.erase(host_transaction_id);
-  if (transaction_database_map.find(host_transaction_id) !=
-      transaction_database_map.end())
-    transaction_database_map.erase(host_transaction_id);
+  transaction_url_map.erase(host_transaction_id);
+  transaction_size_map.erase(host_transaction_id);
+  transaction_database_map.erase(host_transaction_id);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -369,10 +361,10 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::CloseAll() {
     int32 ipc_database_id = iter->second;
     ++iter;
     IndexedDBConnection* connection = map_.Lookup(ipc_database_id);
-    if (connection) {
+    if (connection && connection->IsConnected()) {
       connection->database()->Abort(
           transaction_id,
-          IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError));
+          IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError));
     }
   }
   DCHECK(transaction_database_map_.empty());
@@ -381,7 +373,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::CloseAll() {
        iter != database_url_map_.end();
        iter++) {
     IndexedDBConnection* connection = map_.Lookup(iter->first);
-    if (connection) {
+    if (connection && connection->IsConnected()) {
       connection->Close();
       parent_->Context()->ConnectionClosed(iter->second, connection);
     }
@@ -422,18 +414,13 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
   return handled;
 }
 
-void IndexedDBDispatcherHost::DatabaseDispatcherHost::Send(
-    IPC::Message* message) {
-  parent_->Send(message);
-}
-
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateObjectStore(
     const IndexedDBHostMsg_DatabaseCreateObjectStore_Params& params) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
@@ -446,7 +433,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateObjectStore(
           database_url_map_[params.ipc_database_id])) {
     connection->database()->Abort(
         host_transaction_id,
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionQuotaError));
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionQuotaError));
   }
 }
 
@@ -458,7 +445,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDeleteObjectStore(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   connection->database()->DeleteObjectStore(
@@ -471,7 +458,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateTransaction(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
@@ -495,7 +482,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnClose(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
   connection->Close();
 }
@@ -517,7 +504,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnGet(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   scoped_refptr<IndexedDBCallbacks> callbacks(new IndexedDBCallbacks(
@@ -538,12 +525,22 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
 
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
   scoped_refptr<IndexedDBCallbacks> callbacks(new IndexedDBCallbacks(
       parent_, params.ipc_thread_id, params.ipc_callbacks_id));
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
+  if (params.index_ids.size() != params.index_keys.size()) {
+    connection->database()->Abort(
+        host_transaction_id,
+        IndexedDBDatabaseError(
+            blink::WebIDBDatabaseExceptionUnknownError,
+            "Malformed IPC message: index_ids.size() != index_keys.size()"));
+    parent_->BadMessageReceived();
+    return;
+  }
+
   // TODO(alecflett): Avoid a copy here.
   std::string value_copy(params.value);
   connection->database()->Put(
@@ -568,7 +565,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnSetIndexKeys(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
@@ -576,8 +573,9 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnSetIndexKeys(
     connection->database()->Abort(
         host_transaction_id,
         IndexedDBDatabaseError(
-            WebKit::WebIDBDatabaseExceptionUnknownError,
+            blink::WebIDBDatabaseExceptionUnknownError,
             "Malformed IPC message: index_ids.size() != index_keys.size()"));
+    parent_->BadMessageReceived();
     return;
   }
 
@@ -598,7 +596,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnSetIndexesReady(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   connection->database()->SetIndexesReady(
@@ -611,7 +609,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnOpenCursor(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   scoped_refptr<IndexedDBCallbacks> callbacks(new IndexedDBCallbacks(
@@ -633,7 +631,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCount(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   scoped_refptr<IndexedDBCallbacks> callbacks(new IndexedDBCallbacks(
@@ -652,7 +650,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDeleteRange(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   scoped_refptr<IndexedDBCallbacks> callbacks(new IndexedDBCallbacks(
@@ -674,7 +672,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnClear(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   scoped_refptr<IndexedDBCallbacks> callbacks(
@@ -691,7 +689,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnAbort(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   connection->database()->Abort(parent_->HostTransactionId(transaction_id));
@@ -704,7 +702,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCommit(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(transaction_id);
@@ -714,7 +712,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCommit(
           transaction_url_map_[host_transaction_id], transaction_size)) {
     connection->database()->Abort(
         host_transaction_id,
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionQuotaError));
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionQuotaError));
     return;
   }
 
@@ -727,7 +725,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateIndex(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
@@ -742,7 +740,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateIndex(
           database_url_map_[params.ipc_database_id])) {
     connection->database()->Abort(
         host_transaction_id,
-        IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionQuotaError));
+        IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionQuotaError));
   }
 }
 
@@ -755,7 +753,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDeleteIndex(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, ipc_database_id);
-  if (!connection)
+  if (!connection || !connection->IsConnected())
     return;
 
   connection->database()->DeleteIndex(
@@ -793,11 +791,6 @@ bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
   return handled;
 }
 
-void IndexedDBDispatcherHost::CursorDispatcherHost::Send(
-    IPC::Message* message) {
-  parent_->Send(message);
-}
-
 void IndexedDBDispatcherHost::CursorDispatcherHost::OnAdvance(
     int32 ipc_cursor_id,
     int32 ipc_thread_id,
@@ -820,7 +813,8 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnContinue(
     int32 ipc_cursor_id,
     int32 ipc_thread_id,
     int32 ipc_callbacks_id,
-    const IndexedDBKey& key) {
+    const IndexedDBKey& key,
+    const IndexedDBKey& primary_key) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBCursor* idb_cursor =
@@ -829,7 +823,10 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnContinue(
     return;
 
   idb_cursor->Continue(
-      make_scoped_ptr(new IndexedDBKey(key)),
+      key.IsValid() ? make_scoped_ptr(new IndexedDBKey(key))
+                    : scoped_ptr<IndexedDBKey>(),
+      primary_key.IsValid() ? make_scoped_ptr(new IndexedDBKey(primary_key))
+                            : scoped_ptr<IndexedDBKey>(),
       new IndexedDBCallbacks(
           parent_, ipc_thread_id, ipc_callbacks_id, ipc_cursor_id));
 }

@@ -32,10 +32,10 @@
 #define WebTextCheckingCompletionImpl_h
 
 #include "WebTextCheckingCompletion.h"
-#include "core/platform/text/TextChecking.h"
+#include "platform/text/TextChecking.h"
 #include "wtf/RefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class EditorClientImpl;
 
@@ -55,6 +55,6 @@ private:
     WTF::RefPtr<WebCore::TextCheckingRequest> m_request;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

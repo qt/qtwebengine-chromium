@@ -7,6 +7,8 @@
 
 #include <string>
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "crypto/crypto_export.h"
 
 namespace base {
@@ -102,21 +104,21 @@ CRYPTO_EXPORT void OpenPersistentNSSDB();
 // GetPrivateNSSKeySlot() will return the TPM slot if one was found.
 CRYPTO_EXPORT void EnableTPMTokenForNSS();
 
-// Get name and user PIN for the built-in TPM token on ChromeOS.
-// Either one can safely be NULL.  Should only be called after
-// EnableTPMTokenForNSS has been called with a non-null delegate.
-CRYPTO_EXPORT void GetTPMTokenInfo(std::string* token_name,
-                                   std::string* user_pin);
+// Returns true if EnableTPMTokenForNSS has been called.
+CRYPTO_EXPORT bool IsTPMTokenEnabledForNSS();
 
 // Returns true if the TPM is owned and PKCS#11 initialized with the
 // user and security officer PINs, and has been enabled in NSS by
 // calling EnableTPMForNSS, and Chaps has been successfully
 // loaded into NSS.
-CRYPTO_EXPORT bool IsTPMTokenReady();
+// If |callback| is non-null and the function returns false, the |callback| will
+// be run once the TPM is ready. |callback| will never be run if the function
+// returns true.
+CRYPTO_EXPORT bool IsTPMTokenReady(const base::Closure& callback)
+    WARN_UNUSED_RESULT;
 
 // Initialize the TPM token.  Does nothing if it is already initialized.
-CRYPTO_EXPORT bool InitializeTPMToken(const std::string& token_name,
-                                      const std::string& user_pin);
+CRYPTO_EXPORT bool InitializeTPMToken(int token_slot_id);
 #endif
 
 // Convert a NSS PRTime value into a base::Time object.

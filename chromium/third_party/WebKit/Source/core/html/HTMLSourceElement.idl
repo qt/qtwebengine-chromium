@@ -24,9 +24,9 @@
  */
 
 [
-    EnabledAtRuntime=Media
+    RuntimeEnabled=Media
 ] interface HTMLSourceElement : HTMLElement {
-[Reflect, URL] attribute DOMString src;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
     attribute DOMString type;
     attribute DOMString media;
 };

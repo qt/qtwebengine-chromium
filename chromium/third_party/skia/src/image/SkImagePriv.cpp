@@ -9,45 +9,22 @@
 #include "SkCanvas.h"
 #include "SkPicture.h"
 
-SkBitmap::Config SkImageInfoToBitmapConfig(const SkImage::Info& info,
-                                           bool* isOpaque) {
+SkBitmap::Config SkImageInfoToBitmapConfig(const SkImageInfo& info) {
     switch (info.fColorType) {
-        case SkImage::kAlpha_8_ColorType:
-            switch (info.fAlphaType) {
-                case kIgnore_SkAlphaType:
-                    // makes no sense
-                    return SkBitmap::kNo_Config;
+        case kAlpha_8_SkColorType:
+            return SkBitmap::kA8_Config;
 
-                case kOpaque_SkAlphaType:
-                    *isOpaque = true;
-                    return SkBitmap::kA8_Config;
+        case kARGB_4444_SkColorType:
+            return SkBitmap::kARGB_4444_Config;
 
-                case kPremul_SkAlphaType:
-                case kUnpremul_SkAlphaType:
-                    *isOpaque = false;
-                    return SkBitmap::kA8_Config;
-            }
-            break;
-
-        case SkImage::kRGB_565_ColorType:
-            // we ignore fAlpahType, though some would not make sense
-            *isOpaque = true;
+        case kRGB_565_SkColorType:
             return SkBitmap::kRGB_565_Config;
 
-        case SkImage::kPMColor_ColorType:
-            switch (info.fAlphaType) {
-                case kIgnore_SkAlphaType:
-                case kUnpremul_SkAlphaType:
-                    // not supported yet
-                    return SkBitmap::kNo_Config;
-                case kOpaque_SkAlphaType:
-                    *isOpaque = true;
-                    return SkBitmap::kARGB_8888_Config;
-                case kPremul_SkAlphaType:
-                    *isOpaque = false;
-                    return SkBitmap::kARGB_8888_Config;
-            }
-            break;
+        case kPMColor_SkColorType:
+            return SkBitmap::kARGB_8888_Config;
+
+        case kIndex_8_SkColorType:
+            return SkBitmap::kIndex8_Config;
 
         default:
             // break for unsupported colortypes
@@ -56,47 +33,9 @@ SkBitmap::Config SkImageInfoToBitmapConfig(const SkImage::Info& info,
     return SkBitmap::kNo_Config;
 }
 
-int SkImageBytesPerPixel(SkImage::ColorType ct) {
-    static const uint8_t gColorTypeBytesPerPixel[] = {
-        1,  // kAlpha_8_ColorType
-        2,  // kRGB_565_ColorType
-        4,  // kRGBA_8888_ColorType
-        4,  // kBGRA_8888_ColorType
-        4,  // kPMColor_ColorType
-    };
-
-    SkASSERT((size_t)ct < SK_ARRAY_COUNT(gColorTypeBytesPerPixel));
-    return gColorTypeBytesPerPixel[ct];
-}
-
-bool SkBitmapToImageInfo(const SkBitmap& bm, SkImage::Info* info) {
-    switch (bm.config()) {
-        case SkBitmap::kA8_Config:
-            info->fColorType = SkImage::kAlpha_8_ColorType;
-            break;
-
-        case SkBitmap::kRGB_565_Config:
-            info->fColorType = SkImage::kRGB_565_ColorType;
-            break;
-
-        case SkBitmap::kARGB_8888_Config:
-            info->fColorType = SkImage::kPMColor_ColorType;
-            break;
-
-        default:
-            return false;
-    }
-
-    info->fWidth = bm.width();
-    info->fHeight = bm.height();
-    info->fAlphaType = bm.isOpaque() ? kOpaque_SkAlphaType :
-                                       kPremul_SkAlphaType;
-    return true;
-}
-
 SkImage* SkNewImageFromBitmap(const SkBitmap& bm, bool canSharePixelRef) {
-    SkImage::Info info;
-    if (!SkBitmapToImageInfo(bm, &info)) {
+    SkImageInfo info;
+    if (!bm.asImageInfo(&info)) {
         return NULL;
     }
 

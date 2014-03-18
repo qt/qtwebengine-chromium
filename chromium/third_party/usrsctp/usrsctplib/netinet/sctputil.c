@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 255190 2013-09-03 19:31:59Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 257800 2013-11-07 16:37:12Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -2721,7 +2721,7 @@ sctp_notify_assoc_change(uint16_t state, struct sctp_tcb *stcb,
 	if (sctp_stcb_is_feature_on(stcb->sctp_ep, stcb, SCTP_PCB_FLAGS_RECVASSOCEVNT)) {
 		notif_len = sizeof(struct sctp_assoc_change);
 		if (abort != NULL) {
-			abort_len = htons(abort->ch.chunk_length);
+			abort_len = ntohs(abort->ch.chunk_length);
 		} else {
 			abort_len = 0;
 		}
@@ -3617,7 +3617,7 @@ sctp_notify_remote_error(struct sctp_tcb *stcb, uint16_t error, struct sctp_erro
 		return;
 	}
 	if (chunk != NULL) {
-		chunk_len = htons(chunk->ch.chunk_length);
+		chunk_len = ntohs(chunk->ch.chunk_length);
 	} else {
 		chunk_len = 0;
 	}
@@ -4776,11 +4776,9 @@ sctp_add_to_readq(struct sctp_inpcb *inp,
 				addr.sin6 = control->whoFrom->ro._l_addr.sin6;
 				break;
 #endif
-#if defined(__Userspace__)
 			case AF_CONN:
 				addr.sconn = control->whoFrom->ro._l_addr.sconn;
 				break;
-#endif
 			default:
 				addr.sa = control->whoFrom->ro._l_addr.sa;
 				break;
@@ -4792,6 +4790,8 @@ sctp_add_to_readq(struct sctp_inpcb *inp,
 			inp->recv_callback(so, addr, buffer, control->length, rcv, flags, inp->ulp_info);
 			SCTP_TCB_LOCK(stcb);
 			atomic_subtract_int(&stcb->asoc.refcnt, 1);
+			sctp_free_remote_addr(control->whoFrom);
+			control->whoFrom = NULL;
 			sctp_m_freem(control->data);
 			control->data = NULL;
 			control->length = 0;
@@ -4954,9 +4954,19 @@ sctp_append_to_readq(struct sctp_inpcb *inp,
 	 * is populated in the outbound sinfo structure from the true cumack
 	 * if the association exists...
 	 */
+	control->sinfo_tsn = control->sinfo_cumtsn = ctls_cumack;
 #if defined(__Userspace__)
 	if (inp->recv_callback) {
-		if (control->end_added == 1) {
+		uint32_t pd_point, length;
+
+		length = control->length;
+		if (stcb != NULL && stcb->sctp_socket != NULL) {
+			pd_point = min(SCTP_SB_LIMIT_RCV(stcb->sctp_socket) >> SCTP_PARTIAL_DELIVERY_SHIFT,
+			               stcb->sctp_ep->partial_delivery_point);
+		} else {
+			pd_point = inp->partial_delivery_point;
+		}
+		if ((control->end_added == 1) || (length >= pd_point)) {
 			struct socket *so;
 			char *buffer;
 			struct sctp_rcvinfo rcv;
@@ -4970,8 +4980,6 @@ sctp_append_to_readq(struct sctp_inpcb *inp,
 			for (m = control->data; m; m = SCTP_BUF_NEXT(m)) {
 				sctp_sbfree(control, control->stcb, &so->so_rcv, m);
 			}
-			atomic_add_int(&stcb->asoc.refcnt, 1);
-			SCTP_TCB_UNLOCK(stcb);
 			m_copydata(control->data, 0, control->length, buffer);
 			memset(&rcv, 0, sizeof(struct sctp_rcvinfo));
 			rcv.rcv_sid = control->sinfo_stream;
@@ -4994,33 +5002,42 @@ sctp_append_to_readq(struct sctp_inpcb *inp,
 				addr.sin6 = control->whoFrom->ro._l_addr.sin6;
 				break;
 #endif
-#if defined(__Userspace__)
 			case AF_CONN:
 				addr.sconn = control->whoFrom->ro._l_addr.sconn;
 				break;
-#endif
 			default:
 				addr.sa = control->whoFrom->ro._l_addr.sa;
 				break;
 			}
 			flags = 0;
+			if (control->end_added == 1) {
+				flags |= MSG_EOR;
+			}
 			if (control->spec_flags & M_NOTIFICATION) {
 				flags |= MSG_NOTIFICATION;
 			}
-			inp->recv_callback(so, addr, buffer, control->length, rcv, flags, inp->ulp_info);
-			SCTP_TCB_LOCK(stcb);
-			atomic_subtract_int(&stcb->asoc.refcnt, 1);
 			sctp_m_freem(control->data);
 			control->data = NULL;
+			control->tail_mbuf = NULL;
 			control->length = 0;
-			sctp_free_a_readq(stcb, control);
+			if (control->end_added) {
+				sctp_free_remote_addr(control->whoFrom);
+				control->whoFrom = NULL;
+				sctp_free_a_readq(stcb, control);
+			} else {
+				control->some_taken = 1;
+			}
+			atomic_add_int(&stcb->asoc.refcnt, 1);
+			SCTP_TCB_UNLOCK(stcb);
+			inp->recv_callback(so, addr, buffer, length, rcv, flags, inp->ulp_info);
+			SCTP_TCB_LOCK(stcb);
+			atomic_subtract_int(&stcb->asoc.refcnt, 1);
 		}
 		if (inp)
 			SCTP_INP_READ_UNLOCK(inp);
 		return (0);
 	}
 #endif
-	control->sinfo_tsn = control->sinfo_cumtsn = ctls_cumack;
 	if (inp) {
 		SCTP_INP_READ_UNLOCK(inp);
 	}
@@ -6981,7 +6998,7 @@ sctp_hashinit_flags(int elements, struct malloc_type *type,
 		hashtbl = malloc((u_long)hashsize * sizeof(*hashtbl));
 	else {
 #ifdef INVARIANTS
-		SCTP_PRINTF("flag incorrect in hashinit_flags");
+		SCTP_PRINTF("flag incorrect in hashinit_flags.\n");
 #endif
 		return (NULL);
 	}
@@ -7005,7 +7022,7 @@ sctp_hashdestroy(void *vhashtbl, struct malloc_type *type, u_long hashmask)
 	hashtbl = vhashtbl;
 	for (hp = hashtbl; hp <= &hashtbl[hashmask]; hp++)
 		if (!LIST_EMPTY(hp)) {
-			SCTP_PRINTF("hashdestroy: hash not empty");
+			SCTP_PRINTF("hashdestroy: hash not empty.\n");
 			return;
 		}
 	FREE(hashtbl, type);
@@ -7467,8 +7484,13 @@ sctp_bindx_delete_address(struct sctp_inpcb *inp,
 int
 sctp_local_addr_count(struct sctp_tcb *stcb)
 {
-	int loopback_scope, ipv4_local_scope, local_scope, site_scope;
-	int ipv4_addr_legal, ipv6_addr_legal;
+	int loopback_scope;
+#if defined(INET)
+	int ipv4_local_scope, ipv4_addr_legal;
+#endif
+#if defined (INET6)
+	int local_scope, site_scope, ipv6_addr_legal;
+#endif
 #if defined(__Userspace__)
 	int conn_addr_legal;
 #endif
@@ -7479,11 +7501,15 @@ sctp_local_addr_count(struct sctp_tcb *stcb)
 
 	/* Turn on all the appropriate scopes */
 	loopback_scope = stcb->asoc.scope.loopback_scope;
+#if defined(INET)
 	ipv4_local_scope = stcb->asoc.scope.ipv4_local_scope;
+	ipv4_addr_legal = stcb->asoc.scope.ipv4_addr_legal;
+#endif
+#if defined(INET6)
 	local_scope = stcb->asoc.scope.local_scope;
 	site_scope = stcb->asoc.scope.site_scope;
-	ipv4_addr_legal = stcb->asoc.scope.ipv4_addr_legal;
 	ipv6_addr_legal = stcb->asoc.scope.ipv6_addr_legal;
+#endif
 #if defined(__Userspace__)
 	conn_addr_legal = stcb->asoc.scope.conn_addr_legal;
 #endif

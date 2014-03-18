@@ -34,11 +34,11 @@
 #include "WebString.h"
 #include "WebURL.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
 namespace WebCore { class ResourceError; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebURLError {
     // A namespace for "reason" to support various layers generating
@@ -64,13 +64,13 @@ struct WebURLError {
 
     WebURLError() : reason(0), isCancellation(false) { }
 
-#if WEBKIT_IMPLEMENTATION
-    WebURLError(const WebCore::ResourceError&);
-    WebURLError& operator=(const WebCore::ResourceError&);
-    operator WebCore::ResourceError() const;
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebURLError(const WebCore::ResourceError&);
+    BLINK_PLATFORM_EXPORT WebURLError& operator=(const WebCore::ResourceError&);
+    BLINK_PLATFORM_EXPORT operator WebCore::ResourceError() const;
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

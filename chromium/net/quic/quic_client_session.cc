@@ -15,6 +15,7 @@
 #include "net/base/net_errors.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
+#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
@@ -47,7 +48,7 @@ QuicClientSession::StreamRequest::~StreamRequest() {
 }
 
 int QuicClientSession::StreamRequest::StartRequest(
-    const base::WeakPtr<QuicClientSession> session,
+    const base::WeakPtr<QuicClientSession>& session,
     QuicReliableClientStream** stream,
     const CompletionCallback& callback) {
   session_ = session;
@@ -82,21 +83,24 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
     scoped_ptr<DatagramClientSocket> socket,
+    scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
-    : QuicSession(connection, config, false),
+    : QuicSession(connection, config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
+      writer_(writer.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
       read_pending_(false),
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_),
+      num_packets_read_(0),
       weak_factory_(this) {
   crypto_stream_.reset(
       crypto_client_stream_factory ?
@@ -112,6 +116,12 @@ QuicClientSession::QuicClientSession(
 }
 
 QuicClientSession::~QuicClientSession() {
+  // The session must be closed before it is destroyed.
+  DCHECK(streams()->empty());
+  CloseAllStreams(ERR_UNEXPECTED);
+  DCHECK(observers_.empty());
+  CloseAllObservers(ERR_UNEXPECTED);
+
   connection()->set_debug_visitor(NULL);
   net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
 
@@ -134,6 +144,38 @@ QuicClientSession::~QuicClientSession() {
     UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellosCryptoHandshakeConfirmed",
                          crypto_stream_->num_sent_client_hellos());
   }
+
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumTotalStreams", num_total_streams_);
+}
+
+bool QuicClientSession::OnStreamFrames(
+    const std::vector<QuicStreamFrame>& frames) {
+  // Record total number of stream frames.
+  UMA_HISTOGRAM_COUNTS("Net.QuicNumStreamFramesInPacket", frames.size());
+
+  // Record number of frames per stream in packet.
+  typedef std::map<QuicStreamId, size_t> FrameCounter;
+  FrameCounter frames_per_stream;
+  for (size_t i = 0; i < frames.size(); ++i) {
+    frames_per_stream[frames[i].stream_id]++;
+  }
+  for (FrameCounter::const_iterator it = frames_per_stream.begin();
+       it != frames_per_stream.end(); ++it) {
+    UMA_HISTOGRAM_COUNTS("Net.QuicNumStreamFramesPerStreamInPacket",
+                         it->second);
+  }
+
+  return QuicSession::OnStreamFrames(frames);
+}
+
+void QuicClientSession::AddObserver(Observer* observer) {
+  DCHECK(!ContainsKey(observers_, observer));
+  observers_.insert(observer);
+}
+
+void QuicClientSession::RemoveObserver(Observer* observer) {
+  DCHECK(ContainsKey(observers_, observer));
+  observers_.erase(observer);
 }
 
 int QuicClientSession::TryCreateStream(StreamRequest* request,
@@ -144,12 +186,12 @@ int QuicClientSession::TryCreateStream(StreamRequest* request,
   }
 
   if (goaway_received()) {
-    DLOG(INFO) << "Going away.";
+    DVLOG(1) << "Going away.";
     return ERR_CONNECTION_CLOSED;
   }
 
   if (!connection()->connected()) {
-    DLOG(INFO) << "Already closed.";
+    DVLOG(1) << "Already closed.";
     return ERR_CONNECTION_CLOSED;
   }
 
@@ -172,18 +214,18 @@ void QuicClientSession::CancelRequest(StreamRequest* request) {
   }
 }
 
-QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
+QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
   if (!crypto_stream_->encryption_established()) {
-    DLOG(INFO) << "Encryption not active so no outgoing stream created.";
+    DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return NULL;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
+    DVLOG(1) << "Failed to create a new outgoing stream. "
                << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
+    DVLOG(1) << "Failed to create a new outgoing stream. "
                << "Already received goaway.";
     return NULL;
   }
@@ -198,6 +240,7 @@ QuicClientSession::CreateOutgoingReliableStreamImpl() {
       new QuicReliableClientStream(GetNextStreamId(), this, net_log_);
   ActivateStream(stream);
   ++num_total_streams_;
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumOpenStreams", GetNumOpenStreams());
   return stream;
 }
 
@@ -234,7 +277,7 @@ int QuicClientSession::GetNumSentClientHellos() const {
   return crypto_stream_->num_sent_client_hellos();
 }
 
-ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
+QuicDataStream* QuicClientSession::CreateIncomingDataStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return NULL;
@@ -276,6 +319,14 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     // following code needs to changed.
     base::ResetAndReturn(&callback_).Run(OK);
   }
+  if (event == HANDSHAKE_CONFIRMED) {
+    ObserverSet::iterator it = observers_.begin();
+    while (it != observers_.end()) {
+      Observer* observer = *it;
+      ++it;
+      observer->OnCryptoHandshakeConfirmed();
+    }
+  }
   QuicSession::OnCryptoHandshakeEvent(event);
 }
 
@@ -289,8 +340,10 @@ void QuicClientSession::OnCryptoHandshakeMessageReceived(
   logger_.OnCryptoHandshakeMessageReceived(message);
 }
 
-void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
-  logger_.OnConnectionClose(error, from_peer);
+void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
+                                           bool from_peer) {
+  DCHECK(!connection()->connected());
+  logger_.OnConnectionClosed(error, from_peer);
   if (from_peer) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.QuicSession.ConnectionCloseErrorCodeServer", error);
@@ -300,18 +353,30 @@ void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
   }
 
   if (error == QUIC_CONNECTION_TIMED_OUT) {
-    UMA_HISTOGRAM_SPARSE_SLOWLY(
+    UMA_HISTOGRAM_COUNTS(
         "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
         GetNumOpenStreams());
+    if (!IsCryptoHandshakeConfirmed()) {
+      // If there have been any streams created, they were 0-RTT speculative
+      // requests that have not be serviced.
+      UMA_HISTOGRAM_COUNTS(
+          "Net.QuicSession.ConnectionClose.NumTotalStreams.HandshakeTimedOut",
+          num_total_streams_);
+    }
   }
 
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
                               connection()->version());
+  NotifyFactoryOfSessionGoingAway();
   if (!callback_.is_null()) {
     base::ResetAndReturn(&callback_).Run(ERR_QUIC_PROTOCOL_ERROR);
   }
-  QuicSession::ConnectionClose(error, from_peer);
-  NotifyFactoryOfSessionCloseLater();
+  socket_->Close();
+  QuicSession::OnConnectionClosed(error, from_peer);
+  DCHECK(streams()->empty());
+  CloseAllStreams(ERR_UNEXPECTED);
+  CloseAllObservers(ERR_UNEXPECTED);
+  NotifyFactoryOfSessionClosedLater();
 }
 
 void QuicClientSession::OnSuccessfulVersionNegotiation(
@@ -330,22 +395,28 @@ void QuicClientSession::StartReading() {
                          base::Bind(&QuicClientSession::OnReadComplete,
                                     weak_factory_.GetWeakPtr()));
   if (rv == ERR_IO_PENDING) {
+    num_packets_read_ = 0;
     return;
   }
 
-  // Data was read, process it.
-  // Schedule the work through the message loop to avoid recursive
-  // callbacks.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&QuicClientSession::OnReadComplete,
-                 weak_factory_.GetWeakPtr(), rv));
+  if (++num_packets_read_ > 32) {
+    num_packets_read_ = 0;
+    // Data was read, process it.
+    // Schedule the work through the message loop to avoid recursive
+    // callbacks.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&QuicClientSession::OnReadComplete,
+                   weak_factory_.GetWeakPtr(), rv));
+  } else {
+    OnReadComplete(rv);
+  }
 }
 
 void QuicClientSession::CloseSessionOnError(int error) {
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.CloseSessionOnError", -error);
   CloseSessionOnErrorInner(error, QUIC_INTERNAL_ERROR);
-  NotifyFactoryOfSessionClose();
+  NotifyFactoryOfSessionClosed();
 }
 
 void QuicClientSession::CloseSessionOnErrorInner(int net_error,
@@ -353,18 +424,31 @@ void QuicClientSession::CloseSessionOnErrorInner(int net_error,
   if (!callback_.is_null()) {
     base::ResetAndReturn(&callback_).Run(net_error);
   }
-  while (!streams()->empty()) {
-    ReliableQuicStream* stream = streams()->begin()->second;
-    QuicStreamId id = stream->id();
-    static_cast<QuicReliableClientStream*>(stream)->OnError(net_error);
-    CloseStream(id);
-  }
+  CloseAllStreams(net_error);
+  CloseAllObservers(net_error);
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_CLOSE_ON_ERROR,
       NetLog::IntegerCallback("net_error", net_error));
 
   connection()->CloseConnection(quic_error, false);
   DCHECK(!connection()->connected());
+}
+
+void QuicClientSession::CloseAllStreams(int net_error) {
+  while (!streams()->empty()) {
+    ReliableQuicStream* stream = streams()->begin()->second;
+    QuicStreamId id = stream->id();
+    static_cast<QuicReliableClientStream*>(stream)->OnError(net_error);
+    CloseStream(id);
+  }
+}
+
+void QuicClientSession::CloseAllObservers(int net_error) {
+  while (!observers_.empty()) {
+    Observer* observer = *observers_.begin();
+    observers_.erase(observer);
+    observer->OnSessionClosed(net_error);
+  }
 }
 
 base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
@@ -375,6 +459,7 @@ base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
   dict->SetString("guid", base::Uint64ToString(guid()));
+  dict->SetBoolean("connected", connection()->connected());
   return dict;
 }
 
@@ -388,10 +473,11 @@ void QuicClientSession::OnReadComplete(int result) {
     result = ERR_CONNECTION_CLOSED;
 
   if (result < 0) {
-    DLOG(INFO) << "Closing session on read error: " << result;
+    DVLOG(1) << "Closing session on read error: " << result;
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ReadError", -result);
+    NotifyFactoryOfSessionGoingAway();
     CloseSessionOnErrorInner(result, QUIC_PACKET_READ_ERROR);
-    NotifyFactoryOfSessionCloseLater();
+    NotifyFactoryOfSessionClosedLater();
     return;
   }
 
@@ -406,26 +492,31 @@ void QuicClientSession::OnReadComplete(int result) {
   // use a weak pointer to be safe.
   connection()->ProcessUdpPacket(local_address, peer_address, packet);
   if (!connection()->connected()) {
-    stream_factory_->OnSessionClose(this);
+    stream_factory_->OnSessionClosed(this);
     return;
   }
   StartReading();
 }
 
-void QuicClientSession::NotifyFactoryOfSessionCloseLater() {
+void QuicClientSession::NotifyFactoryOfSessionGoingAway() {
+  if (stream_factory_)
+    stream_factory_->OnSessionGoingAway(this);
+}
+
+void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
   DCHECK_EQ(0u, GetNumOpenStreams());
   DCHECK(!connection()->connected());
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&QuicClientSession::NotifyFactoryOfSessionClose,
+      base::Bind(&QuicClientSession::NotifyFactoryOfSessionClosed,
                  weak_factory_.GetWeakPtr()));
 }
 
-void QuicClientSession::NotifyFactoryOfSessionClose() {
+void QuicClientSession::NotifyFactoryOfSessionClosed() {
   DCHECK_EQ(0u, GetNumOpenStreams());
-  DCHECK(stream_factory_);
   // Will delete |this|.
-  stream_factory_->OnSessionClose(this);
+  if (stream_factory_)
+    stream_factory_->OnSessionClosed(this);
 }
 
 }  // namespace net

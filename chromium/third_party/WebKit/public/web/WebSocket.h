@@ -36,7 +36,7 @@
 
 namespace WebCore { class WebSocketChannel; }
 
-namespace WebKit {
+namespace blink {
 
 class WebArrayBuffer;
 class WebDocument;
@@ -70,7 +70,7 @@ public:
         BinaryTypeArrayBuffer = 1
     };
 
-    WEBKIT_EXPORT static WebSocket* create(const WebDocument&, WebSocketClient*);
+    BLINK_EXPORT static WebSocket* create(const WebDocument&, WebSocketClient*);
     virtual ~WebSocket() { }
 
     // These functions come from binaryType attribute of the WebSocket API
@@ -94,6 +94,6 @@ public:
     virtual void disconnect() = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSocket_h

@@ -41,31 +41,26 @@
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTable.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableElement::HTMLTableElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLTableElement::HTMLTableElement(Document& document)
+    : HTMLElement(tableTag, document)
     , m_borderAttr(false)
     , m_borderColorAttr(false)
     , m_frameAttr(false)
     , m_rulesAttr(UnsetRules)
     , m_padding(1)
 {
-    ASSERT(hasTagName(tableTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLTableElement> HTMLTableElement::create(Document& document)
 {
-    return adoptRef(new HTMLTableElement(tableTag, document));
-}
-
-PassRefPtr<HTMLTableElement> HTMLTableElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLTableElement(tagName, document));
+    return adoptRef(new HTMLTableElement(document));
 }
 
 HTMLTableCaptionElement* HTMLTableElement::caption() const
@@ -77,10 +72,10 @@ HTMLTableCaptionElement* HTMLTableElement::caption() const
     return 0;
 }
 
-void HTMLTableElement::setCaption(PassRefPtr<HTMLTableCaptionElement> newCaption, ExceptionState& es)
+void HTMLTableElement::setCaption(PassRefPtr<HTMLTableCaptionElement> newCaption, ExceptionState& exceptionState)
 {
     deleteCaption();
-    insertBefore(newCaption, firstChild(), es);
+    insertBefore(newCaption, firstChild(), exceptionState);
 }
 
 HTMLTableSectionElement* HTMLTableElement::tHead() const
@@ -92,7 +87,7 @@ HTMLTableSectionElement* HTMLTableElement::tHead() const
     return 0;
 }
 
-void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, ExceptionState& es)
+void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, ExceptionState& exceptionState)
 {
     deleteTHead();
 
@@ -101,7 +96,7 @@ void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, Exc
         if (child->isElementNode() && !child->hasTagName(captionTag) && !child->hasTagName(colgroupTag))
             break;
 
-    insertBefore(newHead, child, es);
+    insertBefore(newHead, child, exceptionState);
 }
 
 HTMLTableSectionElement* HTMLTableElement::tFoot() const
@@ -113,7 +108,7 @@ HTMLTableSectionElement* HTMLTableElement::tFoot() const
     return 0;
 }
 
-void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, ExceptionState& es)
+void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, ExceptionState& exceptionState)
 {
     deleteTFoot();
 
@@ -122,7 +117,7 @@ void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, Exc
         if (child->isElementNode() && !child->hasTagName(captionTag) && !child->hasTagName(colgroupTag) && !child->hasTagName(theadTag))
             break;
 
-    insertBefore(newFoot, child, es);
+    insertBefore(newFoot, child, exceptionState);
 }
 
 PassRefPtr<HTMLElement> HTMLTableElement::createTHead()
@@ -166,7 +161,7 @@ PassRefPtr<HTMLElement> HTMLTableElement::createCaption()
 {
     if (HTMLTableCaptionElement* existingCaption = caption())
         return existingCaption;
-    RefPtr<HTMLTableCaptionElement> caption = HTMLTableCaptionElement::create(captionTag, document());
+    RefPtr<HTMLTableCaptionElement> caption = HTMLTableCaptionElement::create(document());
     setCaption(caption, IGNORE_EXCEPTION);
     return caption.release();
 }
@@ -185,10 +180,10 @@ HTMLTableSectionElement* HTMLTableElement::lastBody() const
     return 0;
 }
 
-PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& es)
+PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& exceptionState)
 {
     if (index < -1) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The index provided (" + String::number(index) + ") is less than -1.");
         return 0;
     }
 
@@ -203,7 +198,7 @@ PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& e
             row = HTMLTableRowsCollection::rowAfter(this, lastRow.get());
             if (!row) {
                 if (i != index) {
-                    es.throwDOMException(IndexSizeError);
+                    exceptionState.throwDOMException(IndexSizeError, "The index provided (" + String::number(index) + ") is greater than the number of rows in the table (" + String::number(i) + ").");
                     return 0;
                 }
                 break;
@@ -220,34 +215,40 @@ PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& e
         if (!parent) {
             RefPtr<HTMLTableSectionElement> newBody = HTMLTableSectionElement::create(tbodyTag, document());
             RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
-            newBody->appendChild(newRow, es);
-            appendChild(newBody.release(), es);
+            newBody->appendChild(newRow, exceptionState);
+            appendChild(newBody.release(), exceptionState);
             return newRow.release();
         }
     }
 
     RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
-    parent->insertBefore(newRow, row.get(), es);
+    parent->insertBefore(newRow, row.get(), exceptionState);
     return newRow.release();
 }
 
-void HTMLTableElement::deleteRow(int index, ExceptionState& es)
+void HTMLTableElement::deleteRow(int index, ExceptionState& exceptionState)
 {
+    if (index < -1) {
+        exceptionState.throwDOMException(IndexSizeError, "The index provided (" + String::number(index) + ") is less than -1.");
+        return;
+    }
+
     HTMLTableRowElement* row = 0;
+    int i = 0;
     if (index == -1)
         row = HTMLTableRowsCollection::lastRow(this);
     else {
-        for (int i = 0; i <= index; ++i) {
+        for (i = 0; i <= index; ++i) {
             row = HTMLTableRowsCollection::rowAfter(this, row);
             if (!row)
                 break;
         }
     }
     if (!row) {
-        es.throwDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The index provided (" + String::number(index) + ") is greater than the number of rows in the table (" + String::number(i) + ").");
         return;
     }
-    row->remove(es);
+    row->remove(exceptionState);
 }
 
 static inline bool isTableCellAncestor(Node* n)
@@ -414,14 +415,14 @@ void HTMLTableElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 }
 
-static StylePropertySet* leakBorderStyle(CSSValueID value)
+static PassRefPtr<StylePropertySet> createBorderStyle(CSSValueID value)
 {
     RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyBorderTopStyle, value);
     style->setProperty(CSSPropertyBorderBottomStyle, value);
     style->setProperty(CSSPropertyBorderLeftStyle, value);
     style->setProperty(CSSPropertyBorderRightStyle, value);
-    return style.release().leakRef();
+    return style.release();
 }
 
 const StylePropertySet* HTMLTableElement::additionalPresentationAttributeStyle()
@@ -433,17 +434,17 @@ const StylePropertySet* HTMLTableElement::additionalPresentationAttributeStyle()
         // Setting the border to 'hidden' allows it to win over any border
         // set on the table's cells during border-conflict resolution.
         if (m_rulesAttr != UnsetRules) {
-            static StylePropertySet* solidBorderStyle = leakBorderStyle(CSSValueHidden);
+            DEFINE_STATIC_REF(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueHidden)));
             return solidBorderStyle;
         }
         return 0;
     }
 
     if (m_borderColorAttr) {
-        static StylePropertySet* solidBorderStyle = leakBorderStyle(CSSValueSolid);
+        DEFINE_STATIC_REF(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueSolid)));
         return solidBorderStyle;
     }
-    static StylePropertySet* outsetBorderStyle = leakBorderStyle(CSSValueOutset);
+    DEFINE_STATIC_REF(StylePropertySet, outsetBorderStyle, (createBorderStyle(CSSValueOutset)));
     return outsetBorderStyle;
 }
 
@@ -517,7 +518,7 @@ const StylePropertySet* HTMLTableElement::additionalCellStyle()
     return m_sharedCellStyle.get();
 }
 
-static StylePropertySet* leakGroupBorderStyle(int rows)
+static PassRefPtr<StylePropertySet> createGroupBorderStyle(int rows)
 {
     RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     if (rows) {
@@ -531,7 +532,7 @@ static StylePropertySet* leakGroupBorderStyle(int rows)
         style->setProperty(CSSPropertyBorderLeftStyle, CSSValueSolid);
         style->setProperty(CSSPropertyBorderRightStyle, CSSValueSolid);
     }
-    return style.release().leakRef();
+    return style.release();
 }
 
 const StylePropertySet* HTMLTableElement::additionalGroupStyle(bool rows)
@@ -540,10 +541,10 @@ const StylePropertySet* HTMLTableElement::additionalGroupStyle(bool rows)
         return 0;
 
     if (rows) {
-        static StylePropertySet* rowBorderStyle = leakGroupBorderStyle(true);
+        DEFINE_STATIC_REF(StylePropertySet, rowBorderStyle, (createGroupBorderStyle(true)));
         return rowBorderStyle;
     }
-    static StylePropertySet* columnBorderStyle = leakGroupBorderStyle(false);
+    DEFINE_STATIC_REF(StylePropertySet, columnBorderStyle, (createGroupBorderStyle(false)));
     return columnBorderStyle;
 }
 
@@ -562,12 +563,12 @@ PassRefPtr<HTMLCollection> HTMLTableElement::tBodies()
     return ensureCachedHTMLCollection(TableTBodies);
 }
 
-String HTMLTableElement::rules() const
+const AtomicString& HTMLTableElement::rules() const
 {
     return getAttribute(rulesAttr);
 }
 
-String HTMLTableElement::summary() const
+const AtomicString& HTMLTableElement::summary() const
 {
     return getAttribute(summaryAttr);
 }

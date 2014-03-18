@@ -11,12 +11,15 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event.h"
-#include "content/common/input/input_event_disposition.h"
 #include "content/common/input/input_param_traits.h"
-#include "content/common/input/ipc_input_event_payload.h"
-#include "content/common/input/event_packet.h"
+#include "content/common/input/synthetic_gesture_packet.h"
+#include "content/common/input/synthetic_gesture_params.h"
+#include "content/common/input/synthetic_pinch_gesture_params.h"
+#include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
+#include "content/common/input/synthetic_tap_gesture_params.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
+#include "content/common/input/touch_action.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/latency_info.h"
@@ -32,20 +35,52 @@
 
 #define IPC_MESSAGE_START InputMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::InputEvent::Payload::Type,
-                          content::InputEvent::Payload::PAYLOAD_TYPE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventAckState,
                           content::INPUT_EVENT_ACK_STATE_MAX)
-IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventDisposition,
-                          content::INPUT_EVENT_DISPOSITION_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    content::SyntheticGestureParams::GestureSourceType,
+    content::SyntheticGestureParams::GESTURE_SOURCE_TYPE_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    content::SyntheticGestureParams::GestureType,
+    content::SyntheticGestureParams::SYNTHETIC_GESTURE_TYPE_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(content::TouchAction,
+    content::TOUCH_ACTION_MAX)
 
 IPC_STRUCT_TRAITS_BEGIN(content::EditCommand)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(value)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::IPCInputEventPayload)
-  IPC_STRUCT_TRAITS_MEMBER(message)
+IPC_STRUCT_TRAITS_BEGIN(content::InputEvent)
+  IPC_STRUCT_TRAITS_MEMBER(web_event)
+  IPC_STRUCT_TRAITS_MEMBER(latency_info)
+  IPC_STRUCT_TRAITS_MEMBER(is_keyboard_shortcut)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(gesture_source_type)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(distance)
+  IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(prevent_fling)
+  IPC_STRUCT_TRAITS_MEMBER(speed_in_pixels_s)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticPinchGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(zoom_in)
+  IPC_STRUCT_TRAITS_MEMBER(total_num_pixels_covered)
+  IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(relative_pointer_speed_in_pixels_s)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticTapGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(position)
+  IPC_STRUCT_TRAITS_MEMBER(duration_ms)
 IPC_STRUCT_TRAITS_END()
 
 // Sends an input event to the render widget.
@@ -53,11 +88,6 @@ IPC_MESSAGE_ROUTED3(InputMsg_HandleInputEvent,
                     IPC::WebInputEventPointer /* event */,
                     ui::LatencyInfo /* latency_info */,
                     bool /* is_keyboard_shortcut */)
-
-// Sends an event packet to the render widget.
-IPC_MESSAGE_ROUTED2(InputMsg_HandleEventPacket,
-                    content::EventPacket /* event_packet */,
-                    content::InputEventDispositions /* dispositions */)
 
 // Sends the cursor visibility state to the render widget.
 IPC_MESSAGE_ROUTED1(InputMsg_CursorVisibilityChange,
@@ -112,10 +142,10 @@ IPC_MESSAGE_ROUTED0(InputMsg_PasteAndMatchStyle)
 // Replaces the selected region or a word around the cursor with the
 // specified string.
 IPC_MESSAGE_ROUTED1(InputMsg_Replace,
-                    string16)
+                    base::string16)
 // Replaces the misspelling in the selected region with the specified string.
 IPC_MESSAGE_ROUTED1(InputMsg_ReplaceMisspelling,
-                    string16)
+                    base::string16)
 IPC_MESSAGE_ROUTED0(InputMsg_Delete)
 IPC_MESSAGE_ROUTED0(InputMsg_SelectAll)
 
@@ -141,19 +171,23 @@ IPC_MESSAGE_ROUTED3(InputMsg_ActivateNearestFindResult,
                     float /* y */)
 #endif
 
+IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted);
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
 // Acknowledges receipt of a InputMsg_HandleInputEvent message.
 IPC_MESSAGE_ROUTED3(InputHostMsg_HandleInputEvent_ACK,
-                    WebKit::WebInputEvent::Type,
+                    blink::WebInputEvent::Type,
                     content::InputEventAckState /* ack_result */,
                     ui::LatencyInfo /* latency_info */)
 
-IPC_MESSAGE_ROUTED2(InputHostMsg_HandleEventPacket_ACK,
-                    int64 /* event_packet_id */,
-                    content::InputEventDispositions /* dispositions */)
+IPC_MESSAGE_ROUTED1(InputHostMsg_QueueSyntheticGesture,
+                    content::SyntheticGesturePacket)
 
+// Notifies the allowed touch actions for a new touch point.
+IPC_MESSAGE_ROUTED1(InputHostMsg_SetTouchAction,
+                    content::TouchAction /* touch_action */)
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent InputMsg, then ifdefs for platform specific InputMsg, then

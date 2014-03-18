@@ -461,14 +461,12 @@ static int decode_p_frame(FourXContext *f, AVFrame *frame,
         return AVERROR_INVALIDDATA;
     }
 
-    av_fast_malloc(&f->bitstream_buffer, &f->bitstream_buffer_size,
-                   bitstream_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    av_fast_padded_malloc(&f->bitstream_buffer, &f->bitstream_buffer_size,
+                          bitstream_size);
     if (!f->bitstream_buffer)
         return AVERROR(ENOMEM);
     f->dsp.bswap_buf(f->bitstream_buffer, (const uint32_t*)(buf + extra),
                      bitstream_size / 4);
-    memset((uint8_t*)f->bitstream_buffer + bitstream_size,
-           0, FF_INPUT_BUFFER_PADDING_SIZE);
     init_get_bits(&f->gb, f->bitstream_buffer, 8 * bitstream_size);
 
     wordstream_offset = extra + bitstream_size;
@@ -803,14 +801,12 @@ static int decode_i_frame(FourXContext *f, AVFrame *frame, const uint8_t *buf, i
 
     prestream_size = length + buf - prestream;
 
-    av_fast_malloc(&f->bitstream_buffer, &f->bitstream_buffer_size,
-                   prestream_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    av_fast_padded_malloc(&f->bitstream_buffer, &f->bitstream_buffer_size,
+                          prestream_size);
     if (!f->bitstream_buffer)
         return AVERROR(ENOMEM);
     f->dsp.bswap_buf(f->bitstream_buffer, (const uint32_t*)prestream,
                      prestream_size / 4);
-    memset((uint8_t*)f->bitstream_buffer + prestream_size,
-           0, FF_INPUT_BUFFER_PADDING_SIZE);
     init_get_bits(&f->pre_gb, f->bitstream_buffer, 8 * prestream_size);
 
     f->last_dc = 0 * 128 * 8 * 8;
@@ -1020,6 +1016,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 
 AVCodec ff_fourxm_decoder = {
     .name           = "4xm",
+    .long_name      = NULL_IF_CONFIG_SMALL("4X Movie"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_4XM,
     .priv_data_size = sizeof(FourXContext),
@@ -1027,5 +1024,4 @@ AVCodec ff_fourxm_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("4X Movie"),
 };

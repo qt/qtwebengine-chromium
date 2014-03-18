@@ -36,19 +36,20 @@
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/inspector/InspectorFrontendHost.h"
-#include "core/platform/HistogramSupport.h"
+#include "platform/ContextMenu.h"
+#include "public/platform/Platform.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-void V8InspectorFrontendHost::platformMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8InspectorFrontendHost::platformMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
 #if OS(MACOSX)
-    v8SetReturnValue(args, v8::String::NewSymbol("mac"));
+    v8SetReturnValue(info, v8AtomicString(info.GetIsolate(), "mac"));
 #elif OS(WIN)
-    v8SetReturnValue(args, v8::String::NewSymbol("windows"));
+    v8SetReturnValue(info, v8AtomicString(info.GetIsolate(), "windows"));
 #else // Unix-like systems
-    v8SetReturnValue(args, v8::String::NewSymbol("linux"));
+    v8SetReturnValue(info, v8AtomicString(info.GetIsolate(), "linux"));
 #endif
 }
 
@@ -56,19 +57,19 @@ void V8InspectorFrontendHost::portMethodCustom(const v8::FunctionCallbackInfo<v8
 {
 }
 
-static void populateContextMenuItems(v8::Local<v8::Array>& itemArray, ContextMenu& menu)
+static bool populateContextMenuItems(v8::Local<v8::Array>& itemArray, ContextMenu& menu, v8::Isolate* isolate)
 {
     for (size_t i = 0; i < itemArray->Length(); ++i) {
         v8::Local<v8::Object> item = v8::Local<v8::Object>::Cast(itemArray->Get(i));
-        v8::Local<v8::Value> type = item->Get(v8::String::NewSymbol("type"));
-        v8::Local<v8::Value> id = item->Get(v8::String::NewSymbol("id"));
-        v8::Local<v8::Value> label = item->Get(v8::String::NewSymbol("label"));
-        v8::Local<v8::Value> enabled = item->Get(v8::String::NewSymbol("enabled"));
-        v8::Local<v8::Value> checked = item->Get(v8::String::NewSymbol("checked"));
-        v8::Local<v8::Value> subItems = item->Get(v8::String::NewSymbol("subItems"));
+        v8::Local<v8::Value> type = item->Get(v8AtomicString(isolate, "type"));
+        v8::Local<v8::Value> id = item->Get(v8AtomicString(isolate, "id"));
+        v8::Local<v8::Value> label = item->Get(v8AtomicString(isolate, "label"));
+        v8::Local<v8::Value> enabled = item->Get(v8AtomicString(isolate, "enabled"));
+        v8::Local<v8::Value> checked = item->Get(v8AtomicString(isolate, "checked"));
+        v8::Local<v8::Value> subItems = item->Get(v8AtomicString(isolate, "subItems"));
         if (!type->IsString())
             continue;
-        String typeString = toWebCoreStringWithNullCheck(type.As<v8::String>());
+        String typeString = toCoreStringWithNullCheck(type.As<v8::String>());
         if (typeString == "separator") {
             ContextMenuItem item(ContextMenuItem(SeparatorType,
                                  ContextMenuItemCustomTagNoAction,
@@ -77,15 +78,18 @@ static void populateContextMenuItems(v8::Local<v8::Array>& itemArray, ContextMen
         } else if (typeString == "subMenu" && subItems->IsArray()) {
             ContextMenu subMenu;
             v8::Local<v8::Array> subItemsArray = v8::Local<v8::Array>::Cast(subItems);
-            populateContextMenuItems(subItemsArray, subMenu);
+            if (!populateContextMenuItems(subItemsArray, subMenu, isolate))
+                return false;
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<WithNullCheck>, labelString, label, false);
             ContextMenuItem item(SubmenuType,
-                                 ContextMenuItemCustomTagNoAction,
-                                 toWebCoreStringWithNullCheck(label),
-                                 &subMenu);
+                ContextMenuItemCustomTagNoAction,
+                labelString,
+                &subMenu);
             menu.appendItem(item);
         } else {
             ContextMenuAction typedId = static_cast<ContextMenuAction>(ContextMenuItemBaseCustomTag + id->ToInt32()->Value());
-            ContextMenuItem menuItem((typeString == "checkbox" ? CheckableActionType : ActionType), typedId, toWebCoreStringWithNullCheck(label));
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<WithNullCheck>, labelString, label, false);
+            ContextMenuItem menuItem((typeString == "checkbox" ? CheckableActionType : ActionType), typedId, labelString);
             if (checked->IsBoolean())
                 menuItem.setChecked(checked->ToBoolean()->Value());
             if (enabled->IsBoolean())
@@ -93,53 +97,55 @@ static void populateContextMenuItems(v8::Local<v8::Array>& itemArray, ContextMen
             menu.appendItem(menuItem);
         }
     }
+    return true;
 }
 
-void V8InspectorFrontendHost::showContextMenuMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8InspectorFrontendHost::showContextMenuMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (args.Length() < 2)
+    if (info.Length() < 2)
         return;
 
-    v8::Local<v8::Object> eventWrapper = v8::Local<v8::Object>::Cast(args[0]);
-    if (!V8MouseEvent::info.equals(toWrapperTypeInfo(eventWrapper)))
+    v8::Local<v8::Object> eventWrapper = v8::Local<v8::Object>::Cast(info[0]);
+    if (!V8MouseEvent::wrapperTypeInfo.equals(toWrapperTypeInfo(eventWrapper)))
         return;
 
     Event* event = V8Event::toNative(eventWrapper);
-    if (!args[1]->IsArray())
+    if (!info[1]->IsArray())
         return;
 
-    v8::Local<v8::Array> array = v8::Local<v8::Array>::Cast(args[1]);
+    v8::Local<v8::Array> array = v8::Local<v8::Array>::Cast(info[1]);
     ContextMenu menu;
-    populateContextMenuItems(array, menu);
+    if (!populateContextMenuItems(array, menu, info.GetIsolate()))
+        return;
 
-    InspectorFrontendHost* frontendHost = V8InspectorFrontendHost::toNative(args.Holder());
+    InspectorFrontendHost* frontendHost = V8InspectorFrontendHost::toNative(info.Holder());
     Vector<ContextMenuItem> items = menu.items();
     frontendHost->showContextMenu(event, items);
 }
 
-static void histogramEnumeration(const char* name, const v8::FunctionCallbackInfo<v8::Value>& args, int boundaryValue)
+static void histogramEnumeration(const char* name, const v8::FunctionCallbackInfo<v8::Value>& info, int boundaryValue)
 {
-    if (args.Length() < 1 || !args[0]->IsInt32())
+    if (info.Length() < 1 || !info[0]->IsInt32())
         return;
 
-    int sample = args[0]->ToInt32()->Value();
+    int sample = info[0]->ToInt32()->Value();
     if (sample < boundaryValue)
-        HistogramSupport::histogramEnumeration(name, sample, boundaryValue);
+        blink::Platform::current()->histogramEnumeration(name, sample, boundaryValue);
 }
 
-void V8InspectorFrontendHost::recordActionTakenMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8InspectorFrontendHost::recordActionTakenMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    histogramEnumeration("DevTools.ActionTaken", args, 100);
+    histogramEnumeration("DevTools.ActionTaken", info, 100);
 }
 
-void V8InspectorFrontendHost::recordPanelShownMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8InspectorFrontendHost::recordPanelShownMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    histogramEnumeration("DevTools.PanelShown", args, 20);
+    histogramEnumeration("DevTools.PanelShown", info, 20);
 }
 
-void V8InspectorFrontendHost::recordSettingChangedMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8InspectorFrontendHost::recordSettingChangedMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    histogramEnumeration("DevTools.SettingChanged", args, 100);
+    histogramEnumeration("DevTools.SettingChanged", info, 100);
 }
 
 } // namespace WebCore

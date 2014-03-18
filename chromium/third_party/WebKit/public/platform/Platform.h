@@ -49,7 +49,7 @@
 
 class GrContext;
 
-namespace WebKit {
+namespace blink {
 
 class WebAudioBus;
 class WebBlobRegistry;
@@ -58,6 +58,7 @@ class WebClipboard;
 class WebCompositorSupport;
 class WebCookieJar;
 class WebCrypto;
+class WebDatabaseObserver;
 class WebDeviceMotionListener;
 class WebDeviceOrientationListener;
 class WebDiscardableMemory;
@@ -77,6 +78,7 @@ class WebMessagePortChannel;
 class WebMimeRegistry;
 class WebPluginListBuilder;
 class WebPrescientNetworking;
+class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
@@ -106,9 +108,9 @@ public:
     typedef int FileHandle;
 #endif
 
-    WEBKIT_EXPORT static void initialize(Platform*);
-    WEBKIT_EXPORT static void shutdown();
-    WEBKIT_EXPORT static Platform* current();
+    BLINK_PLATFORM_EXPORT static void initialize(Platform*);
+    BLINK_PLATFORM_EXPORT static void shutdown();
+    BLINK_PLATFORM_EXPORT static Platform* current();
 
     // May return null.
     virtual WebCookieJar* cookieJar() { return 0; }
@@ -184,7 +186,7 @@ public:
     virtual long long databaseGetFileSize(const WebString& vfsFileName) { return 0; }
 
     // Returns the space available for the given origin
-    virtual long long databaseGetSpaceAvailableForOrigin(const WebKit::WebString& originIdentifier) { return 0; }
+    virtual long long databaseGetSpaceAvailableForOrigin(const blink::WebString& originIdentifier) { return 0; }
 
 
     // DOM Storage --------------------------------------------------
@@ -246,6 +248,12 @@ public:
 
     // Same as above, but always returns actual value, without any caches.
     virtual size_t actualMemoryUsageMB() { return 0; }
+
+    // Return the physical memory of the current machine, in MB.
+    virtual size_t physicalMemoryMB() { return 0; }
+
+    // Return the number of of processors of the current machine.
+    virtual size_t numberOfProcessors() { return 0; }
 
     // Returns private and shared usage, in bytes. Private bytes is the amount of
     // memory currently allocated to this process that cannot be shared. Returns
@@ -329,6 +337,12 @@ public:
     // If refresh is true, then cached information should not be used to
     // satisfy this call.
     virtual void getPluginList(bool refresh, WebPluginListBuilder*) { }
+
+
+    // Public Suffix List --------------------------------------------------
+
+    // May return null on some platforms.
+    virtual WebPublicSuffixList* publicSuffixList() { return 0; }
 
 
     // Resources -----------------------------------------------------------
@@ -440,11 +454,17 @@ public:
     // and reflects the sampling profiled results into about:tracing.
     virtual TraceEventAPIAtomicWord* getTraceSamplingState(const unsigned bucketName) { return 0; }
 
+    typedef uint64_t TraceEventHandle;
+
     // Add a trace event to the platform tracing system. Depending on the actual
     // enabled state, this event may be recorded or dropped.
     // - phase specifies the type of event:
     //   - BEGIN ('B'): Marks the beginning of a scoped event.
     //   - END ('E'): Marks the end of a scoped event.
+    //   - COMPLETE ('X'): Marks the beginning of a scoped event, but doesn't
+    //     need a matching END event. Instead, at the end of the scope,
+    //     updateTraceEventDuration() must be called with the TraceEventHandle
+    //     returned from addTraceEvent().
     //   - INSTANT ('I'): Standalone, instantaneous event.
     //   - START ('S'): Marks the beginning of an asynchronous event (the end
     //     event can occur in a different scope or thread). The id parameter is
@@ -487,7 +507,7 @@ public:
     //     matching with other events of the same name.
     //   - MANGLE_ID (0x4): specify this flag if the id parameter is the value
     //     of a pointer.
-    virtual void addTraceEvent(
+    virtual TraceEventHandle addTraceEvent(
         char phase,
         const unsigned char* categoryEnabledFlag,
         const char* name,
@@ -496,7 +516,13 @@ public:
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
-        unsigned char flags) { }
+        unsigned char flags)
+    {
+        return 0;
+    }
+
+    // Set the duration field of a COMPLETE trace event.
+    virtual void updateTraceEventDuration(const unsigned char* categoryEnabledFlag, const char* name, TraceEventHandle) { }
 
     // Callbacks for reporting histogram data.
     // CustomCounts histogram has exponential bucket sizes, so that min=1, max=1000000, bucketCount=50 would do.
@@ -560,11 +586,11 @@ public:
 
     // Sets a Listener to listen for device motion data updates.
     // If null, the platform stops providing device motion data to the current listener.
-    virtual void setDeviceMotionListener(WebKit::WebDeviceMotionListener*) { }
+    virtual void setDeviceMotionListener(blink::WebDeviceMotionListener*) { }
 
     // Sets a Listener to listen for device orientation data updates.
     // If null, the platform stops proving device orientation data to the current listener.
-    virtual void setDeviceOrientationListener(WebKit::WebDeviceOrientationListener*) { }
+    virtual void setDeviceOrientationListener(blink::WebDeviceOrientationListener*) { }
 
 
     // Quota -----------------------------------------------------------
@@ -581,10 +607,16 @@ public:
         WebStorageQuotaType,
         WebStorageQuotaCallbacks*) { }
 
+
+    // WebDatabase --------------------------------------------------------
+
+    virtual WebDatabaseObserver* databaseObserver() { return 0; }
+
+
 protected:
     virtual ~Platform() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

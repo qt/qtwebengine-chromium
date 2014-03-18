@@ -32,11 +32,11 @@
 #include "core/html/forms/TimeInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
-#include "core/html/forms/InputTypeNames.h"
-#include "core/platform/DateComponents.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "platform/DateComponents.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
 #include "wtf/MathExtras.h"
@@ -51,29 +51,24 @@ static const int timeDefaultStep = 60;
 static const int timeDefaultStepBase = 0;
 static const int timeStepScaleFactor = 1000;
 
-TimeInputType::TimeInputType(HTMLInputElement*  element)
+TimeInputType::TimeInputType(HTMLInputElement& element)
     : BaseTimeInputType(element)
 {
 }
 
-PassRefPtr<InputType> TimeInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> TimeInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new TimeInputType(element));
 }
 
 void TimeInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeTime);
+    countUsageIfVisible(UseCounter::InputTypeTime);
 }
 
 const AtomicString& TimeInputType::formControlType() const
 {
-    return InputTypeNames::time();
-}
-
-DateComponents::Type TimeInputType::dateType() const
-{
-    return DateComponents::Time;
+    return InputTypeNames::time;
 }
 
 Decimal TimeInputType::defaultValueForStepUp() const
@@ -95,11 +90,7 @@ StepRange TimeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (timeDefaultStep, timeDefaultStepBase, timeStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element()->fastGetAttribute(minAttr), 0);
-    const Decimal minimum = parseToNumber(element()->fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumTime()));
-    const Decimal maximum = parseToNumber(element()->fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumTime()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumTime()), Decimal::fromDouble(DateComponents::maximumTime()), stepDescription);
 }
 
 bool TimeInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const
@@ -130,7 +121,7 @@ String TimeInputType::localizeValue(const String& proposedValue) const
 
     Locale::FormatType formatType = shouldHaveSecondField(date) ? Locale::FormatTypeMedium : Locale::FormatTypeShort;
 
-    String localized = element()->locale().formatDateTime(date, formatType);
+    String localized = element().locale().formatDateTime(date, formatType);
     return localized.isEmpty() ? proposedValue : localized;
 }
 
@@ -163,9 +154,9 @@ void TimeInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters&
         layoutParameters.dateTimeFormat = layoutParameters.locale.shortTimeFormat();
         layoutParameters.fallbackDateTimeFormat = "HH:mm";
     }
-    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+    if (!parseToDateComponents(element().fastGetAttribute(minAttr), &layoutParameters.minimum))
         layoutParameters.minimum = DateComponents();
-    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+    if (!parseToDateComponents(element().fastGetAttribute(maxAttr), &layoutParameters.maximum))
         layoutParameters.maximum = DateComponents();
 }
 

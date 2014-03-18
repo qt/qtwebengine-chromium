@@ -22,13 +22,13 @@
 #include "core/svg/graphics/SVGImageCache.h"
 
 #include "core/fetch/ImageResource.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "core/svg/graphics/SVGImageForContainer.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageBuffer.h"
 
 namespace WebCore {
 
@@ -46,9 +46,7 @@ SVGImageCache::~SVGImageCache()
 void SVGImageCache::removeClientFromCache(const ImageResourceClient* client)
 {
     ASSERT(client);
-
-    if (m_imageForContainerMap.contains(client))
-        m_imageForContainerMap.remove(client);
+    m_imageForContainerMap.remove(client);
 }
 
 void SVGImageCache::setContainerSizeForRenderer(const ImageResourceClient* client, const IntSize& containerSize, float containerZoom)

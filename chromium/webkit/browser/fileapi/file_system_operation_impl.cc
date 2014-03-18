@@ -69,6 +69,7 @@ void FileSystemOperationImpl::CreateDirectory(const FileSystemURL& url,
 void FileSystemOperationImpl::Copy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
@@ -80,6 +81,7 @@ void FileSystemOperationImpl::Copy(
           file_system_context(),
           src_url, dest_url,
           CopyOrMoveOperationDelegate::OPERATION_COPY,
+          option,
           progress_callback,
           base::Bind(&FileSystemOperationImpl::DidFinishOperation,
                      weak_factory_.GetWeakPtr(), callback)));
@@ -88,6 +90,7 @@ void FileSystemOperationImpl::Copy(
 
 void FileSystemOperationImpl::Move(const FileSystemURL& src_url,
                                    const FileSystemURL& dest_url,
+                                   CopyOrMoveOption option,
                                    const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationMove));
   DCHECK(!recursive_operation_delegate_);
@@ -96,6 +99,7 @@ void FileSystemOperationImpl::Move(const FileSystemURL& src_url,
           file_system_context(),
           src_url, dest_url,
           CopyOrMoveOperationDelegate::OPERATION_MOVE,
+          option,
           FileSystemOperation::CopyProgressCallback(),
           base::Bind(&FileSystemOperationImpl::DidFinishOperation,
                      weak_factory_.GetWeakPtr(), callback)));
@@ -195,18 +199,14 @@ void FileSystemOperationImpl::TouchFile(const FileSystemURL& url,
 
 void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
                                        int file_flags,
-                                       base::ProcessHandle peer_handle,
                                        const OpenFileCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationOpenFile));
-  peer_handle_ = peer_handle;
 
-  if (file_flags & (
-      (base::PLATFORM_FILE_ENUMERATE | base::PLATFORM_FILE_TEMPORARY |
-       base::PLATFORM_FILE_HIDDEN))) {
+  if (file_flags &
+      (base::PLATFORM_FILE_TEMPORARY | base::PLATFORM_FILE_HIDDEN)) {
     callback.Run(base::PLATFORM_FILE_ERROR_FAILED,
                  base::kInvalidPlatformFileValue,
-                 base::Closure(),
-                 base::kNullProcessHandle);
+                 base::Closure());
     return;
   }
   GetUsageAndQuotaThenRunTask(
@@ -216,8 +216,7 @@ void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
                  url, callback, file_flags),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED,
                  base::kInvalidPlatformFileValue,
-                 base::Closure(),
-                 base::kNullProcessHandle));
+                 base::Closure()));
 }
 
 // We can only get here on a write or truncate that's not yet completed.
@@ -284,6 +283,7 @@ void FileSystemOperationImpl::RemoveDirectory(
 void FileSystemOperationImpl::CopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
@@ -292,7 +292,7 @@ void FileSystemOperationImpl::CopyFileLocal(
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoCopyFileLocal,
-                 weak_factory_.GetWeakPtr(), src_url, dest_url,
+                 weak_factory_.GetWeakPtr(), src_url, dest_url, option,
                  progress_callback, callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
@@ -300,13 +300,15 @@ void FileSystemOperationImpl::CopyFileLocal(
 void FileSystemOperationImpl::MoveFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationMove));
   DCHECK(src_url.IsInSameFileSystem(dest_url));
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoMoveFileLocal,
-                 weak_factory_.GetWeakPtr(), src_url, dest_url, callback),
+                 weak_factory_.GetWeakPtr(),
+                 src_url, dest_url, option, callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -329,7 +331,6 @@ FileSystemOperationImpl::FileSystemOperationImpl(
     : file_system_context_(file_system_context),
       operation_context_(operation_context.Pass()),
       async_file_util_(NULL),
-      peer_handle_(base::kNullProcessHandle),
       pending_operation_(kOperationNone),
       weak_factory_(this) {
   DCHECK(operation_context_.get());
@@ -404,10 +405,11 @@ void FileSystemOperationImpl::DoCreateDirectory(
 void FileSystemOperationImpl::DoCopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   async_file_util_->CopyFileLocal(
-      operation_context_.Pass(), src_url, dest_url, progress_callback,
+      operation_context_.Pass(), src_url, dest_url, option, progress_callback,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
                  weak_factory_.GetWeakPtr(), callback));
 }
@@ -415,9 +417,10 @@ void FileSystemOperationImpl::DoCopyFileLocal(
 void FileSystemOperationImpl::DoMoveFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   async_file_util_->MoveFileLocal(
-      operation_context_.Pass(), src_url, dest_url,
+      operation_context_.Pass(), src_url, dest_url, option,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
                  weak_factory_.GetWeakPtr(), callback));
 }
@@ -545,9 +548,7 @@ void FileSystemOperationImpl::DidOpenFile(
     base::PlatformFileError rv,
     base::PassPlatformFile file,
     const base::Closure& on_close_callback) {
-  if (rv == base::PLATFORM_FILE_OK)
-    CHECK_NE(base::kNullProcessHandle, peer_handle_);
-  callback.Run(rv, file.ReleaseValue(), on_close_callback, peer_handle_);
+  callback.Run(rv, file.ReleaseValue(), on_close_callback);
 }
 
 bool FileSystemOperationImpl::SetPendingOperationType(OperationType type) {

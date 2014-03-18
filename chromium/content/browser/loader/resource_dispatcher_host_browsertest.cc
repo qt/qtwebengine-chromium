@@ -59,13 +59,13 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
 
   void CheckTitleTest(const GURL& url,
                       const std::string& expected_title) {
-    string16 expected_title16(ASCIIToUTF16(expected_title));
+    base::string16 expected_title16(ASCIIToUTF16(expected_title));
     TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
     NavigateToURL(shell(), url);
     EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
   }
 
-  bool GetPopupTitle(const GURL& url, string16* title) {
+  bool GetPopupTitle(const GURL& url, base::string16* title) {
     NavigateToURL(shell(), url);
 
     ShellAddedObserver new_shell_observer;
@@ -96,7 +96,7 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle1) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/dynamic1.html"));
-  string16 title;
+  base::string16 title;
   ASSERT_TRUE(GetPopupTitle(url, &title));
   EXPECT_TRUE(StartsWith(title, ASCIIToUTF16("My Popup Title"), true))
       << "Actual title: " << title;
@@ -108,7 +108,7 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle2) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/dynamic2.html"));
-  string16 title;
+  base::string16 title;
   ASSERT_TRUE(GetPopupTitle(url, &title));
   EXPECT_TRUE(StartsWith(title, ASCIIToUTF16("My Dynamic Title"), true))
       << "Actual title: " << title;
@@ -301,6 +301,9 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // complete and isn't conducive to quick turnarounds. As we don't currently
 // strip the app on the build bots, this is bad times.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, CrossSiteAfterCrash) {
+  // Make sure we have a live process before trying to kill it.
+  NavigateToURL(shell(), GURL("about:blank"));
+
   // Cause the renderer to crash.
   WindowedNotificationObserver crash_observer(
       NOTIFICATION_RENDERER_PROCESS_CLOSED,
@@ -364,7 +367,7 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   // URLs are prohibited by policy from interacting with sensitive chrome
   // pages of which the error page is one.  Instead, use automation to kick
   // off the navigation, and wait to see that the tab loads.
-  string16 expected_title16(ASCIIToUTF16("Title Of Awesomeness"));
+  base::string16 expected_title16(ASCIIToUTF16("Title Of Awesomeness"));
   TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
 
   bool success;

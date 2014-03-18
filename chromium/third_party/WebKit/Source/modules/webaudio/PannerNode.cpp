@@ -28,9 +28,8 @@
 
 #include "modules/webaudio/PannerNode.h"
 
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/platform/audio/AudioBus.h"
-#include "core/platform/audio/HRTFPanner.h"
+#include "core/dom/ExecutionContext.h"
+#include "platform/audio/HRTFPanner.h"
 #include "modules/webaudio/AudioBufferSourceNode.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
@@ -207,7 +206,7 @@ bool PannerNode::setPanningModel(unsigned model)
         break;
     case SOUNDFIELD:
         // FIXME: Implement sound field model. See // https://bugs.webkit.org/show_bug.cgi?id=77367.
-        context()->scriptExecutionContext()->addConsoleMessage(JSMessageSource, WarningMessageLevel, "'soundfield' panning model not implemented.");
+        context()->executionContext()->addConsoleMessage(JSMessageSource, WarningMessageLevel, "'soundfield' panning model not implemented.");
         break;
     default:
         return false;

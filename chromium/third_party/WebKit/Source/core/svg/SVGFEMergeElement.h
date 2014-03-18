@@ -21,17 +21,17 @@
 #ifndef SVGFEMergeElement_h
 #define SVGFEMergeElement_h
 
-#include "core/platform/graphics/filters/FEMerge.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "platform/graphics/filters/FEMerge.h"
 
 namespace WebCore {
 
 class SVGFEMergeElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEMergeElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGFEMergeElement> create(Document&);
 
 private:
-    SVGFEMergeElement(const QualifiedName&, Document&);
+    explicit SVGFEMergeElement(Document&);
 
     virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
 };

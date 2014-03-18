@@ -36,7 +36,6 @@ struct SVGSynchronizableAnimatedProperty {
     SVGSynchronizableAnimatedProperty()
         : value(SVGPropertyTraits<PropertyType>::initialValue())
         , shouldSynchronize(false)
-        , isValid(false)
     {
     }
 
@@ -44,7 +43,6 @@ struct SVGSynchronizableAnimatedProperty {
     SVGSynchronizableAnimatedProperty(const ConstructorParameter1& value1)
         : value(value1)
         , shouldSynchronize(false)
-        , isValid(false)
     {
     }
 
@@ -52,7 +50,6 @@ struct SVGSynchronizableAnimatedProperty {
     SVGSynchronizableAnimatedProperty(const ConstructorParameter1& value1, const ConstructorParameter2& value2)
         : value(value1, value2)
         , shouldSynchronize(false)
-        , isValid(false)
     {
     }
 
@@ -63,7 +60,6 @@ struct SVGSynchronizableAnimatedProperty {
 
     PropertyType value;
     bool shouldSynchronize : 1;
-    bool isValid : 1;
 };
 
 // Property registration helpers
@@ -79,8 +75,9 @@ SVGAttributeToPropertyMap& OwnerType::localAttributeToPropertyMap() const \
     return attributeToPropertyMap(); \
 } \
 \
-static void registerAnimatedPropertiesFor##OwnerType() \
+void OwnerType::registerAnimatedPropertiesFor##OwnerType() \
 { \
+    OwnerType::m_cleanupAnimatedPropertiesCaller.setOwner(this); \
     SVGAttributeToPropertyMap& map = OwnerType::attributeToPropertyMap(); \
     if (!map.isEmpty()) \
         return; \
@@ -120,21 +117,15 @@ PropertyType& OwnerType::LowerProperty##BaseValue() const \
     return m_##LowerProperty.value; \
 } \
 \
-void OwnerType::set##UpperProperty##BaseValue(const PropertyType& type, const bool validValue) \
+void OwnerType::set##UpperProperty##BaseValue(const PropertyType& type) \
 { \
     m_##LowerProperty.value = type; \
-    m_##LowerProperty.isValid = validValue; \
 } \
 \
 PassRefPtr<TearOffType> OwnerType::LowerProperty() \
 { \
     m_##LowerProperty.shouldSynchronize = true; \
     return static_pointer_cast<TearOffType>(lookupOrCreate##UpperProperty##Wrapper(this)); \
-} \
-\
-bool OwnerType::LowerProperty##IsValid() const \
-{ \
-    return m_##LowerProperty.isValid; \
 } \
 \
 void OwnerType::synchronize##UpperProperty() \
@@ -164,6 +155,7 @@ void OwnerType::synchronize##UpperProperty(SVGElement* maskedOwnerType) \
 public: \
     static SVGAttributeToPropertyMap& attributeToPropertyMap(); \
     virtual SVGAttributeToPropertyMap& localAttributeToPropertyMap() const; \
+    void registerAnimatedPropertiesFor##OwnerType(); \
     typedef OwnerType UseOwnerType;
 
 #define DECLARE_ANIMATED_PROPERTY(TearOffType, PropertyType, UpperProperty, LowerProperty) \
@@ -171,9 +163,8 @@ public: \
     static const SVGPropertyInfo* LowerProperty##PropertyInfo(); \
     PropertyType& LowerProperty##CurrentValue() const; \
     PropertyType& LowerProperty##BaseValue() const; \
-    void set##UpperProperty##BaseValue(const PropertyType& type, const bool = true); \
+    void set##UpperProperty##BaseValue(const PropertyType& type); \
     PassRefPtr<TearOffType> LowerProperty(); \
-    bool LowerProperty##IsValid() const; \
 \
 private: \
     void synchronize##UpperProperty(); \
@@ -182,7 +173,8 @@ private: \
 \
     mutable SVGSynchronizableAnimatedProperty<PropertyType> m_##LowerProperty;
 
-#define END_DECLARE_ANIMATED_PROPERTIES
+#define END_DECLARE_ANIMATED_PROPERTIES \
+    CleanUpAnimatedPropertiesCaller m_cleanupAnimatedPropertiesCaller;
 
 // List specific definition/declaration helpers
 #define DECLARE_ANIMATED_LIST_PROPERTY(TearOffType, PropertyType, UpperProperty, LowerProperty) \

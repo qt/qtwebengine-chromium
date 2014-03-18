@@ -226,7 +226,7 @@ TEST_F(FileUtilProxyTest, GetFileInfo_File) {
   // Setup.
   ASSERT_EQ(4, file_util::WriteFile(test_path(), "test", 4));
   PlatformFileInfo expected_info;
-  file_util::GetFileInfo(test_path(), &expected_info);
+  GetFileInfo(test_path(), &expected_info);
 
   // Run.
   FileUtilProxy::GetFileInfo(
@@ -247,9 +247,9 @@ TEST_F(FileUtilProxyTest, GetFileInfo_File) {
 
 TEST_F(FileUtilProxyTest, GetFileInfo_Directory) {
   // Setup.
-  ASSERT_TRUE(file_util::CreateDirectory(test_path()));
+  ASSERT_TRUE(base::CreateDirectory(test_path()));
   PlatformFileInfo expected_info;
-  file_util::GetFileInfo(test_path(), &expected_info);
+  GetFileInfo(test_path(), &expected_info);
 
   // Run.
   FileUtilProxy::GetFileInfo(
@@ -320,7 +320,7 @@ TEST_F(FileUtilProxyTest, WriteAndFlush) {
 
   // Verify the written data.
   char buffer[10];
-  EXPECT_EQ(data_bytes, file_util::ReadFile(test_path(), buffer, data_bytes));
+  EXPECT_EQ(data_bytes, base::ReadFile(test_path(), buffer, data_bytes));
   for (int i = 0; i < data_bytes; ++i) {
     EXPECT_EQ(data[i], buffer[i]);
   }
@@ -342,7 +342,7 @@ TEST_F(FileUtilProxyTest, Touch) {
   EXPECT_EQ(PLATFORM_FILE_OK, error_);
 
   PlatformFileInfo info;
-  file_util::GetFileInfo(test_path(), &info);
+  GetFileInfo(test_path(), &info);
 
   // The returned values may only have the seconds precision, so we cast
   // the double values to int here.
@@ -357,7 +357,7 @@ TEST_F(FileUtilProxyTest, Truncate_Shrink) {
   const char kTestData[] = "0123456789";
   ASSERT_EQ(10, file_util::WriteFile(test_path(), kTestData, 10));
   PlatformFileInfo info;
-  file_util::GetFileInfo(test_path(), &info);
+  GetFileInfo(test_path(), &info);
   ASSERT_EQ(10, info.size);
 
   // Run.
@@ -369,11 +369,11 @@ TEST_F(FileUtilProxyTest, Truncate_Shrink) {
   MessageLoop::current()->Run();
 
   // Verify.
-  file_util::GetFileInfo(test_path(), &info);
+  GetFileInfo(test_path(), &info);
   ASSERT_EQ(7, info.size);
 
   char buffer[7];
-  EXPECT_EQ(7, file_util::ReadFile(test_path(), buffer, 7));
+  EXPECT_EQ(7, base::ReadFile(test_path(), buffer, 7));
   int i = 0;
   for (; i < 7; ++i)
     EXPECT_EQ(kTestData[i], buffer[i]);
@@ -384,7 +384,7 @@ TEST_F(FileUtilProxyTest, Truncate_Expand) {
   const char kTestData[] = "9876543210";
   ASSERT_EQ(10, file_util::WriteFile(test_path(), kTestData, 10));
   PlatformFileInfo info;
-  file_util::GetFileInfo(test_path(), &info);
+  GetFileInfo(test_path(), &info);
   ASSERT_EQ(10, info.size);
 
   // Run.
@@ -396,11 +396,11 @@ TEST_F(FileUtilProxyTest, Truncate_Expand) {
   MessageLoop::current()->Run();
 
   // Verify.
-  file_util::GetFileInfo(test_path(), &info);
+  GetFileInfo(test_path(), &info);
   ASSERT_EQ(53, info.size);
 
   char buffer[53];
-  EXPECT_EQ(53, file_util::ReadFile(test_path(), buffer, 53));
+  EXPECT_EQ(53, base::ReadFile(test_path(), buffer, 53));
   int i = 0;
   for (; i < 10; ++i)
     EXPECT_EQ(kTestData[i], buffer[i]);

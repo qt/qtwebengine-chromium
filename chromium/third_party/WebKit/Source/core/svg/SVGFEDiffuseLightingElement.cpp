@@ -21,14 +21,12 @@
 
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 
-#include "SVGNames.h"
-#include "core/platform/graphics/filters/FEDiffuseLighting.h"
-#include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
+#include "platform/graphics/filters/FEDiffuseLighting.h"
+#include "platform/graphics/filters/FilterEffect.h"
 
 namespace WebCore {
 
@@ -48,19 +46,18 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEDiffuseLightingElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFEDiffuseLightingElement::SVGFEDiffuseLightingElement(const QualifiedName& tagName, Document& document)
-    : SVGFilterPrimitiveStandardAttributes(tagName, document)
+inline SVGFEDiffuseLightingElement::SVGFEDiffuseLightingElement(Document& document)
+    : SVGFilterPrimitiveStandardAttributes(SVGNames::feDiffuseLightingTag, document)
     , m_diffuseConstant(1)
     , m_surfaceScale(1)
 {
-    ASSERT(hasTagName(SVGNames::feDiffuseLightingTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFEDiffuseLightingElement();
 }
 
-PassRefPtr<SVGFEDiffuseLightingElement> SVGFEDiffuseLightingElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFEDiffuseLightingElement> SVGFEDiffuseLightingElement::create(Document& document)
 {
-    return adoptRef(new SVGFEDiffuseLightingElement(tagName, document));
+    return adoptRef(new SVGFEDiffuseLightingElement(document));
 }
 
 const AtomicString& SVGFEDiffuseLightingElement::kernelUnitLengthXIdentifier()

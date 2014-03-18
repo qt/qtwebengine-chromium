@@ -5,6 +5,8 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_ROOT_WINDOW_HOST_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_ROOT_WINDOW_HOST_H_
 
+#include "base/memory/scoped_ptr.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/widget.h"
@@ -12,6 +14,10 @@
 namespace aura {
 class RootWindowHost;
 class Window;
+
+namespace client {
+class DragDropClient;
+}
 }
 
 namespace gfx {
@@ -24,10 +30,17 @@ class NativeTheme;
 }
 
 namespace views {
-class DesktopNativeWidgetAura;
+namespace corewm {
+
+class Tooltip;
+}
+
 namespace internal {
 class NativeWidgetDelegate;
 }
+
+class DesktopNativeCursorManager;
+class DesktopNativeWidgetAura;
 
 class VIEWS_EXPORT DesktopRootWindowHost {
  public:
@@ -35,17 +48,30 @@ class VIEWS_EXPORT DesktopRootWindowHost {
 
   static DesktopRootWindowHost* Create(
       internal::NativeWidgetDelegate* native_widget_delegate,
-      DesktopNativeWidgetAura* desktop_native_widget_aura,
-      const gfx::Rect& initial_bounds);
+      DesktopNativeWidgetAura* desktop_native_widget_aura);
 
   // Return the NativeTheme to use for |window|. WARNING: |window| may be NULL.
   static ui::NativeTheme* GetNativeTheme(aura::Window* window);
 
-  // Creates the aura resources associated with the native window we built.
-  // Caller takes ownership of returned RootWindow.
-  virtual aura::RootWindow* Init(aura::Window* content_window,
-                                 const Widget::InitParams& params) = 0;
-  virtual void InitFocus(aura::Window* window) = 0;
+  // Sets up resources needed before the RootWindow has been created.
+  virtual void Init(aura::Window* content_window,
+                    const Widget::InitParams& params,
+                    aura::RootWindow::CreateParams* rw_create_params) = 0;
+
+  // Invoked once the RootWindow has been created. Caller owns the RootWindow.
+  virtual void OnRootWindowCreated(aura::RootWindow* root,
+                                   const Widget::InitParams& params) = 0;
+
+  // Creates and returns the Tooltip implementation to use. Return value is
+  // owned by DesktopNativeWidgetAura and lives as long as
+  // DesktopRootWindowHost.
+  virtual scoped_ptr<corewm::Tooltip> CreateTooltip() = 0;
+
+  // Creates and returns the DragDropClient implementation to use. Return value
+  // is owned by DesktopNativeWidgetAura and lives as long as
+  // DesktopRootWindowHost.
+  virtual scoped_ptr<aura::client::DragDropClient> CreateDragDropClient(
+      DesktopNativeCursorManager* cursor_manager) = 0;
 
   virtual void Close() = 0;
   virtual void CloseNow() = 0;
@@ -58,6 +84,7 @@ class VIEWS_EXPORT DesktopRootWindowHost {
   virtual bool IsVisible() const = 0;
 
   virtual void SetSize(const gfx::Size& size) = 0;
+  virtual void StackAtTop() = 0;
   virtual void CenterWindow(const gfx::Size& size) = 0;
   virtual void GetWindowPlacement(gfx::Rect* bounds,
                                   ui::WindowShowState* show_state) const = 0;
@@ -67,6 +94,8 @@ class VIEWS_EXPORT DesktopRootWindowHost {
 
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const = 0;
 
+  // Sets the shape of the root window. If |native_region| is NULL then the
+  // window reverts to rectangular. Takes ownership of |native_region|.
   virtual void SetShape(gfx::NativeRegion native_region) = 0;
 
   virtual void Activate() = 0;
@@ -81,14 +110,17 @@ class VIEWS_EXPORT DesktopRootWindowHost {
   virtual bool HasCapture() const = 0;
 
   virtual void SetAlwaysOnTop(bool always_on_top) = 0;
+  virtual bool IsAlwaysOnTop() const = 0;
 
-  virtual void SetWindowTitle(const string16& title) = 0;
+  // Returns true if the title changed.
+  virtual bool SetWindowTitle(const string16& title) = 0;
 
   virtual void ClearNativeFocus() = 0;
 
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) = 0;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) = 0;
   virtual void EndMoveLoop() = 0;
 
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) = 0;
@@ -115,6 +147,10 @@ class VIEWS_EXPORT DesktopRootWindowHost {
   // blurred.
   virtual void OnNativeWidgetFocus() = 0;
   virtual void OnNativeWidgetBlur() = 0;
+
+  // Returns true if the Widget was closed but is still showing because of
+  // animations.
+  virtual bool IsAnimatingClosed() const = 0;
 };
 
 }  // namespace views

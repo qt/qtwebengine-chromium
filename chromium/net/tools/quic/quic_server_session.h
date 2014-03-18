@@ -36,7 +36,7 @@ class QuicSessionOwner {
  public:
   virtual ~QuicSessionOwner() {}
 
-  virtual void OnConnectionClose(QuicGuid guid, QuicErrorCode error) = 0;
+  virtual void OnConnectionClosed(QuicGuid guid, QuicErrorCode error) = 0;
 };
 
 class QuicServerSession : public QuicSession {
@@ -46,7 +46,7 @@ class QuicServerSession : public QuicSession {
                     QuicSessionOwner* owner);
 
   // Override the base class to notify the owner of the connection close.
-  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
 
   virtual ~QuicServerSession();
 
@@ -56,15 +56,14 @@ class QuicServerSession : public QuicSession {
 
  protected:
   // QuicSession methods:
-  virtual ReliableQuicStream* CreateIncomingReliableStream(
-      QuicStreamId id) OVERRIDE;
-  virtual ReliableQuicStream* CreateOutgoingReliableStream() OVERRIDE;
+  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
+  virtual QuicDataStream* CreateOutgoingDataStream() OVERRIDE;
   virtual QuicCryptoServerStream* GetCryptoStream() OVERRIDE;
 
   // If we should create an incoming stream, returns true. Otherwise
   // does error handling, including communicating the error to the client and
   // possibly closing the connection, and returns false.
-  virtual bool ShouldCreateIncomingReliableStream(QuicStreamId id);
+  virtual bool ShouldCreateIncomingDataStream(QuicStreamId id);
 
   virtual QuicCryptoServerStream* CreateQuicCryptoServerStream(
     const QuicCryptoServerConfig& crypto_config);

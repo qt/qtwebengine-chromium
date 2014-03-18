@@ -32,6 +32,7 @@
 #include "core/html/LinkResource.h"
 
 #include "HTMLNames.h"
+#include "core/html/HTMLImport.h"
 #include "core/html/HTMLLinkElement.h"
 
 namespace WebCore {
@@ -47,9 +48,22 @@ LinkResource::~LinkResource()
 {
 }
 
+bool LinkResource::shouldLoadResource() const
+{
+    return m_owner->document().frame() || m_owner->document().import();
+}
+
+Frame* LinkResource::loadingFrame() const
+{
+    HTMLImport* import = m_owner->document().import();
+    if (!import)
+        return m_owner->document().frame();
+    return import->master()->document().frame();
+}
+
 LinkRequestBuilder::LinkRequestBuilder(HTMLLinkElement* owner)
     : m_owner(owner)
-    , m_url(m_owner->getNonEmptyURLAttribute(hrefAttr))
+    , m_url(owner->getNonEmptyURLAttribute(hrefAttr))
 {
     m_charset = m_owner->getAttribute(charsetAttr);
     if (m_charset.isEmpty() && m_owner->document().frame())

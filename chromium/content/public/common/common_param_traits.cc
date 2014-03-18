@@ -7,6 +7,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/host_port_pair.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
@@ -50,7 +51,7 @@ struct SkBitmap_Data {
 namespace IPC {
 
 void ParamTraits<GURL>::Write(Message* m, const GURL& p) {
-  DCHECK(p.possibly_invalid_spec().length() <= content::kMaxURLChars);
+  DCHECK(p.possibly_invalid_spec().length() <= content::GetMaxURLChars());
 
   // Beware of print-parse inconsistency which would change an invalid
   // URL into a valid one. Ideally, the message would contain this flag
@@ -69,7 +70,7 @@ void ParamTraits<GURL>::Write(Message* m, const GURL& p) {
 
 bool ParamTraits<GURL>::Read(const Message* m, PickleIterator* iter, GURL* p) {
   std::string s;
-  if (!m->ReadString(iter, &s) || s.length() > content::kMaxURLChars) {
+  if (!m->ReadString(iter, &s) || s.length() > content::GetMaxURLChars()) {
     *p = GURL();
     return false;
   }
@@ -192,19 +193,21 @@ void ParamTraits<gfx::PointF>::Log(const gfx::PointF& v, std::string* l) {
 void ParamTraits<gfx::Size>::Write(Message* m, const gfx::Size& p) {
   DCHECK_GE(p.width(), 0);
   DCHECK_GE(p.height(), 0);
-  m->WriteInt(p.width());
-  m->WriteInt(p.height());
+  int values[2] = { p.width(), p.height() };
+  m->WriteBytes(&values, sizeof(int) * 2);
 }
 
 bool ParamTraits<gfx::Size>::Read(const Message* m,
                                   PickleIterator* iter,
                                   gfx::Size* r) {
-  int w, h;
-  if (!m->ReadInt(iter, &w) || w < 0 ||
-      !m->ReadInt(iter, &h) || h < 0)
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(int) * 2))
     return false;
-  r->set_width(w);
-  r->set_height(h);
+  const int* values = reinterpret_cast<const int*>(char_values);
+  if (values[0] < 0 || values[1] < 0)
+    return false;
+  r->set_width(values[0]);
+  r->set_height(values[1]);
   return true;
 }
 
@@ -213,19 +216,19 @@ void ParamTraits<gfx::Size>::Log(const gfx::Size& p, std::string* l) {
 }
 
 void ParamTraits<gfx::SizeF>::Write(Message* m, const gfx::SizeF& p) {
-  ParamTraits<float>::Write(m, p.width());
-  ParamTraits<float>::Write(m, p.height());
+  float values[2] = { p.width(), p.height() };
+  m->WriteBytes(&values, sizeof(float) * 2);
 }
 
 bool ParamTraits<gfx::SizeF>::Read(const Message* m,
                                    PickleIterator* iter,
-                                   gfx::SizeF* p) {
-  float w, h;
-  if (!ParamTraits<float>::Read(m, iter, &w) ||
-      !ParamTraits<float>::Read(m, iter, &h))
+                                   gfx::SizeF* r) {
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(float) * 2))
     return false;
-  p->set_width(w);
-  p->set_height(h);
+  const float* values = reinterpret_cast<const float*>(char_values);
+  r->set_width(values[0]);
+  r->set_height(values[1]);
   return true;
 }
 
@@ -233,20 +236,20 @@ void ParamTraits<gfx::SizeF>::Log(const gfx::SizeF& p, std::string* l) {
   l->append(base::StringPrintf("(%f, %f)", p.width(), p.height()));
 }
 
-void ParamTraits<gfx::Vector2d>::Write(Message* m, const gfx::Vector2d& v) {
-  m->WriteInt(v.x());
-  m->WriteInt(v.y());
+void ParamTraits<gfx::Vector2d>::Write(Message* m, const gfx::Vector2d& p) {
+  int values[2] = { p.x(), p.y() };
+  m->WriteBytes(&values, sizeof(int) * 2);
 }
 
 bool ParamTraits<gfx::Vector2d>::Read(const Message* m,
                                       PickleIterator* iter,
                                       gfx::Vector2d* r) {
-  int x, y;
-  if (!m->ReadInt(iter, &x) ||
-      !m->ReadInt(iter, &y))
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(int) * 2))
     return false;
-  r->set_x(x);
-  r->set_y(y);
+  const int* values = reinterpret_cast<const int*>(char_values);
+  r->set_x(values[0]);
+  r->set_y(values[1]);
   return true;
 }
 
@@ -254,20 +257,20 @@ void ParamTraits<gfx::Vector2d>::Log(const gfx::Vector2d& v, std::string* l) {
   l->append(base::StringPrintf("(%d, %d)", v.x(), v.y()));
 }
 
-void ParamTraits<gfx::Vector2dF>::Write(Message* m, const gfx::Vector2dF& v) {
-  ParamTraits<float>::Write(m, v.x());
-  ParamTraits<float>::Write(m, v.y());
+void ParamTraits<gfx::Vector2dF>::Write(Message* m, const gfx::Vector2dF& p) {
+  float values[2] = { p.x(), p.y() };
+  m->WriteBytes(&values, sizeof(float) * 2);
 }
 
 bool ParamTraits<gfx::Vector2dF>::Read(const Message* m,
                                       PickleIterator* iter,
                                       gfx::Vector2dF* r) {
-  float x, y;
-  if (!ParamTraits<float>::Read(m, iter, &x) ||
-      !ParamTraits<float>::Read(m, iter, &y))
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(float) * 2))
     return false;
-  r->set_x(x);
-  r->set_y(y);
+  const float* values = reinterpret_cast<const float*>(char_values);
+  r->set_x(values[0]);
+  r->set_y(values[1]);
   return true;
 }
 
@@ -276,20 +279,20 @@ void ParamTraits<gfx::Vector2dF>::Log(const gfx::Vector2dF& v, std::string* l) {
 }
 
 void ParamTraits<gfx::Rect>::Write(Message* m, const gfx::Rect& p) {
-  WriteParam(m, p.origin());
-  WriteParam(m, p.size());
+  int values[4] = { p.x(), p.y(), p.width(), p.height() };
+  m->WriteBytes(&values, sizeof(int) * 4);
 }
 
 bool ParamTraits<gfx::Rect>::Read(const Message* m,
                                   PickleIterator* iter,
                                   gfx::Rect* r) {
-  gfx::Point origin;
-  gfx::Size size;
-  if (!ReadParam(m, iter, &origin) ||
-      !ReadParam(m, iter, &size))
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(int) * 4))
     return false;
-  r->set_origin(origin);
-  r->set_size(size);
+  const int* values = reinterpret_cast<const int*>(char_values);
+  if (values[2] < 0 || values[3] < 0)
+    return false;
+  r->SetRect(values[0], values[1], values[2], values[3]);
   return true;
 }
 
@@ -299,25 +302,18 @@ void ParamTraits<gfx::Rect>::Log(const gfx::Rect& p, std::string* l) {
 }
 
 void ParamTraits<gfx::RectF>::Write(Message* m, const gfx::RectF& p) {
-  ParamTraits<float>::Write(m, p.x());
-  ParamTraits<float>::Write(m, p.y());
-  ParamTraits<float>::Write(m, p.width());
-  ParamTraits<float>::Write(m, p.height());
+  float values[4] = { p.x(), p.y(), p.width(), p.height() };
+  m->WriteBytes(&values, sizeof(float) * 4);
 }
 
 bool ParamTraits<gfx::RectF>::Read(const Message* m,
                                    PickleIterator* iter,
                                    gfx::RectF* r) {
-  float x, y, w, h;
-  if (!ParamTraits<float>::Read(m, iter, &x) ||
-      !ParamTraits<float>::Read(m, iter, &y) ||
-      !ParamTraits<float>::Read(m, iter, &w) ||
-      !ParamTraits<float>::Read(m, iter, &h))
+  const char* char_values;
+  if (!m->ReadBytes(iter, &char_values, sizeof(float) * 4))
     return false;
-  r->set_x(x);
-  r->set_y(y);
-  r->set_width(w);
-  r->set_height(h);
+  const float* values = reinterpret_cast<const float*>(char_values);
+  r->SetRect(values[0], values[1], values[2], values[3]);
   return true;
 }
 

@@ -36,7 +36,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebRuntimeFeatures::enableStableFeatures(bool enable)
 {
@@ -112,7 +112,7 @@ void WebRuntimeFeatures::enableEncryptedMedia(bool enable)
     // FIXME: Hack to allow MediaKeyError to be enabled for either version.
     RuntimeEnabledFeatures::setEncryptedMediaAnyVersionEnabled(
         RuntimeEnabledFeatures::encryptedMediaEnabled()
-        || RuntimeEnabledFeatures::legacyEncryptedMediaEnabled());
+        || RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled());
 }
 
 bool WebRuntimeFeatures::isEncryptedMediaEnabled()
@@ -120,18 +120,29 @@ bool WebRuntimeFeatures::isEncryptedMediaEnabled()
     return RuntimeEnabledFeatures::encryptedMediaEnabled();
 }
 
-void WebRuntimeFeatures::enableLegacyEncryptedMedia(bool enable)
+void WebRuntimeFeatures::enablePrefixedEncryptedMedia(bool enable)
 {
-    RuntimeEnabledFeatures::setLegacyEncryptedMediaEnabled(enable);
+    RuntimeEnabledFeatures::setPrefixedEncryptedMediaEnabled(enable);
     // FIXME: Hack to allow MediaKeyError to be enabled for either version.
     RuntimeEnabledFeatures::setEncryptedMediaAnyVersionEnabled(
         RuntimeEnabledFeatures::encryptedMediaEnabled()
-        || RuntimeEnabledFeatures::legacyEncryptedMediaEnabled());
+        || RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled());
 }
 
-bool WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()
+bool WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()
 {
-    return RuntimeEnabledFeatures::legacyEncryptedMediaEnabled();
+    return RuntimeEnabledFeatures::prefixedEncryptedMediaEnabled();
+}
+
+void WebRuntimeFeatures::enableDirectWrite(bool enable)
+{
+    RuntimeEnabledFeatures::setDirectWriteEnabled(enable);
+    RuntimeEnabledFeatures::setSubpixelFontScalingEnabled(enable || RuntimeEnabledFeatures::subpixelFontScalingEnabled());
+}
+
+bool WebRuntimeFeatures::isDirectWriteEnabled()
+{
+    return RuntimeEnabledFeatures::directWriteEnabled();
 }
 
 void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
@@ -142,6 +153,16 @@ void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
 bool WebRuntimeFeatures::isExperimentalCanvasFeaturesEnabled()
 {
     return RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled();
+}
+
+void WebRuntimeFeatures::enableFastTextAutosizing(bool enable)
+{
+    RuntimeEnabledFeatures::setFastTextAutosizingEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isFastTextAutosizingEnabled()
+{
+    return RuntimeEnabledFeatures::fastTextAutosizingEnabled();
 }
 
 void WebRuntimeFeatures::enableFileSystem(bool enable)
@@ -249,6 +270,16 @@ bool WebRuntimeFeatures::isNotificationsEnabled()
     return RuntimeEnabledFeatures::notificationsEnabled();
 }
 
+void WebRuntimeFeatures::enableNavigatorContentUtils(bool enable)
+{
+    RuntimeEnabledFeatures::setNavigatorContentUtilsEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isNavigatorContentUtilsEnabled()
+{
+    return RuntimeEnabledFeatures::navigatorContentUtilsEnabled();
+}
+
 void WebRuntimeFeatures::enablePagePopup(bool enable)
 {
     RuntimeEnabledFeatures::setPagePopupEnabled(enable);
@@ -287,6 +318,16 @@ void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
 bool WebRuntimeFeatures::isScriptedSpeechEnabled()
 {
     return RuntimeEnabledFeatures::scriptedSpeechEnabled();
+}
+
+void WebRuntimeFeatures::enableServiceWorker(bool enable)
+{
+    RuntimeEnabledFeatures::setServiceWorkerEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isServiceWorkerEnabled()
+{
+    return RuntimeEnabledFeatures::serviceWorkerEnabled();
 }
 
 void WebRuntimeFeatures::enableSessionStorage(bool enable)
@@ -329,16 +370,14 @@ bool WebRuntimeFeatures::isTouchEnabled()
     return RuntimeEnabledFeatures::touchEnabled();
 }
 
-void WebRuntimeFeatures::enableWebAnimationsCSS()
+void WebRuntimeFeatures::enableWebAnimationsCSS(bool enable)
 {
-    RuntimeEnabledFeatures::setWebAnimationsEnabled(true);
-    RuntimeEnabledFeatures::setWebAnimationsCSSEnabled(true);
+    RuntimeEnabledFeatures::setWebAnimationsCSSEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableWebAnimationsSVG()
+void WebRuntimeFeatures::enableWebAnimationsSVG(bool enable)
 {
-    RuntimeEnabledFeatures::setWebAnimationsEnabled(true);
-    RuntimeEnabledFeatures::setWebAnimationsSVGEnabled(true);
+    RuntimeEnabledFeatures::setWebAnimationsSVGEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableWebAudio(bool enable)
@@ -391,6 +430,11 @@ bool WebRuntimeFeatures::isHTMLImportsEnabled()
     return RuntimeEnabledFeatures::htmlImportsEnabled();
 }
 
+void WebRuntimeFeatures::enableXSLT(bool enable)
+{
+    RuntimeEnabledFeatures::setXSLTEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableEmbedderCustomElements(bool enable)
 {
     RuntimeEnabledFeatures::setEmbedderCustomElementsEnabled(enable);
@@ -411,4 +455,14 @@ void WebRuntimeFeatures::enableOverlayFullscreenVideo(bool enable)
     RuntimeEnabledFeatures::setOverlayFullscreenVideoEnabled(enable);
 }
 
-} // namespace WebKit
+void WebRuntimeFeatures::enableSharedWorker(bool enable)
+{
+    RuntimeEnabledFeatures::setSharedWorkerEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableRepaintAfterLayout(bool enable)
+{
+    RuntimeEnabledFeatures::setRepaintAfterLayoutEnabled(enable);
+}
+
+} // namespace blink

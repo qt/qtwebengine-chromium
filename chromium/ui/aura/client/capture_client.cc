@@ -15,19 +15,21 @@ namespace client {
 DEFINE_WINDOW_PROPERTY_KEY(
     CaptureClient*, kRootWindowCaptureClientKey, NULL);
 
-void SetCaptureClient(RootWindow* root_window, CaptureClient* client) {
+void SetCaptureClient(Window* root_window, CaptureClient* client) {
   root_window->SetProperty(kRootWindowCaptureClientKey, client);
 }
 
-CaptureClient* GetCaptureClient(RootWindow* root_window) {
+CaptureClient* GetCaptureClient(Window* root_window) {
   return root_window ?
       root_window->GetProperty(kRootWindowCaptureClientKey) : NULL;
 }
 
 Window* GetCaptureWindow(Window* window) {
-  RootWindow* root_window = window->GetRootWindow();
-  return root_window ?
-      GetCaptureClient(root_window)->GetCaptureWindow() : NULL;
+  Window* root_window = window->GetRootWindow();
+  if (!root_window)
+    return NULL;
+  CaptureClient* capture_client = GetCaptureClient(root_window);
+  return capture_client ? capture_client->GetCaptureWindow() : NULL;
 }
 
 }  // namespace client

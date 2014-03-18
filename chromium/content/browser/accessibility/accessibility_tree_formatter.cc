@@ -55,7 +55,7 @@ AccessibilityTreeFormatter::BuildAccessibilityTree() {
 }
 
 void AccessibilityTreeFormatter::FormatAccessibilityTree(
-    string16* contents) {
+    base::string16* contents) {
   scoped_ptr<base::DictionaryValue> dict = BuildAccessibilityTree();
   RecursiveFormatAccessibilityTree(*(dict.get()), contents);
 }
@@ -66,10 +66,8 @@ void AccessibilityTreeFormatter::RecursiveBuildAccessibilityTree(
 
   base::ListValue* children = new base::ListValue;
   dict->Set(kChildrenDictAttr, children);
-  if (!IncludeChildren(node))
-    return;
 
-  for (size_t i = 0; i < node.children().size(); ++i) {
+  for (size_t i = 0; i < node.PlatformChildCount(); ++i) {
     BrowserAccessibility* child_node = node.children()[i];
     base::DictionaryValue* child_dict = new base::DictionaryValue;
     children->Append(child_dict);
@@ -78,9 +76,10 @@ void AccessibilityTreeFormatter::RecursiveBuildAccessibilityTree(
 }
 
 void AccessibilityTreeFormatter::RecursiveFormatAccessibilityTree(
-    const base::DictionaryValue& dict, string16* contents, int depth) {
-  string16 line = ToString(dict, string16(depth * kIndentSpaces, ' '));
-  if (line.find(ASCIIToUTF16(kSkipString)) != string16::npos)
+    const base::DictionaryValue& dict, base::string16* contents, int depth) {
+  base::string16 line =
+      ToString(dict, base::string16(depth * kIndentSpaces, ' '));
+  if (line.find(ASCIIToUTF16(kSkipString)) != base::string16::npos)
     return;
 
   *contents += line;
@@ -93,13 +92,6 @@ void AccessibilityTreeFormatter::RecursiveFormatAccessibilityTree(
   }
 }
 
-#if !defined(OS_ANDROID)
-bool AccessibilityTreeFormatter::IncludeChildren(
-    const BrowserAccessibility& node) {
-  return true;
-}
-#endif
-
 #if (!defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
      !defined(TOOLKIT_GTK))
 void AccessibilityTreeFormatter::AddProperties(const BrowserAccessibility& node,
@@ -107,8 +99,9 @@ void AccessibilityTreeFormatter::AddProperties(const BrowserAccessibility& node,
   dict->SetInteger("id", node.renderer_id());
 }
 
-string16 AccessibilityTreeFormatter::ToString(const base::DictionaryValue& node,
-                                              const string16& indent) {
+base::string16 AccessibilityTreeFormatter::ToString(
+    const base::DictionaryValue& node,
+    const base::string16& indent) {
   int id_value;
   node.GetInteger("id", &id_value);
   return indent + base::IntToString16(id_value) +
@@ -151,7 +144,7 @@ void AccessibilityTreeFormatter::SetFilters(
 }
 
 bool AccessibilityTreeFormatter::MatchesFilters(
-    const string16& text, bool default_result) const {
+    const base::string16& text, bool default_result) const {
   std::vector<Filter>::const_iterator iter = filters_.begin();
   bool allow = default_result;
   for (iter = filters_.begin(); iter != filters_.end(); ++iter) {
@@ -167,7 +160,7 @@ bool AccessibilityTreeFormatter::MatchesFilters(
   return allow;
 }
 
-string16 AccessibilityTreeFormatter::FormatCoordinates(
+base::string16 AccessibilityTreeFormatter::FormatCoordinates(
     const char* name, const char* x_name, const char* y_name,
     const base::DictionaryValue& value) {
   int x, y;
@@ -179,12 +172,12 @@ string16 AccessibilityTreeFormatter::FormatCoordinates(
 }
 
 void AccessibilityTreeFormatter::WriteAttribute(
-    bool include_by_default, const std::string& attr, string16* line) {
+    bool include_by_default, const std::string& attr, base::string16* line) {
   WriteAttribute(include_by_default, UTF8ToUTF16(attr), line);
 }
 
 void AccessibilityTreeFormatter::WriteAttribute(
-    bool include_by_default, const string16& attr, string16* line) {
+    bool include_by_default, const base::string16& attr, base::string16* line) {
   if (attr.empty())
     return;
   if (!MatchesFilters(attr, include_by_default))

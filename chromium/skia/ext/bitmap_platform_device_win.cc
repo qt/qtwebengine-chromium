@@ -5,8 +5,9 @@
 #include <windows.h>
 #include <psapi.h>
 
+#include "base/logging.h"
+#include "base/debug/alias.h"
 #include "skia/ext/bitmap_platform_device_win.h"
-#include "skia/ext/bitmap_platform_device_data.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -57,6 +58,62 @@ HBITMAP CreateHBitmap(int width, int height, bool is_opaque,
 
   HBITMAP hbitmap = CreateDIBSection(NULL, reinterpret_cast<BITMAPINFO*>(&hdr),
                                      0, data, shared_section, 0);
+
+  // If this call fails, we're gonna crash hard. Try to get some useful
+  // information out before we crash for post-mortem analysis.
+  if (!hbitmap) {
+    // Make sure parameters are saved in the minidump.
+    base::debug::Alias(&width);
+    base::debug::Alias(&height);
+
+    int last_error = GetLastError();
+    base::debug::Alias(&last_error);
+
+    int num_gdi_handles = GetGuiResources(GetCurrentProcess(),
+                                          GR_GDIOBJECTS);
+    if (num_gdi_handles == 0) {
+      int get_gui_resources_error = GetLastError();
+      base::debug::Alias(&get_gui_resources_error);
+      CHECK(false);
+    }
+
+    base::debug::Alias(&num_gdi_handles);
+    const int kLotsOfHandles = 9990;
+    if (num_gdi_handles > kLotsOfHandles)
+      CHECK(false);
+
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    pmc.cb = sizeof(pmc);
+    if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                              reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                              sizeof(pmc))) {
+      CHECK(false);
+    }
+    const size_t kLotsOfMemory = 1500 * 1024 * 1024; // 1.5GB
+    if (pmc.PagefileUsage > kLotsOfMemory)
+      CHECK(false);
+    if (pmc.PrivateUsage > kLotsOfMemory)
+      CHECK(false);
+
+    // Huh, that's weird.  We don't have crazy handle count, we don't have
+    // ridiculous memory usage.  Try to allocate a small bitmap and see if that
+    // fails too.
+    hdr.biWidth = 5;
+    hdr.biHeight = 5;
+    void* small_data;
+    HBITMAP small_bitmap = CreateDIBSection(
+        NULL, reinterpret_cast<BITMAPINFO*>(&hdr),
+        0, &small_data, shared_section, 0);
+    if (!small_bitmap)
+      CHECK(false);
+    BITMAP bitmap_data;
+    if (GetObject(small_bitmap, sizeof(BITMAP), &bitmap_data)) {
+      if (!DeleteObject(small_bitmap))
+        CHECK(false);
+    }
+    // No idea what's going on. Die!
+    CHECK(false);
+  }
   return hbitmap;
 }
 
@@ -86,57 +143,32 @@ void PlatformBitmapPixelRef::onUnlockPixels() {
 
 namespace skia {
 
-BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
-    HBITMAP hbitmap)
-    : bitmap_context_(hbitmap),
-      hdc_(NULL),
-      config_dirty_(true),  // Want to load the config next time.
-      transform_(SkMatrix::I()) {
-  // Initialize the clip region to the entire bitmap.
-  BITMAP bitmap_data;
-  if (GetObject(bitmap_context_, sizeof(BITMAP), &bitmap_data)) {
-    SkIRect rect;
-    rect.set(0, 0, bitmap_data.bmWidth, bitmap_data.bmHeight);
-    clip_region_ = SkRegion(rect);
-  }
-}
-
-BitmapPlatformDevice::BitmapPlatformDeviceData::~BitmapPlatformDeviceData() {
-  if (hdc_)
-    ReleaseBitmapDC();
-
-  // this will free the bitmap data as well as the bitmap handle
-  DeleteObject(bitmap_context_);
-}
-
-HDC BitmapPlatformDevice::BitmapPlatformDeviceData::GetBitmapDC() {
+HDC BitmapPlatformDevice::GetBitmapDC() {
   if (!hdc_) {
     hdc_ = CreateCompatibleDC(NULL);
     InitializeDC(hdc_);
-    HGDIOBJ old_bitmap = SelectObject(hdc_, bitmap_context_);
-    // When the memory DC is created, its display surface is exactly one
-    // monochrome pixel wide and one monochrome pixel high. Since we select our
-    // own bitmap, we must delete the previous one.
-    DeleteObject(old_bitmap);
+    old_hbitmap_ = static_cast<HBITMAP>(SelectObject(hdc_, hbitmap_));
   }
 
   LoadConfig();
   return hdc_;
 }
 
-void BitmapPlatformDevice::BitmapPlatformDeviceData::ReleaseBitmapDC() {
+void BitmapPlatformDevice::ReleaseBitmapDC() {
   SkASSERT(hdc_);
+  SelectObject(hdc_, old_hbitmap_);
   DeleteDC(hdc_);
   hdc_ = NULL;
+  old_hbitmap_ = NULL;
 }
 
-bool BitmapPlatformDevice::BitmapPlatformDeviceData::IsBitmapDCCreated()
+bool BitmapPlatformDevice::IsBitmapDCCreated()
     const {
   return hdc_ != NULL;
 }
 
 
-void BitmapPlatformDevice::BitmapPlatformDeviceData::SetMatrixClip(
+void BitmapPlatformDevice::SetMatrixClip(
     const SkMatrix& transform,
     const SkRegion& region) {
   transform_ = transform;
@@ -144,7 +176,7 @@ void BitmapPlatformDevice::BitmapPlatformDeviceData::SetMatrixClip(
   config_dirty_ = true;
 }
 
-void BitmapPlatformDevice::BitmapPlatformDeviceData::LoadConfig() {
+void BitmapPlatformDevice::LoadConfig() {
   if (!config_dirty_ || !hdc_)
     return;  // Nothing to do.
   config_dirty_ = false;
@@ -171,9 +203,11 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(
     return NULL;
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.setPixels(data);
-  bitmap.setIsOpaque(is_opaque);
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height, 0,
+                   is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+  RefPtr<SkPixelRef> pixel_ref = AdoptRef(new PlatformBitmapPixelRef(hbitmap,
+                                                                     data));
+  bitmap.setPixelRef(pixel_ref.get());
 
 #ifndef NDEBUG
   // If we were given data, then don't clobber it!
@@ -185,8 +219,7 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(
 
   // The device object will take ownership of the HBITMAP. The initial refcount
   // of the data object will be 1, which is what the constructor expects.
-  return new BitmapPlatformDevice(
-      skia::AdoptRef(new BitmapPlatformDeviceData(hbitmap)), bitmap);
+  return new BitmapPlatformDevice(hbitmap, bitmap);
 }
 
 // static
@@ -209,22 +242,35 @@ BitmapPlatformDevice* BitmapPlatformDevice::CreateAndClear(int width,
 // The device will own the HBITMAP, which corresponds to also owning the pixel
 // data. Therefore, we do not transfer ownership to the SkBitmapDevice's bitmap.
 BitmapPlatformDevice::BitmapPlatformDevice(
-    const skia::RefPtr<BitmapPlatformDeviceData>& data,
+    HBITMAP hbitmap,
     const SkBitmap& bitmap)
     : SkBitmapDevice(bitmap),
-      data_(data) {
+      hbitmap_(hbitmap),
+      old_hbitmap_(NULL),
+      hdc_(NULL),
+      config_dirty_(true),  // Want to load the config next time.
+      transform_(SkMatrix::I()) {
   // The data object is already ref'ed for us by create().
   SkDEBUGCODE(begin_paint_count_ = 0);
   SetPlatformDevice(this, this);
+  // Initialize the clip region to the entire bitmap.
+  BITMAP bitmap_data;
+  if (GetObject(hbitmap_, sizeof(BITMAP), &bitmap_data)) {
+    SkIRect rect;
+    rect.set(0, 0, bitmap_data.bmWidth, bitmap_data.bmHeight);
+    clip_region_ = SkRegion(rect);
+  }
 }
 
 BitmapPlatformDevice::~BitmapPlatformDevice() {
   SkASSERT(begin_paint_count_ == 0);
+  if (hdc_)
+    ReleaseBitmapDC();
 }
 
 HDC BitmapPlatformDevice::BeginPlatformPaint() {
   SkDEBUGCODE(begin_paint_count_++);
-  return data_->GetBitmapDC();
+  return GetBitmapDC();
 }
 
 void BitmapPlatformDevice::EndPlatformPaint() {
@@ -235,12 +281,12 @@ void BitmapPlatformDevice::EndPlatformPaint() {
 void BitmapPlatformDevice::setMatrixClip(const SkMatrix& transform,
                                          const SkRegion& region,
                                          const SkClipStack&) {
-  data_->SetMatrixClip(transform, region);
+  SetMatrixClip(transform, region);
 }
 
 void BitmapPlatformDevice::DrawToNativeContext(HDC dc, int x, int y,
                                                const RECT* src_rect) {
-  bool created_dc = !data_->IsBitmapDCCreated();
+  bool created_dc = !IsBitmapDCCreated();
   HDC source_dc = BeginPlatformPaint();
 
   RECT temp_rect;
@@ -286,17 +332,17 @@ void BitmapPlatformDevice::DrawToNativeContext(HDC dc, int x, int y,
                   copy_height,
                   blend_function);
   }
-  LoadTransformToDC(source_dc, data_->transform());
+  LoadTransformToDC(source_dc, transform_);
 
   EndPlatformPaint();
   if (created_dc)
-    data_->ReleaseBitmapDC();
+    ReleaseBitmapDC();
 }
 
 const SkBitmap& BitmapPlatformDevice::onAccessBitmap() {
   // FIXME(brettw) OPTIMIZATION: We should only flush if we know a GDI
   // operation has occurred on our DC.
-  if (data_->IsBitmapDCCreated())
+  if (IsBitmapDCCreated())
     GdiFlush();
   return SkBitmapDevice::onAccessBitmap();
 }
@@ -343,11 +389,12 @@ bool PlatformBitmap::Allocate(int width, int height, bool is_opaque) {
   HGDIOBJ stock_bitmap = SelectObject(surface_, hbitmap);
   platform_extra_ = reinterpret_cast<intptr_t>(stock_bitmap);
 
-  bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+  bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height, 0,
+                    is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
   // PlatformBitmapPixelRef takes ownership of |hbitmap|.
-  bitmap_.setPixelRef(
-      skia::AdoptRef(new PlatformBitmapPixelRef(hbitmap, data)).get());
-  bitmap_.setIsOpaque(is_opaque);
+  RefPtr<SkPixelRef> pixel_ref = AdoptRef(new PlatformBitmapPixelRef(hbitmap,
+                                                                     data));
+  bitmap_.setPixelRef(pixel_ref.get());
   bitmap_.lockPixels();
 
   return true;

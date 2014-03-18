@@ -31,12 +31,12 @@
 #include "core/dom/NamedFlow.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NamedFlowCollection.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/UIEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/events/UIEvent.h"
+#include "core/rendering/RenderNamedFlowFragment.h"
 #include "core/rendering/RenderNamedFlowThread.h"
-#include "core/rendering/RenderRegion.h"
 
 namespace WebCore {
 
@@ -104,11 +104,11 @@ int NamedFlow::firstEmptyRegionIndex() const
     int countNonPseudoRegions = -1;
     RenderRegionList::const_iterator iter = regionList.begin();
     for (int index = 0; iter != regionList.end(); ++index, ++iter) {
-        const RenderRegion* renderRegion = *iter;
+        const RenderNamedFlowFragment* renderRegion = toRenderNamedFlowFragment(*iter);
         // FIXME: Pseudo-elements are not included in the list.
         // They will be included when we will properly support the Region interface
         // http://dev.w3.org/csswg/css-regions/#the-region-interface
-        if (renderRegion->isPseudoElement())
+        if (!renderRegion->isElementBasedRegion())
             continue;
         countNonPseudoRegions++;
         if (renderRegion->regionOversetState() == RegionEmpty)
@@ -135,13 +135,13 @@ PassRefPtr<NodeList> NamedFlow::getRegionsByContent(Node* contentNode)
     if (inFlowThread(contentNode->renderer(), m_parentFlowThread)) {
         const RenderRegionList& regionList = m_parentFlowThread->renderRegionList();
         for (RenderRegionList::const_iterator iter = regionList.begin(); iter != regionList.end(); ++iter) {
-            const RenderRegion* renderRegion = *iter;
+            const RenderNamedFlowFragment* renderRegion = toRenderNamedFlowFragment(*iter);
             // They will be included when we will properly support the Region interface
             // http://dev.w3.org/csswg/css-regions/#the-region-interface
-            if (renderRegion->isPseudoElement())
+            if (!renderRegion->isElementBasedRegion())
                 continue;
             if (m_parentFlowThread->objectInFlowRegion(contentNode->renderer(), renderRegion))
-                regionNodes.append(renderRegion->node());
+                regionNodes.append(renderRegion->nodeForRegion());
         }
     }
 
@@ -162,12 +162,12 @@ PassRefPtr<NodeList> NamedFlow::getRegions()
 
     const RenderRegionList& regionList = m_parentFlowThread->renderRegionList();
     for (RenderRegionList::const_iterator iter = regionList.begin(); iter != regionList.end(); ++iter) {
-        const RenderRegion* renderRegion = *iter;
+        const RenderNamedFlowFragment* renderRegion = toRenderNamedFlowFragment(*iter);
         // They will be included when we will properly support the Region interface
         // http://dev.w3.org/csswg/css-regions/#the-region-interface
-        if (renderRegion->isPseudoElement())
+        if (!renderRegion->isElementBasedRegion())
             continue;
-        regionNodes.append(renderRegion->node());
+        regionNodes.append(renderRegion->nodeForRegion());
     }
 
     return StaticNodeList::adopt(regionNodes);
@@ -204,16 +204,6 @@ void NamedFlow::setRenderer(RenderNamedFlowThread* parentFlowThread)
     m_parentFlowThread = parentFlowThread;
 }
 
-EventTargetData* NamedFlow::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* NamedFlow::ensureEventTargetData()
-{
-    return &m_eventTargetData;
-}
-
 void NamedFlow::dispatchRegionLayoutUpdateEvent()
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
@@ -222,7 +212,7 @@ void NamedFlow::dispatchRegionLayoutUpdateEvent()
     if (flowState() == FlowStateNull)
         return;
 
-    RefPtr<Event> event = UIEvent::create(eventNames().webkitregionlayoutupdateEvent, false, false, m_flowManager->document()->defaultView(), 0);
+    RefPtr<Event> event = UIEvent::create(EventTypeNames::webkitregionlayoutupdate, false, false, m_flowManager->document()->domWindow(), 0);
 
     dispatchEvent(event);
 }
@@ -235,17 +225,17 @@ void NamedFlow::dispatchRegionOversetChangeEvent()
     if (flowState() == FlowStateNull)
         return;
 
-    RefPtr<Event> event = UIEvent::create(eventNames().webkitregionoversetchangeEvent, false, false, m_flowManager->document()->defaultView(), 0);
+    RefPtr<Event> event = UIEvent::create(EventTypeNames::webkitregionoversetchange, false, false, m_flowManager->document()->domWindow(), 0);
 
     dispatchEvent(event);
 }
 
 const AtomicString& NamedFlow::interfaceName() const
 {
-    return eventNames().interfaceForNamedFlow;
+    return EventTargetNames::NamedFlow;
 }
 
-ScriptExecutionContext* NamedFlow::scriptExecutionContext() const
+ExecutionContext* NamedFlow::executionContext() const
 {
     return m_flowManager->document();
 }

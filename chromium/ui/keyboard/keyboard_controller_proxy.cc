@@ -13,6 +13,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/bindings_policy.h"
+#include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_constants.h"
 
@@ -71,6 +72,23 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
     return source;
   }
 
+  virtual bool IsPopupOrPanel(
+      const content::WebContents* source) const OVERRIDE {
+    return true;
+  }
+
+  virtual void MoveContents(content::WebContents* source,
+                            const gfx::Rect& pos) OVERRIDE {
+    aura::Window* keyboard = proxy_->GetKeyboardWindow();
+    gfx::Rect bounds = keyboard->bounds();
+    int new_height = pos.height();
+    bounds.set_y(bounds.y() + bounds.height() - new_height);
+    bounds.set_height(new_height);
+    proxy_->set_resizing_from_contents(true);
+    keyboard->SetBounds(bounds);
+    proxy_->set_resizing_from_contents(false);
+  }
+
   // Overridden from content::WebContentsDelegate:
   virtual void RequestMediaAccessPermission(content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
@@ -93,39 +111,64 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
 
 namespace keyboard {
 
-KeyboardControllerProxy::KeyboardControllerProxy() {
+KeyboardControllerProxy::KeyboardControllerProxy()
+    : default_url_(kKeyboardWebUIURL), resizing_from_contents_(false) {
 }
 
 KeyboardControllerProxy::~KeyboardControllerProxy() {
 }
 
+const GURL& KeyboardControllerProxy::GetValidUrl() {
+  return override_url_.is_valid() ? override_url_ : default_url_;
+}
+
+void KeyboardControllerProxy::SetOverrideContentUrl(const GURL& url) {
+  if (override_url_ == url)
+    return;
+
+  override_url_ = url;
+  // Restores the keyboard window size to default.
+  aura::Window* container = GetKeyboardWindow()->parent();
+  CHECK(container);
+  container->layout_manager()->OnWindowResized();
+
+  ReloadContents();
+}
+
+void KeyboardControllerProxy::ReloadContents() {
+  if (keyboard_contents_) {
+    content::OpenURLParams params(
+        GetValidUrl(),
+        content::Referrer(),
+        SINGLETON_TAB,
+        content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+        false);
+    keyboard_contents_->OpenURL(params);
+  }
+}
+
 aura::Window* KeyboardControllerProxy::GetKeyboardWindow() {
   if (!keyboard_contents_) {
     content::BrowserContext* context = GetBrowserContext();
-    GURL url(kKeyboardWebUIURL);
     keyboard_contents_.reset(content::WebContents::Create(
         content::WebContents::CreateParams(context,
-            content::SiteInstance::CreateForURL(context, url))));
+            content::SiteInstance::CreateForURL(context, GetValidUrl()))));
     keyboard_contents_->SetDelegate(new KeyboardContentsDelegate(this));
     SetupWebContents(keyboard_contents_.get());
-
-    content::OpenURLParams params(url,
-                                  content::Referrer(),
-                                  SINGLETON_TAB,
-                                  content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-                                  false);
-    keyboard_contents_->OpenURL(params);
+    ReloadContents();
   }
 
   return keyboard_contents_->GetView()->GetNativeView();
 }
 
 void KeyboardControllerProxy::ShowKeyboardContainer(aura::Window* container) {
+  GetKeyboardWindow()->Show();
   container->Show();
 }
 
 void KeyboardControllerProxy::HideKeyboardContainer(aura::Window* container) {
   container->Hide();
+  GetKeyboardWindow()->Hide();
 }
 
 void KeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {

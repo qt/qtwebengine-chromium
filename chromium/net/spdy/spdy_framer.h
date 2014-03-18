@@ -19,6 +19,8 @@
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 
+// TODO(akalin): Remove support for CREDENTIAL frames.
+
 typedef struct z_stream_s z_stream;  // Forward declaration for zlib.
 
 namespace net {
@@ -378,7 +380,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
                              SpdyPriority priority,
                              uint8 credential_slot,
                              SpdyControlFlags flags,
-                             bool compressed,
                              const SpdyHeaderBlock* headers);
   SpdySerializedFrame* SerializeSynStream(const SpdySynStreamIR& syn_stream);
 
@@ -390,7 +391,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // |headers| is the header block to include in the frame.
   SpdyFrame* CreateSynReply(SpdyStreamId stream_id,
                             SpdyControlFlags flags,
-                            bool compressed,
                             const SpdyHeaderBlock* headers);
   SpdySerializedFrame* SerializeSynReply(const SpdySynReplyIR& syn_reply);
 
@@ -422,7 +422,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // arguments are the same as for CreateSynReply.
   SpdyFrame* CreateHeaders(SpdyStreamId stream_id,
                            SpdyControlFlags flags,
-                           bool compressed,
                            const SpdyHeaderBlock* headers);
   SpdySerializedFrame* SerializeHeaders(const SpdyHeadersIR& headers);
 
@@ -623,8 +622,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
 
   // Set the error code and moves the framer into the error state.
   void set_error(SpdyError error);
-
-  size_t GoAwaySize() const;
 
   // The maximum size of the control frames that we support.
   // This limit is arbitrary. We can enforce it here or at the application

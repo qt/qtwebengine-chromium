@@ -23,16 +23,14 @@
 
 #include "core/svg/SVGFEImageElement.h"
 
-#include "SVGNames.h"
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
-#include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/platform/graphics/Image.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
+#include "platform/graphics/Image.h"
 
 namespace WebCore {
 
@@ -48,17 +46,16 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEImageElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFEImageElement::SVGFEImageElement(const QualifiedName& tagName, Document& document)
-    : SVGFilterPrimitiveStandardAttributes(tagName, document)
+inline SVGFEImageElement::SVGFEImageElement(Document& document)
+    : SVGFilterPrimitiveStandardAttributes(SVGNames::feImageTag, document)
 {
-    ASSERT(hasTagName(SVGNames::feImageTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFEImageElement();
 }
 
-PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(Document& document)
 {
-    return adoptRef(new SVGFEImageElement(tagName, document));
+    return adoptRef(new SVGFEImageElement(document));
 }
 
 SVGFEImageElement::~SVGFEImageElement()

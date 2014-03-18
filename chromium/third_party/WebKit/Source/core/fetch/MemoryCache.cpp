@@ -25,17 +25,16 @@
 
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
-#include "core/fetch/Resource.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Logging.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/FrameView.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/Logging.h"
+#include "platform/TraceEvent.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOriginHash.h"
 #include "public/platform/Platform.h"
-#include "weborigin/SecurityOrigin.h"
-#include "weborigin/SecurityOriginHash.h"
 #include "wtf/Assertions.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MathExtras.h"
@@ -75,9 +74,9 @@ MemoryCache::MemoryCache()
     , m_minDeadCapacity(0)
     , m_maxDeadCapacity(cDefaultCacheCapacity)
     , m_maxDeferredPruneDeadCapacity(cDeferredPruneDeadCapacityFactor * cDefaultCacheCapacity)
+    , m_delayBeforeLiveDecodedPrune(cMinDelayBeforeLiveDecodedPrune)
     , m_liveSize(0)
     , m_deadSize(0)
-    , m_delayBeforeLiveDecodedPrune(cMinDelayBeforeLiveDecodedPrune)
 #ifdef MEMORY_CACHE_STATS
     , m_statsTimer(this, &MemoryCache::dumpStats)
 #endif
@@ -92,7 +91,7 @@ MemoryCache::MemoryCache()
 MemoryCache::~MemoryCache()
 {
     if (m_prunePending)
-        WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
+        blink::Platform::current()->currentThread()->removeTaskObserver(this);
 }
 
 KURL MemoryCache::removeFragmentIdentifierIfNeeded(const KURL& originalURL)
@@ -116,7 +115,7 @@ void MemoryCache::add(Resource* resource)
     resource->setInCache(true);
     resource->updateForAccess();
 
-    LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
+    WTF_LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
 }
 
 void MemoryCache::replace(Resource* newResource, Resource* oldResource)
@@ -146,16 +145,16 @@ Resource* MemoryCache::resourceForURL(const KURL& resourceURL)
     return resource;
 }
 
-unsigned MemoryCache::deadCapacity() const
+size_t MemoryCache::deadCapacity() const
 {
     // Dead resource capacity is whatever space is not occupied by live resources, bounded by an independent minimum and maximum.
-    unsigned capacity = m_capacity - min(m_liveSize, m_capacity); // Start with available capacity.
+    size_t capacity = m_capacity - min(m_liveSize, m_capacity); // Start with available capacity.
     capacity = max(capacity, m_minDeadCapacity); // Make sure it's above the minimum.
     capacity = min(capacity, m_maxDeadCapacity); // Make sure it's below the maximum.
     return capacity;
 }
 
-unsigned MemoryCache::liveCapacity() const
+size_t MemoryCache::liveCapacity() const
 {
     // Live resource capacity is whatever is left over after calculating dead resource capacity.
     return m_capacity - deadCapacity();
@@ -164,11 +163,11 @@ unsigned MemoryCache::liveCapacity() const
 void MemoryCache::pruneLiveResources()
 {
     ASSERT(!m_prunePending);
-    unsigned capacity = liveCapacity();
+    size_t capacity = liveCapacity();
     if (!m_liveSize || (capacity && m_liveSize <= capacity))
         return;
 
-    unsigned targetSize = static_cast<unsigned>(capacity * cTargetPrunePercentage); // Cut by a percentage to avoid immediately pruning again.
+    size_t targetSize = static_cast<size_t>(capacity * cTargetPrunePercentage); // Cut by a percentage to avoid immediately pruning again.
 
     // Destroy any decoded data in live objects that we can.
     // Start from the tail, since this is the lowest priority
@@ -207,11 +206,11 @@ void MemoryCache::pruneLiveResources()
 
 void MemoryCache::pruneDeadResources()
 {
-    unsigned capacity = deadCapacity();
+    size_t capacity = deadCapacity();
     if (!m_deadSize || (capacity && m_deadSize <= capacity))
         return;
 
-    unsigned targetSize = static_cast<unsigned>(capacity * cTargetPrunePercentage); // Cut by a percentage to avoid immediately pruning again.
+    size_t targetSize = static_cast<size_t>(capacity * cTargetPrunePercentage); // Cut by a percentage to avoid immediately pruning again.
 
     int size = m_allResources.size();
 
@@ -281,7 +280,7 @@ void MemoryCache::pruneDeadResources()
     }
 }
 
-void MemoryCache::setCapacities(unsigned minDeadBytes, unsigned maxDeadBytes, unsigned totalBytes)
+void MemoryCache::setCapacities(size_t minDeadBytes, size_t maxDeadBytes, size_t totalBytes)
 {
     ASSERT(minDeadBytes <= maxDeadBytes);
     ASSERT(maxDeadBytes <= totalBytes);
@@ -295,7 +294,7 @@ void MemoryCache::setCapacities(unsigned minDeadBytes, unsigned maxDeadBytes, un
 void MemoryCache::evict(Resource* resource)
 {
     ASSERT(WTF::isMainThread());
-    LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().string().latin1().data());
+    WTF_LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().string().latin1().data());
     // The resource may have already been removed by someone other than our caller,
     // who needed a fresh copy for a reload. See <http://bugs.webkit.org/show_bug.cgi?id=12479#c6>.
     if (resource->inCache()) {
@@ -306,7 +305,7 @@ void MemoryCache::evict(Resource* resource)
         // Remove from the appropriate LRU list.
         removeFromLRUList(resource);
         removeFromLiveDecodedResourcesList(resource);
-        adjustSize(resource->hasClients(), -static_cast<int>(resource->size()));
+        adjustSize(resource->hasClients(), -static_cast<ptrdiff_t>(resource->size()));
     } else {
         ASSERT(m_resources.get(resource->url()) != resource);
     }
@@ -477,28 +476,30 @@ void MemoryCache::insertInLiveDecodedResourcesList(Resource* resource)
 
 void MemoryCache::addToLiveResourcesSize(Resource* resource)
 {
+    ASSERT(m_deadSize >= resource->size());
     m_liveSize += resource->size();
     m_deadSize -= resource->size();
 }
 
 void MemoryCache::removeFromLiveResourcesSize(Resource* resource)
 {
+    ASSERT(m_liveSize >= resource->size());
     m_liveSize -= resource->size();
     m_deadSize += resource->size();
 }
 
-void MemoryCache::adjustSize(bool live, int delta)
+void MemoryCache::adjustSize(bool live, ptrdiff_t delta)
 {
     if (live) {
-        ASSERT(delta >= 0 || ((int)m_liveSize + delta >= 0));
+        ASSERT(delta >= 0 || m_liveSize >= static_cast<size_t>(-delta) );
         m_liveSize += delta;
     } else {
-        ASSERT(delta >= 0 || ((int)m_deadSize + delta >= 0));
+        ASSERT(delta >= 0 || m_deadSize >= static_cast<size_t>(-delta) );
         m_deadSize += delta;
     }
 }
 
-void MemoryCache::removeURLFromCache(ScriptExecutionContext* context, const KURL& url)
+void MemoryCache::removeURLFromCache(ExecutionContext* context, const KURL& url)
 {
     if (context->isWorkerGlobalScope()) {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
@@ -508,7 +509,7 @@ void MemoryCache::removeURLFromCache(ScriptExecutionContext* context, const KURL
     removeURLFromCacheInternal(context, url);
 }
 
-void MemoryCache::removeURLFromCacheInternal(ScriptExecutionContext*, const KURL& url)
+void MemoryCache::removeURLFromCacheInternal(ExecutionContext*, const KURL& url)
 {
     if (Resource* resource = memoryCache()->resourceForURL(url))
         memoryCache()->remove(resource);
@@ -518,7 +519,7 @@ void MemoryCache::TypeStatistic::addResource(Resource* o)
 {
     bool purged = o->wasPurged();
     bool purgeable = o->isPurgeable() && !purged;
-    int pageSize = (o->encodedSize() + o->overheadSize() + 4095) & ~4095;
+    size_t pageSize = (o->encodedSize() + o->overheadSize() + 4095) & ~4095;
     count++;
     size += purged ? 0 : o->size();
     liveSize += o->hasClients() ? o->size() : 0;
@@ -595,7 +596,7 @@ void MemoryCache::prune(Resource* justReleasedResource)
             pruneNow(currentTime); // Delay exceeded, prune now.
         } else {
             // Defer.
-            WebKit::Platform::current()->currentThread()->addTaskObserver(this);
+            blink::Platform::current()->currentThread()->addTaskObserver(this);
             m_prunePending = true;
         }
     }
@@ -630,7 +631,7 @@ void MemoryCache::pruneNow(double currentTime)
 {
     if (m_prunePending) {
         m_prunePending = false;
-        WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
+        blink::Platform::current()->currentThread()->removeTaskObserver(this);
     }
 
     TemporaryChange<bool> reentrancyProtector(m_inPruneResources, true);

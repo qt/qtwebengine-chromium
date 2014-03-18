@@ -34,3 +34,8 @@ Local Modifications:
 - patches/tls_intolerant.patch: allow TLSLite to simulate a TLS-intolerant server.
 - patches/channel_id.patch: add basic ChannelID support. (Signatures are not
   checked.)
+- patches/signed_certificate_timestamps.patch: add support for sending Signed
+  Certificate Timestamps over a TLS extension.
+- patches/fallback_scsv.patch: add support for TLS_FALLBACK_SCSV. See
+  https://tools.ietf.org/html/draft-bmoeller-tls-downgrade-scsv-01
+- patches/status_request.patch: add support for sending stapled OCSP responses.

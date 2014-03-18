@@ -41,7 +41,7 @@ public:
     UChar32 from() const { return m_from; }
     UChar32 to() const { return m_to; }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     bool equals(const CSSUnicodeRangeValue&) const;
 
@@ -56,6 +56,8 @@ private:
     UChar32 m_from;
     UChar32 m_to;
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSUnicodeRangeValue, isUnicodeRangeValue());
 
 } // namespace WebCore
 

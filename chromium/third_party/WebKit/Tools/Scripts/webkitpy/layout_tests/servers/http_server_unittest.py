@@ -45,7 +45,7 @@ class TestHttpServer(unittest.TestCase):
         host = MockHost()
         test_port = test.TestPort(host)
         host.filesystem.write_text_file(
-            "/mock-checkout/Tools/Scripts/webkitpy/layout_tests/servers/lighttpd.conf", "Mock Config\n")
+            "/mock-checkout/third_party/WebKit/Tools/Scripts/webkitpy/layout_tests/servers/lighttpd.conf", "Mock Config\n")
         host.filesystem.write_text_file(
             "/usr/lib/lighttpd/liblightcomp.dylib", "Mock dylib")
 
@@ -57,7 +57,7 @@ class TestHttpServer(unittest.TestCase):
 
         config_file = host.filesystem.read_text_file("/mock/output_dir/lighttpd.conf")
         self.assertEqual(re.findall(r"alias.url.+", config_file), [
-            'alias.url = ( "/js-test-resources" => "/test.checkout/LayoutTests/fast/js/resources" )',
+            'alias.url = ( "/js-test-resources" => "/test.checkout/LayoutTests/resources" )',
             'alias.url += ( "/mock/one-additional-dir" => "/mock-checkout/one-additional-dir" )',
             'alias.url += ( "/mock/another-additional-dir" => "/mock-checkout/one-additional-dir" )',
             'alias.url += ( "/media-resources" => "/test.checkout/LayoutTests/media" )',
@@ -67,7 +67,7 @@ class TestHttpServer(unittest.TestCase):
         host = MockHost()
         test_port = test.TestPort(host)
         host.filesystem.write_text_file(
-            "/mock-checkout/Tools/Scripts/webkitpy/layout_tests/servers/lighttpd.conf", "Mock Config\n")
+            "/mock-checkout/third_party/WebKit/Tools/Scripts/webkitpy/layout_tests/servers/lighttpd.conf", "Mock Config\n")
         host.filesystem.write_text_file(
             "/usr/lib/lighttpd/liblightcomp.dylib", "Mock dylib")
 

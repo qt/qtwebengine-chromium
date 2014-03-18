@@ -27,7 +27,7 @@
 #define StyleSheetResourceClient_h
 
 #include "core/fetch/ResourceClient.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -41,6 +41,7 @@ public:
     virtual void setCSSStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* charset */, const CSSStyleSheetResource*) { }
     virtual void setXSLStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* sheet */) { }
 };
+
 }
 
 #endif // StyleSheetResourceClient_h

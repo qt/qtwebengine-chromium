@@ -76,6 +76,8 @@ class ViECapturer
   virtual int IncomingFrameI420(const ViEVideoFrameI420& video_frame,
                                 unsigned long long capture_time = 0);  // NOLINT
 
+  virtual void SwapFrame(I420VideoFrame* frame) OVERRIDE;
+
   // Start/Stop.
   int32_t Start(
       const CaptureCapability& capture_capability = CaptureCapability());
@@ -103,6 +105,11 @@ class ViECapturer
   const char* CurrentDeviceName() const;
 
   void RegisterCpuOveruseObserver(CpuOveruseObserver* observer);
+
+  void CpuOveruseMeasures(int* capture_jitter_ms,
+                          int* avg_encode_time_ms,
+                          int* encode_usage_percent,
+                          int* capture_queue_delay_ms_per_s) const;
 
  protected:
   ViECapturer(int capture_id,
@@ -154,6 +161,10 @@ class ViECapturer
   ProcessThread& module_process_thread_;
   const int capture_id_;
 
+  // Frame used in IncomingFrameI420.
+  scoped_ptr<CriticalSectionWrapper> incoming_frame_cs_;
+  I420VideoFrame incoming_frame_;
+
   // Capture thread.
   ThreadWrapper& capture_thread_;
   EventWrapper& capture_event_;
@@ -177,8 +188,6 @@ class ViECapturer
   ViECaptureObserver* observer_;
 
   CaptureCapability requested_capability_;
-
-  I420VideoFrame capture_device_image_;
 
   scoped_ptr<OveruseFrameDetector> overuse_detector_;
 };

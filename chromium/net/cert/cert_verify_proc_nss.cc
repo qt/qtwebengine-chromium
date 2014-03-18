@@ -127,6 +127,8 @@ int MapSecurityError(int err) {
     case SEC_ERROR_REVOKED_CERTIFICATE:
     case SEC_ERROR_UNTRUSTED_CERT:  // Treat as revoked.
       return ERR_CERT_REVOKED;
+    case SEC_ERROR_CERT_NOT_IN_NAME_SPACE:
+      return ERR_CERT_NAME_CONSTRAINT_VIOLATION;
     case SEC_ERROR_BAD_DER:
     case SEC_ERROR_BAD_SIGNATURE:
     case SEC_ERROR_CERT_NOT_VALID:
@@ -136,7 +138,6 @@ int MapSecurityError(int err) {
     case SEC_ERROR_INADEQUATE_CERT_TYPE:  // Extended key usage and whether
                                           // the certificate is a CA.
     case SEC_ERROR_POLICY_VALIDATION_FAILED:
-    case SEC_ERROR_CERT_NOT_IN_NAME_SPACE:
     case SEC_ERROR_PATH_LEN_CONSTRAINT_INVALID:
     case SEC_ERROR_UNKNOWN_CRITICAL_EXTENSION:
     case SEC_ERROR_EXTENSION_VALUE_INVALID:
@@ -763,9 +764,10 @@ int CertVerifyProcNSS::VerifyInternal(
   CERTCertificate* cert_handle = cert->os_cert_handle();
 #endif  // defined(OS_IOS)
 
-  // Make sure that the hostname matches with the common name of the cert.
-  if (!cert->VerifyNameMatch(hostname))
+  if (!cert->VerifyNameMatch(hostname,
+                             &verify_result->common_name_fallback_used)) {
     verify_result->cert_status |= CERT_STATUS_COMMON_NAME_INVALID;
+  }
 
   // Make sure that the cert is valid now.
   SECCertTimeValidity validity = CERT_CheckCertValidTimes(

@@ -38,7 +38,7 @@ using namespace WTF;
 
 namespace WebCore {
 
-static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> value, bool& succeeded)
+static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> value, v8::Isolate* isolate, bool& succeeded)
 {
     succeeded = true;
 
@@ -58,7 +58,7 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
     // - If the getter or the property's valueOf method throws an exception, we
     //   quit so as not to risk overwriting the exception.
     // - If the value is absent or undefined, we don't override the default.
-    v8::Local<v8::Value> enableHighAccuracyValue = object->Get(v8::String::NewSymbol("enableHighAccuracy"));
+    v8::Local<v8::Value> enableHighAccuracyValue = object->Get(v8AtomicString(isolate, "enableHighAccuracy"));
     if (enableHighAccuracyValue.IsEmpty()) {
         succeeded = false;
         return 0;
@@ -72,7 +72,7 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
         options->setEnableHighAccuracy(enableHighAccuracyBoolean->Value());
     }
 
-    v8::Local<v8::Value> timeoutValue = object->Get(v8::String::NewSymbol("timeout"));
+    v8::Local<v8::Value> timeoutValue = object->Get(v8AtomicString(isolate, "timeout"));
     if (timeoutValue.IsEmpty()) {
         succeeded = false;
         return 0;
@@ -96,7 +96,7 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
         }
     }
 
-    v8::Local<v8::Value> maximumAgeValue = object->Get(v8::String::NewSymbol("maximumAge"));
+    v8::Local<v8::Value> maximumAgeValue = object->Get(v8AtomicString(isolate, "maximumAge"));
     if (maximumAgeValue.IsEmpty()) {
         succeeded = false;
         return 0;
@@ -125,51 +125,51 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
     return options.release();
 }
 
-void V8Geolocation::getCurrentPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8Geolocation::getCurrentPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     bool succeeded = false;
 
-    RefPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(args[0], succeeded, args.GetIsolate());
+    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], succeeded, info.GetIsolate());
     if (!succeeded)
         return;
     ASSERT(positionCallback);
 
     // Argument is optional (hence undefined is allowed), and null is allowed.
-    RefPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(args[1], succeeded, args.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
+    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], succeeded, info.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
     if (!succeeded)
         return;
 
-    RefPtr<PositionOptions> positionOptions = createPositionOptions(args[2], succeeded);
+    RefPtr<PositionOptions> positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded);
     if (!succeeded)
         return;
     ASSERT(positionOptions);
 
-    Geolocation* geolocation = V8Geolocation::toNative(args.Holder());
+    Geolocation* geolocation = V8Geolocation::toNative(info.Holder());
     geolocation->getCurrentPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions.release());
 }
 
-void V8Geolocation::watchPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8Geolocation::watchPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     bool succeeded = false;
 
-    RefPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(args[0], succeeded, args.GetIsolate());
+    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], succeeded, info.GetIsolate());
     if (!succeeded)
         return;
     ASSERT(positionCallback);
 
     // Argument is optional (hence undefined is allowed), and null is allowed.
-    RefPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(args[1], succeeded, args.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
+    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], succeeded, info.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
     if (!succeeded)
         return;
 
-    RefPtr<PositionOptions> positionOptions = createPositionOptions(args[2], succeeded);
+    RefPtr<PositionOptions> positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded);
     if (!succeeded)
         return;
     ASSERT(positionOptions);
 
-    Geolocation* geolocation = V8Geolocation::toNative(args.Holder());
+    Geolocation* geolocation = V8Geolocation::toNative(info.Holder());
     int watchId = geolocation->watchPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions.release());
-    v8SetReturnValue(args, watchId);
+    v8SetReturnValue(info, watchId);
 }
 
 } // namespace WebCore

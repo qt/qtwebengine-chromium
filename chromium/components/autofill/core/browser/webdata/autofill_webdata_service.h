@@ -20,8 +20,8 @@
 
 class WebDatabaseService;
 
-namespace content {
-class BrowserContext;
+namespace base {
+class MessageLoopProxy;
 }
 
 namespace autofill {
@@ -38,15 +38,12 @@ class CreditCard;
 class AutofillWebDataService : public AutofillWebData,
                                public WebDataServiceBase {
  public:
-  AutofillWebDataService();
-
+  AutofillWebDataService(scoped_refptr<base::MessageLoopProxy> ui_thread,
+                         scoped_refptr<base::MessageLoopProxy> db_thread);
   AutofillWebDataService(scoped_refptr<WebDatabaseService> wdbs,
+                         scoped_refptr<base::MessageLoopProxy> ui_thread,
+                         scoped_refptr<base::MessageLoopProxy> db_thread,
                          const ProfileErrorCallback& callback);
-
-  // Retrieve an AutofillWebDataService for the given context.
-  // Can return NULL in some contexts.
-  static scoped_refptr<AutofillWebDataService> FromBrowserContext(
-      content::BrowserContext* context);
 
   // WebDataServiceBase implementation.
   virtual void ShutdownOnUIThread() OVERRIDE;
@@ -111,6 +108,12 @@ class AutofillWebDataService : public AutofillWebData,
 
  private:
   ObserverList<AutofillWebDataServiceObserverOnUIThread> ui_observer_list_;
+
+    // The MessageLoopProxy that this class uses as its UI thread.
+  scoped_refptr<base::MessageLoopProxy> ui_thread_;
+
+  // The MessageLoopProxy that this class uses as its DB thread.
+  scoped_refptr<base::MessageLoopProxy> db_thread_;
 
   // This factory is used on the UI thread. All vended weak pointers are
   // invalidated in ShutdownOnUIThread().

@@ -35,7 +35,6 @@ namespace net {
 
 namespace {
 
-const int kKeySizeInBits = 1024;
 const int kValidityPeriodInDays = 365;
 // When we check the system time, we add this many days to the end of the check
 // so the result will still hold even after chrome has been running for a
@@ -99,15 +98,13 @@ scoped_ptr<ServerBoundCertStore::ServerBoundCert> GenerateCert(
       not_valid_before + base::TimeDelta::FromDays(kValidityPeriodInDays);
   std::string der_cert;
   std::vector<uint8> private_key_info;
-  scoped_ptr<crypto::ECPrivateKey> key(crypto::ECPrivateKey::Create());
-  if (!key.get()) {
-    DLOG(ERROR) << "Unable to create key pair for client";
-    *error = ERR_KEY_GENERATION_FAILED;
-    return result.Pass();
-  }
-  if (!x509_util::CreateDomainBoundCertEC(key.get(), server_identifier,
-                                          serial_number, not_valid_before,
-                                          not_valid_after, &der_cert)) {
+  scoped_ptr<crypto::ECPrivateKey> key;
+  if (!x509_util::CreateKeyAndDomainBoundCertEC(server_identifier,
+                                                serial_number,
+                                                not_valid_before,
+                                                not_valid_after,
+                                                &key,
+                                                &der_cert)) {
     DLOG(ERROR) << "Unable to create x509 cert for client";
     *error = ERR_ORIGIN_BOUND_CERT_GENERATION_FAILED;
     return result.Pass();
@@ -372,11 +369,11 @@ ServerBoundCertService::ServerBoundCertService(
     const scoped_refptr<base::TaskRunner>& task_runner)
     : server_bound_cert_store_(server_bound_cert_store),
       task_runner_(task_runner),
-      weak_ptr_factory_(this),
       requests_(0),
       cert_store_hits_(0),
       inflight_joins_(0),
-      workers_created_(0) {
+      workers_created_(0),
+      weak_ptr_factory_(this) {
   base::Time start = base::Time::Now();
   base::Time end = start + base::TimeDelta::FromDays(
       kValidityPeriodInDays + kSystemTimeValidityBufferInDays);

@@ -27,7 +27,7 @@ namespace gfx {
 class Rect;
 }
 
-namespace WebKit {
+namespace blink {
 class WebMouseEvent;
 struct WebScreenInfo;
 }
@@ -113,11 +113,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Returns the size of all the backing stores used for rendering
   static size_t BackingStoreMemorySize();
 
-  // Adds/removes a callback called on creation of each new RenderWidgetHost.
-  typedef base::Callback<void(RenderWidgetHost*)> CreatedCallback;
-  static void AddCreatedCallback(const CreatedCallback& callback);
-  static void RemoveCreatedCallback(const CreatedCallback& callback);
-
   // Returns the RenderWidgetHost given its ID and the ID of its render process.
   // Returns NULL if the IDs do not correspond to a live RenderWidgetHost.
   static RenderWidgetHost* FromID(int32 process_id, int32 routing_id);
@@ -175,7 +170,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // NotifyTextDirection(). (We may receive keydown events even after we
   // canceled updating the text direction because of auto-repeat.)
   // Note: we cannot undo this change for compatibility with Firefox and IE.
-  virtual void UpdateTextDirection(WebKit::WebTextDirection direction) = 0;
+  virtual void UpdateTextDirection(blink::WebTextDirection direction) = 0;
   virtual void NotifyTextDirection() = 0;
 
   virtual void Focus() = 0;
@@ -221,9 +216,9 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
   virtual void ForwardMouseEvent(
-      const WebKit::WebMouseEvent& mouse_event) = 0;
+      const blink::WebMouseEvent& mouse_event) = 0;
   virtual void ForwardWheelEvent(
-      const WebKit::WebMouseWheelEvent& wheel_event) = 0;
+      const blink::WebMouseWheelEvent& wheel_event) = 0;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) = 0;
 
@@ -261,11 +256,11 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Makes an IPC call to tell webkit to replace the currently selected word
   // or a word around the cursor.
-  virtual void Replace(const string16& word) = 0;
+  virtual void Replace(const base::string16& word) = 0;
 
   // Makes an IPC call to tell webkit to replace the misspelling in the current
   // selection.
-  virtual void ReplaceMisspelling(const string16& word) = 0;
+  virtual void ReplaceMisspelling(const base::string16& word) = 0;
 
   // Called to notify the RenderWidget that the resize rect has changed without
   // the size of the RenderWidget itself changing.
@@ -298,12 +293,12 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
       const KeyPressEventCallback& callback) = 0;
 
   // Add/remove a callback that can handle all kinds of mouse events.
-  typedef base::Callback<bool(const WebKit::WebMouseEvent&)> MouseEventCallback;
+  typedef base::Callback<bool(const blink::WebMouseEvent&)> MouseEventCallback;
   virtual void AddMouseEventCallback(const MouseEventCallback& callback) = 0;
   virtual void RemoveMouseEventCallback(const MouseEventCallback& callback) = 0;
 
   // Get the screen info corresponding to this render widget.
-  virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) = 0;
+  virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
 
   // Grabs snapshot from renderer side and returns the bitmap to a callback.
   // If |src_rect| is empty, the whole contents is copied. This is an expensive

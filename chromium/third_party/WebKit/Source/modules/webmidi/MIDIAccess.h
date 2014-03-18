@@ -33,9 +33,9 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/midi/MIDIAccessor.h"
-#include "core/platform/midi/MIDIAccessorClient.h"
+#include "core/events/EventTarget.h"
+#include "modules/webmidi/MIDIAccessor.h"
+#include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIInput.h"
 #include "modules/webmidi/MIDIOutput.h"
 #include "wtf/RefCounted.h"
@@ -44,19 +44,17 @@
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class ExecutionContext;
 class MIDIAccessPromise;
 
-class MIDIAccess : public RefCounted<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTarget, public MIDIAccessorClient {
+class MIDIAccess : public RefCounted<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
+    REFCOUNTED_EVENT_TARGET(MIDIAccess);
 public:
     virtual ~MIDIAccess();
-    static PassRefPtr<MIDIAccess> create(ScriptExecutionContext*, MIDIAccessPromise*);
+    static PassRefPtr<MIDIAccess> create(ExecutionContext*, MIDIAccessPromise*);
 
     MIDIInputVector inputs() const { return m_inputs; }
     MIDIOutputVector outputs() const { return m_outputs; }
-
-    using RefCounted<MIDIAccess>::ref;
-    using RefCounted<MIDIAccess>::deref;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
@@ -65,11 +63,10 @@ public:
     bool sysExEnabled() const { return m_sysExEnabled; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForMIDIAccess; }
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE { return ActiveDOMObject::scriptExecutionContext(); }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIAccess; }
+    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     // ActiveDOMObject
-    virtual bool canSuspend() const OVERRIDE { return true; }
     virtual void stop();
 
     // MIDIAccessorClient
@@ -82,20 +79,13 @@ public:
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds);
 
 private:
-    MIDIAccess(ScriptExecutionContext*, MIDIAccessPromise*);
+    MIDIAccess(ExecutionContext*, MIDIAccessPromise*);
 
     void startRequest();
     virtual void permissionDenied();
 
-    // EventTarget
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-    virtual EventTargetData* eventTargetData() OVERRIDE { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE { return &m_eventTargetData; }
-
     MIDIInputVector m_inputs;
     MIDIOutputVector m_outputs;
-    EventTargetData m_eventTargetData;
     MIDIAccessPromise* m_promise;
 
     OwnPtr<MIDIAccessor> m_accessor;

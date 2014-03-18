@@ -40,9 +40,9 @@ class InputTagSpeechBrowserTest : public ContentBrowserTest {
     GURL test_url = GetTestUrl("speech", filename);
     NavigateToURL(shell(), test_url);
 
-    WebKit::WebMouseEvent mouse_event;
-    mouse_event.type = WebKit::WebInputEvent::MouseDown;
-    mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+    blink::WebMouseEvent mouse_event;
+    mouse_event.type = blink::WebInputEvent::MouseDown;
+    mouse_event.button = blink::WebMouseEvent::ButtonLeft;
     mouse_event.x = 0;
     mouse_event.y = 0;
     mouse_event.clickCount = 1;
@@ -52,7 +52,7 @@ class InputTagSpeechBrowserTest : public ContentBrowserTest {
         NOTIFICATION_LOAD_STOP,
         Source<NavigationController>(&web_contents->GetController()));
     web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-    mouse_event.type = WebKit::WebInputEvent::MouseUp;
+    mouse_event.type = blink::WebInputEvent::MouseUp;
     web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
     fake_speech_recognition_manager_.WaitForRecognitionStarted();
 
@@ -79,7 +79,7 @@ class InputTagSpeechBrowserTest : public ContentBrowserTest {
 
     // Inject the fake manager factory so that the test result is returned to
     // the web page.
-    SpeechRecognitionManager::SetManagerForTests(speech_recognition_manager_);
+    SpeechRecognitionManager::SetManagerForTesting(speech_recognition_manager_);
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {

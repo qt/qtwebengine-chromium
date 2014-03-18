@@ -91,8 +91,8 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
         duration_(AV_NOPTS_VALUE) {
     InitializeFFmpeg();
 
-    audio_buffer_.reset(avcodec_alloc_frame());
-    video_buffer_.reset(avcodec_alloc_frame());
+    audio_buffer_.reset(av_frame_alloc());
+    video_buffer_.reset(av_frame_alloc());
   }
 
   virtual ~FFmpegTest() {
@@ -382,8 +382,8 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
   AVPacketQueue audio_packets_;
   AVPacketQueue video_packets_;
 
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> audio_buffer_;
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> video_buffer_;
+  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFreeFrame> audio_buffer_;
+  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFreeFrame> video_buffer_;
 
   int64 decoded_audio_time_;
   int64 decoded_audio_duration_;

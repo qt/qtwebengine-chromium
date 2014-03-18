@@ -31,6 +31,7 @@
 #ifndef WebTestProxy_h
 #define WebTestProxy_h
 
+#include "WebScopedPtr.h"
 #include "WebTask.h"
 #include "WebTestCommon.h"
 #include "public/platform/WebNonCopyable.h"
@@ -41,7 +42,6 @@
 #include "public/web/WebDOMMessageEvent.h"
 #include "public/web/WebDataSource.h"
 #include "public/web/WebDragOperation.h"
-#include "public/web/WebEditingAction.h"
 #include "public/web/WebIconURL.h"
 #include "public/web/WebNavigationPolicy.h"
 #include "public/web/WebNavigationType.h"
@@ -49,18 +49,15 @@
 #include "public/web/WebTextAffinity.h"
 #include "public/web/WebTextDirection.h"
 #include <map>
-#include <memory>
 #include <string>
 
-namespace WebKit {
+namespace blink {
 class WebAXObject;
 class WebAudioDevice;
 class WebCachedURLRequest;
 class WebColorChooser;
 class WebColorChooserClient;
 class WebDataSource;
-class WebDeviceOrientationClient;
-class WebDeviceOrientationClientMock;
 class WebDragData;
 class WebFileChooserCompletion;
 class WebFrame;
@@ -87,6 +84,7 @@ class WebUserMediaClient;
 class WebValidationMessageClient;
 class WebView;
 class WebWidget;
+struct WebColorSuggestion;
 struct WebConsoleMessage;
 struct WebContextMenuData;
 struct WebFileChooserParams;
@@ -115,14 +113,15 @@ class WEBTESTRUNNER_EXPORT WebTestProxyBase {
 public:
     void setInterfaces(WebTestInterfaces*);
     void setDelegate(WebTestDelegate*);
-    void setWidget(WebKit::WebWidget*);
+    void setWidget(blink::WebWidget*);
 
     void reset();
 
-    WebKit::WebSpellCheckClient *spellCheckClient() const;
-    WebKit::WebValidationMessageClient* validationMessageClient();
-    WebKit::WebColorChooser* createColorChooser(WebKit::WebColorChooserClient*, const WebKit::WebColor&);
-    bool runFileChooser(const WebKit::WebFileChooserParams&, WebKit::WebFileChooserCompletion*);
+    blink::WebSpellCheckClient *spellCheckClient() const;
+    blink::WebValidationMessageClient* validationMessageClient();
+    blink::WebColorChooser* createColorChooser(blink::WebColorChooserClient*, const blink::WebColor&);
+    blink::WebColorChooser* createColorChooser(blink::WebColorChooserClient*, const blink::WebColor&, const blink::WebVector<blink::WebColorSuggestion>& suggestions);
+    bool runFileChooser(const blink::WebFileChooserParams&, blink::WebFileChooserCompletion*);
 
     std::string captureTree(bool debugRenderTree);
     SkCanvas* capturePixels();
@@ -141,92 +140,87 @@ public:
     void displayInvalidatedRegion();
     void discardBackingStore();
 
-    WebKit::WebDeviceOrientationClientMock* deviceOrientationClientMock();
-    WebKit::WebGeolocationClientMock* geolocationClientMock();
-    WebKit::WebMIDIClientMock* midiClientMock();
+    blink::WebGeolocationClientMock* geolocationClientMock();
+    blink::WebMIDIClientMock* midiClientMock();
     MockWebSpeechInputController* speechInputControllerMock();
     MockWebSpeechRecognizer* speechRecognizerMock();
 #endif
 
     WebTaskList* taskList() { return &m_taskList; }
 
-    WebKit::WebView* webView();
+    blink::WebView* webView();
+
+    void didForceResize();
+
+    void postSpellCheckEvent(const blink::WebString& eventName);
 
 protected:
     WebTestProxyBase();
     ~WebTestProxyBase();
 
-    void didInvalidateRect(const WebKit::WebRect&);
-    void didScrollRect(int, int, const WebKit::WebRect&);
+    void didInvalidateRect(const blink::WebRect&);
+    void didScrollRect(int, int, const blink::WebRect&);
     void scheduleAnimation();
-    void setWindowRect(const WebKit::WebRect&);
-    void show(WebKit::WebNavigationPolicy);
-    void didAutoResize(const WebKit::WebSize&);
-    void postAccessibilityEvent(const WebKit::WebAXObject&, WebKit::WebAXEvent);
-    void startDragging(WebKit::WebFrame*, const WebKit::WebDragData&, WebKit::WebDragOperationsMask, const WebKit::WebImage&, const WebKit::WebPoint&);
-    bool shouldBeginEditing(const WebKit::WebRange&);
-    bool shouldEndEditing(const WebKit::WebRange&);
-    bool shouldInsertNode(const WebKit::WebNode&, const WebKit::WebRange&, WebKit::WebEditingAction);
-    bool shouldInsertText(const WebKit::WebString& text, const WebKit::WebRange&, WebKit::WebEditingAction);
-    bool shouldChangeSelectedRange(const WebKit::WebRange& fromRange, const WebKit::WebRange& toRange, WebKit::WebTextAffinity, bool stillSelecting);
-    bool shouldDeleteRange(const WebKit::WebRange&);
-    bool shouldApplyStyle(const WebKit::WebString& style, const WebKit::WebRange&);
-    void didBeginEditing();
+    // FIXME: Remove once we switch to use didForceResize.
+    void setWindowRect(const blink::WebRect&);
+    void show(blink::WebNavigationPolicy);
+    void didAutoResize(const blink::WebSize&);
+    void postAccessibilityEvent(const blink::WebAXObject&, blink::WebAXEvent);
+    void startDragging(blink::WebFrame*, const blink::WebDragData&, blink::WebDragOperationsMask, const blink::WebImage&, const blink::WebPoint&);
     void didChangeSelection(bool isEmptySelection);
     void didChangeContents();
     void didEndEditing();
-    bool createView(WebKit::WebFrame* creator, const WebKit::WebURLRequest&, const WebKit::WebWindowFeatures&, const WebKit::WebString& frameName, WebKit::WebNavigationPolicy);
-    WebKit::WebPlugin* createPlugin(WebKit::WebFrame*, const WebKit::WebPluginParams&);
-    void setStatusText(const WebKit::WebString&);
+    bool createView(blink::WebFrame* creator, const blink::WebURLRequest&, const blink::WebWindowFeatures&, const blink::WebString& frameName, blink::WebNavigationPolicy, bool suppressOpener);
+    blink::WebPlugin* createPlugin(blink::WebFrame*, const blink::WebPluginParams&);
+    void setStatusText(const blink::WebString&);
     void didStopLoading();
-    void showContextMenu(WebKit::WebFrame*, const WebKit::WebContextMenuData&);
-    WebKit::WebUserMediaClient* userMediaClient();
-    void printPage(WebKit::WebFrame*);
-    WebKit::WebNotificationPresenter* notificationPresenter();
-    WebKit::WebGeolocationClient* geolocationClient();
-    WebKit::WebMIDIClient* webMIDIClient();
-    WebKit::WebSpeechInputController* speechInputController(WebKit::WebSpeechInputListener*);
-    WebKit::WebSpeechRecognizer* speechRecognizer();
-    WebKit::WebDeviceOrientationClient* deviceOrientationClient();
+    void showContextMenu(blink::WebFrame*, const blink::WebContextMenuData&);
+    blink::WebUserMediaClient* userMediaClient();
+    void printPage(blink::WebFrame*);
+    blink::WebNotificationPresenter* notificationPresenter();
+    blink::WebGeolocationClient* geolocationClient();
+    blink::WebMIDIClient* webMIDIClient();
+    blink::WebSpeechInputController* speechInputController(blink::WebSpeechInputListener*);
+    blink::WebSpeechRecognizer* speechRecognizer();
     bool requestPointerLock();
     void requestPointerUnlock();
     bool isPointerLocked();
     void didFocus();
     void didBlur();
-    void setToolTipText(const WebKit::WebString&, WebKit::WebTextDirection);
-    void didAddMessageToConsole(const WebKit::WebConsoleMessage&, const WebKit::WebString& sourceName, unsigned sourceLine);
-    void runModalAlertDialog(WebKit::WebFrame*, const WebKit::WebString&);
-    bool runModalConfirmDialog(WebKit::WebFrame*, const WebKit::WebString&);
-    bool runModalPromptDialog(WebKit::WebFrame*, const WebKit::WebString& message, const WebKit::WebString& defaultValue, WebKit::WebString* actualValue);
-    bool runModalBeforeUnloadDialog(WebKit::WebFrame*, const WebKit::WebString&);
+    void setToolTipText(const blink::WebString&, blink::WebTextDirection);
+    void didAddMessageToConsole(const blink::WebConsoleMessage&, const blink::WebString& sourceName, unsigned sourceLine);
+    void runModalAlertDialog(blink::WebFrame*, const blink::WebString&);
+    bool runModalConfirmDialog(blink::WebFrame*, const blink::WebString&);
+    bool runModalPromptDialog(blink::WebFrame*, const blink::WebString& message, const blink::WebString& defaultValue, blink::WebString* actualValue);
+    bool runModalBeforeUnloadDialog(blink::WebFrame*, const blink::WebString&);
 
-    void didStartProvisionalLoad(WebKit::WebFrame*);
-    void didReceiveServerRedirectForProvisionalLoad(WebKit::WebFrame*);
-    bool didFailProvisionalLoad(WebKit::WebFrame*, const WebKit::WebURLError&);
-    void didCommitProvisionalLoad(WebKit::WebFrame*, bool isNewNavigation);
-    void didReceiveTitle(WebKit::WebFrame*, const WebKit::WebString& title, WebKit::WebTextDirection);
-    void didChangeIcon(WebKit::WebFrame*, WebKit::WebIconURL::Type);
-    void didFinishDocumentLoad(WebKit::WebFrame*);
-    void didHandleOnloadEvents(WebKit::WebFrame*);
-    void didFailLoad(WebKit::WebFrame*, const WebKit::WebURLError&);
-    void didFinishLoad(WebKit::WebFrame*);
-    void didChangeLocationWithinPage(WebKit::WebFrame*);
-    void didDetectXSS(WebKit::WebFrame*, const WebKit::WebURL& insecureURL, bool didBlockEntirePage);
-    void didDispatchPingLoader(WebKit::WebFrame*, const WebKit::WebURL&);
-    void willRequestResource(WebKit::WebFrame*, const WebKit::WebCachedURLRequest&);
-    void didCreateDataSource(WebKit::WebFrame*, WebKit::WebDataSource*);
-    void willSendRequest(WebKit::WebFrame*, unsigned identifier, WebKit::WebURLRequest&, const WebKit::WebURLResponse& redirectResponse);
-    void didReceiveResponse(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLResponse&);
-    void didChangeResourcePriority(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&);
-    void didFinishResourceLoad(WebKit::WebFrame*, unsigned identifier);
-    WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame*, WebKit::WebDataSource::ExtraData*, const WebKit::WebURLRequest&, WebKit::WebNavigationType, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect);
-    bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent);
+    void didStartProvisionalLoad(blink::WebFrame*);
+    void didReceiveServerRedirectForProvisionalLoad(blink::WebFrame*);
+    bool didFailProvisionalLoad(blink::WebFrame*, const blink::WebURLError&);
+    void didCommitProvisionalLoad(blink::WebFrame*, bool isNewNavigation);
+    void didReceiveTitle(blink::WebFrame*, const blink::WebString& title, blink::WebTextDirection);
+    void didChangeIcon(blink::WebFrame*, blink::WebIconURL::Type);
+    void didFinishDocumentLoad(blink::WebFrame*);
+    void didHandleOnloadEvents(blink::WebFrame*);
+    void didFailLoad(blink::WebFrame*, const blink::WebURLError&);
+    void didFinishLoad(blink::WebFrame*);
+    void didChangeLocationWithinPage(blink::WebFrame*);
+    void didDetectXSS(blink::WebFrame*, const blink::WebURL& insecureURL, bool didBlockEntirePage);
+    void didDispatchPingLoader(blink::WebFrame*, const blink::WebURL&);
+    void willRequestResource(blink::WebFrame*, const blink::WebCachedURLRequest&);
+    void didCreateDataSource(blink::WebFrame*, blink::WebDataSource*);
+    void willSendRequest(blink::WebFrame*, unsigned identifier, blink::WebURLRequest&, const blink::WebURLResponse& redirectResponse);
+    void didReceiveResponse(blink::WebFrame*, unsigned identifier, const blink::WebURLResponse&);
+    void didChangeResourcePriority(blink::WebFrame*, unsigned identifier, const blink::WebURLRequest::Priority&);
+    void didFinishResourceLoad(blink::WebFrame*, unsigned identifier);
+    blink::WebNavigationPolicy decidePolicyForNavigation(blink::WebFrame*, blink::WebDataSource::ExtraData*, const blink::WebURLRequest&, blink::WebNavigationType, blink::WebNavigationPolicy defaultPolicy, bool isRedirect);
+    bool willCheckAndDispatchMessageEvent(blink::WebFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent);
     void resetInputMethod();
 
 private:
     template<class, typename, typename> friend class WebFrameTestProxy;
-    void locationChangeDone(WebKit::WebFrame*);
-    void paintRect(const WebKit::WebRect&);
+    void locationChangeDone(blink::WebFrame*);
+    void paintRect(const blink::WebRect&);
     void paintInvalidatedRegion();
     void paintPagesWithBoundaries();
     SkCanvas* canvas();
@@ -234,34 +228,33 @@ private:
     void invalidateAll();
     void animateNow();
 
-    WebKit::WebWidget* webWidget();
+    blink::WebWidget* webWidget();
 
     TestInterfaces* m_testInterfaces;
     WebTestDelegate* m_delegate;
-    WebKit::WebWidget* m_webWidget;
+    blink::WebWidget* m_webWidget;
 
     WebTaskList m_taskList;
 
-    std::auto_ptr<SpellCheckClient> m_spellcheck;
-    std::auto_ptr<WebUserMediaClientMock> m_userMediaClient;
+    WebScopedPtr<SpellCheckClient> m_spellcheck;
+    WebScopedPtr<WebUserMediaClientMock> m_userMediaClient;
 
     // Painting.
-    std::auto_ptr<SkCanvas> m_canvas;
-    WebKit::WebRect m_paintRect;
+    WebScopedPtr<SkCanvas> m_canvas;
+    blink::WebRect m_paintRect;
     bool m_isPainting;
     bool m_animateScheduled;
     std::map<unsigned, std::string> m_resourceIdentifierMap;
-    std::map<unsigned, WebKit::WebURLRequest> m_requestMap;
+    std::map<unsigned, blink::WebURLRequest> m_requestMap;
 
     bool m_logConsoleOutput;
     int m_chooserCount;
 
-    std::auto_ptr<WebKit::WebGeolocationClientMock> m_geolocationClient;
-    std::auto_ptr<WebKit::WebMIDIClientMock> m_midiClient;
-    std::auto_ptr<WebKit::WebDeviceOrientationClientMock> m_deviceOrientationClient;
-    std::auto_ptr<MockWebSpeechRecognizer> m_speechRecognizer;
-    std::auto_ptr<MockWebSpeechInputController> m_speechInputController;
-    std::auto_ptr<MockWebValidationMessageClient> m_validationMessageClient;
+    WebScopedPtr<blink::WebGeolocationClientMock> m_geolocationClient;
+    WebScopedPtr<blink::WebMIDIClientMock> m_midiClient;
+    WebScopedPtr<MockWebSpeechRecognizer> m_speechRecognizer;
+    WebScopedPtr<MockWebSpeechInputController> m_speechInputController;
+    WebScopedPtr<MockWebValidationMessageClient> m_validationMessageClient;
 
     // FIXME:: We want to move away from this pattern and mark classes
     // as Noncopyable, but this class is marked as WEBTESTRUNNER_EXPORT
@@ -279,7 +272,7 @@ private:
 // Use this template to inject methods into your WebViewClient/WebFrameClient
 // implementation required for the running layout tests.
 template<class Base, typename T>
-class WebTestProxy : public Base, public WebTestProxyBase, public WebKit::WebNonCopyable {
+class WebTestProxy : public Base, public WebTestProxyBase, public blink::WebNonCopyable {
 public:
     explicit WebTestProxy(T t)
         : Base(t)
@@ -289,11 +282,11 @@ public:
     virtual ~WebTestProxy() { }
 
     // WebViewClient implementation.
-    virtual void didInvalidateRect(const WebKit::WebRect& rect)
+    virtual void didInvalidateRect(const blink::WebRect& rect)
     {
         WebTestProxyBase::didInvalidateRect(rect);
     }
-    virtual void didScrollRect(int dx, int dy, const WebKit::WebRect& clipRect)
+    virtual void didScrollRect(int dx, int dy, const blink::WebRect& clipRect)
     {
         WebTestProxyBase::didScrollRect(dx, dy, clipRect);
     }
@@ -305,70 +298,30 @@ public:
     {
         WebTestProxyBase::scheduleAnimation();
     }
-    virtual void setWindowRect(const WebKit::WebRect& rect)
+    virtual void setWindowRect(const blink::WebRect& rect)
     {
         WebTestProxyBase::setWindowRect(rect);
         Base::setWindowRect(rect);
     }
-    virtual void show(WebKit::WebNavigationPolicy policy)
+    virtual void show(blink::WebNavigationPolicy policy)
     {
         WebTestProxyBase::show(policy);
         Base::show(policy);
     }
-    virtual void didAutoResize(const WebKit::WebSize& newSize)
+    virtual void didAutoResize(const blink::WebSize& newSize)
     {
         WebTestProxyBase::didAutoResize(newSize);
         Base::didAutoResize(newSize);
     }
-    virtual void postAccessibilityEvent(const WebKit::WebAXObject& object, WebKit::WebAXEvent event)
+    virtual void postAccessibilityEvent(const blink::WebAXObject& object, blink::WebAXEvent event)
     {
         WebTestProxyBase::postAccessibilityEvent(object, event);
         Base::postAccessibilityEvent(object, event);
     }
-    virtual void startDragging(WebKit::WebFrame* frame, const WebKit::WebDragData& data, WebKit::WebDragOperationsMask mask, const WebKit::WebImage& image, const WebKit::WebPoint& point)
+    virtual void startDragging(blink::WebFrame* frame, const blink::WebDragData& data, blink::WebDragOperationsMask mask, const blink::WebImage& image, const blink::WebPoint& point)
     {
         WebTestProxyBase::startDragging(frame, data, mask, image, point);
         // Don't forward this call to Base because we don't want to do a real drag-and-drop.
-    }
-    virtual bool shouldBeginEditing(const WebKit::WebRange& range)
-    {
-        WebTestProxyBase::shouldBeginEditing(range);
-        return Base::shouldBeginEditing(range);
-    }
-    virtual bool shouldEndEditing(const WebKit::WebRange& range)
-    {
-        WebTestProxyBase::shouldEndEditing(range);
-        return Base::shouldEndEditing(range);
-    }
-    virtual bool shouldInsertNode(const WebKit::WebNode& node, const WebKit::WebRange& range, WebKit::WebEditingAction action)
-    {
-        WebTestProxyBase::shouldInsertNode(node, range, action);
-        return Base::shouldInsertNode(node, range, action);
-    }
-    virtual bool shouldInsertText(const WebKit::WebString& text, const WebKit::WebRange& range, WebKit::WebEditingAction action)
-    {
-        WebTestProxyBase::shouldInsertText(text, range, action);
-        return Base::shouldInsertText(text, range, action);
-    }
-    virtual bool shouldChangeSelectedRange(const WebKit::WebRange& fromRange, const WebKit::WebRange& toRange, WebKit::WebTextAffinity affinity, bool stillSelecting)
-    {
-        WebTestProxyBase::shouldChangeSelectedRange(fromRange, toRange, affinity, stillSelecting);
-        return Base::shouldChangeSelectedRange(fromRange, toRange, affinity, stillSelecting);
-    }
-    virtual bool shouldDeleteRange(const WebKit::WebRange& range)
-    {
-        WebTestProxyBase::shouldDeleteRange(range);
-        return Base::shouldDeleteRange(range);
-    }
-    virtual bool shouldApplyStyle(const WebKit::WebString& style, const WebKit::WebRange& range)
-    {
-        WebTestProxyBase::shouldApplyStyle(style, range);
-        return Base::shouldApplyStyle(style, range);
-    }
-    virtual void didBeginEditing()
-    {
-        WebTestProxyBase::didBeginEditing();
-        Base::didBeginEditing();
     }
     virtual void didChangeSelection(bool isEmptySelection)
     {
@@ -380,18 +333,13 @@ public:
         WebTestProxyBase::didChangeContents();
         Base::didChangeContents();
     }
-    virtual void didEndEditing()
+    virtual blink::WebView* createView(blink::WebFrame* creator, const blink::WebURLRequest& request, const blink::WebWindowFeatures& features, const blink::WebString& frameName, blink::WebNavigationPolicy policy, bool suppressOpener)
     {
-        WebTestProxyBase::didEndEditing();
-        Base::didEndEditing();
-    }
-    virtual WebKit::WebView* createView(WebKit::WebFrame* creator, const WebKit::WebURLRequest& request, const WebKit::WebWindowFeatures& features, const WebKit::WebString& frameName, WebKit::WebNavigationPolicy policy)
-    {
-        if (!WebTestProxyBase::createView(creator, request, features, frameName, policy))
+        if (!WebTestProxyBase::createView(creator, request, features, frameName, policy, suppressOpener))
             return 0;
-        return Base::createView(creator, request, features, frameName, policy);
+        return Base::createView(creator, request, features, frameName, policy, suppressOpener);
     }
-    virtual void setStatusText(const WebKit::WebString& text)
+    virtual void setStatusText(const blink::WebString& text)
     {
         WebTestProxyBase::setStatusText(text);
         Base::setStatusText(text);
@@ -401,42 +349,38 @@ public:
         WebTestProxyBase::didStopLoading();
         Base::didStopLoading();
     }
-    virtual void showContextMenu(WebKit::WebFrame* frame, const WebKit::WebContextMenuData& contextMenuData)
+    virtual void showContextMenu(blink::WebFrame* frame, const blink::WebContextMenuData& contextMenuData)
     {
         WebTestProxyBase::showContextMenu(frame, contextMenuData);
         Base::showContextMenu(frame, contextMenuData);
     }
-    virtual WebKit::WebUserMediaClient* userMediaClient()
+    virtual blink::WebUserMediaClient* userMediaClient()
     {
         return WebTestProxyBase::userMediaClient();
     }
-    virtual void printPage(WebKit::WebFrame* frame)
+    virtual void printPage(blink::WebFrame* frame)
     {
         WebTestProxyBase::printPage(frame);
     }
-    virtual WebKit::WebNotificationPresenter* notificationPresenter()
+    virtual blink::WebNotificationPresenter* notificationPresenter()
     {
         return WebTestProxyBase::notificationPresenter();
     }
-    virtual WebKit::WebGeolocationClient* geolocationClient()
+    virtual blink::WebGeolocationClient* geolocationClient()
     {
         return WebTestProxyBase::geolocationClient();
     }
-    virtual WebKit::WebMIDIClient* webMIDIClient()
+    virtual blink::WebMIDIClient* webMIDIClient()
     {
         return WebTestProxyBase::webMIDIClient();
     }
-    virtual WebKit::WebSpeechInputController* speechInputController(WebKit::WebSpeechInputListener* listener)
+    virtual blink::WebSpeechInputController* speechInputController(blink::WebSpeechInputListener* listener)
     {
         return WebTestProxyBase::speechInputController(listener);
     }
-    virtual WebKit::WebSpeechRecognizer* speechRecognizer()
+    virtual blink::WebSpeechRecognizer* speechRecognizer()
     {
         return WebTestProxyBase::speechRecognizer();
-    }
-    virtual WebKit::WebDeviceOrientationClient* deviceOrientationClient()
-    {
-        return WebTestProxyBase::deviceOrientationClient();
     }
     virtual bool requestPointerLock()
     {
@@ -460,7 +404,7 @@ public:
         WebTestProxyBase::didBlur();
         Base::didBlur();
     }
-    virtual void setToolTipText(const WebKit::WebString& text, WebKit::WebTextDirection hint)
+    virtual void setToolTipText(const blink::WebString& text, blink::WebTextDirection hint)
     {
         WebTestProxyBase::setToolTipText(text, hint);
         Base::setToolTipText(text, hint);
@@ -470,17 +414,17 @@ public:
         WebTestProxyBase::resetInputMethod();
     }
 
-    virtual void didStartProvisionalLoad(WebKit::WebFrame* frame)
+    virtual void didStartProvisionalLoad(blink::WebFrame* frame)
     {
         WebTestProxyBase::didStartProvisionalLoad(frame);
         Base::didStartProvisionalLoad(frame);
     }
-    virtual void didReceiveServerRedirectForProvisionalLoad(WebKit::WebFrame* frame)
+    virtual void didReceiveServerRedirectForProvisionalLoad(blink::WebFrame* frame)
     {
         WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(frame);
         Base::didReceiveServerRedirectForProvisionalLoad(frame);
     }
-    virtual void didFailProvisionalLoad(WebKit::WebFrame* frame, const WebKit::WebURLError& error)
+    virtual void didFailProvisionalLoad(blink::WebFrame* frame, const blink::WebURLError& error)
     {
         // If the test finished, don't notify the embedder of the failed load,
         // as we already destroyed the document loader.
@@ -488,120 +432,128 @@ public:
             return;
         Base::didFailProvisionalLoad(frame, error);
     }
-    virtual void didCommitProvisionalLoad(WebKit::WebFrame* frame, bool isNewNavigation)
+    virtual void didCommitProvisionalLoad(blink::WebFrame* frame, bool isNewNavigation)
     {
         WebTestProxyBase::didCommitProvisionalLoad(frame, isNewNavigation);
         Base::didCommitProvisionalLoad(frame, isNewNavigation);
     }
-    virtual void didReceiveTitle(WebKit::WebFrame* frame, const WebKit::WebString& title, WebKit::WebTextDirection direction)
+    virtual void didReceiveTitle(blink::WebFrame* frame, const blink::WebString& title, blink::WebTextDirection direction)
     {
         WebTestProxyBase::didReceiveTitle(frame, title, direction);
         Base::didReceiveTitle(frame, title, direction);
     }
-    virtual void didChangeIcon(WebKit::WebFrame* frame, WebKit::WebIconURL::Type iconType)
+    virtual void didChangeIcon(blink::WebFrame* frame, blink::WebIconURL::Type iconType)
     {
         WebTestProxyBase::didChangeIcon(frame, iconType);
         Base::didChangeIcon(frame, iconType);
     }
-    virtual void didFinishDocumentLoad(WebKit::WebFrame* frame)
+    virtual void didFinishDocumentLoad(blink::WebFrame* frame)
     {
         WebTestProxyBase::didFinishDocumentLoad(frame);
         Base::didFinishDocumentLoad(frame);
     }
-    virtual void didHandleOnloadEvents(WebKit::WebFrame* frame)
+    virtual void didHandleOnloadEvents(blink::WebFrame* frame)
     {
         WebTestProxyBase::didHandleOnloadEvents(frame);
         Base::didHandleOnloadEvents(frame);
     }
-    virtual void didFailLoad(WebKit::WebFrame* frame, const WebKit::WebURLError& error)
+    virtual void didFailLoad(blink::WebFrame* frame, const blink::WebURLError& error)
     {
         WebTestProxyBase::didFailLoad(frame, error);
         Base::didFailLoad(frame, error);
     }
-    virtual void didFinishLoad(WebKit::WebFrame* frame)
+    virtual void didFinishLoad(blink::WebFrame* frame)
     {
         WebTestProxyBase::didFinishLoad(frame);
         Base::didFinishLoad(frame);
     }
-    virtual void didDetectXSS(WebKit::WebFrame* frame, const WebKit::WebURL& insecureURL, bool didBlockEntirePage)
+    virtual void didDetectXSS(blink::WebFrame* frame, const blink::WebURL& insecureURL, bool didBlockEntirePage)
     {
         WebTestProxyBase::didDetectXSS(frame, insecureURL, didBlockEntirePage);
         Base::didDetectXSS(frame, insecureURL, didBlockEntirePage);
     }
-    virtual void willRequestResource(WebKit::WebFrame* frame, const WebKit::WebCachedURLRequest& request)
+    virtual void willRequestResource(blink::WebFrame* frame, const blink::WebCachedURLRequest& request)
     {
         WebTestProxyBase::willRequestResource(frame, request);
         Base::willRequestResource(frame, request);
     }
-    virtual void didCreateDataSource(WebKit::WebFrame* frame, WebKit::WebDataSource* ds)
+    virtual void didCreateDataSource(blink::WebFrame* frame, blink::WebDataSource* ds)
     {
         WebTestProxyBase::didCreateDataSource(frame, ds);
         Base::didCreateDataSource(frame, ds);
     }
-    virtual void willSendRequest(WebKit::WebFrame* frame, unsigned identifier, WebKit::WebURLRequest& request, const WebKit::WebURLResponse& redirectResponse)
+    virtual void willSendRequest(blink::WebFrame* frame, unsigned identifier, blink::WebURLRequest& request, const blink::WebURLResponse& redirectResponse)
     {
         WebTestProxyBase::willSendRequest(frame, identifier, request, redirectResponse);
         Base::willSendRequest(frame, identifier, request, redirectResponse);
     }
-    virtual void didReceiveResponse(WebKit::WebFrame* frame, unsigned identifier, const WebKit::WebURLResponse& response)
+    virtual void didReceiveResponse(blink::WebFrame* frame, unsigned identifier, const blink::WebURLResponse& response)
     {
         WebTestProxyBase::didReceiveResponse(frame, identifier, response);
         Base::didReceiveResponse(frame, identifier, response);
     }
-    virtual void didChangeResourcePriority(WebKit::WebFrame* frame, unsigned identifier, const WebKit::WebURLRequest::Priority& priority)
+    virtual void didChangeResourcePriority(blink::WebFrame* frame, unsigned identifier, const blink::WebURLRequest::Priority& priority)
     {
         WebTestProxyBase::didChangeResourcePriority(frame, identifier, priority);
         Base::didChangeResourcePriority(frame, identifier, priority);
     }
-    virtual void didFinishResourceLoad(WebKit::WebFrame* frame, unsigned identifier)
+    virtual void didFinishResourceLoad(blink::WebFrame* frame, unsigned identifier)
     {
         WebTestProxyBase::didFinishResourceLoad(frame, identifier);
         Base::didFinishResourceLoad(frame, identifier);
     }
-    virtual void didAddMessageToConsole(const WebKit::WebConsoleMessage& message, const WebKit::WebString& sourceName, unsigned sourceLine, const WebKit::WebString& stackTrace)
+    virtual void didAddMessageToConsole(const blink::WebConsoleMessage& message, const blink::WebString& sourceName, unsigned sourceLine, const blink::WebString& stackTrace)
     {
         WebTestProxyBase::didAddMessageToConsole(message, sourceName, sourceLine);
         Base::didAddMessageToConsole(message, sourceName, sourceLine, stackTrace);
     }
-    virtual void runModalAlertDialog(WebKit::WebFrame* frame, const WebKit::WebString& message)
+    virtual void runModalAlertDialog(blink::WebFrame* frame, const blink::WebString& message)
     {
         WebTestProxyBase::runModalAlertDialog(frame, message);
         Base::runModalAlertDialog(frame, message);
     }
-    virtual bool runModalConfirmDialog(WebKit::WebFrame* frame, const WebKit::WebString& message)
+    virtual bool runModalConfirmDialog(blink::WebFrame* frame, const blink::WebString& message)
     {
         WebTestProxyBase::runModalConfirmDialog(frame, message);
         return Base::runModalConfirmDialog(frame, message);
     }
-    virtual bool runModalPromptDialog(WebKit::WebFrame* frame, const WebKit::WebString& message, const WebKit::WebString& defaultValue, WebKit::WebString* actualValue)
+    virtual bool runModalPromptDialog(blink::WebFrame* frame, const blink::WebString& message, const blink::WebString& defaultValue, blink::WebString* actualValue)
     {
         WebTestProxyBase::runModalPromptDialog(frame, message, defaultValue, actualValue);
         return Base::runModalPromptDialog(frame, message, defaultValue, actualValue);
     }
-    virtual bool runModalBeforeUnloadDialog(WebKit::WebFrame* frame, const WebKit::WebString& message)
+    virtual bool runModalBeforeUnloadDialog(blink::WebFrame* frame, const blink::WebString& message)
     {
         return WebTestProxyBase::runModalBeforeUnloadDialog(frame, message);
     }
-    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, WebKit::WebDataSource::ExtraData* extraData, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
+    virtual blink::WebNavigationPolicy decidePolicyForNavigation(blink::WebFrame* frame, blink::WebDataSource::ExtraData* extraData, const blink::WebURLRequest& request, blink::WebNavigationType type, blink::WebNavigationPolicy defaultPolicy, bool isRedirect)
     {
-        WebKit::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
-        if (policy == WebKit::WebNavigationPolicyIgnore)
+        blink::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
+        if (policy == blink::WebNavigationPolicyIgnore)
             return policy;
         return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
-    virtual bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent event)
+    virtual bool willCheckAndDispatchMessageEvent(blink::WebFrame* sourceFrame, blink::WebFrame* targetFrame, blink::WebSecurityOrigin target, blink::WebDOMMessageEvent event)
     {
         if (WebTestProxyBase::willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event))
             return true;
         return Base::willCheckAndDispatchMessageEvent(sourceFrame, targetFrame, target, event);
     }
-    virtual WebKit::WebColorChooser* createColorChooser(WebKit::WebColorChooserClient* client, const WebKit::WebColor& color)
+    virtual blink::WebColorChooser* createColorChooser(blink::WebColorChooserClient* client, const blink::WebColor& color)
     {
         return WebTestProxyBase::createColorChooser(client, color);
     }
-    virtual bool runFileChooser(const WebKit::WebFileChooserParams& params, WebKit::WebFileChooserCompletion* completion)
+    virtual blink::WebColorChooser* createColorChooser(blink::WebColorChooserClient* client, const blink::WebColor& color, const blink::WebVector<blink::WebColorSuggestion>& suggestions)
+    {
+        return WebTestProxyBase::createColorChooser(client, color, suggestions);
+    }
+    virtual bool runFileChooser(const blink::WebFileChooserParams& params, blink::WebFileChooserCompletion* completion)
     {
         return WebTestProxyBase::runFileChooser(params, completion);
+    }
+    virtual void postSpellCheckEvent(const blink::WebString& eventName)
+    {
+        WebTestProxyBase::postSpellCheckEvent(eventName);
     }
 };
 

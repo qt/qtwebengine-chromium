@@ -26,14 +26,16 @@
 #define TimingFunction_h
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/platform/animation/AnimationUtilities.h" // For blend()
-#include "core/platform/graphics/UnitBezier.h"
+#include "platform/animation/AnimationUtilities.h" // For blend()
+#include "platform/animation/UnitBezier.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 #include <algorithm>
+
 
 namespace WebCore {
 
@@ -51,7 +53,6 @@ public:
     // Evaluates the timing function at the given fraction. The accuracy parameter provides a hint as to the required
     // accuracy and is not guaranteed.
     virtual double evaluate(double fraction, double accuracy) const = 0;
-    virtual bool operator==(const TimingFunction& other) const = 0;
 
 protected:
     TimingFunction(Type type)
@@ -74,14 +75,9 @@ public:
 
     virtual double evaluate(double fraction, double) const
     {
-        ASSERT(RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1));
-        RELEASE_ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
+        ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1));
+        ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
         return fraction;
-    }
-
-    virtual bool operator==(const TimingFunction& other) const
-    {
-        return other.type() == LinearFunction;
     }
 
 private:
@@ -90,6 +86,10 @@ private:
     {
     }
 };
+
+
+// Forward declare so we can friend it below. Don't use in production code!
+class ChainedTimingFunctionTestHelper;
 
 class CubicBezierTimingFunction : public TimingFunction {
 public:
@@ -111,22 +111,22 @@ public:
         switch (subType) {
         case Ease:
             {
-                static CubicBezierTimingFunction* ease = adoptRef(new CubicBezierTimingFunction(Ease, 0.25, 0.1, 0.25, 1.0)).leakRef();
+                DEFINE_STATIC_REF(CubicBezierTimingFunction, ease, (adoptRef(new CubicBezierTimingFunction(Ease, 0.25, 0.1, 0.25, 1.0))));
                 return ease;
             }
         case EaseIn:
             {
-                static CubicBezierTimingFunction* easeIn = adoptRef(new CubicBezierTimingFunction(EaseIn, 0.42, 0.0, 1.0, 1.0)).leakRef();
+                DEFINE_STATIC_REF(CubicBezierTimingFunction, easeIn, (adoptRef(new CubicBezierTimingFunction(EaseIn, 0.42, 0.0, 1.0, 1.0))));
                 return easeIn;
             }
         case EaseOut:
             {
-                static CubicBezierTimingFunction* easeOut = adoptRef(new CubicBezierTimingFunction(EaseOut, 0.0, 0.0, 0.58, 1.0)).leakRef();
+                DEFINE_STATIC_REF(CubicBezierTimingFunction, easeOut, (adoptRef(new CubicBezierTimingFunction(EaseOut, 0.0, 0.0, 0.58, 1.0))));
                 return easeOut;
             }
         case EaseInOut:
             {
-                static CubicBezierTimingFunction* easeInOut = adoptRef(new CubicBezierTimingFunction(EaseInOut, 0.42, 0.0, 0.58, 1.0)).leakRef();
+                DEFINE_STATIC_REF(CubicBezierTimingFunction, easeInOut, (adoptRef(new CubicBezierTimingFunction(EaseInOut, 0.42, 0.0, 0.58, 1.0))));
                 return easeInOut;
             }
         default:
@@ -139,23 +139,11 @@ public:
 
     virtual double evaluate(double fraction, double accuracy) const
     {
-        ASSERT(RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1));
-        RELEASE_ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
+        ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1));
+        ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
         if (!m_bezier)
             m_bezier = adoptPtr(new UnitBezier(m_x1, m_y1, m_x2, m_y2));
         return m_bezier->solve(fraction, accuracy);
-    }
-
-    virtual bool operator==(const TimingFunction& other) const
-    {
-        if (other.type() == CubicBezierFunction) {
-            const CubicBezierTimingFunction* ctf = static_cast<const CubicBezierTimingFunction*>(&other);
-            if (m_subType != Custom)
-                return m_subType == ctf->m_subType;
-
-            return m_x1 == ctf->m_x1 && m_y1 == ctf->m_y1 && m_x2 == ctf->m_x2 && m_y2 == ctf->m_y2;
-        }
-        return false;
     }
 
     double x1() const { return m_x1; }
@@ -202,12 +190,12 @@ public:
         switch (subType) {
         case Start:
             {
-                static StepsTimingFunction* start = adoptRef(new StepsTimingFunction(Start, 1, true)).leakRef();
+                DEFINE_STATIC_REF(StepsTimingFunction, start, (adoptRef(new StepsTimingFunction(Start, 1, true))));
                 return start;
             }
         case End:
             {
-                static StepsTimingFunction* end = adoptRef(new StepsTimingFunction(End, 1, false)).leakRef();
+                DEFINE_STATIC_REF(StepsTimingFunction, end, (adoptRef(new StepsTimingFunction(End, 1, false))));
                 return end;
             }
         default:
@@ -221,20 +209,9 @@ public:
 
     virtual double evaluate(double fraction, double) const
     {
-        ASSERT(RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1));
-        RELEASE_ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
+        ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1));
+        ASSERT_WITH_MESSAGE(!RuntimeEnabledFeatures::webAnimationsCSSEnabled() || (fraction >= 0 && fraction <= 1), "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
         return std::min(1.0, (floor(m_steps * fraction) + m_stepAtStart) / m_steps);
-    }
-
-    virtual bool operator==(const TimingFunction& other) const
-    {
-        if (other.type() == StepsFunction) {
-            const StepsTimingFunction* stf = static_cast<const StepsTimingFunction*>(&other);
-            if (m_subType != Custom)
-                return m_subType == stf->m_subType;
-            return m_steps == stf->m_steps && m_stepAtStart == stf->m_stepAtStart;
-        }
-        return false;
     }
 
     int numberOfSteps() const { return m_steps; }
@@ -271,23 +248,15 @@ public:
     }
     virtual double evaluate(double fraction, double accuracy) const
     {
-        RELEASE_ASSERT_WITH_MESSAGE(fraction >= 0 && fraction <= 1, "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
+        ASSERT_WITH_MESSAGE(fraction >= 0 && fraction <= 1, "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
         ASSERT(!m_segments.isEmpty());
         ASSERT(m_segments.last().max() == 1);
-        const Segment* segment;
-        for (size_t i = 0; i < m_segments.size(); ++i) {
-            segment = &m_segments[i];
-            if (fraction < segment->max())
-                break;
+        size_t i = 0;
+        const Segment* segment = &m_segments[i++];
+        while (fraction >= segment->max() && i < m_segments.size()) {
+            segment = &m_segments[i++];
         }
         return segment->evaluate(fraction, accuracy);
-    }
-
-    virtual bool operator==(const TimingFunction& other) const
-    {
-        // This class is not exposed to CSS, so this method is not required.
-        ASSERT_NOT_REACHED();
-        return false;
     }
 
 private:
@@ -297,7 +266,7 @@ private:
             : m_min(min)
             , m_max(max)
             , m_timingFunction(timingFunction)
-        { }
+        { ASSERT(timingFunction); }
 
         double max() const { return m_max; }
         double evaluate(double fraction, double accuracy) const
@@ -312,16 +281,49 @@ private:
         double m_min;
         double m_max;
         RefPtr<TimingFunction> m_timingFunction;
+
+        // FIXME: Come up with a public API for the segments and remove this.
+        friend class CompositorAnimationsImpl;
+        friend class CompositorAnimations;
+
+        // Allow the compositor to reverse the timing function.
+        friend class CompositorAnimationsTimingFunctionReverser;
+
+        // Allow PrintTo/operator== of the segments. Can be removed once
+        // ChainedTimingFunction has a public API for segments.
+        friend class ChainedTimingFunctionTestHelper;
     };
 
     ChainedTimingFunction()
         : TimingFunction(ChainedFunction)
     {
-        ASSERT(RuntimeEnabledFeatures::webAnimationsEnabled());
+        ASSERT(RuntimeEnabledFeatures::webAnimationsCSSEnabled());
     }
 
     Vector<Segment> m_segments;
+
+    // FIXME: Come up with a public API for the segments and remove this.
+    friend class CompositorAnimationsImpl;
+    friend class CompositorAnimations;
+
+    // Allow the compositor to reverse the timing function.
+    friend class CompositorAnimationsTimingFunctionReverser;
+
+    // Allow PrintTo/operator== of the segments. Can be removed once
+    // ChainedTimingFunction has a public API for segments.
+    friend class ChainedTimingFunctionTestHelper;
 };
+
+#define DEFINE_TIMING_FUNCTION_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS( \
+        typeName##TimingFunction, TimingFunction, value, \
+        value->type() == TimingFunction::typeName##Function, \
+        value.type() == TimingFunction::typeName##Function)
+
+DEFINE_TIMING_FUNCTION_TYPE_CASTS(Linear);
+DEFINE_TIMING_FUNCTION_TYPE_CASTS(CubicBezier);
+DEFINE_TIMING_FUNCTION_TYPE_CASTS(Steps);
+DEFINE_TIMING_FUNCTION_TYPE_CASTS(Chained);
 
 } // namespace WebCore
 

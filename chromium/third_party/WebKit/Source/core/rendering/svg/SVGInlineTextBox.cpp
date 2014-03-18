@@ -22,20 +22,21 @@
 #include "config.h"
 #include "core/rendering/svg/SVGInlineTextBox.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/DrawLooper.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineFlowBox.h"
 #include "core/rendering/PointerEventsHitRules.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGResourceSolidColor.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
+#include "platform/FloatConversion.h"
+#include "platform/fonts/FontCache.h"
+#include "platform/graphics/DrawLooper.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 using namespace std;
 
@@ -320,7 +321,7 @@ void SVGInlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint&, LayoutUni
             paintInfo.context->concatCTM(fragmentTransform);
 
         // Spec: All text decorations except line-through should be drawn before the text is filled and stroked; thus, the text is rendered on top of these decorations.
-        int decorations = style->textDecorationsInEffect();
+        unsigned decorations = style->textDecorationsInEffect();
         if (decorations & TextDecorationUnderline)
             paintDecoration(paintInfo.context, TextDecorationUnderline, fragment);
         if (decorations & TextDecorationOverline)
@@ -432,8 +433,6 @@ void SVGInlineTextBox::restoreGraphicsContextAfterTextPainting(GraphicsContext*&
     TextRun::RenderingContext* renderingContext = textRun.renderingContext();
     if (renderingContext)
         static_cast<SVGTextRunRenderingContext*>(renderingContext)->setActivePaintingResource(0);
-#else
-    UNUSED_PARAM(textRun);
 #endif
 }
 
@@ -622,10 +621,10 @@ void SVGInlineTextBox::paintTextWithShadows(GraphicsContext* context, RenderStyl
     ASSERT(scalingFactor);
 
     const Font& scaledFont = textRenderer->scaledFont();
-    const ShadowData* shadow = style->textShadow();
+    const ShadowList* shadowList = style->textShadow();
 
     // Text shadows are disabled when printing. http://crbug.com/258321
-    bool hasShadow = shadow && !context->printing();
+    bool hasShadow = shadowList && !context->printing();
 
     FloatPoint textOrigin(fragment.x, fragment.y);
     FloatSize textSize(fragment.width, fragment.height);
@@ -639,11 +638,12 @@ void SVGInlineTextBox::paintTextWithShadows(GraphicsContext* context, RenderStyl
 
     if (hasShadow) {
         DrawLooper drawLooper;
-        do {
-            FloatSize offset(shadow->x(), shadow->y());
-            drawLooper.addShadow(offset, shadow->blur(), shadow->color(),
+        for (size_t i = shadowList->shadows().size(); i--; ) {
+            const ShadowData& shadow = shadowList->shadows()[i];
+            FloatSize offset(shadow.x(), shadow.y());
+            drawLooper.addShadow(offset, shadow.blur(), shadow.color(),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowRespectsAlpha);
-        } while ((shadow = shadow->next()));
+        }
         drawLooper.addUnmodifiedContent();
         context->setDrawLooper(drawLooper);
     }
@@ -736,7 +736,8 @@ bool SVGInlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult&
     PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, request, renderer()->style()->pointerEvents());
     bool isVisible = renderer()->style()->visibility() == VISIBLE;
     if (isVisible || !hitRules.requireVisible) {
-        if ((hitRules.canHitStroke && (renderer()->style()->svgStyle()->hasStroke() || !hitRules.requireStroke))
+        if (hitRules.canHitBoundingBox
+            || (hitRules.canHitStroke && (renderer()->style()->svgStyle()->hasStroke() || !hitRules.requireStroke))
             || (hitRules.canHitFill && (renderer()->style()->svgStyle()->hasFill() || !hitRules.requireFill))) {
             FloatPoint boxOrigin(x(), y());
             boxOrigin.moveBy(accumulatedOffset);

@@ -468,6 +468,35 @@ class FileStream : public StreamInterface {
   DISALLOW_EVIL_CONSTRUCTORS(FileStream);
 };
 
+// A stream that caps the output at a certain size, dropping content from the
+// middle of the logical stream and maintaining equal parts of the start/end of
+// the logical stream.
+class CircularFileStream : public FileStream {
+ public:
+  explicit CircularFileStream(size_t max_size);
+
+  virtual bool Open(const std::string& filename, const char* mode, int* error);
+  virtual StreamResult Read(void* buffer, size_t buffer_len,
+                            size_t* read, int* error);
+  virtual StreamResult Write(const void* data, size_t data_len,
+                             size_t* written, int* error);
+
+ private:
+  enum ReadSegment {
+    READ_MARKED,  // Read 0 .. marked_position_
+    READ_MIDDLE,  // Read position_ .. file_size
+    READ_LATEST,  // Read marked_position_ .. position_ if the buffer was
+                  // overwritten or 0 .. position_ otherwise.
+  };
+
+  size_t max_write_size_;
+  size_t position_;
+  size_t marked_position_;
+  size_t last_write_position_;
+  ReadSegment read_segment_;
+  size_t read_segment_available_;
+};
+
 
 // A stream which pushes writes onto a separate thread and
 // returns from the write call immediately.
@@ -662,7 +691,7 @@ class FifoBuffer : public StreamInterface {
                                  size_t offset, size_t* bytes_written);
 
   StreamState state_;  // keeps the opened/closed state of the stream
-  scoped_array<char> buffer_;  // the allocated buffer
+  scoped_ptr<char[]> buffer_;  // the allocated buffer
   size_t buffer_length_;  // size of the allocated buffer
   size_t data_length_;  // amount of readable data in the buffer
   size_t read_position_;  // offset to the readable data

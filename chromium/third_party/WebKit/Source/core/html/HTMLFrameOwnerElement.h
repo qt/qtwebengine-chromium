@@ -40,7 +40,7 @@ public:
     DOMWindow* contentWindow() const;
     Document* contentDocument() const;
 
-    void setContentFrame(Frame*);
+    void setContentFrame(Frame&);
     void clearContentFrame();
 
     void disconnectContentFrame();
@@ -77,34 +77,24 @@ private:
     SandboxFlags m_sandboxFlags;
 };
 
-inline HTMLFrameOwnerElement* toHTMLFrameOwnerElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isFrameOwnerElement());
-    return static_cast<HTMLFrameOwnerElement*>(node);
-}
-
-inline const HTMLFrameOwnerElement* toHTMLFrameOwnerElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isFrameOwnerElement());
-    return static_cast<const HTMLFrameOwnerElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
 
 class SubframeLoadingDisabler {
 public:
-    explicit SubframeLoadingDisabler(Node* root)
+    explicit SubframeLoadingDisabler(Node& root)
         : m_root(root)
     {
-        disabledSubtreeRoots().add(m_root);
+        disabledSubtreeRoots().add(&m_root);
     }
 
     ~SubframeLoadingDisabler()
     {
-        disabledSubtreeRoots().remove(m_root);
+        disabledSubtreeRoots().remove(&m_root);
     }
 
-    static bool canLoadFrame(HTMLFrameOwnerElement* owner)
+    static bool canLoadFrame(HTMLFrameOwnerElement& owner)
     {
-        for (Node* node = owner; node; node = node->parentOrShadowHostNode()) {
+        for (Node* node = &owner; node; node = node->parentOrShadowHostNode()) {
             if (disabledSubtreeRoots().contains(node))
                 return false;
         }
@@ -118,7 +108,7 @@ private:
         return nodes;
     }
 
-    Node* m_root;
+    Node& m_root;
 };
 
 } // namespace WebCore

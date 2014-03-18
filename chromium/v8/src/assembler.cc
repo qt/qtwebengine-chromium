@@ -98,6 +98,7 @@ struct DoubleConstant BASE_EMBEDDED {
   double negative_infinity;
   double canonical_non_hole_nan;
   double the_hole_nan;
+  double uint32_bias;
 };
 
 static DoubleConstant double_constants;
@@ -204,6 +205,24 @@ CpuFeatureScope::~CpuFeatureScope() {
   assembler_->set_enabled_cpu_features(old_enabled_);
 }
 #endif
+
+
+// -----------------------------------------------------------------------------
+// Implementation of PlatformFeatureScope
+
+PlatformFeatureScope::PlatformFeatureScope(CpuFeature f)
+    : old_cross_compile_(CpuFeatures::cross_compile_) {
+  // CpuFeatures is a global singleton, therefore this is only safe in
+  // single threaded code.
+  ASSERT(Serializer::enabled());
+  uint64_t mask = static_cast<uint64_t>(1) << f;
+  CpuFeatures::cross_compile_ |= mask;
+}
+
+
+PlatformFeatureScope::~PlatformFeatureScope() {
+  CpuFeatures::cross_compile_ = old_cross_compile_;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -800,14 +819,14 @@ void RelocInfo::Print(Isolate* isolate, FILE* out) {
   } else if (rmode_ == EXTERNAL_REFERENCE) {
     ExternalReferenceEncoder ref_encoder(isolate);
     PrintF(out, " (%s)  (%p)",
-           ref_encoder.NameOfAddress(*target_reference_address()),
-           *target_reference_address());
+           ref_encoder.NameOfAddress(target_reference()),
+           target_reference());
   } else if (IsCodeTarget(rmode_)) {
     Code* code = Code::GetCodeFromTargetAddress(target_address());
     PrintF(out, " (%s)  (%p)", Code::Kind2String(code->kind()),
            target_address());
     if (rmode_ == CODE_TARGET_WITH_ID) {
-      PrintF(" (id=%d)", static_cast<int>(data_));
+      PrintF(out, " (id=%d)", static_cast<int>(data_));
     }
   } else if (IsPosition(rmode_)) {
     PrintF(out, "  (%" V8_PTR_PREFIX "d)", data());
@@ -890,6 +909,8 @@ void ExternalReference::SetUp() {
   double_constants.canonical_non_hole_nan = OS::nan_value();
   double_constants.the_hole_nan = BitCast<double>(kHoleNanInt64);
   double_constants.negative_infinity = -V8_INFINITY;
+  double_constants.uint32_bias =
+    static_cast<double>(static_cast<uint32_t>(0xFFFFFFFF)) + 1;
 
   math_exp_data_mutex = new Mutex();
 }
@@ -1032,25 +1053,11 @@ ExternalReference ExternalReference::perform_gc_function(Isolate* isolate) {
 }
 
 
-ExternalReference ExternalReference::fill_heap_number_with_random_function(
-    Isolate* isolate) {
-  return ExternalReference(Redirect(
-      isolate,
-      FUNCTION_ADDR(V8::FillHeapNumberWithRandom)));
-}
-
-
 ExternalReference ExternalReference::delete_handle_scope_extensions(
     Isolate* isolate) {
   return ExternalReference(Redirect(
       isolate,
       FUNCTION_ADDR(HandleScope::DeleteExtensions)));
-}
-
-
-ExternalReference ExternalReference::random_uint32_function(
-    Isolate* isolate) {
-  return ExternalReference(Redirect(isolate, FUNCTION_ADDR(V8::Random)));
 }
 
 
@@ -1064,6 +1071,13 @@ ExternalReference ExternalReference::get_make_code_young_function(
     Isolate* isolate) {
   return ExternalReference(Redirect(
       isolate, FUNCTION_ADDR(Code::MakeCodeAgeSequenceYoung)));
+}
+
+
+ExternalReference ExternalReference::get_mark_code_as_executed_function(
+    Isolate* isolate) {
+  return ExternalReference(Redirect(
+      isolate, FUNCTION_ADDR(Code::MarkCodeAsExecuted)));
 }
 
 
@@ -1312,6 +1326,12 @@ ExternalReference ExternalReference::address_of_canonical_non_hole_nan() {
 ExternalReference ExternalReference::address_of_the_hole_nan() {
   return ExternalReference(
       reinterpret_cast<void*>(&double_constants.the_hole_nan));
+}
+
+
+ExternalReference ExternalReference::address_of_uint32_bias() {
+  return ExternalReference(
+      reinterpret_cast<void*>(&double_constants.uint32_bias));
 }
 
 

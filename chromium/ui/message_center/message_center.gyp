@@ -17,8 +17,9 @@
         '../../skia/skia.gyp:skia',
         '../../url/url.gyp:url_lib',
         '../base/strings/ui_strings.gyp:ui_strings',
+        '../gfx/gfx.gyp:gfx',
+        '../resources/ui_resources.gyp:ui_resources',
         '../ui.gyp:ui',
-        '../ui.gyp:ui_resources',
       ],
       'defines': [
         'MESSAGE_CENTER_IMPLEMENTATION',
@@ -32,6 +33,8 @@
         'cocoa/popup_controller.mm',
         'cocoa/settings_controller.h',
         'cocoa/settings_controller.mm',
+        'cocoa/settings_entry_view.h',
+        'cocoa/settings_entry_view.mm',
         'cocoa/status_item_view.h',
         'cocoa/status_item_view.mm',
         'cocoa/tray_controller.h',
@@ -69,8 +72,12 @@
         'notifier_settings.h',
         'views/bounded_label.cc',
         'views/bounded_label.h',
+        'views/group_view.cc',
+        'views/group_view.h',
+        'views/constants.h',
         'views/message_bubble_base.cc',
         'views/message_bubble_base.h',
+        'views/message_center_controller.h',
         'views/message_center_bubble.cc',
         'views/message_center_bubble.h',
         'views/message_center_button_bar.cc',
@@ -83,16 +90,31 @@
         'views/message_view.h',
         'views/notifier_settings_view.cc',
         'views/notifier_settings_view.h',
+        'views/notification_button.cc',
+        'views/notification_button.h',
         'views/notification_view.cc',
         'views/notification_view.h',
+        'views/padded_button.cc',
+        'views/padded_button.h',
+        'views/proportional_image_view.cc',
+        'views/proportional_image_view.h',
         'views/toast_contents_view.cc',
         'views/toast_contents_view.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
+        # This condition is for Windows 8 Metro mode support.  We need to
+        # specify a particular desktop during widget creation in that case.
+        # This is done using the desktop aura native widget framework.
+        ['use_ash==1 and OS=="win"', {
+          'dependencies': [
+            '../aura/aura.gyp:aura',
+          ],
+        }],
         ['toolkit_views==1', {
           'dependencies': [
+            '../events/events.gyp:events',
             '../views/views.gyp:views',
           ],
         }, {
@@ -142,6 +164,7 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
         'message_center',
       ],
@@ -158,11 +181,15 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
+        '../../chrome/chrome_resources.gyp:packed_resources',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
-        '../ui.gyp:run_ui_unittests',
-        '../ui.gyp:ui',
         '../../url/url.gyp:url_lib',
+        '../../url/url.gyp:url_lib',
+        '../gfx/gfx.gyp:gfx',
+        '../resources/ui_resources.gyp:ui_resources',
+        '../ui.gyp:ui',
+        '../ui_unittests.gyp:run_ui_unittests',
         'message_center',
         'message_center_test_support',
       ],
@@ -180,9 +207,14 @@
         'test/run_all_unittests.cc',
       ],
       'conditions': [
+        ['desktop_linux == 1 or chromeos == 1 or OS=="ios"', {
+         'dependencies': [
+           '../base/strings/ui_strings.gyp:ui_unittest_strings',
+         ],
+        }],
         ['OS=="mac"', {
           'dependencies': [
-            '../ui.gyp:ui_test_support',
+            '../ui_unittests.gyp:ui_test_support',
           ],
         }],
         ['toolkit_views==1', {
@@ -197,6 +229,7 @@
             'views/bounded_label_unittest.cc',
             'views/message_center_view_unittest.cc',
             'views/message_popup_collection_unittest.cc',
+            'views/notifier_settings_view_unittest.cc',
           ],
         }],
         ['notifications==0', {  # Android and iOS.

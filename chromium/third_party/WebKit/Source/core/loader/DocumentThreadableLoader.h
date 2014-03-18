@@ -33,10 +33,10 @@
 #define DocumentThreadableLoader_h
 
 #include "core/fetch/RawResource.h"
-#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/ResourceOwner.h"
 #include "core/loader/ThreadableLoader.h"
-#include "core/platform/Timer.h"
-#include "core/platform/network/ResourceError.h"
+#include "platform/Timer.h"
+#include "platform/network/ResourceError.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -51,7 +51,7 @@ class ResourceRequest;
 class SecurityOrigin;
 class ThreadableLoaderClient;
 
-class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private RawResourceClient  {
+class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private ResourceOwner<RawResource>  {
     WTF_MAKE_FAST_ALLOCATED;
     public:
         static void loadResourceSynchronously(Document*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
@@ -75,8 +75,6 @@ class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, pu
         };
 
         DocumentThreadableLoader(Document*, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&);
-
-        void clearResource();
 
         // RawResourceClient
         virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
@@ -105,7 +103,6 @@ class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, pu
         SecurityOrigin* securityOrigin() const;
         bool checkCrossOriginAccessRedirectionUrl(const KURL&, String& errorDescription);
 
-        ResourcePtr<RawResource> m_resource;
         ThreadableLoaderClient* m_client;
         Document* m_document;
         ThreadableLoaderOptions m_options;

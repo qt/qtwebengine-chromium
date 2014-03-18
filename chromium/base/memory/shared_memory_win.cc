@@ -60,8 +60,8 @@ SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only,
       lock_(NULL) {
   ::DuplicateHandle(process, handle,
                     GetCurrentProcess(), &mapped_file_,
-                    STANDARD_RIGHTS_REQUIRED |
-                    (read_only_ ? FILE_MAP_READ : FILE_MAP_ALL_ACCESS),
+                    read_only_ ? FILE_MAP_READ : FILE_MAP_READ |
+                        FILE_MAP_WRITE,
                     FALSE, 0);
 }
 
@@ -147,8 +147,8 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   name_ = ASCIIToWide(name);
   read_only_ = read_only;
   mapped_file_ = OpenFileMapping(
-      read_only_ ? FILE_MAP_READ : FILE_MAP_ALL_ACCESS, false,
-      name_.empty() ? NULL : name_.c_str());
+      read_only_ ? FILE_MAP_READ : FILE_MAP_READ | FILE_MAP_WRITE,
+      false, name_.empty() ? NULL : name_.c_str());
   if (mapped_file_ != NULL) {
     // Note: size_ is not set in this case.
     return true;
@@ -164,7 +164,8 @@ bool SharedMemory::MapAt(off_t offset, size_t bytes) {
     return false;
 
   memory_ = MapViewOfFile(mapped_file_,
-                          read_only_ ? FILE_MAP_READ : FILE_MAP_ALL_ACCESS,
+                          read_only_ ? FILE_MAP_READ : FILE_MAP_READ |
+                              FILE_MAP_WRITE,
                           static_cast<uint64>(offset) >> 32,
                           static_cast<DWORD>(offset),
                           bytes);
@@ -188,13 +189,14 @@ bool SharedMemory::Unmap() {
 
 bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
                                         SharedMemoryHandle *new_handle,
-                                        bool close_self) {
+                                        bool close_self,
+                                        ShareMode share_mode) {
   *new_handle = 0;
-  DWORD access = STANDARD_RIGHTS_REQUIRED | FILE_MAP_READ;
+  DWORD access = FILE_MAP_READ;
   DWORD options = 0;
   HANDLE mapped_file = mapped_file_;
   HANDLE result;
-  if (!read_only_)
+  if (share_mode == SHARE_CURRENT_MODE && !read_only_)
     access |= FILE_MAP_WRITE;
   if (close_self) {
     // DUPLICATE_CLOSE_SOURCE causes DuplicateHandle to close mapped_file.

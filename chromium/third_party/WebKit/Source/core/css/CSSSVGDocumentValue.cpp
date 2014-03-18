@@ -29,7 +29,6 @@
 #include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/fetch/DocumentResource.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 
@@ -60,7 +59,7 @@ DocumentResource* CSSSVGDocumentValue::load(ResourceFetcher* loader)
     return m_document.get();
 }
 
-String CSSSVGDocumentValue::customCssText() const
+String CSSSVGDocumentValue::customCSSText() const
 {
     return quoteCSSStringIfNeeded(m_url);
 }

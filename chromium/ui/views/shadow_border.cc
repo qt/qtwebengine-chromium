@@ -6,8 +6,10 @@
 
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/views/view.h"
 
 namespace views {
 
@@ -34,6 +36,8 @@ void ShadowBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   paint.setColor(SK_ColorTRANSPARENT);
   paint.setStrokeJoin(SkPaint::kRound_Join);
   gfx::Rect bounds(view.size());
+  // TODO(pkasting): This isn't right if one of the offsets is larger than
+  // (blur_ / 2).
   bounds.Inset(gfx::Insets(blur_ / 2, blur_ / 2, blur_ / 2, blur_ / 2));
   canvas->DrawRect(bounds, paint);
 }
@@ -43,6 +47,10 @@ gfx::Insets ShadowBorder::GetInsets() const {
                      blur_ / 2 - horizontal_offset_,
                      blur_ / 2 + vertical_offset_,
                      blur_ / 2 + horizontal_offset_);
+}
+
+gfx::Size ShadowBorder::GetMinimumSize() const {
+  return gfx::Size(blur_, blur_);
 }
 
 }  // namespace views

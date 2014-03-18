@@ -12,7 +12,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/image_raster_worker_pool.h"
 #include "cc/resources/pixel_buffer_raster_worker_pool.h"
@@ -34,74 +33,120 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_ABSOLUTE_MINIMUM]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
     NEVER_BIN,                  // [SOON_BIN]
     NEVER_BIN,                  // [EVENTUALLY_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_PREPAINT_ONLY]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
-    SOON_BIN,                   // [SOON_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
     NEVER_BIN,                  // [EVENTUALLY_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_ANYTHING]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
-    SOON_BIN,                   // [SOON_BIN]
-    EVENTUALLY_AND_ACTIVE_BIN,  // [EVENTUALLY_AND_ACTIVE_BIN]
-    EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
-    AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
-    AT_LAST_BIN,                // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }
+};
+
+// Ready to draw works by mapping NOW_BIN to NOW_AND_READY_TO_DRAW_BIN.
+const ManagedTileBin kBinReadyToDrawMap[2][NUM_BINS] = {
+  {  // Not ready
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }, {  // Ready
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_BIN]
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }
+};
+
+// Active works by mapping some bin stats to equivalent _ACTIVE_BIN state.
+const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
+  {  // Inactive
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }, {  // Active
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,  // [EVENTUALLY_BIN]
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_BIN]
+    NEVER_BIN
   }
 };
 
 // Determine bin based on three categories of tiles: things we need now,
 // things we need soon, and eventually.
-inline ManagedTileBin BinFromTilePriority(const TilePriority& prio,
-                                          TreePriority tree_priority,
-                                          bool is_ready_to_draw,
-                                          bool is_active) {
-  // The amount of time for which we want to have prepainting coverage.
+inline ManagedTileBin BinFromTilePriority(const TilePriority& prio) {
+  // The amount of time/pixels for which we want to have prepainting coverage.
+  // Note: All very arbitrary constants: metric-based tuning is welcome!
   const float kPrepaintingWindowTimeSeconds = 1.0f;
   const float kBackflingGuardDistancePixels = 314.0f;
-
-  // Don't let low res tiles be in the now bin unless we're in a mode where
-  // we're prioritizing checkerboard prevention.
-  bool can_be_in_now_bin = tree_priority == SMOOTHNESS_TAKES_PRIORITY ||
-                           prio.resolution != LOW_RESOLUTION;
+  // Note: The max distances here assume that SOON_BIN will never help overcome
+  // raster being too slow (only caching in advance will do that), so we just
+  // need enough padding to handle some latency and per-tile variability.
+  const float kMaxPrepaintingDistancePixelsHighRes = 2000.0f;
+  const float kMaxPrepaintingDistancePixelsLowRes = 4000.0f;
 
   if (prio.distance_to_visible_in_pixels ==
       std::numeric_limits<float>::infinity())
     return NEVER_BIN;
 
-  if (can_be_in_now_bin && prio.time_to_visible_in_seconds == 0)
-    return is_ready_to_draw ? NOW_AND_READY_TO_DRAW_BIN : NOW_BIN;
+  if (prio.time_to_visible_in_seconds == 0)
+    return NOW_BIN;
 
   if (prio.resolution == NON_IDEAL_RESOLUTION)
-    return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
+    return EVENTUALLY_BIN;
 
+  float max_prepainting_distance_pixels =
+      (prio.resolution == HIGH_RESOLUTION)
+          ? kMaxPrepaintingDistancePixelsHighRes
+          : kMaxPrepaintingDistancePixelsLowRes;
+
+  // Soon bin if we are within backfling-guard, or under both the time window
+  // and the max distance window.
   if (prio.distance_to_visible_in_pixels < kBackflingGuardDistancePixels ||
-      prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds)
+      (prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds &&
+       prio.distance_to_visible_in_pixels <= max_prepainting_distance_pixels))
     return SOON_BIN;
 
-  return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
+  return EVENTUALLY_BIN;
 }
-
-// Limit to the number of raster tasks that can be scheduled.
-// This is high enough to not cause unnecessary scheduling but
-// gives us an insurance that we're not spending a huge amount
-// of time scheduling one enormous set of tasks.
-const size_t kMaxRasterTasks = 256u;
 
 }  // namespace
 
@@ -125,18 +170,23 @@ scoped_ptr<TileManager> TileManager::Create(
     size_t num_raster_threads,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
     bool use_map_image,
-    size_t max_transfer_buffer_usage_bytes) {
+    size_t max_transfer_buffer_usage_bytes,
+    size_t max_raster_usage_bytes,
+    GLenum map_image_texture_target) {
   return make_scoped_ptr(
       new TileManager(client,
                       resource_provider,
                       use_map_image ?
                       ImageRasterWorkerPool::Create(
-                          resource_provider, num_raster_threads) :
+                          resource_provider,
+                          num_raster_threads,
+                          map_image_texture_target) :
                       PixelBufferRasterWorkerPool::Create(
                           resource_provider,
                           num_raster_threads,
                           max_transfer_buffer_usage_bytes),
                       num_raster_threads,
+                      max_raster_usage_bytes,
                       rendering_stats_instrumentation));
 }
 
@@ -145,9 +195,13 @@ TileManager::TileManager(
     ResourceProvider* resource_provider,
     scoped_ptr<RasterWorkerPool> raster_worker_pool,
     size_t num_raster_threads,
+    size_t max_raster_usage_bytes,
     RenderingStatsInstrumentation* rendering_stats_instrumentation)
     : client_(client),
-      resource_pool_(ResourcePool::Create(resource_provider)),
+      resource_pool_(ResourcePool::Create(
+                         resource_provider,
+                         raster_worker_pool->GetResourceTarget(),
+                         raster_worker_pool->GetResourceFormat())),
       raster_worker_pool_(raster_worker_pool.Pass()),
       prioritized_tiles_dirty_(false),
       all_tiles_that_need_to_be_rasterized_have_memory_(true),
@@ -156,6 +210,7 @@ TileManager::TileManager(
       memory_nice_to_have_bytes_(0),
       bytes_releasable_(0),
       resources_releasable_(0),
+      max_raster_usage_bytes_(max_raster_usage_bytes),
       ever_exceeded_memory_budget_(false),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       did_initialize_visible_tile_(false),
@@ -168,6 +223,7 @@ TileManager::~TileManager() {
   // our memory usage to drop to zero.
   global_state_ = GlobalStateThatImpactsTilePriority();
 
+  CleanUpReleasedTiles();
   DCHECK_EQ(0u, tiles_.size());
 
   RasterWorkerPool::RasterTask::Queue empty;
@@ -182,38 +238,9 @@ TileManager::~TileManager() {
   DCHECK_EQ(0u, resources_releasable_);
 }
 
-void TileManager::SetGlobalState(
-    const GlobalStateThatImpactsTilePriority& global_state) {
-  global_state_ = global_state;
-  resource_pool_->SetResourceUsageLimits(
-      global_state_.memory_limit_in_bytes,
-      global_state_.unused_memory_limit_in_bytes,
-      global_state_.num_resources_limit);
-}
-
-void TileManager::RegisterTile(Tile* tile) {
-  DCHECK(!tile->required_for_activation());
-  DCHECK(tiles_.find(tile->id()) == tiles_.end());
-
-  tiles_[tile->id()] = tile;
-  used_layer_counts_[tile->layer_id()]++;
+void TileManager::Release(Tile* tile) {
   prioritized_tiles_dirty_ = true;
-}
-
-void TileManager::UnregisterTile(Tile* tile) {
-  FreeResourcesForTile(tile);
-
-  DCHECK(tiles_.find(tile->id()) != tiles_.end());
-  tiles_.erase(tile->id());
-
-  LayerCountMap::iterator layer_it = used_layer_counts_.find(tile->layer_id());
-  DCHECK_GT(layer_it->second, 0);
-  if (--layer_it->second == 0) {
-    used_layer_counts_.erase(layer_it);
-    image_decode_tasks_.erase(tile->layer_id());
-  }
-
-  prioritized_tiles_dirty_ = true;
+  released_tiles_.push_back(tile);
 }
 
 void TileManager::DidChangeTilePriority(Tile* tile) {
@@ -221,17 +248,43 @@ void TileManager::DidChangeTilePriority(Tile* tile) {
 }
 
 bool TileManager::ShouldForceTasksRequiredForActivationToComplete() const {
-  return GlobalState().tree_priority != SMOOTHNESS_TAKES_PRIORITY;
+  return global_state_.tree_priority != SMOOTHNESS_TAKES_PRIORITY;
 }
 
-PrioritizedTileSet* TileManager::GetPrioritizedTileSet() {
+void TileManager::CleanUpReleasedTiles() {
+  for (std::vector<Tile*>::iterator it = released_tiles_.begin();
+       it != released_tiles_.end();
+       ++it) {
+    Tile* tile = *it;
+
+    FreeResourcesForTile(tile);
+
+    DCHECK(tiles_.find(tile->id()) != tiles_.end());
+    tiles_.erase(tile->id());
+
+    LayerCountMap::iterator layer_it =
+        used_layer_counts_.find(tile->layer_id());
+    DCHECK_GT(layer_it->second, 0);
+    if (--layer_it->second == 0) {
+      used_layer_counts_.erase(layer_it);
+      image_decode_tasks_.erase(tile->layer_id());
+    }
+
+    delete tile;
+  }
+
+  released_tiles_.clear();
+}
+
+void TileManager::UpdatePrioritizedTileSetIfNeeded() {
   if (!prioritized_tiles_dirty_)
-    return &prioritized_tiles_;
+    return;
+
+  CleanUpReleasedTiles();
 
   prioritized_tiles_.Clear();
   GetTilesWithAssignedBins(&prioritized_tiles_);
   prioritized_tiles_dirty_ = false;
-  return &prioritized_tiles_;
 }
 
 void TileManager::DidFinishRunningTasks() {
@@ -246,7 +299,7 @@ void TileManager::DidFinishRunningTasks() {
   did_check_for_completed_tasks_since_last_schedule_tasks_ = true;
 
   TileVector tiles_that_need_to_be_rasterized;
-  AssignGpuMemoryToTiles(GetPrioritizedTileSet(),
+  AssignGpuMemoryToTiles(&prioritized_tiles_,
                          &tiles_that_need_to_be_rasterized);
 
   // |tiles_that_need_to_be_rasterized| will be empty when we reach a
@@ -318,44 +371,68 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
 
     // Get the active priority and bin.
     TilePriority active_priority = tile->priority(ACTIVE_TREE);
-    ManagedTileBin active_bin = BinFromTilePriority(
-        active_priority, tree_priority, tile_is_ready_to_draw, tile_is_active);
-    mts.tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
+    ManagedTileBin active_bin = BinFromTilePriority(active_priority);
 
     // Get the pending priority and bin.
     TilePriority pending_priority = tile->priority(PENDING_TREE);
-    ManagedTileBin pending_bin = BinFromTilePriority(
-        pending_priority, tree_priority, tile_is_ready_to_draw, tile_is_active);
-    mts.tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];
+    ManagedTileBin pending_bin = BinFromTilePriority(pending_priority);
 
-    // Get the combined priority and bin.
-    TilePriority combined_priority = tile->combined_priority();
-    ManagedTileBin combined_bin = BinFromTilePriority(combined_priority,
-                                                      tree_priority,
-                                                      tile_is_ready_to_draw,
-                                                      tile_is_active);
+    bool pending_is_low_res =
+        pending_priority.resolution == LOW_RESOLUTION;
+    bool pending_is_non_ideal =
+        pending_priority.resolution == NON_IDEAL_RESOLUTION;
+    bool active_is_non_ideal =
+        active_priority.resolution == NON_IDEAL_RESOLUTION;
+
+    // Adjust pending bin state for low res tiles. This prevents
+    // pending tree low-res tiles from being initialized before
+    // high-res tiles.
+    if (pending_is_low_res)
+      pending_bin = std::max(pending_bin, EVENTUALLY_BIN);
+
+    // Adjust bin state based on if ready to draw.
+    active_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][active_bin];
+    pending_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][pending_bin];
+
+    // Adjust bin state based on if active.
+    active_bin = kBinIsActiveMap[tile_is_active][active_bin];
+    pending_bin = kBinIsActiveMap[tile_is_active][pending_bin];
+
+    // We never want to paint new non-ideal tiles, as we always have
+    // a high-res tile covering that content (paint that instead).
+    if (!tile_is_ready_to_draw && active_is_non_ideal)
+      active_bin = NEVER_BIN;
+    if (!tile_is_ready_to_draw && pending_is_non_ideal)
+      pending_bin = NEVER_BIN;
+
+    // Compute combined bin.
+    ManagedTileBin combined_bin = std::min(active_bin, pending_bin);
+
+    ManagedTileBin tree_bin[NUM_TREES];
+    tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
+    tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];
 
     // The bin that the tile would have if the GPU memory manager had
     // a maximally permissive policy, send to the GPU memory manager
     // to determine policy.
     ManagedTileBin gpu_memmgr_stats_bin = NEVER_BIN;
+    TilePriority tile_priority;
 
-    TilePriority* high_priority = NULL;
     switch (tree_priority) {
       case SAME_PRIORITY_FOR_BOTH_TREES:
         mts.bin = kBinPolicyMap[memory_policy][combined_bin];
         gpu_memmgr_stats_bin = combined_bin;
-        high_priority = &combined_priority;
+        tile_priority = tile->combined_priority();
         break;
       case SMOOTHNESS_TAKES_PRIORITY:
-        mts.bin = mts.tree_bin[ACTIVE_TREE];
+        mts.bin = tree_bin[ACTIVE_TREE];
         gpu_memmgr_stats_bin = active_bin;
-        high_priority = &active_priority;
+        tile_priority = active_priority;
         break;
       case NEW_CONTENT_TAKES_PRIORITY:
-        mts.bin = mts.tree_bin[PENDING_TREE];
+        mts.bin = tree_bin[PENDING_TREE];
         gpu_memmgr_stats_bin = pending_bin;
-        high_priority = &pending_priority;
+        tile_priority = pending_priority;
         break;
     }
 
@@ -370,22 +447,20 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
     // Bump up the priority if we determined it's NEVER_BIN on one tree,
     // but is still required on the other tree.
     bool is_in_never_bin_on_both_trees =
-        mts.tree_bin[ACTIVE_TREE] == NEVER_BIN &&
-        mts.tree_bin[PENDING_TREE] == NEVER_BIN;
+        tree_bin[ACTIVE_TREE] == NEVER_BIN &&
+        tree_bin[PENDING_TREE] == NEVER_BIN;
 
     if (mts.bin == NEVER_BIN && !is_in_never_bin_on_both_trees)
       mts.bin = tile_is_active ? AT_LAST_AND_ACTIVE_BIN : AT_LAST_BIN;
 
-    DCHECK(high_priority != NULL);
-
-    mts.resolution = high_priority->resolution;
-    mts.time_to_needed_in_seconds = high_priority->time_to_visible_in_seconds;
+    mts.resolution = tile_priority.resolution;
+    mts.time_to_needed_in_seconds = tile_priority.time_to_visible_in_seconds;
     mts.distance_to_visible_in_pixels =
-        high_priority->distance_to_visible_in_pixels;
-    mts.required_for_activation = high_priority->required_for_activation;
+        tile_priority.distance_to_visible_in_pixels;
+    mts.required_for_activation = tile_priority.required_for_activation;
 
     mts.visible_and_ready_to_draw =
-        mts.tree_bin[ACTIVE_TREE] == NOW_AND_READY_TO_DRAW_BIN;
+        tree_bin[ACTIVE_TREE] == NOW_AND_READY_TO_DRAW_BIN;
 
     if (mts.bin == NEVER_BIN) {
       FreeResourcesForTile(tile);
@@ -406,8 +481,18 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
   }
 }
 
-void TileManager::ManageTiles() {
+void TileManager::ManageTiles(const GlobalStateThatImpactsTilePriority& state) {
   TRACE_EVENT0("cc", "TileManager::ManageTiles");
+
+  // Update internal state.
+  if (state != global_state_) {
+    global_state_ = state;
+    prioritized_tiles_dirty_ = true;
+    resource_pool_->SetResourceUsageLimits(
+        global_state_.memory_limit_in_bytes,
+        global_state_.unused_memory_limit_in_bytes,
+        global_state_.num_resources_limit);
+  }
 
   // We need to call CheckForCompletedTasks() once in-between each call
   // to ScheduleTasks() to prevent canceled tasks from being scheduled.
@@ -416,8 +501,10 @@ void TileManager::ManageTiles() {
     did_check_for_completed_tasks_since_last_schedule_tasks_ = true;
   }
 
+  UpdatePrioritizedTileSetIfNeeded();
+
   TileVector tiles_that_need_to_be_rasterized;
-  AssignGpuMemoryToTiles(GetPrioritizedTileSet(),
+  AssignGpuMemoryToTiles(&prioritized_tiles_,
                          &tiles_that_need_to_be_rasterized);
 
   // Finally, schedule rasterizer tasks.
@@ -523,6 +610,13 @@ void TileManager::AssignGpuMemoryToTiles(
     TileVector* tiles_that_need_to_be_rasterized) {
   TRACE_EVENT0("cc", "TileManager::AssignGpuMemoryToTiles");
 
+  // Maintain the list of released resources that can potentially be re-used
+  // or deleted.
+  // If this operation becomes expensive too, only do this after some
+  // resource(s) was returned. Note that in that case, one also need to
+  // invalidate when releasing some resource from the pool.
+  resource_pool_->CheckBusyResources();
+
   // Now give memory out to the tiles until we're out, and build
   // the needs-to-be-rasterized queue.
   all_tiles_that_need_to_be_rasterized_have_memory_ = true;
@@ -546,6 +640,14 @@ void TileManager::AssignGpuMemoryToTiles(
   size_t bytes_left = bytes_allocatable;
   size_t resources_left = resources_allocatable;
   bool oomed = false;
+
+  // Memory we assign to raster tasks now will be deducted from our memory
+  // in future iterations if priorities change. By assigning at most half
+  // the raster limit, we will always have another 50% left even if priorities
+  // change completely (assuming we check for completed/cancelled rasters
+  // between each call to this function).
+  size_t max_raster_bytes = max_raster_usage_bytes_ / 2;
+  size_t raster_bytes = 0;
 
   unsigned schedule_priority = 1u;
   for (PrioritizedTileSet::Iterator it(tiles, true);
@@ -571,13 +673,16 @@ void TileManager::AssignGpuMemoryToTiles(
       continue;
     }
 
+    size_t bytes_if_allocated = BytesConsumedIfAllocated(tile);
+    size_t raster_bytes_if_rastered = raster_bytes + bytes_if_allocated;
+
     size_t tile_bytes = 0;
     size_t tile_resources = 0;
 
     // It costs to maintain a resource.
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
       if (mts.tile_versions[mode].resource_) {
-        tile_bytes += BytesConsumedIfAllocated(tile);
+        tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
     }
@@ -585,11 +690,11 @@ void TileManager::AssignGpuMemoryToTiles(
     // Allow lower priority tiles with initialized resources to keep
     // their memory by only assigning memory to new raster tasks if
     // they can be scheduled.
-    if (tiles_that_need_to_be_rasterized->size() < kMaxRasterTasks) {
+    if (raster_bytes_if_rastered <= max_raster_bytes) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
       if (!tile_version.resource_ && tile_version.raster_task_.is_null()) {
-        tile_bytes += BytesConsumedIfAllocated(tile);
+        tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
     }
@@ -624,7 +729,7 @@ void TileManager::AssignGpuMemoryToTiles(
     // 1. Tile size should not impact raster priority.
     // 2. Tiles with existing raster task could otherwise incorrectly
     //    be added as they are not affected by |bytes_allocatable|.
-    if (oomed || tiles_that_need_to_be_rasterized->size() >= kMaxRasterTasks) {
+    if (oomed || raster_bytes_if_rastered > max_raster_bytes) {
       all_tiles_that_need_to_be_rasterized_have_memory_ = false;
       if (tile->required_for_activation())
         all_tiles_required_for_activation_have_memory_ = false;
@@ -632,6 +737,7 @@ void TileManager::AssignGpuMemoryToTiles(
       continue;
     }
 
+    raster_bytes = raster_bytes_if_rastered;
     tiles_that_need_to_be_rasterized->push_back(tile);
   }
 
@@ -742,11 +848,9 @@ RasterWorkerPool::Task TileManager::CreateImageDecodeTask(
 RasterWorkerPool::RasterTask TileManager::CreateRasterTask(Tile* tile) {
   ManagedTileState& mts = tile->managed_state();
 
-  scoped_ptr<ResourcePool::Resource> resource =
-      resource_pool_->AcquireResource(
-          tile->tile_size_.size(),
-          raster_worker_pool_->GetResourceFormat());
-  const Resource* const_resource = resource.get();
+  scoped_ptr<ScopedResource> resource =
+      resource_pool_->AcquireResource(tile->tile_size_.size());
+  const ScopedResource* const_resource = resource.get();
 
   // Create and queue all image decode tasks that this tile depends on.
   RasterWorkerPool::Task::Set decode_tasks;
@@ -778,7 +882,6 @@ RasterWorkerPool::RasterTask TileManager::CreateRasterTask(Tile* tile) {
       tile->content_rect(),
       tile->contents_scale(),
       mts.raster_mode,
-      mts.tree_bin[PENDING_TREE] == NOW_BIN,
       mts.resolution,
       tile->layer_id(),
       static_cast<const void *>(tile),
@@ -817,7 +920,7 @@ void TileManager::OnImageDecodeTaskCompleted(
 
 void TileManager::OnRasterTaskCompleted(
     Tile::Id tile_id,
-    scoped_ptr<ResourcePool::Resource> resource,
+    scoped_ptr<ScopedResource> resource,
     RasterMode raster_mode,
     const PicturePileImpl::Analysis& analysis,
     bool was_canceled) {
@@ -858,6 +961,31 @@ void TileManager::OnRasterTaskCompleted(
   FreeUnusedResourcesForTile(tile);
   if (tile->priority(ACTIVE_TREE).distance_to_visible_in_pixels == 0)
     did_initialize_visible_tile_ = true;
+}
+
+scoped_refptr<Tile> TileManager::CreateTile(PicturePileImpl* picture_pile,
+                                            gfx::Size tile_size,
+                                            gfx::Rect content_rect,
+                                            gfx::Rect opaque_rect,
+                                            float contents_scale,
+                                            int layer_id,
+                                            int source_frame_number,
+                                            int flags) {
+  scoped_refptr<Tile> tile = make_scoped_refptr(new Tile(this,
+                                                         picture_pile,
+                                                         tile_size,
+                                                         content_rect,
+                                                         opaque_rect,
+                                                         contents_scale,
+                                                         layer_id,
+                                                         source_frame_number,
+                                                         flags));
+  DCHECK(tiles_.find(tile->id()) == tiles_.end());
+
+  tiles_[tile->id()] = tile;
+  used_layer_counts_[tile->layer_id()]++;
+  prioritized_tiles_dirty_ = true;
+  return tile;
 }
 
 }  // namespace cc

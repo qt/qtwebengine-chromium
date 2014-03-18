@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_split.h"
+#include "components/variations/processed_study.h"
 #include "components/variations/variations_associated_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,6 +28,8 @@ const char kFlagGroup2Name[] = "flag_group2";
 const char kNonFlagGroupName[] = "non_flag_group";
 const char kForcingFlag1[] = "flag_test1";
 const char kForcingFlag2[] = "flag_test2";
+
+const VariationID kExperimentId = 123;
 
 // Adds an experiment to |study| with the specified |name| and |probability|.
 Study_Experiment* AddExperiment(const std::string& name, int probability,
@@ -60,9 +63,84 @@ Study CreateStudyWithFlagGroups(int default_group_probability,
   return study;
 }
 
+// Tests whether a field trial is active (i.e. group() has been called on it).
+bool IsFieldTrialActive(const std::string& trial_name) {
+  base::FieldTrial::ActiveGroups active_groups;
+  base::FieldTrialList::GetActiveFieldTrialGroups(&active_groups);
+  for (size_t i = 0; i < active_groups.size(); ++i) {
+    if (active_groups[i].trial_name == trial_name)
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
-TEST(VariationsSeedProcessorTest, CheckStudyChannel) {
+class VariationsSeedProcessorTest : public ::testing::Test {
+ public:
+  VariationsSeedProcessorTest() {
+  }
+
+  virtual ~VariationsSeedProcessorTest() {
+    // Ensure that the maps are cleared between tests, since they are stored as
+    // process singletons.
+    testing::ClearAllVariationIDs();
+    testing::ClearAllVariationParams();
+  }
+
+  bool CreateTrialFromStudy(const Study* study) {
+    ProcessedStudy processed_study;
+    if (processed_study.Init(study, false)) {
+      VariationsSeedProcessor().CreateTrialFromStudy(processed_study);
+      return true;
+    }
+    return false;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(VariationsSeedProcessorTest);
+};
+
+TEST_F(VariationsSeedProcessorTest, AllowForceGroupAndVariationId) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
+
+  base::FieldTrialList field_trial_list(NULL);
+
+  Study study = CreateStudyWithFlagGroups(100, 0, 0);
+  study.mutable_experiment(1)->set_google_web_experiment_id(kExperimentId);
+  study.mutable_filter()->add_channel(Study_Channel_DEV);
+  study.mutable_filter()->add_channel(Study_Channel_CANARY);
+  study.mutable_filter()->add_platform(Study_Platform_PLATFORM_ANDROID);
+
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
+  EXPECT_EQ(kFlagGroup1Name,
+            base::FieldTrialList::FindFullName(kFlagStudyName));
+
+  VariationID id = GetGoogleVariationID(GOOGLE_WEB_PROPERTIES, kFlagStudyName,
+                                        kFlagGroup1Name);
+  EXPECT_EQ(kExperimentId, id);
+}
+
+TEST_F(VariationsSeedProcessorTest, AllowVariationIdWithForcingFlag) {
+  VariationsSeedProcessor seed_processor;
+  Study study = CreateStudyWithFlagGroups(100, 0, 0);
+  EXPECT_FALSE(seed_processor.AllowVariationIdWithForcingFlag(study));
+
+  study.mutable_filter()->add_channel(Study_Channel_DEV);
+  EXPECT_FALSE(seed_processor.AllowVariationIdWithForcingFlag(study));
+
+  study.mutable_filter()->add_platform(Study_Platform_PLATFORM_ANDROID);
+  EXPECT_TRUE(seed_processor.AllowVariationIdWithForcingFlag(study));
+
+  study.mutable_filter()->add_channel(Study_Channel_CANARY);
+  study.mutable_filter()->add_platform(Study_Platform_PLATFORM_IOS);
+  EXPECT_TRUE(seed_processor.AllowVariationIdWithForcingFlag(study));
+
+  study.mutable_filter()->add_platform(Study_Platform_PLATFORM_WINDOWS);
+  EXPECT_FALSE(seed_processor.AllowVariationIdWithForcingFlag(study));
+}
+
+TEST_F(VariationsSeedProcessorTest, CheckStudyChannel) {
   VariationsSeedProcessor seed_processor;
 
   const Study_Channel channels[] = {
@@ -108,7 +186,57 @@ TEST(VariationsSeedProcessorTest, CheckStudyChannel) {
   }
 }
 
-TEST(VariationsSeedProcessorTest, CheckStudyLocale) {
+TEST_F(VariationsSeedProcessorTest, CheckStudyFormFactor) {
+  VariationsSeedProcessor seed_processor;
+
+  const Study_FormFactor form_factors[] = {
+    Study_FormFactor_DESKTOP,
+    Study_FormFactor_PHONE,
+    Study_FormFactor_TABLET,
+  };
+
+  ASSERT_EQ(Study_FormFactor_FormFactor_ARRAYSIZE,
+            static_cast<int>(arraysize(form_factors)));
+
+  bool form_factor_added[arraysize(form_factors)] = { 0 };
+  Study_Filter filter;
+
+  for (size_t i = 0; i <= arraysize(form_factors); ++i) {
+    for (size_t j = 0; j < arraysize(form_factors); ++j) {
+      const bool expected = form_factor_added[j] ||
+                            filter.form_factor_size() == 0;
+      const bool result = seed_processor.CheckStudyFormFactor(filter,
+                                                              form_factors[j]);
+      EXPECT_EQ(expected, result) << "Case " << i << "," << j << " failed!";
+    }
+
+    if (i < arraysize(form_factors)) {
+      filter.add_form_factor(form_factors[i]);
+      form_factor_added[i] = true;
+    }
+  }
+
+  // Do the same check in the reverse order.
+  filter.clear_form_factor();
+  memset(&form_factor_added, 0, sizeof(form_factor_added));
+  for (size_t i = 0; i <= arraysize(form_factors); ++i) {
+    for (size_t j = 0; j < arraysize(form_factors); ++j) {
+      const bool expected = form_factor_added[j] ||
+                            filter.form_factor_size() == 0;
+      const bool result = seed_processor.CheckStudyFormFactor(filter,
+                                                              form_factors[j]);
+      EXPECT_EQ(expected, result) << "Case " << i << "," << j << " failed!";
+    }
+
+    if (i < arraysize(form_factors)) {
+      const int index = arraysize(form_factors) - i - 1;;
+      filter.add_form_factor(form_factors[index]);
+      form_factor_added[index] = true;
+    }
+  }
+}
+
+TEST_F(VariationsSeedProcessorTest, CheckStudyLocale) {
   VariationsSeedProcessor seed_processor;
 
   struct {
@@ -141,7 +269,7 @@ TEST(VariationsSeedProcessorTest, CheckStudyLocale) {
   }
 }
 
-TEST(VariationsSeedProcessorTest, CheckStudyPlatform) {
+TEST_F(VariationsSeedProcessorTest, CheckStudyPlatform) {
   VariationsSeedProcessor seed_processor;
 
   const Study_Platform platforms[] = {
@@ -193,7 +321,7 @@ TEST(VariationsSeedProcessorTest, CheckStudyPlatform) {
   }
 }
 
-TEST(VariationsSeedProcessorTest, CheckStudyStartDate) {
+TEST_F(VariationsSeedProcessorTest, CheckStudyStartDate) {
   VariationsSeedProcessor seed_processor;
 
   const base::Time now = base::Time::Now();
@@ -220,7 +348,7 @@ TEST(VariationsSeedProcessorTest, CheckStudyStartDate) {
   }
 }
 
-TEST(VariationsSeedProcessorTest, CheckStudyVersion) {
+TEST_F(VariationsSeedProcessorTest, CheckStudyVersion) {
   VariationsSeedProcessor seed_processor;
 
   const struct {
@@ -311,33 +439,84 @@ TEST(VariationsSeedProcessorTest, CheckStudyVersion) {
   }
 }
 
-// Test that the group for kForcingFlag1 is forced.
-TEST(VariationsSeedProcessorTest, ForceGroupWithFlag1) {
+TEST_F(VariationsSeedProcessorTest, FilterAndValidateStudies) {
+  const std::string kTrial1Name = "A";
+  const std::string kGroup1Name = "Group1";
+  const std::string kTrial3Name = "B";
+
+  VariationsSeed seed;
+  Study* study1 = seed.add_study();
+  study1->set_name(kTrial1Name);
+  study1->set_default_experiment_name("Default");
+  AddExperiment(kGroup1Name, 100, study1);
+  AddExperiment("Default", 0, study1);
+
+  Study* study2 = seed.add_study();
+  *study2 = *study1;
+  study2->mutable_experiment(0)->set_name("Bam");
+  ASSERT_EQ(seed.study(0).name(), seed.study(1).name());
+
+  Study* study3 = seed.add_study();
+  study3->set_name(kTrial3Name);
+  study3->set_default_experiment_name("Default");
+  AddExperiment("A", 10, study3);
+  AddExperiment("Default", 25, study3);
+
+  std::vector<ProcessedStudy> processed_studies;
+  VariationsSeedProcessor().FilterAndValidateStudies(
+      seed, "en-CA", base::Time::Now(), base::Version("20.0.0.0"),
+      Study_Channel_STABLE, Study_FormFactor_DESKTOP, &processed_studies);
+
+  // Check that only the first kTrial1Name study was kept.
+  ASSERT_EQ(2U, processed_studies.size());
+  EXPECT_EQ(kTrial1Name, processed_studies[0].study()->name());
+  EXPECT_EQ(kGroup1Name, processed_studies[0].study()->experiment(0).name());
+  EXPECT_EQ(kTrial3Name, processed_studies[1].study()->name());
+}
+
+TEST_F(VariationsSeedProcessorTest, ForbidForceGroupWithVariationId) {
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
 
   base::FieldTrialList field_trial_list(NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  VariationsSeedProcessor().CreateTrialFromStudy(study, false);
+  study.mutable_experiment(1)->set_google_web_experiment_id(kExperimentId);
+  // Adding windows platform makes forcing_flag and variation Id incompatible.
+  study.mutable_filter()->add_platform(Study_Platform_PLATFORM_WINDOWS);
 
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
+  EXPECT_EQ(kFlagGroup1Name,
+            base::FieldTrialList::FindFullName(kFlagStudyName));
+  VariationID id = GetGoogleVariationID(GOOGLE_WEB_PROPERTIES, kFlagStudyName,
+                                        kFlagGroup1Name);
+  EXPECT_EQ(EMPTY_ID, id);
+}
+
+// Test that the group for kForcingFlag1 is forced.
+TEST_F(VariationsSeedProcessorTest, ForceGroupWithFlag1) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
+
+  base::FieldTrialList field_trial_list(NULL);
+
+  Study study = CreateStudyWithFlagGroups(100, 0, 0);
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ(kFlagGroup1Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
 }
 
 // Test that the group for kForcingFlag2 is forced.
-TEST(VariationsSeedProcessorTest, ForceGroupWithFlag2) {
+TEST_F(VariationsSeedProcessorTest, ForceGroupWithFlag2) {
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag2);
 
   base::FieldTrialList field_trial_list(NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  VariationsSeedProcessor().CreateTrialFromStudy(study, false);
-
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ(kFlagGroup2Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
 }
 
-TEST(VariationsSeedProcessorTest, ForceGroup_ChooseFirstGroupWithFlag) {
+TEST_F(VariationsSeedProcessorTest, ForceGroup_ChooseFirstGroupWithFlag) {
   // Add the flag to the command line arguments so the flag group is forced.
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
   CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag2);
@@ -345,25 +524,24 @@ TEST(VariationsSeedProcessorTest, ForceGroup_ChooseFirstGroupWithFlag) {
   base::FieldTrialList field_trial_list(NULL);
 
   Study study = CreateStudyWithFlagGroups(100, 0, 0);
-  VariationsSeedProcessor().CreateTrialFromStudy(study, false);
-
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ(kFlagGroup1Name,
             base::FieldTrialList::FindFullName(kFlagStudyName));
 }
 
-TEST(VariationsSeedProcessorTest, ForceGroup_DontChooseGroupWithFlag) {
+TEST_F(VariationsSeedProcessorTest, ForceGroup_DontChooseGroupWithFlag) {
   base::FieldTrialList field_trial_list(NULL);
 
   // The two flag groups are given high probability, which would normally make
   // them very likely to be chosen. They won't be chosen since flag groups are
   // never chosen when their flag isn't present.
   Study study = CreateStudyWithFlagGroups(1, 999, 999);
-  VariationsSeedProcessor().CreateTrialFromStudy(study, false);
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ(kNonFlagGroupName,
             base::FieldTrialList::FindFullName(kFlagStudyName));
 }
 
-TEST(VariationsSeedProcessorTest, IsStudyExpired) {
+TEST_F(VariationsSeedProcessorTest, IsStudyExpired) {
   VariationsSeedProcessor seed_processor;
 
   const base::Time now = base::Time::Now();
@@ -390,7 +568,8 @@ TEST(VariationsSeedProcessorTest, IsStudyExpired) {
   }
 }
 
-TEST(VariationsSeedProcessorTest, NonExpiredStudyPrioritizedOverExpiredStudy) {
+TEST_F(VariationsSeedProcessorTest,
+       NonExpiredStudyPrioritizedOverExpiredStudy) {
   VariationsSeedProcessor seed_processor;
 
   const std::string kTrialName = "A";
@@ -417,7 +596,8 @@ TEST(VariationsSeedProcessorTest, NonExpiredStudyPrioritizedOverExpiredStudy) {
     base::FieldTrialList field_trial_list(NULL);
     study1->set_expiry_date(TimeToProtoTime(year_ago));
     seed_processor.CreateTrialsFromSeed(seed, "en-CA", base::Time::Now(),
-                                        version, Study_Channel_STABLE);
+                                        version, Study_Channel_STABLE,
+                                        Study_FormFactor_DESKTOP);
     EXPECT_EQ(kGroup1Name, base::FieldTrialList::FindFullName(kTrialName));
   }
 
@@ -428,84 +608,58 @@ TEST(VariationsSeedProcessorTest, NonExpiredStudyPrioritizedOverExpiredStudy) {
     study1->clear_expiry_date();
     study2->set_expiry_date(TimeToProtoTime(year_ago));
     seed_processor.CreateTrialsFromSeed(seed, "en-CA", base::Time::Now(),
-                                        version, Study_Channel_STABLE);
+                                        version, Study_Channel_STABLE,
+                                        Study_FormFactor_DESKTOP);
     EXPECT_EQ(kGroup1Name, base::FieldTrialList::FindFullName(kTrialName));
   }
 }
 
-TEST(VariationsSeedProcessorTest, ValidateStudy) {
-  VariationsSeedProcessor seed_processor;
-
+TEST_F(VariationsSeedProcessorTest, ValidateStudy) {
   Study study;
   study.set_default_experiment_name("def");
   AddExperiment("abc", 100, &study);
   Study_Experiment* default_group = AddExperiment("def", 200, &study);
 
-  base::FieldTrial::Probability total_probability = 0;
-  bool valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_TRUE(valid);
-  EXPECT_EQ(300, total_probability);
+  ProcessedStudy processed_study;
+  EXPECT_TRUE(processed_study.Init(&study, false));
+  EXPECT_EQ(300, processed_study.total_probability());
 
   // Min version checks.
   study.mutable_filter()->set_min_version("1.2.3.*");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_TRUE(valid);
+  EXPECT_TRUE(processed_study.Init(&study, false));
   study.mutable_filter()->set_min_version("1.*.3");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
   study.mutable_filter()->set_min_version("1.2.3");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_TRUE(valid);
+  EXPECT_TRUE(processed_study.Init(&study, false));
 
   // Max version checks.
   study.mutable_filter()->set_max_version("2.3.4.*");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_TRUE(valid);
+  EXPECT_TRUE(processed_study.Init(&study, false));
   study.mutable_filter()->set_max_version("*.3");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
   study.mutable_filter()->set_max_version("2.3.4");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(
-      study, &total_probability);
-  EXPECT_TRUE(valid);
+  EXPECT_TRUE(processed_study.Init(&study, false));
 
   study.clear_default_experiment_name();
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(study,
-      &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
 
   study.set_default_experiment_name("xyz");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(study,
-      &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
 
   study.set_default_experiment_name("def");
   default_group->clear_name();
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(study,
-      &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
 
   default_group->set_name("def");
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(study,
-      &total_probability);
-  ASSERT_TRUE(valid);
+  EXPECT_TRUE(processed_study.Init(&study, false));
   Study_Experiment* repeated_group = study.add_experiment();
   repeated_group->set_name("abc");
   repeated_group->set_probability_weight(1);
-  valid = seed_processor.ValidateStudyAndComputeTotalProbability(study,
-      &total_probability);
-  EXPECT_FALSE(valid);
+  EXPECT_FALSE(processed_study.Init(&study, false));
 }
 
-TEST(VariationsSeedProcessorTest, VariationParams) {
+TEST_F(VariationsSeedProcessorTest, VariationParams) {
   base::FieldTrialList field_trial_list(NULL);
-  VariationsSeedProcessor seed_processor;
 
   Study study;
   study.set_name("Study1");
@@ -518,14 +672,74 @@ TEST(VariationsSeedProcessorTest, VariationParams) {
 
   Study_Experiment* experiment2 = AddExperiment("B", 0, &study);
 
-  seed_processor.CreateTrialFromStudy(study, false);
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ("y", GetVariationParamValue("Study1", "x"));
 
   study.set_name("Study2");
   experiment1->set_probability_weight(0);
   experiment2->set_probability_weight(1);
-  seed_processor.CreateTrialFromStudy(study, false);
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
   EXPECT_EQ(std::string(), GetVariationParamValue("Study2", "x"));
+}
+
+TEST_F(VariationsSeedProcessorTest, VariationParamsWithForcingFlag) {
+  Study study = CreateStudyWithFlagGroups(100, 0, 0);
+  ASSERT_EQ(kForcingFlag1, study.experiment(1).forcing_flag());
+  Study_Experiment_Param* param = study.mutable_experiment(1)->add_param();
+  param->set_name("x");
+  param->set_value("y");
+
+  CommandLine::ForCurrentProcess()->AppendSwitch(kForcingFlag1);
+  base::FieldTrialList field_trial_list(NULL);
+  EXPECT_TRUE(CreateTrialFromStudy(&study));
+  EXPECT_EQ(kFlagGroup1Name, base::FieldTrialList::FindFullName(study.name()));
+  EXPECT_EQ("y", GetVariationParamValue(study.name(), "x"));
+}
+
+TEST_F(VariationsSeedProcessorTest, StartsActive) {
+  base::FieldTrialList field_trial_list(NULL);
+
+  VariationsSeed seed;
+  Study* study1 = seed.add_study();
+  study1->set_name("A");
+  study1->set_default_experiment_name("Default");
+  AddExperiment("AA", 100, study1);
+  AddExperiment("Default", 0, study1);
+
+  Study* study2 = seed.add_study();
+  study2->set_name("B");
+  study2->set_default_experiment_name("Default");
+  AddExperiment("BB", 100, study2);
+  AddExperiment("Default", 0, study2);
+  study2->set_activation_type(Study_ActivationType_ACTIVATION_AUTO);
+
+  Study* study3 = seed.add_study();
+  study3->set_name("C");
+  study3->set_default_experiment_name("Default");
+  AddExperiment("CC", 100, study3);
+  AddExperiment("Default", 0, study3);
+  study3->set_activation_type(Study_ActivationType_ACTIVATION_EXPLICIT);
+
+  VariationsSeedProcessor seed_processor;
+  seed_processor.CreateTrialsFromSeed(seed, "en-CA", base::Time::Now(),
+                                      base::Version("20.0.0.0"),
+                                      Study_Channel_STABLE,
+                                      Study_FormFactor_DESKTOP);
+
+  // Non-specified and ACTIVATION_EXPLICIT should not start active, but
+  // ACTIVATION_AUTO should.
+  EXPECT_FALSE(IsFieldTrialActive("A"));
+  EXPECT_TRUE(IsFieldTrialActive("B"));
+  EXPECT_FALSE(IsFieldTrialActive("C"));
+
+  EXPECT_EQ("AA", base::FieldTrialList::FindFullName("A"));
+  EXPECT_EQ("BB", base::FieldTrialList::FindFullName("B"));
+  EXPECT_EQ("CC", base::FieldTrialList::FindFullName("C"));
+
+  // Now, all studies should be active.
+  EXPECT_TRUE(IsFieldTrialActive("A"));
+  EXPECT_TRUE(IsFieldTrialActive("B"));
+  EXPECT_TRUE(IsFieldTrialActive("C"));
 }
 
 }  // namespace chrome_variations
