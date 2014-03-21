@@ -566,7 +566,7 @@
       'openssl/crypto/aes/asm/aes-armv4.S',
       'openssl/crypto/bn/asm/armv4-gf2m.S',
       'openssl/crypto/bn/asm/armv4-mont.S',
-      'openssl/crypto/chacha/chacha_vec_arm.S',
+      'openssl/crypto/chacha/chacha_vec.c',
       'openssl/crypto/modes/asm/ghash-armv4.S',
       'openssl/crypto/poly1305/poly1305_arm.c',
       'openssl/crypto/poly1305/poly1305_arm_asm.S',
