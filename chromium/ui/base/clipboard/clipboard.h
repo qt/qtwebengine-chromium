@@ -88,6 +88,7 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     bool operator<(const FormatType& other) const;
 #endif
 
+#if !defined(TOOLKIT_QT)
 #if defined(OS_WIN)
     const FORMATETC& ToFormatEtc() const { return data_; }
 #elif defined(OS_MACOSX)
