@@ -181,6 +181,7 @@ typedef void* NativeViewAccessible;
 typedef void* NativeFont;
 typedef void* NativeEditView;
 typedef void* NativeDrawingContext;
+typedef void* NativeViewAccessible;
 #elif defined(USE_CAIRO)
 typedef PangoFontDescription* NativeFont;
 typedef void* NativeEditView;
