@@ -1,0 +1,8 @@
+Sanity-Review+1: Qt Sanity Bot <qt_sanitybot@qt-project.org>
+Code-Review+2: Zeno Albisser <zeno.albisser@digia.com>
+Code-Review+2: Jocelyn Turcotte <jocelyn.turcotte@digia.com>
+Submitted-by: Zeno Albisser <zeno.albisser@digia.com>
+Submitted-at: Sat, 22 Mar 2014 11:41:50 +0100
+Reviewed-on: https://codereview.qt-project.org/81525
+Project: qt-labs/chromium
+Branch: refs/heads/master
