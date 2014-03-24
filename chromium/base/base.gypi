@@ -715,9 +715,9 @@
         ],
         'target_conditions': [
           ['(<(desktop_linux) == 0 and <(chromeos) == 0) or >(nacl_untrusted_build)==1', {
-              'sources/': [
-                ['exclude', '^nix/'],
-              ],
+              #'sources/': [
+              #  ['exclude', '^nix/'],
+              #],
               'sources!': [
                 'atomicops_internals_x86_gcc.cc',
               ],
