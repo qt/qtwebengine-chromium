@@ -29,7 +29,7 @@
         'use_system_ssl%': 1,
       },
     }],
-    [ 'chromeos==0', {
+    [ 'chromeos==0 and use_qt==0', {
       # Hide GTK and related dependencies for Chrome OS, so they won't get
       # added back to Chrome OS. Don't try to use GTK on Chrome OS.
       'targets': [
@@ -660,6 +660,8 @@
       'type': 'none',
       'toolsets': ['host', 'target'],
       'conditions': [
+      ['use_pango==1', {
+      'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
             'cflags': [
@@ -689,6 +691,8 @@
             ],
           },
         }],
+      ],
+      }],
       ],
     },
     {
