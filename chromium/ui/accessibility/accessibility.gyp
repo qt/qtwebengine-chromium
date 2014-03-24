@@ -70,7 +70,7 @@
             'platform/ax_platform_node_win.cc',
           ]
         }],
-        ['OS=="linux" and chromeos==0 and use_x11==1', {
+        ['OS=="linux" and chromeos==0 and use_x11==1 and use_qt==0', {
           'dependencies': [
             '../../build/linux/system.gyp:atk',
             '../../build/linux/system.gyp:gconf',
@@ -87,7 +87,7 @@
             ],
           },
         }],
-        ['OS!="linux" or chromeos==1 or use_x11==0', {
+        ['OS!="linux" or chromeos==1 or use_x11==0 or use_qt==1', {
           'sources!': [
             'platform/ax_platform_node_auralinux.cc',
             'platform/ax_platform_node_auralinux.h',
