@@ -724,7 +724,7 @@
             '../display/display.gyp:display_util',
           ],
         }],
-        ['OS=="linux" and chromeos==0 and use_ozone==0', {
+        ['OS=="linux" and chromeos==0 and use_ozone==0 and use_qt==0', {
           'dependencies': [
             '../../build/linux/system.gyp:atk',
            ],
