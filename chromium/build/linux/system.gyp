@@ -78,7 +78,7 @@
     ],
   },
   'conditions': [
-    [ 'chromeos==0 and use_ozone==0', {
+    [ 'chromeos==0 and use_ozone==0 and use_qt==0', {
       # Hide GTK and related dependencies for Chrome OS and Ozone, so they won't get
       # added back to Chrome OS and Ozone. Don't try to use GTK on Chrome OS and Ozone.
       'targets': [
