@@ -242,6 +242,14 @@
             'third_party/nspr/nspr.gyp:nspr',
           ],
         }],
+        ['use_qt == 1', {
+          'sources': [
+            'nix/mime_util_xdg.h',
+            'nix/mime_util_xdg.cc',
+            'nix/xdg_util.h',
+            'nix/xdg_util.cc',
+          ],
+        }],
       ],
       'sources': [
         'third_party/nspr/prcpucfg.h',
