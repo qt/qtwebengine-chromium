@@ -2003,7 +2003,7 @@
         },
       },
     }],
-    ['OS=="linux" and chromeos==0 and use_x11==1', {
+    ['OS=="linux" and chromeos==0 and use_x11==1 and use_qt==0', {
       'dependencies': [
         '../build/linux/system.gyp:atk',
         '../build/linux/system.gyp:gconf',
