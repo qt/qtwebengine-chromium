@@ -5,7 +5,7 @@
 {
   'variables': {
     'conditions': [
-      ['sysroot!=""', {
+      ['sysroot!="" and use_qt==0', {
         'pkg-config': './pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
       }, {
         'pkg-config': 'pkg-config'
