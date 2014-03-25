@@ -1,0 +1,7 @@
+Sanity-Review+1: Qt Sanity Bot <qt_sanitybot@qt-project.org>
+Code-Review+2: Zeno Albisser <zeno.albisser@digia.com>
+Submitted-by: Andras Becsi <andras.becsi@digia.com>
+Submitted-at: Tue, 25 Mar 2014 14:00:10 +0100
+Reviewed-on: https://codereview.qt-project.org/81682
+Project: qt-labs/chromium
+Branch: refs/heads/master
