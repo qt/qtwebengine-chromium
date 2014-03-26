@@ -973,7 +973,7 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
   if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
     use_software_compositor_ = true;
   //TODO(jbauman): enable for Chrome OS and Linux
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#if defined(USE_AURA) && !defined(OS_CHROMEOS) && !defined(TOOLKIT_QT)
   use_software_compositor_ = true;
 #endif
 
