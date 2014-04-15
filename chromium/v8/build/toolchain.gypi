@@ -1101,7 +1101,7 @@
           'VCCLCompilerTool': {
             'Optimization': '0',
             'conditions': [
-              ['component=="shared_library"', {
+              ['component=="shared_library" or use_qt==1', {
                 'RuntimeLibrary': '3',  # /MDd
               }, {
                 'RuntimeLibrary': '1',  # /MTd
@@ -1153,7 +1153,7 @@
             'StringPooling': 'true',
             'BasicRuntimeChecks': '0',
             'conditions': [
-              ['component=="shared_library"', {
+              ['component=="shared_library" or use_qt==1', {
                 'RuntimeLibrary': '3',  #/MDd
               }, {
                 'RuntimeLibrary': '1',  #/MTd
@@ -1343,7 +1343,7 @@
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
                 'conditions': [
-                  ['component=="shared_library"', {
+                  ['component=="shared_library" or use_qt==1', {
                     'RuntimeLibrary': '2',  #/MD
                   }, {
                     'RuntimeLibrary': '0',  #/MT
