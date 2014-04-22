@@ -70,10 +70,11 @@ static Stat64Function g_libc_stat64 = NULL;
 // Find the libc's real fopen* and *stat* functions. This should only be
 // called once, and should be guarded by g_libc_file_io_funcs_guard.
 static void InitLibcFileIOFunctions() {
+  void *handle_libc = dlopen("libc.so.6", RTLD_NOW);
   g_libc_fopen = reinterpret_cast<FopenFunction>(
-      dlsym(RTLD_NEXT, "fopen"));
+      dlsym(handle_libc, "fopen"));
   g_libc_fopen64 = reinterpret_cast<FopenFunction>(
-      dlsym(RTLD_NEXT, "fopen64"));
+      dlsym(handle_libc, "fopen64"));
 
   if (!g_libc_fopen) {
     LOG(FATAL) << "Failed to get fopen() from libc.";
@@ -86,9 +87,9 @@ static void InitLibcFileIOFunctions() {
 
 #if HAVE_XSTAT
   g_libc_xstat = reinterpret_cast<XstatFunction>(
-      dlsym(RTLD_NEXT, "__xstat"));
+      dlsym(handle_libc, "__xstat"));
   g_libc_xstat64 = reinterpret_cast<Xstat64Function>(
-      dlsym(RTLD_NEXT, "__xstat64"));
+      dlsym(handle_libc, "__xstat64"));
 
   if (!g_libc_xstat) {
     LOG(FATAL) << "Failed to get __xstat() from libc.";
@@ -98,9 +99,9 @@ static void InitLibcFileIOFunctions() {
   }
 #else
   g_libc_stat = reinterpret_cast<StatFunction>(
-      dlsym(RTLD_NEXT, "stat"));
+      dlsym(handle_libc, "stat"));
   g_libc_stat64 = reinterpret_cast<Stat64Function>(
-      dlsym(RTLD_NEXT, "stat64"));
+      dlsym(handle_libc, "stat64"));
 
   if (!g_libc_stat) {
     LOG(FATAL) << "Failed to get stat() from libc.";
