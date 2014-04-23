@@ -233,9 +233,6 @@ static void InitLibcLocaltimeFunctions() {
 // to set visibility attribute to "default" to export the symbol, as it is set
 // to "hidden" by default in chrome per build/common.gypi.
 __attribute__((__visibility__("default"))) struct tm* localtime_override(
-    const time_t* timep) __asm__("localtime");
-
-__attribute__((__visibility__("default"))) struct tm* localtime_override(
     const time_t* timep) {
   if (g_am_zygote_or_renderer && g_use_localtime_override) {
     static struct tm time_struct;
@@ -256,10 +253,6 @@ __attribute__((__visibility__("default"))) struct tm* localtime_override(
 #endif
   return res;
 }
-
-// Use same trick to override localtime64(), localtime_r() and localtime64_r().
-__attribute__((__visibility__("default"))) struct tm* localtime64_override(
-    const time_t* timep) __asm__("localtime64");
 
 __attribute__((__visibility__("default"))) struct tm* localtime64_override(
     const time_t* timep) {
@@ -285,10 +278,6 @@ __attribute__((__visibility__("default"))) struct tm* localtime64_override(
 
 __attribute__((__visibility__("default"))) struct tm* localtime_r_override(
     const time_t* timep,
-    struct tm* result) __asm__("localtime_r");
-
-__attribute__((__visibility__("default"))) struct tm* localtime_r_override(
-    const time_t* timep,
     struct tm* result) {
   if (g_am_zygote_or_renderer && g_use_localtime_override) {
     ProxyLocaltimeCallToBrowser(*timep, result, nullptr, 0);
@@ -306,10 +295,6 @@ __attribute__((__visibility__("default"))) struct tm* localtime_r_override(
 #endif
   return res;
 }
-
-__attribute__((__visibility__("default"))) struct tm* localtime64_r_override(
-    const time_t* timep,
-    struct tm* result) __asm__("localtime64_r");
 
 __attribute__((__visibility__("default"))) struct tm* localtime64_r_override(
     const time_t* timep,
