@@ -566,13 +566,24 @@
       'openssl/crypto/aes/asm/aes-armv4.S',
       'openssl/crypto/bn/asm/armv4-gf2m.S',
       'openssl/crypto/bn/asm/armv4-mont.S',
-      'openssl/crypto/chacha/chacha_vec.c',
       'openssl/crypto/modes/asm/ghash-armv4.S',
       'openssl/crypto/poly1305/poly1305_arm.c',
       'openssl/crypto/poly1305/poly1305_arm_asm.S',
       'openssl/crypto/sha/asm/sha1-armv4-large.S',
       'openssl/crypto/sha/asm/sha256-armv4.S',
       'openssl/crypto/sha/asm/sha512-armv4.S',
+    ],
+    'conditions': [
+      ['arm_neon_optional==1 and arm_tune=="cortex-a8"', {
+        'openssl_arm_sources+': [
+          'openssl/crypto/chacha/chacha_vec_arm.S',
+        ],
+      },
+      {
+        'openssl_arm_sources+': [
+          'openssl/crypto/chacha/chacha_vec.c',
+        ],
+      }],
     ],
     'openssl_arm_defines': [
       'OPENSSL_BN_ASM_GF2m',
