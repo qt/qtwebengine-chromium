@@ -396,7 +396,7 @@
                 ],
               },
             }],
-            ['OS!="android" and OS!="qnx"', {
+            ['OS!="android" and OS!="qnx" and qt_os!="embedded_linux"', {
               'link_settings': {
                 'ldflags': [
                   '<!@(icu-config --ldflags)',
