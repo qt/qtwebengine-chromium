@@ -5,7 +5,7 @@
 {
   'variables': {
     'conditions': [
-      ['sysroot!="" and qt_os!="embedded_linux"', {
+      ['sysroot!=""', {
         'pkg-config': './pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
       }, {
         'pkg-config': 'pkg-config'
