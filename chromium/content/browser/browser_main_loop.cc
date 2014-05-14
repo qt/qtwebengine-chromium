@@ -654,14 +654,7 @@ int BrowserMainLoop::CreateThreads() {
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::FILE");
         thread_to_start = &file_thread_;
-#if defined(OS_WIN)
-        // On Windows, the FILE thread needs to be have a UI message loop
-        // which pumps messages in such a way that Google Update can
-        // communicate back to us.
-        options = &ui_message_loop_options;
-#else
         options = &io_message_loop_options;
-#endif
         break;
       case BrowserThread::PROCESS_LAUNCHER:
         TRACE_EVENT_BEGIN1("startup",
