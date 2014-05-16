@@ -132,6 +132,9 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   base::MessageLoop::Type message_loop_type = base::MessageLoop::TYPE_IO;
 #if defined(OS_WIN)
+#if defined(TOOLKIT_QT)
+  message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+#else
   // Unless we're running on desktop GL, we don't need a UI message
   // loop, so avoid its use to work around apparent problems with some
   // third-party software.
@@ -140,6 +143,7 @@ int GpuMain(const MainFunctionParams& parameters) {
           gfx::kGLImplementationDesktopName) {
     message_loop_type = base::MessageLoop::TYPE_UI;
   }
+#endif // TOOLKIT_QT
 #elif defined(TOOLKIT_GTK)
   message_loop_type = base::MessageLoop::TYPE_GPU;
 #elif defined(OS_LINUX)
