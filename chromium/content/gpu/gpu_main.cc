@@ -170,7 +170,11 @@ int GpuMain(const MainFunctionParams& parameters) {
 #if defined(OS_WIN)
   // Use a UI message loop because ANGLE and the desktop GL platform can
   // create child windows to render to.
+#if defined(TOOLKIT_QT)
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_DEFAULT);
+#else
   base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
+#endif
 #elif defined(OS_LINUX) && defined(USE_X11)
   // We need a UI loop so that we can grab the Expose events. See GLSurfaceGLX
   // and https://crbug.com/326995.

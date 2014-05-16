@@ -550,7 +550,7 @@ bool GpuProcessHost::Init() {
         g_gpu_main_thread_factory(InProcessChildThreadParams(
             channel_id, base::MessageLoop::current()->task_runner())));
     base::Thread::Options options;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     // WGL needs to create its own window and pump messages on it.
     options.message_loop_type = base::MessageLoop::TYPE_UI;
 #endif
