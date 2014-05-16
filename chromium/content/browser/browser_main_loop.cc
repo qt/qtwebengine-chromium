@@ -1056,7 +1056,7 @@ int BrowserMainLoop::CreateThreads() {
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::FILE");
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
         // On Windows, the FILE thread needs to have a UI message loop which
         // pumps messages in such a way that Google Update can communicate back
         // to us.
