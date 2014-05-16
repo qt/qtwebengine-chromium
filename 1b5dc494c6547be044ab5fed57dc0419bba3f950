@@ -1,0 +1,8 @@
+Sanity-Review+1: Qt Sanity Bot <qt_sanitybot@qt-project.org>
+Code-Review+2: Jocelyn Turcotte <jocelyn.turcotte@digia.com>
+Code-Review+1: Andras Becsi <andras.becsi@digia.com>
+Submitted-by: Peter Varga <pvarga@inf.u-szeged.hu>
+Submitted-at: Fri, 16 May 2014 16:43:03 +0200
+Reviewed-on: https://codereview.qt-project.org/85572
+Project: qt-labs/chromium
+Branch: refs/heads/master
