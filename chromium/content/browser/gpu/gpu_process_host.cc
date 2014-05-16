@@ -516,7 +516,13 @@ bool GpuProcessHost::Init() {
     gpu_data_manager->AppendGpuCommandLine(command_line);
 
     in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
+#if defined(OS_WIN) && defined(TOOLKIT_QT)
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+    in_process_gpu_thread_->StartWithOptions(options);
+#else
     in_process_gpu_thread_->Start();
+#endif
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else if (!LaunchGpuProcess(channel_id)) {
