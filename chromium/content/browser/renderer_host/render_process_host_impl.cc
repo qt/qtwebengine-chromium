@@ -512,7 +512,7 @@ bool RenderProcessHostImpl::Init() {
     in_process_renderer_.reset(g_renderer_main_thread_factory(channel_id));
 
     base::Thread::Options options;
-#if defined(OS_WIN) && !defined(OS_MACOSX)
+#if defined(OS_WIN) && !defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     // In-process plugins require this to be a UI message loop.
     options.message_loop_type = base::MessageLoop::TYPE_UI;
 #else
