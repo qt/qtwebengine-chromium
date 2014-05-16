@@ -149,6 +149,8 @@ int RendererMain(const MainFunctionParams& parameters) {
   // http://crbug.com/306348#c24 for details.
   scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
   base::MessageLoop main_message_loop(pump.Pass());
+#elif defined(OS_WIN) && defined(TOOLKIT_QT)
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_DEFAULT);
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
   base::MessageLoop main_message_loop;
