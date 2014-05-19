@@ -384,6 +384,11 @@ CPU::CPU() : stepping_(0),
         architecture_ = 6;
       }
       delete[] processor;
+      processor = cpu_info.ExtractField("model name");
+      if (HasListItem(processor, "(v6l)")) {
+        architecture_ = 6;
+      }
+      delete[] processor;
     }
   }
 
