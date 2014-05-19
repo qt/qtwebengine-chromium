@@ -371,10 +371,12 @@ CPU::CPU() : stepping_(0),
     // ARMv6 device that reports architecture 7.
     if (architecture_ == 7) {
       char* processor = cpu_info.ExtractField("Processor");
-      if (HasListItem(processor, "(v6l)")) {
+      char* model_name = cpu_info.ExtractField("model name");
+      if (HasListItem(processor, "(v6l)") || HasListItem(model_name, "(v6l)")) {
         architecture_ = 6;
       }
       delete[] processor;
+      delete[] model_name;
     }
   }
 
