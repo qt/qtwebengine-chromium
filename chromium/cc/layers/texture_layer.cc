@@ -13,8 +13,6 @@
 #include "cc/resources/single_release_callback.h"
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 
 namespace cc {
 

@@ -14,7 +14,6 @@
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/base/swap_promise.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/trees/layer_tree_host.h"
 #include "cc/resources/ui_resource_client.h"
 
 #if defined(COMPILER_GCC)

@@ -23,9 +23,6 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
-      'export_dependent_settings': [
-        '../third_party/khronos/khronos.gyp:khronos_headers',
-      ],
       'defines': [
         'GLES2_IMPL_IMPLEMENTATION',
       ],
@@ -93,9 +90,6 @@
         'command_buffer_client',
         'gles2_implementation',
       ],
-      'export_dependent_settings': [
-        'command_buffer_client',
-      ],
       'defines': [
         'GLES2_C_LIB_IMPLEMENTATION',
       ],
@@ -120,9 +114,6 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'gles2_implementation_client_side_arrays_no_check',
-      ],
-      'export_dependent_settings': [
-        'command_buffer_client',
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
@@ -387,9 +378,6 @@
             'gpu_config',
             'gpu_ipc',
           ],
-          'export_dependent_settings': [
-            'command_buffer_common',
-          ],
           'sources': [
             'gpu_export.h',
           ],
@@ -432,9 +420,6 @@
           'dependencies': [
             'command_buffer_common',
           ],
-          'export_dependent_settings': [
-            'command_buffer_common',
-          ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
         },
@@ -458,9 +443,6 @@
             'gpu_ipc.gypi',
           ],
           'dependencies': [
-            'command_buffer_common',
-          ],
-          'export_dependent_settings': [
             'command_buffer_common',
           ],
         },

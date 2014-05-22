@@ -1366,7 +1366,7 @@
               '../build/linux/system.gyp:gio',
             ],
         }],
-        [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
+        [ 'desktop_linux == 1 or chromeos == 1', {
             'conditions': [
               ['use_openssl==1', {
                 'dependencies': [

@@ -223,9 +223,14 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
         static CFDictionaryRef ltrTypesetterOptions = CFDictionaryCreate(kCFAllocatorDefault, optionKeys, ltrOptionValues, WTF_ARRAY_LENGTH(optionKeys), &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         static CFDictionaryRef rtlTypesetterOptions = CFDictionaryCreate(kCFAllocatorDefault, optionKeys, rtlOptionValues, WTF_ARRAY_LENGTH(optionKeys), &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+        ProviderInfo info = { cp, length, stringAttributes.get() };
+        RetainPtr<CTTypesetterRef> typesetter(AdoptCF, WKCreateCTTypesetterWithUniCharProviderAndOptions(&provideStringAndAttributes, 0, &info, m_run.ltr() ? ltrTypesetterOptions : rtlTypesetterOptions));
+#else
         RetainPtr<CFStringRef> string(AdoptCF, CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, cp, length, kCFAllocatorNull));
         RetainPtr<CFAttributedStringRef> attributedString(AdoptCF, CFAttributedStringCreate(kCFAllocatorDefault, string.get(), stringAttributes.get()));
         RetainPtr<CTTypesetterRef> typesetter(AdoptCF, CTTypesetterCreateWithAttributedStringAndOptions(attributedString.get(), m_run.ltr() ? ltrTypesetterOptions : rtlTypesetterOptions));
+#endif
 
         line.adoptCF(CTTypesetterCreateLine(typesetter.get(), CFRangeMake(0, 0)));
     } else {

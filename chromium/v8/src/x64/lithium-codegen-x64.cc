@@ -268,6 +268,13 @@ void LCodeGen::GenerateOsrPrologue() {
 }
 
 
+void LCodeGen::GenerateBodyInstructionPre(LInstruction* instr) {
+  if (!instr->IsLazyBailout() && !instr->IsGap()) {
+    safepoints_.BumpLastLazySafepointIndex();
+  }
+}
+
+
 bool LCodeGen::GenerateJumpTable() {
   Label needs_frame;
   if (jump_table_.length() > 0) {
@@ -1953,7 +1960,6 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
 
   BinaryOpICStub stub(instr->op(), NO_OVERWRITE);
   CallCode(stub.GetCode(isolate()), RelocInfo::CODE_TARGET, instr);
-  __ nop();  // Signals no inlined code.
 }
 
 
@@ -3601,10 +3607,11 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   const XMMRegister xmm_scratch = double_scratch0();
   Register output_reg = ToRegister(instr->result());
   XMMRegister input_reg = ToDoubleRegister(instr->value());
+  XMMRegister input_temp = ToDoubleRegister(instr->temp());
   static int64_t one_half = V8_INT64_C(0x3FE0000000000000);  // 0.5
   static int64_t minus_one_half = V8_INT64_C(0xBFE0000000000000);  // -0.5
 
-  Label done, round_to_zero, below_one_half, do_not_compensate, restore;
+  Label done, round_to_zero, below_one_half;
   Label::Distance dist = DeoptEveryNTimes() ? Label::kFar : Label::kNear;
   __ movq(kScratchRegister, one_half);
   __ movq(xmm_scratch, kScratchRegister);
@@ -3628,21 +3635,19 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
 
   // CVTTSD2SI rounds towards zero, we use ceil(x - (-0.5)) and then
   // compare and compensate.
-  __ movq(kScratchRegister, input_reg);  // Back up input_reg.
-  __ subsd(input_reg, xmm_scratch);
-  __ cvttsd2si(output_reg, input_reg);
+  __ movq(input_temp, input_reg);  // Do not alter input_reg.
+  __ subsd(input_temp, xmm_scratch);
+  __ cvttsd2si(output_reg, input_temp);
   // Catch minint due to overflow, and to prevent overflow when compensating.
   __ cmpl(output_reg, Immediate(0x80000000));
   __ RecordComment("D2I conversion overflow");
   DeoptimizeIf(equal, instr->environment());
 
   __ Cvtlsi2sd(xmm_scratch, output_reg);
-  __ ucomisd(input_reg, xmm_scratch);
-  __ j(equal, &restore, Label::kNear);
+  __ ucomisd(xmm_scratch, input_temp);
+  __ j(equal, &done, dist);
   __ subl(output_reg, Immediate(1));
   // No overflow because we already ruled out minint.
-  __ bind(&restore);
-  __ movq(input_reg, kScratchRegister);  // Restore input_reg.
   __ jmp(&done, dist);
 
   __ bind(&round_to_zero);
@@ -4124,44 +4129,51 @@ void LCodeGen::ApplyCheckIf(Condition cc, LBoundsCheck* check) {
 
 
 void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
-  if (instr->hydrogen()->skip_check()) return;
+  HBoundsCheck* hinstr = instr->hydrogen();
+  if (hinstr->skip_check()) return;
+
+  Representation representation = hinstr->length()->representation();
+  ASSERT(representation.Equals(hinstr->index()->representation()));
+  ASSERT(representation.IsSmiOrInteger32());
 
   if (instr->length()->IsRegister()) {
     Register reg = ToRegister(instr->length());
-    if (!instr->hydrogen()->length()->representation().IsSmi()) {
-      __ AssertZeroExtended(reg);
-    }
+
     if (instr->index()->IsConstantOperand()) {
       int32_t constant_index =
           ToInteger32(LConstantOperand::cast(instr->index()));
-      if (instr->hydrogen()->length()->representation().IsSmi()) {
+      if (representation.IsSmi()) {
         __ Cmp(reg, Smi::FromInt(constant_index));
       } else {
-        __ cmpq(reg, Immediate(constant_index));
+        __ cmpl(reg, Immediate(constant_index));
       }
     } else {
       Register reg2 = ToRegister(instr->index());
-      if (!instr->hydrogen()->index()->representation().IsSmi()) {
-        __ AssertZeroExtended(reg2);
+      if (representation.IsSmi()) {
+        __ cmpq(reg, reg2);
+      } else {
+        __ cmpl(reg, reg2);
       }
-      __ cmpq(reg, reg2);
     }
   } else {
     Operand length = ToOperand(instr->length());
     if (instr->index()->IsConstantOperand()) {
       int32_t constant_index =
           ToInteger32(LConstantOperand::cast(instr->index()));
-      if (instr->hydrogen()->length()->representation().IsSmi()) {
+      if (representation.IsSmi()) {
         __ Cmp(length, Smi::FromInt(constant_index));
       } else {
-        __ cmpq(length, Immediate(constant_index));
+        __ cmpl(length, Immediate(constant_index));
       }
     } else {
-      __ cmpq(length, ToRegister(instr->index()));
+      if (representation.IsSmi()) {
+        __ cmpq(length, ToRegister(instr->index()));
+      } else {
+        __ cmpl(length, ToRegister(instr->index()));
+      }
     }
   }
-  Condition condition =
-      instr->hydrogen()->allow_equality() ? below : below_equal;
+  Condition condition = hinstr->allow_equality() ? below : below_equal;
   ApplyCheckIf(condition, instr);
 }
 

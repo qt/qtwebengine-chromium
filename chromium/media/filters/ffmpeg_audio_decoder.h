@@ -26,14 +26,9 @@ namespace media {
 
 class AudioTimestampHelper;
 class DecoderBuffer;
+struct QueuedAudioBuffer;
 class ScopedPtrAVFreeContext;
 class ScopedPtrAVFreeFrame;
-
-// Helper structure for managing multiple decoded audio frames per packet.
-struct QueuedAudioBuffer {
-  AudioDecoder::Status status;
-  scoped_refptr<AudioBuffer> buffer;
-};
 
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:

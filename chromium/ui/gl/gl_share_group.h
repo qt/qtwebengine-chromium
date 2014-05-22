@@ -31,7 +31,7 @@ class GL_EXPORT GLShareGroup : public base::RefCounted<GLShareGroup> {
 
   // Returns a pointer to any initialized context in the share group
   // or NULL if there are no initialized contexts in the share group.
-  virtual GLContext* GetContext();
+  GLContext* GetContext();
 
   // Sets and returns the unique shared GL context. Used for context
   // virtualization.
@@ -45,13 +45,10 @@ class GL_EXPORT GLShareGroup : public base::RefCounted<GLShareGroup> {
   int GetRendererID();
 #endif
 
- protected:
-  virtual ~GLShareGroup();
-  virtual void AboutToAddFirstContext() { }
-
  private:
   friend class base::RefCounted<GLShareGroup>;
 
+  ~GLShareGroup();
 
   // References to GLContext are by raw pointer to avoid a reference count
   // cycle.

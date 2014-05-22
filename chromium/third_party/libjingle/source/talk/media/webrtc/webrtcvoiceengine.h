@@ -388,18 +388,7 @@ class WebRtcVoiceMediaChannel
   static Error WebRtcErrorToChannelError(int err_code);
 
  private:
-  // This struct relies on the generated copy constructor and assignment operator
-  // since it is used in an stl::map.
-  struct WebRtcVoiceChannelInfo {
-    WebRtcVoiceChannelInfo() : channel(-1), renderer(NULL) {}
-    WebRtcVoiceChannelInfo(int ch, AudioRenderer* r)
-        : channel(ch),
-          renderer(r) {}
-    ~WebRtcVoiceChannelInfo() {}
-
-    int channel;
-    AudioRenderer* renderer;
-  };
+  struct WebRtcVoiceChannelInfo;
   typedef std::map<uint32, WebRtcVoiceChannelInfo> ChannelMap;
 
   void SetNack(int channel, bool nack_enabled);

@@ -116,12 +116,10 @@ IPC_STRUCT_BEGIN(GpuStreamTextureMsg_MatrixChanged_Params)
 IPC_STRUCT_END()
 #endif
 
-#if defined(OS_WIN)
-IPC_STRUCT_TRAITS_BEGIN(gpu::DxDiagNode)
+  IPC_STRUCT_TRAITS_BEGIN(gpu::DxDiagNode)
   IPC_STRUCT_TRAITS_MEMBER(values)
   IPC_STRUCT_TRAITS_MEMBER(children)
 IPC_STRUCT_TRAITS_END()
-#endif
 
 IPC_STRUCT_TRAITS_BEGIN(gpu::GpuPerformanceStats)
   IPC_STRUCT_TRAITS_MEMBER(graphics)

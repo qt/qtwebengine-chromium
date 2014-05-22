@@ -121,6 +121,8 @@ static void InitLibcFileIOFunctions() {
 // the code below defines fopen_override() function with asm name
 // "fopen", so that all references to fopen() will resolve to this
 // function.
+__attribute__ ((__visibility__("default")))
+FILE* fopen_override(const char* path, const char* mode)  __asm__ ("fopen");
 
 __attribute__ ((__visibility__("default")))
 FILE* fopen_override(const char* path, const char* mode) {
@@ -139,7 +141,7 @@ FILE* fopen_override(const char* path, const char* mode) {
 }
 
 __attribute__ ((__visibility__("default")))
-FILE* fopen64_override(const char* path, const char* mode) {
+FILE* fopen64(const char* path, const char* mode) {
   if (g_override_urandom && strcmp(path, kUrandomDevPath) == 0) {
     int fd = HANDLE_EINTR(dup(base::GetUrandomFD()));
     if (fd < 0) {
@@ -160,6 +162,11 @@ FILE* fopen64_override(const char* path, const char* mode) {
 #if HAVE_XSTAT
 
 __attribute__ ((__visibility__("default")))
+int xstat_override(int version,
+                   const char *path,
+                   struct stat *buf)  __asm__ ("__xstat");
+
+__attribute__ ((__visibility__("default")))
 int xstat_override(int version, const char *path, struct stat *buf) {
   if (g_override_urandom && strcmp(path, kUrandomDevPath) == 0) {
     int result = __fxstat(version, base::GetUrandomFD(), buf);
@@ -170,6 +177,11 @@ int xstat_override(int version, const char *path, struct stat *buf) {
     return g_libc_xstat(version, path, buf);
   }
 }
+
+__attribute__ ((__visibility__("default")))
+int xstat64_override(int version,
+                     const char *path,
+                     struct stat64 *buf)  __asm__ ("__xstat64");
 
 __attribute__ ((__visibility__("default")))
 int xstat64_override(int version, const char *path, struct stat64 *buf) {
@@ -186,6 +198,10 @@ int xstat64_override(int version, const char *path, struct stat64 *buf) {
 #else
 
 __attribute__ ((__visibility__("default")))
+int stat_override(const char *path,
+                  struct stat *buf)  __asm__ ("stat");
+
+__attribute__ ((__visibility__("default")))
 int stat_override(const char *path, struct stat *buf) {
   if (g_override_urandom && strcmp(path, kUrandomDevPath) == 0) {
     int result = fstat(base::GetUrandomFD(), buf);
@@ -196,6 +212,10 @@ int stat_override(const char *path, struct stat *buf) {
     return g_libc_stat(path, buf);
   }
 }
+
+__attribute__ ((__visibility__("default")))
+int stat64_override(const char *path,
+                    struct stat64 *buf)  __asm__ ("stat64");
 
 __attribute__ ((__visibility__("default")))
 int stat64_override(const char *path, struct stat64 *buf) {

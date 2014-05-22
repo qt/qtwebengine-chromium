@@ -25,7 +25,6 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
 using blink::WebGraphicsContext3D;

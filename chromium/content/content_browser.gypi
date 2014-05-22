@@ -1323,7 +1323,6 @@
       'dependencies': [
         'browser/devtools/devtools_resources.gyp:devtools_resources',
         '../cc/cc.gyp:cc',
-        '../gpu/gpu.gyp:gpu_ipc',
         '../net/net.gyp:http_server',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '../ui/surface/surface.gyp:surface',
@@ -1548,7 +1547,7 @@
         ['exclude', '^browser/gamepad/gamepad_platform_data_fetcher_linux\\.cc$'],
       ],
     }],
-    ['use_aura!=1 and use_qt!=1 and OS!="win"', {
+    ['use_aura!=1 and OS!="win"', {
       'sources!': [
         'browser/renderer_host/ui_events_helper.cc',
         'browser/renderer_host/ui_events_helper.h',

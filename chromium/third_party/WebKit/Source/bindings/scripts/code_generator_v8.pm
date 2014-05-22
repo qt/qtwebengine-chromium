@@ -1980,7 +1980,7 @@ END
         die "[PutForwards=x] could not find $destinationAttrName in interface $attrType" unless $destinationAttribute;
         $code .= <<END;
     ${implClassName}* proxyImp = ${v8ClassName}::toNative(info.Holder());
-    ${attrType}* imp = proxyImp->${attrName}();
+    RefPtr<${attrType}> imp = proxyImp->${attrName}();
     if (!imp)
         return;
 END

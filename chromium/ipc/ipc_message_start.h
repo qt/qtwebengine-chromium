@@ -10,7 +10,6 @@
 // code to figure out the message class from its ID.
 enum IPCMessageStart {
   AutomationMsgStart = 0,
-  QtMsgStart,
   FrameMsgStart,
   ViewMsgStart,
   InputMsgStart,

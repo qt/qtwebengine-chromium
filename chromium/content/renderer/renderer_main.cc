@@ -161,8 +161,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   // As long as we use Cocoa in the renderer (for the forseeable future as of
   // now; see http://crbug.com/306348 for info) we need to have a UI loop.
   base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
-#elif defined(OS_WIN) && defined(TOOLKIT_QT)
-  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_DEFAULT);
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks,
   // unless in-process-plugins is used.
@@ -225,6 +223,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     if (!no_sandbox) {
       run_loop = platform.EnableSandbox();
     } else {
+      LOG(ERROR) << "Running without renderer sandbox";
 #ifndef NDEBUG
       // For convenience, we print the stack trace for crashes. We can't get
       // symbols when the sandbox is enabled, so only try when the sandbox is
