@@ -64,28 +64,7 @@ class MessagePortService {
   // verify that the message port id exists.
   void Erase(int message_port_id);
 
-  struct MessagePort {
-    // |filter| and |route_id| are what we need to send messages to the port.
-    // |filter| is just a weak pointer since we get notified when its process has
-    // gone away and remove it.
-    MessagePortMessageFilter* filter;
-    int route_id;
-    // A globally unique id for this message port.
-    int message_port_id;
-    // The globally unique id of the entangled message port.
-    int entangled_message_port_id;
-    // If true, all messages to this message port are queued and not delivered.
-    // This is needed so that when a message port is sent between processes all
-    // pending message get transferred. There are two possibilities for pending
-    // messages: either they are already received by the child process, or they're
-    // in-flight. This flag ensures that the latter type get flushed through the
-    // system.
-    // This flag should only be set to true in response to
-    // MessagePortHostMsg_QueueMessages.
-    bool queue_messages;
-    QueuedMessages queued_messages;
-  };
-
+  struct MessagePort;
   typedef std::map<int, MessagePort> MessagePorts;
   MessagePorts message_ports_;
 

@@ -292,6 +292,18 @@ NPClass message_channel_class = {
 }  // namespace
 
 // MessageChannel --------------------------------------------------------------
+struct MessageChannel::VarConversionResult {
+  VarConversionResult(const ppapi::ScopedPPVar& r, bool s)
+      : result(r),
+        success(s),
+        conversion_completed(true) {}
+  VarConversionResult()
+      : success(false),
+        conversion_completed(false) {}
+  ppapi::ScopedPPVar result;
+  bool success;
+  bool conversion_completed;
+};
 
 MessageChannel::MessageChannelNPObject::MessageChannelNPObject() {
 }

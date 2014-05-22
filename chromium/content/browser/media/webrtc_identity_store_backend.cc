@@ -46,6 +46,43 @@ static bool InitDB(sql::Connection* db) {
       "creation_time INTEGER)");
 }
 
+struct WebRTCIdentityStoreBackend::IdentityKey {
+  IdentityKey(const GURL& origin, const std::string& identity_name)
+      : origin(origin), identity_name(identity_name) {}
+
+  bool operator<(const IdentityKey& other) const {
+    return origin < other.origin ||
+           (origin == other.origin && identity_name < other.identity_name);
+  }
+
+  GURL origin;
+  std::string identity_name;
+};
+
+struct WebRTCIdentityStoreBackend::Identity {
+  Identity(const std::string& common_name,
+           const std::string& certificate,
+           const std::string& private_key)
+      : common_name(common_name),
+        certificate(certificate),
+        private_key(private_key),
+        creation_time(base::Time::Now().ToInternalValue()) {}
+
+  Identity(const std::string& common_name,
+           const std::string& certificate,
+           const std::string& private_key,
+           int64 creation_time)
+      : common_name(common_name),
+        certificate(certificate),
+        private_key(private_key),
+        creation_time(creation_time) {}
+
+  std::string common_name;
+  std::string certificate;
+  std::string private_key;
+  int64 creation_time;
+};
+
 struct WebRTCIdentityStoreBackend::PendingFindRequest {
   PendingFindRequest(const GURL& origin,
                      const std::string& identity_name,

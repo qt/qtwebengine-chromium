@@ -117,7 +117,7 @@
   'target_conditions': [
     # Pull in specific linux files for android (which have been filtered out
     # by file name rules).
-    [ 'OS == "android" or qt_os == "embedded_linux"', {
+    [ 'OS == "android"', {
       'sources/': [
         ['include', 'ext/platform_device_linux\\.cc$'],
       ],

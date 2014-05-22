@@ -7,7 +7,7 @@
     {
       'target_name': 'khronos_headers',
       'type': 'none',
-      'direct_dependent_settings': {
+      'all_dependent_settings': {
         'include_dirs': [
           '.',
           '../../gpu',  # Contains GLES2/gl2chromium.h

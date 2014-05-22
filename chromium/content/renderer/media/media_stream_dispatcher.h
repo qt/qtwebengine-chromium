@@ -99,38 +99,11 @@ class CONTENT_EXPORT MediaStreamDispatcher
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, TestFailure);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, CancelGenerateStream);
 
-  // A request is identified by pair (request_id, handler), or ipc_request.
-  // There could be multiple clients making requests and each has its own
-  // request_id sequence.
-  // The ipc_request is garanteed to be unique when it's created in
-  // MediaStreamDispatcher.
-  struct Request {
-    Request(const base::WeakPtr<MediaStreamDispatcherEventHandler>& handler,
-            int request_id,
-            int ipc_request)
-        : handler(handler),
-          request_id(request_id),
-          ipc_request(ipc_request) {
-    }
-    bool IsThisRequest(
-        int request_id1,
-        const base::WeakPtr<MediaStreamDispatcherEventHandler>& handler1) {
-      return (request_id1 == request_id && handler1.get() == handler.get());
-    }
-    base::WeakPtr<MediaStreamDispatcherEventHandler> handler;
-    int request_id;
-    int ipc_request;
-  };
+  struct Request;
 
   // Private class for keeping track of opened devices and who have
   // opened it.
-  struct Stream {
-    Stream() {}
-    ~Stream() {}
-    base::WeakPtr<MediaStreamDispatcherEventHandler> handler;
-    StreamDeviceInfoArray audio_array;
-    StreamDeviceInfoArray video_array;
-  };
+  struct Stream;
 
   // RenderViewObserver OVERRIDE.
   virtual bool Send(IPC::Message* message) OVERRIDE;
