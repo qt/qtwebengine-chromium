@@ -35,7 +35,7 @@
         ],
       },
       'conditions': [
-        ['desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
+        ['desktop_linux == 1 or chromeos == 1', {
           'conditions': [
             ['chromeos==1', {
               'sources/': [ ['include', '_chromeos\\.cc$'] ]

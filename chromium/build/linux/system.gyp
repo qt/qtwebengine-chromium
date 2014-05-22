@@ -29,7 +29,7 @@
         'use_system_ssl%': 1,
       },
     }],
-    [ 'chromeos==0 and use_qt==0', {
+    [ 'chromeos==0', {
       # Hide GTK and related dependencies for Chrome OS, so they won't get
       # added back to Chrome OS. Don't try to use GTK on Chrome OS.
       'targets': [
@@ -506,8 +506,6 @@
     {
       'target_name': 'libpci',
       'type': 'static_library',
-      'conditions': [
-      ['use_x11==1', {
       'cflags': [
         '<!@(<(pkg-config) --cflags libpci)',
       ],
@@ -567,8 +565,6 @@
           'message': 'Generating libpci library loader',
           'process_outputs_as_sources': 1,
         },
-      ],
-      }],
       ],
     },
     {
@@ -664,8 +660,6 @@
       'type': 'none',
       'toolsets': ['host', 'target'],
       'conditions': [
-      ['use_pango==1', {
-      'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
             'cflags': [
@@ -695,8 +689,6 @@
             ],
           },
         }],
-      ],
-      }],
       ],
     },
     {

@@ -141,15 +141,12 @@ MessagePumpX11::~MessagePumpX11() {
   g_xdisplay = NULL;
 }
 
-#if !defined(TOOLKIT_QT)
-// Qt uses it's own version.
 // static
 Display* MessagePumpX11::GetDefaultXDisplay() {
   if (!g_xdisplay)
     g_xdisplay = XOpenDisplay(NULL);
   return g_xdisplay;
 }
-#endif
 
 #if defined(TOOLKIT_GTK)
 // static

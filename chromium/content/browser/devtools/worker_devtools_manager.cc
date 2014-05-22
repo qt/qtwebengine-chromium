@@ -51,6 +51,19 @@ base::LazyInstance<AgentHosts>::Leaky g_orphan_map = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
+struct WorkerDevToolsManager::TerminatedInspectedWorker {
+  TerminatedInspectedWorker(WorkerId id,
+                            const GURL& url,
+                            const base::string16& name)
+      : old_worker_id(id),
+        worker_url(url),
+        worker_name(name) {}
+  WorkerId old_worker_id;
+  GURL worker_url;
+  base::string16 worker_name;
+};
+
+
 class WorkerDevToolsManager::WorkerDevToolsAgentHost
     : public IPCDevToolsAgentHost {
  public:
@@ -187,6 +200,19 @@ class WorkerDevToolsManager::DetachedClientHosts {
   static void RemoveInspectedWorkerDataOnIOThread(WorkerId id) {
     WorkerDevToolsManager::GetInstance()->RemoveInspectedWorkerData(id);
   }
+};
+
+struct WorkerDevToolsManager::InspectedWorker {
+  InspectedWorker(WorkerProcessHost* host, int route_id, const GURL& url,
+                  const base::string16& name)
+      : host(host),
+        route_id(route_id),
+        worker_url(url),
+        worker_name(name) {}
+  WorkerProcessHost* const host;
+  int const route_id;
+  GURL worker_url;
+  base::string16 worker_name;
 };
 
 // static

@@ -151,7 +151,6 @@ bool IsUndesirablePlugin(const WebPluginInfo& info) {
 // http://code.google.com/p/chromium/issues/detail?id=38229
 bool IsBlacklistedPlugin(const base::FilePath& path) {
   const char* kBlackListedPlugins[] = {
-    "skypebuttons.so",    // Crash on dlopen since it uses Qt4
     "nppdf.so",           // Adobe PDF
   };
   std::string filename = path.BaseName().value();

@@ -107,7 +107,7 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
   if (child_path.empty())
     PathService::Get(CHILD_PROCESS_EXE, &child_path);
 
-#if defined(OS_MACOSX) && 0
+#if defined(OS_MACOSX)
   DCHECK(!(flags & CHILD_NO_PIE && flags & CHILD_ALLOW_HEAP_EXECUTION));
 
   // If needed, choose an executable with special flags set that inform the

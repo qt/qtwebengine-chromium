@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/quads/draw_quad.h"
+#include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 

@@ -270,7 +270,7 @@
         '../third_party/skia/src/opts/opts_check_SSE2.cpp'
       ],
     }],
-    [ 'desktop_linux == 1 or chromeos == 1 or qt_os=="embedded_linux"', {
+    [ 'desktop_linux == 1 or chromeos == 1', {
       'dependencies': [
         '../build/linux/system.gyp:fontconfig',
         '../build/linux/system.gyp:freetype2',
