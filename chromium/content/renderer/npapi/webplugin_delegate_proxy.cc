@@ -6,7 +6,7 @@
 
 #if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
-#elif defined(USE_CAIRO)
+#elif defined(USE_X11)
 #include <cairo/cairo.h>
 #endif
 

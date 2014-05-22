@@ -314,7 +314,7 @@ void RenderThreadImpl::Init() {
   v8::V8::SetCreateHistogramFunction(CreateHistogram);
   v8::V8::SetAddHistogramSampleFunction(AddHistogramSample);
 
-#if (defined(OS_MACOSX) || defined(OS_ANDROID)) && !defined(TOOLKIT_QT)
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
   // On Mac and Android, the select popups are rendered by the browser.
   blink::WebView::setUseExternalPopupMenus(true);
 #endif

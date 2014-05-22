@@ -10,8 +10,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 
-class WebEngineContext;
-
 namespace base {
 #if defined(OS_ANDROID)
 class MessagePumpForUI;
@@ -78,7 +76,6 @@ class BASE_EXPORT RunLoop {
 
  private:
   friend class MessageLoop;
-  friend class ::WebEngineContext;
 #if defined(OS_ANDROID)
   // Android doesn't support the blocking MessageLoop::Run, so it calls
   // BeforeRun and AfterRun directly.

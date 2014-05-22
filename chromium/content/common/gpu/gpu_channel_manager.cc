@@ -11,7 +11,6 @@
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/sync_point_manager.h"
-#include "content/public/browser/content_browser_client.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -125,12 +124,7 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
       DCHECK(!mailbox_manager_.get());
       mailbox_manager_ = new gpu::gles2::MailboxManager;
     }
-    // Qt: Ask the browser client at the top to manage the context sharing.
-    // This can only work with --in-process-gpu or --single-process.
-    if (GetContentClient()->browser() && GetContentClient()->browser()->GetInProcessGpuShareGroup())
-      share_group = GetContentClient()->browser()->GetInProcessGpuShareGroup();
-    else
-      share_group = share_group_.get();
+    share_group = share_group_.get();
     mailbox_manager = mailbox_manager_.get();
   }
 

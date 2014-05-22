@@ -57,25 +57,7 @@ class MockCertVerifier : public CertVerifier {
                                int rv);
 
  private:
-  struct Rule {
-    Rule(X509Certificate* cert,
-         const std::string& hostname,
-         const CertVerifyResult& result,
-         int rv)
-        : cert(cert),
-          hostname(hostname),
-          result(result),
-          rv(rv) {
-      DCHECK(cert);
-      DCHECK(result.verified_cert.get());
-    }
-
-    scoped_refptr<X509Certificate> cert;
-    std::string hostname;
-    CertVerifyResult result;
-    int rv;
-  };
-
+  struct Rule;
   typedef std::list<Rule> RuleList;
 
   int default_result_;
