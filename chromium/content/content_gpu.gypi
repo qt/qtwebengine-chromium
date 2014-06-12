@@ -29,14 +29,12 @@
         '<(angle_path)/src',
         '<(DEPTH)/third_party/wtl/include',
       ],
-      'dependencies': [
-        '<(angle_path)/src/build_angle.gyp:libEGL',
-        '<(angle_path)/src/build_angle.gyp:libGLESv2',
-      ],
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
-        ],
+            '-l<(qt_egl_library)',
+            '-l<(qt_glesv2_library)',
+          ],
       },
     }],
     ['OS=="win" and target_arch=="ia32" and directxsdk_exists=="True"', {
