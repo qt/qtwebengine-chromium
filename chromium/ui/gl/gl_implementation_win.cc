@@ -181,6 +181,7 @@ bool InitializeGLBindings(GLImplementation implementation) {
         gles_path = module_path;
       }
 
+#if defined(NDEBUG)
       // Load libglesv2.dll before libegl.dll because the latter is dependent on
       // the former and if there is another version of libglesv2.dll in the dll
       // search path, it will get loaded instead.
@@ -200,6 +201,25 @@ bool InitializeGLBindings(GLImplementation implementation) {
         base::UnloadNativeLibrary(gles_library);
         return false;
       }
+#else
+      // Load / use the debug version of libglesv2 and libegl because Qt will
+      // load these.
+      base::NativeLibrary gles_library = base::LoadNativeLibrary(
+          gles_path.Append(L"libglesv2d.dll"), NULL);
+      if (!gles_library) {
+        DVLOG(1) << "libglesv2d.dll not found";
+        return false;
+      }
+
+      base::NativeLibrary egl_library = base::LoadNativeLibrary(
+          gles_path.Append(L"libegld.dll"), NULL);
+      if (!egl_library) {
+        DVLOG(1) << "libegld.dll not found.";
+        base::UnloadNativeLibrary(gles_library);
+        return false;
+      }
+
+#endif
 
 #if defined(ENABLE_SWIFTSHADER)
       if (using_swift_shader) {
