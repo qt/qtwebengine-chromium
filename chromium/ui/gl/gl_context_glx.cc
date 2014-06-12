@@ -53,7 +53,8 @@ bool GLContextGLX::Initialize(
   if (GLSurfaceGLX::IsCreateContextSupported()) {
     DVLOG(1) << "GLX_ARB_create_context supported.";
     std::vector<int> attribs;
-    if (GLSurfaceGLX::IsCreateContextRobustnessSupported()) {
+    if (GLSurfaceGLX::IsCreateContextRobustnessSupported()
+        && (!share_group()->GetContext() || share_group()->GetContext()->WasAllocatedUsingRobustnessExtension())) {
       DVLOG(1) << "GLX_ARB_create_context_robustness supported.";
       attribs.push_back(GLX_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB);
       attribs.push_back(GLX_LOSE_CONTEXT_ON_RESET_ARB);

@@ -52,7 +52,8 @@ bool GLContextEGL::Initialize(
   config_ = compatible_surface->GetConfig();
 
   const EGLint* context_attributes = NULL;
-  if (GLSurfaceEGL::IsCreateContextRobustnessSupported()) {
+  if (GLSurfaceEGL::IsCreateContextRobustnessSupported()
+      && (!share_group()->GetContext() || share_group()->GetContext()->WasAllocatedUsingRobustnessExtension())) {
     DVLOG(1) << "EGL_EXT_create_context_robustness supported.";
     context_attributes = kContextRobustnessAttributes;
   } else {
