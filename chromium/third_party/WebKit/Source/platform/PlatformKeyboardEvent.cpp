@@ -43,7 +43,7 @@ static const unsigned short HIGHBITMASKSHORT = 0x8000;
 
 void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type)
 {
-#if OS(WIN)
+#if OS(WIN) && !defined(TOOLKIT_QT)
     // No KeyDown events on Windows to disambiguate.
     ASSERT_NOT_REACHED();
 #else
