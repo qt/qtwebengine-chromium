@@ -97,6 +97,7 @@ class EGLSyncControlVSyncProvider
 
 GLSurfaceEGL::GLSurfaceEGL() {}
 
+#if !defined(TOOLKIT_QT)
 bool GLSurfaceEGL::InitializeOneOff() {
   static bool initialized = false;
   if (initialized)
@@ -223,6 +224,7 @@ EGLDisplay GLSurfaceEGL::GetHardwareDisplay() {
 EGLNativeDisplayType GLSurfaceEGL::GetNativeDisplay() {
   return g_native_display;
 }
+#endif // !defined(TOOLKIT_QT)
 
 const char* GLSurfaceEGL::GetEGLExtensions() {
   return g_egl_extensions;
@@ -545,9 +547,11 @@ void PbufferGLSurfaceEGL::Destroy() {
   }
 }
 
+#if !defined(TOOLKIT_QT)
 EGLConfig PbufferGLSurfaceEGL::GetConfig() {
   return g_config;
 }
+#endif // !defined(TOOLKIT_QT)
 
 bool PbufferGLSurfaceEGL::IsOffscreen() {
   return true;
@@ -660,7 +664,7 @@ void* SurfacelessEGL::GetShareHandle() {
 SurfacelessEGL::~SurfacelessEGL() {
 }
 
-#if defined(ANDROID) || defined(USE_OZONE)
+#if (defined(ANDROID) || defined(USE_OZONE)) && !defined(TOOLKIT_QT)
 
 // A thin subclass of |GLSurfaceOSMesa| that can be used in place
 // of a native hardware-provided surface when a native surface
