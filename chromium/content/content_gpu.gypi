@@ -39,6 +39,26 @@
         ],
       },
     }],
+    ['OS=="win" and not qt_os=="win32"', {
+      'dependencies': [
+        '<(angle_path)/src/build_angle.gyp:libEGL',
+        '<(angle_path)/src/build_angle.gyp:libGLESv2',
+      ],
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+        ],
+      },
+    }],
+    ['OS=="win" and qt_os=="win32"', {
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+          '-l<(qt_egl_library)',
+          '-l<(qt_glesv2_library)',
+        ],
+      },
+    }],
     ['OS=="win" and target_arch=="ia32" and directxsdk_exists=="True"', {
       # We don't support x64 prior to Win7 and D3DCompiler_43.dll is
       # not needed on Vista+.

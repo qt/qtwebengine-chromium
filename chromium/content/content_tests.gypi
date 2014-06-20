@@ -1260,7 +1260,7 @@
                   ['exclude', '^common/gpu/media/android_video_decode_accelerator_unittest.cc'],
                 ],
               }],
-              ['OS=="win"', {
+              ['OS=="win" and not qt_os=="win32"', {
                 'dependencies': [
                   '<(angle_path)/src/build_angle.gyp:libEGL',
                   '<(angle_path)/src/build_angle.gyp:libGLESv2',
