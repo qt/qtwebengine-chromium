@@ -212,7 +212,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and not qt_os=="win32"', {
       'targets': [
         {
           'target_name': 'libGLESv2',

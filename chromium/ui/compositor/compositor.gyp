@@ -67,6 +67,12 @@
             '<(angle_path)/src/build_angle.gyp:libGLESv2',
           ],
         }],
+        ['OS == "win" and use_aura == 1 and qt_os=="win32"', {
+          'libraries': [
+            '-l<(qt_egl_library)',
+            '-l<(qt_glesv2_library)',
+          ],
+        }],
       ],
     },
     {
