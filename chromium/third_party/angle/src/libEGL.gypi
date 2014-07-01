@@ -5,7 +5,7 @@
 {
     'conditions':
     [
-        ['OS=="win"',
+        ['OS=="win" and use_qt==0',
         {
             'targets':
             [
