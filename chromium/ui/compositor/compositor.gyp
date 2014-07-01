@@ -66,13 +66,19 @@
         'transform_animation_curve_adapter.h',
       ],
       'conditions': [
-        ['OS == "win" and use_aura == 1', {
+        ['OS == "win" and use_aura == 1 and use_qt==0', {
           # TODO(sky): before we make this real need to remove
           # IDR_BITMAP_BRUSH_IMAGE.
           'dependencies': [
             '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
             '<(angle_path)/src/build_angle.gyp:libEGL',
             '<(angle_path)/src/build_angle.gyp:libGLESv2',
+          ],
+        }],
+        ['use_aura == 1 and qt_os=="win32"', {
+          'libraries': [
+            '-l<(qt_egl_library)',
+            '-l<(qt_glesv2_library)',
           ],
         }],
       ],

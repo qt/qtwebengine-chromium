@@ -24,7 +24,7 @@
     '..',
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and use_qt==0', {
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
         '<(angle_path)/src',
@@ -37,6 +37,15 @@
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
+        ],
+      },
+    }],
+    ['qt_os=="win32"', {
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+          '-l<(qt_egl_library)',
+          '-l<(qt_glesv2_library)',
         ],
       },
     }],

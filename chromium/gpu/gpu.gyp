@@ -366,7 +366,7 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
-        ['OS == "win"', {
+        ['OS == "win" and use_qt==0', {
           'dependencies': [
             '../third_party/angle/src/build_angle.gyp:libEGL',
             '../third_party/angle/src/build_angle.gyp:libGLESv2',
