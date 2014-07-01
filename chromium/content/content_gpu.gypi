@@ -24,7 +24,7 @@
     '..',
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and use_qt==0', {
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
         # ANGLE libs picked up from ui/gl

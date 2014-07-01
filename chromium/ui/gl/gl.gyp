@@ -211,6 +211,8 @@
               '-ldwmapi.lib',
             ],
           },
+        }],
+        ['OS=="win" and use_qt == 0', {
           'dependencies': [
             '<(DEPTH)/third_party/angle/src/angle.gyp:libEGL',
             '<(DEPTH)/third_party/angle/src/angle.gyp:libGLESv2',
