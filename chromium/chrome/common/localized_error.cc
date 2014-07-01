@@ -12,9 +12,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/net/net_error_info.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#endif // !defined(TOOLKIT_QT)
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -26,6 +28,11 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+// Used to fetch the application name
+#include "web_engine_library_info.h"
 #endif
 
 using blink::WebURLError;
@@ -562,7 +569,11 @@ void LocalizedError::GetStrings(int error_code,
   summary->SetString("hostName", net::IDNToUnicode(failed_url.host(),
                                                    accept_languages));
   summary->SetString("productName",
+#if !defined(TOOLKIT_QT)
                      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+#else
+                     WebEngineLibraryInfo::getApplicationName());
+#endif
 
   error_strings->SetString(
       "more", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_MORE));
@@ -838,6 +849,8 @@ bool LocalizedError::HasStrings(const std::string& error_domain,
   return LookupErrorMap(error_domain, error_code, /*is_post=*/false) != NULL;
 }
 
+
+#if !defined(TOOLKIT_QT)
 void LocalizedError::GetAppErrorStrings(
     const GURL& display_url,
     const extensions::Extension* app,
@@ -877,3 +890,4 @@ void LocalizedError::GetAppErrorStrings(
   error_strings->Set("suggestionsLearnMore", suggest_learn_more);
 #endif  // defined(OS_CHROMEOS)
 }
+#endif // !defined(TOOLKIT_QT)
