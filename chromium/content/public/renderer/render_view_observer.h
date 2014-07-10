@@ -31,6 +31,9 @@ class RenderViewImpl;
 class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                           public IPC::Sender {
  public:
+
+  virtual void OnFirstVisuallyNonEmptyLayout() {}
+
   // A subclass can use this to delete itself. If it does not, the subclass must
   // always null-check each call to render_view() becase the RenderView can
   // go away at any time.
