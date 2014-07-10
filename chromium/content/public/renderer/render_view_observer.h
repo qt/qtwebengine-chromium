@@ -45,6 +45,9 @@ class RenderViewImpl;
 class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                           public IPC::Sender {
  public:
+
+  virtual void OnFirstVisuallyNonEmptyLayout() {}
+
   // By default, observers will be deleted when the RenderView goes away.  If
   // they want to outlive it, they can override this function.
   virtual void OnDestruct();
