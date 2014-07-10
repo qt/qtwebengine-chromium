@@ -22,7 +22,7 @@ class BrowserAccessibility;
 #if defined(OS_ANDROID)
 class BrowserAccessibilityManagerAndroid;
 #endif
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 class BrowserAccessibilityManagerWin;
 #endif
 
@@ -129,7 +129,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   void OnAccessibilityEvents(
       const std::vector<AccessibilityHostMsg_EventParams>& params);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   BrowserAccessibilityManagerWin* ToBrowserAccessibilityManagerWin();
 #endif
 
