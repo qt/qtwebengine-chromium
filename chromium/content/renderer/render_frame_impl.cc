@@ -3488,6 +3488,8 @@ void RenderFrameImpl::didFirstVisuallyNonEmptyLayout(
       InternalDocumentStateData::FromDataSource(frame->dataSource());
   data->set_did_first_visually_non_empty_layout(true);
 
+  FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers_, OnFirstVisuallyNonEmptyLayout());
+
 #if defined(OS_ANDROID)
   GetRenderWidget()->DidChangeBodyBackgroundColor(
       render_view_->webwidget_->backgroundColor());
