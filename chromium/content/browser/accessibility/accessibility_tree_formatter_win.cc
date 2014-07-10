@@ -57,6 +57,12 @@ void AccessibilityTreeFormatter::Initialize() {
   ui::win::CreateATLModuleIfNeeded();
 }
 
+#if defined(TOOLKIT_QT)
+void AccessibilityTreeFormatter::AddProperties(
+    const BrowserAccessibility& /* node */, base::DictionaryValue* /* dict */ ) {
+    //FIXME: Fully implement accessibility with Qt and Windows.
+}
+#else
 void AccessibilityTreeFormatter::AddProperties(
     const BrowserAccessibility& node, base::DictionaryValue* dict) {
   BrowserAccessibilityWin* acc_obj =
@@ -198,6 +204,7 @@ void AccessibilityTreeFormatter::AddProperties(
     }
   }
 }
+#endif
 
 base::string16 AccessibilityTreeFormatter::ToString(
     const base::DictionaryValue& dict,

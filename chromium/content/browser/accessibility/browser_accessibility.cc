@@ -18,10 +18,11 @@ typedef AccessibilityNodeData::FloatAttribute FloatAttribute;
 typedef AccessibilityNodeData::IntAttribute IntAttribute;
 typedef AccessibilityNodeData::StringAttribute StringAttribute;
 
-#if !defined(OS_MACOSX) && \
+#if defined(TOOLKIT_QT) || \
+    (!defined(OS_MACOSX) && \
     !defined(OS_WIN) && \
     !defined(TOOLKIT_GTK) && \
-    !defined(OS_ANDROID)
+    !defined(OS_ANDROID))
 // We have subclassess of BrowserAccessibility on Mac, Linux/GTK,
 // and Win. For any other platform, instantiate the base class.
 // static
