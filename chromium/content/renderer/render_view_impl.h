@@ -318,6 +318,7 @@ class CONTENT_EXPORT RenderViewImpl
   // blink::WebWidgetClient implementation ------------------------------------
 
   // Most methods are handled by RenderWidget.
+  void didFirstVisuallyNonEmptyLayout() override;
   void didFocus() override;
   void didBlur() override;
   void show(blink::WebNavigationPolicy policy) override;

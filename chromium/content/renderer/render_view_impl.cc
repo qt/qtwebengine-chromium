@@ -1978,6 +1978,12 @@ int RenderViewImpl::historyForwardListCount() {
 
 // blink::WebWidgetClient ----------------------------------------------------
 
+void RenderViewImpl::didFirstVisuallyNonEmptyLayout() {
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_, OnFirstVisuallyNonEmptyLayout());
+
+  RenderWidget::didFirstVisuallyNonEmptyLayout();
+}
+
 void RenderViewImpl::didFocus() {
   // TODO(jcivelli): when https://bugs.webkit.org/show_bug.cgi?id=33389 is fixed
   //                 we won't have to test for user gesture anymore and we can
