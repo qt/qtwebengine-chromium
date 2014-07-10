@@ -4105,6 +4105,8 @@ void RenderViewImpl::didFirstVisuallyNonEmptyLayout(WebFrame* frame) {
       InternalDocumentStateData::FromDataSource(frame->dataSource());
   data->set_did_first_visually_non_empty_layout(true);
 
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_, OnFirstVisuallyNonEmptyLayout());
+
 #if defined(OS_ANDROID)
   // Update body background color if necessary.
   SkColor bg_color = webwidget_->backgroundColor();
