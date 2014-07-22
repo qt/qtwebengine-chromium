@@ -1488,7 +1488,7 @@ source_set("browser") {
   if (!is_mac) {
     deps += [ "//sandbox" ]
   }
-  if (!is_android) {
+  if (!is_android && !use_qt) {
     deps += [
       "//content/browser/tracing:resources",
       "//ui/vector_icons",
