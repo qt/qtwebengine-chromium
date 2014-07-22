@@ -1872,7 +1872,7 @@
         '../third_party/WebKit/public/blink.gyp:blink',
       ],
     }],
-    ['OS!="android"', {
+    ['OS!="android" and use_qt==0', {
       'dependencies': [
         'browser/tracing/tracing_resources.gyp:tracing_resources',
         '../ui/compositor/compositor.gyp:compositor',
@@ -1882,6 +1882,15 @@
       'sources/': [
         ['exclude', '^public/browser/context_factory.h'],
       ]
+    }],
+    ['use_qt==1', {
+      'dependencies': [
+        '../ui/compositor/compositor.gyp:compositor',
+      ],
+      'sources': [ '<@(compositor_browser_sources)' ],
+      'sources!': [
+        'browser/tracing/tracing_ui.cc',
+      ],
     }],
     ['(use_udev==1 and os_posix==1) or OS=="mac" or OS=="win"', {
       'dependencies': [
