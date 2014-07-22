@@ -1889,7 +1889,7 @@
         '../sandbox/sandbox.gyp:sandbox',
       ],
     }],
-    ['OS!="android" and OS!="ios"', {
+    ['OS!="android" and OS!="ios" and use_qt==0', {
       'dependencies': [
         'browser/tracing/tracing_resources.gyp:tracing_resources',
         '../ui/compositor/compositor.gyp:compositor',
@@ -1899,6 +1899,15 @@
       'sources/': [
         ['exclude', '^public/browser/context_factory.h'],
       ]
+    }],
+    ['use_qt==1', {
+      'dependencies': [
+        '../ui/compositor/compositor.gyp:compositor',
+      ],
+      'sources': [ '<@(compositor_browser_sources)' ],
+      'sources!': [
+        'browser/tracing/tracing_ui.cc',
+      ],
     }],
     ['OS!="ios"', {
       'sources': [
