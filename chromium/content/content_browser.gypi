@@ -1536,9 +1536,14 @@
         '../sandbox/sandbox.gyp:sandbox',
       ],
     }],
-    ['OS!="android" and OS!="ios"', {
+    ['OS!="android" and OS!="ios" and use_qt==0', {
       'dependencies': [
         'browser/tracing/tracing_resources.gyp:tracing_resources',
+      ],
+    }],
+    ['use_qt==1', {
+      'sources!': [
+        'browser/tracing/tracing_ui.cc',
       ],
     }],
     ['OS!="ios"', {
