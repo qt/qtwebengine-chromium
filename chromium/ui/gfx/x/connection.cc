@@ -22,6 +22,7 @@
 #include "ui/gfx/x/randr.h"
 #include "ui/gfx/x/x11.h"
 #include "ui/gfx/x/x11_switches.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gfx/x/xkb.h"
 #include "ui/gfx/x/xproto.h"
 #include "ui/gfx/x/xproto_internal.h"
@@ -54,6 +55,10 @@ int XLookupString(XKeyEvent* event_struct,
                   void* status_in_out);
 }
 
+#ifdef TOOLKIT_QT
+extern XDisplay* GetQtXDisplay();
+#endif
+
 namespace x11 {
 
 namespace {
@@ -81,6 +86,7 @@ auto CompareSequenceIds(T t, U u) {
   return static_cast<SignedType>(t0 - u0);
 }
 
+#ifndef TOOLKIT_QT
 XDisplay* OpenNewXDisplay(const std::string& address) {
   if (!XInitThreads())
     return nullptr;
@@ -91,6 +97,7 @@ XDisplay* OpenNewXDisplay(const std::string& address) {
           : address;
   return XOpenDisplay(display_str.empty() ? nullptr : display_str.c_str());
 }
+#endif
 
 // Ported from XConvertCase:
 // https://gitlab.freedesktop.org/xorg/lib/libx11/-/blob/2b7598221d87049d03e9a95fcb541c37c8728184/src/KeyBind.c#L645
@@ -260,7 +267,11 @@ void Connection::Set(std::unique_ptr<x11::Connection> connection) {
 
 Connection::Connection(const std::string& address)
     : XProto(this),
+#ifndef TOOLKIT_QT
       display_(OpenNewXDisplay(address)),
+#else
+      display_(static_cast<XDisplay*>(GetQtXDisplay())),
+#endif
       display_string_(address) {
   char* host = nullptr;
   int display = 0;
@@ -306,8 +317,10 @@ Connection::Connection(const std::string& address)
 Connection::~Connection() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   platform_event_source.reset();
+#ifndef TOOLKIT_QT
   if (display_)
     XCloseDisplay(display_);
+#endif
 }
 
 xcb_connection_t* Connection::XcbConnection() {
