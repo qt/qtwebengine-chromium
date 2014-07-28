@@ -78,6 +78,8 @@ enum BasePathKey {
                            // Only for use in base_unittests. Equivalent to
                            // DIR_SRC_TEST_DATA_ROOT + "/base/test/data".
 
+  DIR_QT_LIBRARY_DATA,
+
   PATH_END
 };
 
