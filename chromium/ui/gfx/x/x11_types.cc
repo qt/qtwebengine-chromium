@@ -10,13 +10,21 @@
 #include "build/build_config.h"
 #include "ui/gfx/x/x11_switches.h"
 
+#ifdef TOOLKIT_QT
+extern XDisplay* GetQtXDisplay();
+#endif
+
 namespace gfx {
 
 XDisplay* GetXDisplay() {
+#ifdef TOOLKIT_QT
+  return GetQtXDisplay();
+#else
   static XDisplay* display = NULL;
   if (!display)
     display = OpenNewXDisplay();
   return display;
+#endif
 }
 
 XDisplay* OpenNewXDisplay() {
