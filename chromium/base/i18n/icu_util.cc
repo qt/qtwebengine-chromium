@@ -137,8 +137,12 @@ void LazyInitIcuDataFile() {
     return;
   }
 #endif  // BUILDFLAG(IS_ANDROID)
+#if defined(TOOLKIT_QT)
+  FilePath data_path;
+  PathService::Get(base::DIR_QT_LIBRARY_DATA, &data_path);
+  data_path = data_path.AppendASCII(kIcuDataFileName);
+#elif !BUILDFLAG(IS_APPLE)
   // For unit tests, data file is located on disk, so try there as a fallback.
-#if !BUILDFLAG(IS_APPLE)
   FilePath data_path;
   if (!PathService::Get(DIR_ASSETS, &data_path)) {
     LOG(ERROR) << "Can't find " << kIcuDataFileName;
