@@ -47,6 +47,8 @@ enum BasePathKey {
 
   DIR_TEST_DATA,  // Used only for testing.
 
+  DIR_QT_LIBRARY_DATA,
+
   PATH_END
 };
 
