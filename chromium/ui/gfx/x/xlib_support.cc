@@ -11,6 +11,10 @@
 #include "library_loaders/xlib_loader.h"
 #include "library_loaders/xlib_xcb_loader.h"
 
+#ifdef TOOLKIT_QT
+extern void* GetQtXDisplay();
+#endif
+
 namespace x11 {
 
 namespace {
@@ -67,12 +71,17 @@ DISABLE_CFI_DLSYM
 XlibDisplay::XlibDisplay(const std::string& address) {
   InitXlib();
 
+#ifndef TOOLKIT_QT
   display_ = GetXlibLoader()->XOpenDisplay(address.empty() ? nullptr
                                                            : address.c_str());
+#else
+  display_ = static_cast<struct _XDisplay*>(GetQtXDisplay());
+#endif
 }
 
 DISABLE_CFI_DLSYM
 XlibDisplay::~XlibDisplay() {
+#ifndef TOOLKIT_QT
   if (!display_)
     return;
 
@@ -84,6 +93,7 @@ XlibDisplay::~XlibDisplay() {
   // ExtractAsDangling clears the underlying pointer and returns another raw_ptr
   // instance that is allowed to dangle.
   loader->XCloseDisplay(display_.ExtractAsDangling());
+#endif
 }
 
 DISABLE_CFI_DLSYM
