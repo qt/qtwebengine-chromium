@@ -11,6 +11,10 @@
 #include "library_loaders/xlib_loader.h"
 #include "library_loaders/xlib_xcb_loader.h"
 
+#ifdef TOOLKIT_QT
+extern XDisplay* GetQtXDisplay();
+#endif
+
 namespace x11 {
 
 namespace {
@@ -67,12 +71,17 @@ DISABLE_CFI_ICALL
 XlibDisplay::XlibDisplay(const std::string& address) {
   InitXlib();
 
+#ifndef TOOLKIT_QT
   display_ = GetXlibLoader()->XOpenDisplay(address.empty() ? nullptr
                                                            : address.c_str());
+#else
+  display_ = static_cast<struct _XDisplay*>(GetQtXDisplay());
+#endif
 }
 
 DISABLE_CFI_ICALL
 XlibDisplay::~XlibDisplay() {
+#ifndef TOOLKIT_QT
   if (!display_)
     return;
 
@@ -82,6 +91,7 @@ XlibDisplay::~XlibDisplay() {
   // |display_| never had any pending events before it is closed.
   CHECK(!loader->XPending(display_));
   loader->XCloseDisplay(display_);
+#endif
 }
 
 DISABLE_CFI_ICALL
