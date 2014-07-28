@@ -8,8 +8,13 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
+#include "build/build_config.h"
 #include "library_loaders/xlib_loader.h"
 #include "library_loaders/xlib_xcb_loader.h"
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+extern void* GetQtXDisplay();
+#endif
 
 namespace x11 {
 
@@ -68,12 +73,17 @@ DISABLE_CFI_DLSYM
 XlibDisplay::XlibDisplay(const std::string& address) {
   InitXlib();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   display_ = GetXlibLoader()->XOpenDisplay(address.empty() ? nullptr
                                                            : address.c_str());
+#else
+  display_ = static_cast<struct _XDisplay*>(GetQtXDisplay());
+#endif
 }
 
 DISABLE_CFI_DLSYM
 XlibDisplay::~XlibDisplay() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!display_) {
     return;
   }
@@ -86,6 +96,7 @@ XlibDisplay::~XlibDisplay() {
   // ExtractAsDangling clears the underlying pointer and returns another raw_ptr
   // instance that is allowed to dangle.
   loader->XCloseDisplay(display_.ExtractAsDangling());
+#endif
 }
 
 DISABLE_CFI_DLSYM
