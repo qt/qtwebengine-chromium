@@ -121,7 +121,12 @@ bool InitializeICU() {
   // be released.
   CR_DEFINE_STATIC_LOCAL(base::MemoryMappedFile, mapped_file, ());
   if (!mapped_file.IsValid()) {
-#if !defined(OS_MACOSX)
+#if defined(TOOLKIT_QT)
+    FilePath data_path;
+    bool path_ok = PathService::Get(base::DIR_QT_LIBRARY_DATA, &data_path);
+    DCHECK(path_ok);
+    data_path = data_path.AppendASCII(ICU_UTIL_DATA_FILE_NAME);
+#elif !defined(OS_MACOSX)
     FilePath data_path;
 #if defined(OS_WIN)
     // The data file will be in the same directory as the current module.
