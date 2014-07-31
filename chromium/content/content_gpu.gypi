@@ -36,6 +36,15 @@
         ],
       },
     }],
+    ['qt_os=="win32" and qt_gl=="angle"', {
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+          '-l<(qt_egl_library)',
+          '-l<(qt_glesv2_library)',
+        ],
+      },
+    }],
     ['target_arch!="arm" and chromeos == 1', {
       'include_dirs': [
         '<(DEPTH)/third_party/libva',
