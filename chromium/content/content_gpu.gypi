@@ -40,7 +40,7 @@
         ],
       },
     }],
-    ['qt_os=="win32"', {
+    ['qt_os=="win32" and qt_gl=="angle"', {
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
