@@ -45,7 +45,11 @@ ui::AXTreeUpdate MakeAXTreeUpdate(
 }
 
 BrowserAccessibility* BrowserAccessibilityFactory::Create() {
+#if !defined(TOOLKIT_QT)
   return BrowserAccessibility::Create();
+#else
+  return 0;
+#endif
 }
 
 #if !defined(OS_MACOSX) && \

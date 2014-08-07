@@ -77,7 +77,9 @@
 #include <cstring>
 
 #include "base/strings/string_number_conversions.h"
+#if !defined(TOOLKIT_QT)
 #include "ui/base/win/atl_module.h"
+#endif
 #include "ui/base/win/dpi_setup.h"
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
@@ -481,7 +483,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
 #if defined(OS_WIN)
     RegisterInvalidParamHandler();
+#if !defined(TOOLKIT_QT)
     ui::win::CreateATLModuleIfNeeded();
+#endif
 
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN

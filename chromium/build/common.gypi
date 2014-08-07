@@ -5081,7 +5081,7 @@
               '_SECURE_ATL',
             ],
           }],
-          ['msvs_express', {
+          ['msvs_express and use_qt==0', {
             'configurations': {
               'x86_Base': {
                 'msvs_settings': {
